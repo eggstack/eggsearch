@@ -77,15 +77,15 @@ fetch ↗
 | Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
 | Metasearch adapter | `src/meta/` (34 top-level files plus `adapter/`, `dispatch/`, `dependency_parse/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
 | Vendored search engines | `src/meta/engines/` (42 files: 37 per-provider files + 5 support modules) | 36 engine structs covering 36 of 37 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
-| HTTP fetch pipeline | `src/fetch/` (10 top-level files) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
+| HTTP fetch pipeline | `src/fetch/` (11 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
 | MCP server & tools | `src/mcp/` (8 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
-| CLI commands | `src/commands/` (binary-only, 10 files) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
+| CLI commands | `src/commands/` (binary-only, `mod` + 9 modules) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
 | Agent/IDE integrations | `src/integrations/` (9 files, 7 clients) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
 | Self-update & platform | `src/update.rs`, `src/platform.rs` | Binary-first self-update with checksum verification; 7 release targets and host resolution | [packaging.md](packaging.md) |
-| Testing infrastructure | `tests/` (74 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
+| Testing infrastructure | `tests/` (76 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
 

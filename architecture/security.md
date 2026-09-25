@@ -1,207 +1,241 @@
 # Security Subsystem Deep Dive
 
-**Path:** `src/core/security.rs`, `src/core/security_applicability.rs`, `src/meta/security_search.rs`, `src/meta/security_grouping.rs`, `src/meta/security_suggested_fetches.rs`
-**Purpose:** Security vulnerability and advisory search with normalized metadata, version applicability assessment, and structured result grouping.
+**Path:** `src/core/security.rs`, `src/core/security_applicability.rs`, `src/meta/security_search.rs`, `src/meta/security_grouping.rs`, `src/meta/security_suggested_fetches.rs`, `src/meta/advisory_range.rs`, `src/meta/version_compare.rs`, `src/meta/adapter/advisory.rs`, `src/meta/adapter/security.rs`, `src/mcp/tools/security_search.rs`
+**Purpose:** Advisory-backed vulnerability search with native provider lookups, version applicability assessment, severity filtering, and explicit capability accounting.
 
 ---
 
 ## Overview
 
-The security subsystem combines web search with native advisory lookups (CVE, GHSA, OSV, RustSec, KEV), version applicability assessment, dependency file parsing, and severity filtering into a unified `security_search` MCP tool.
+`security_search` combines three evidence lanes — parallel web dispatch
+(`security_search_subqueries()` with `advisory` / `vendor` / `defensive`
+`PlannedSubquery` lanes), native advisory operations
+(`lookup_advisory_scoped()`, `query_advisories_by_package_scoped()`), and
+`KevClient` enrichment — then groups, severity-filters, and annotates
+results. The entry point is `run_security_search_plan()` in
+`src/meta/security_search.rs`; the MCP wrapper is `run_security_search` in
+`src/mcp/tools/security_search.rs`. Every native operation ends in a
+recorded terminal status; nothing is silently omitted.
 
 ---
 
 ## Core Types (`src/core/security.rs`)
 
-### Vulnerability Metadata
+`VulnerabilityMetadata` is the normalized advisory record: `cve_ids` /
+`ghsa_ids` / `osv_ids` / `rustsec_ids`, `ecosystem` / `package`,
+`affected_ranges` / `patched_ranges`, `vulnerable_versions` /
+`patched_versions`, `severity`, `cvss_score`, `cvss_vector`, `epss_score`,
+`kev` (`KevMetadata`), `published_at` / `modified_at` / `withdrawn_at`,
+`references` (`VulnerabilityReference`), and `source`
+(`VulnerabilitySource`: `Osv`, `GithubAdvisory`, `Nvd`, `Rustsec`,
+`CisaKev`, `Generic` with `as_str()`).
 
-```
-VulnerabilityMetadata
-  ├── cve_ids / ghsa_ids / osv_ids / rustsec_ids: Vec<String>
-  ├── ecosystem / package: Option<String>
-  ├── affected_ranges / patched_ranges: Vec<String>
-  ├── vulnerable_versions / patched_versions: Vec<String>
-  ├── severity: Option<SeverityLevel>
-  ├── cvss_score: Option<f64>
-  ├── cvss_vector: Option<String>
-  ├── epss_score: Option<f64>
-  ├── kev: Option<KevMetadata>
-  ├── published_at / modified_at / withdrawn_at: Option<String>
-  ├── references: Vec<VulnerabilityReference>
-  └── source: VulnerabilitySource
-```
+`SeverityLevel` (`Critical`, `High`, `Medium`, `Low`, `Unknown` default)
+provides `as_str()`, `from_str_loose()`, `rank()` (`Critical` 4 down to
+`Unknown` 0), and `meets_minimum()` — `Unknown` never satisfies any
+threshold.
 
-`SeverityLevel`: `Critical`, `High`, `Medium`, `Low`, `Unknown`
+`SecurityIdentifiers` holds `cve_ids`, `ghsa_ids`, `osv_ids`, `rustsec_ids`,
+`cwe_ids`, `package`, `ecosystem`, `version`, `function_or_api` (from
+`symbol:` hints), and `residual_query`. `SecurityIdentifiers::parse()`
+merges the explicit `cve_id` / `ghsa_id` / `osv_id` / `rustsec_id` /
+`package` / `ecosystem` / `version` fields with free-text regex extraction
+(`CVE_RE`, `GHSA_RE`, plus RustSec/CWE patterns) and normalization
+(`normalize_cve`, `normalize_ghsa`, `normalize_rustsec`,
+`normalize_ecosystem`). `has_strong_identifier()` is true when any advisory
+id, CWE id, or package+ecosystem pair is present.
 
-`VulnerabilitySource`: `Osv`, `GithubAdvisory`, `Nvd`, `Rustsec`, `CisaKev`, `Generic`
+`classify_query_kind()` maps identifiers to `SecurityQueryKind`: `Package`,
+`Cve`, `Cwe`, `Api`, `ErrorMessage`, `Concept`, `Unknown` (default), each
+with `as_str()`.
 
-### Security Identifiers
-
-`SecurityIdentifiers` provides regex-based parsing for:
-- CVE identifiers (`CVE-YYYY-NNNNN`)
-- GHSA identifiers (`GHSA-xxxx-xxxx-xxxx`)
-- OSV identifiers
-- RustSec identifiers (`RUSTSEC-YYYY-NNNN`)
-- CWE identifiers (`CWE-NNN`)
-- Package:ecosystem:version hints
-- Symbol hints
-
-### Query Classification
-
-`classify_query_kind()` → `SecurityQueryKind`:
-- `Package` — package name detected
-- `Cve` — CVE identifier detected
-- `Cwe` — CWE identifier detected
-- `Api` — API/method name detected
-- `ErrorMessage` — error message pattern detected
-- `Concept` — generic security concept
-- `Unknown` — no classification
-
-### Source Tiers
-
-`classify_source_tier()` → `SecuritySourceTier` (9 tiers):
-1. `PrimaryAdvisory` — primary advisory databases (NVD, OSV, RustSec)
-2. `VendorAdvisory` — vendor or project security pages
-3. `PackageRegistryAdvisory` — package registry advisory data (GitHub Advisories)
-4. `MaintainerDiscussion` — maintainer discussion (issues, PRs)
-5. `ReleaseNotes` — release notes and changelogs
-6. `SecurityResearch` — security research and analysis
-7. `NewsOrBlog` — news articles or blog posts
-8. `CommunityDiscussion` — forums, Stack Overflow
-9. `Unknown`
-
-### Remediation
-
-`SecurityRemediation` with categories:
-- `upgrade`, `pin`, `replace`, `remove_dependency`
-- `configuration_mitigation`, `feature_disable`
-- `vulnerable_api_avoidance`, `transitive_override`
-- `vendor_patch`, `monitor_only`, `manual_review`
-- `no_action_supported_by_evidence`
-
-`validate_text_safety()` checks offensive/vulnerability-class keyword blocklists.
+`SecuritySearchRequest` carries `query`, `ecosystem`, `package`, `version`,
+the four explicit id fields, `severity_min`, `include_kev` /
+`include_exploit_context` / `include_defensive_guidance` /
+`include_vendor_advisories`, `max_results`, `max_per_group`, `freshness`,
+`timeout_ms`, `providers`, `assess_applicability`, and `dependency_files`.
+The tool requires a non-empty query, package, or id field, and validates
+`severity_min` against `critical, high, medium, low`.
 
 ---
 
-## Applicability Assessment (`src/core/security_applicability.rs`)
+## Orchestration (`run_security_search_plan()`)
 
-### Advisory Range Extraction
-
-`extract_advisory_ranges()` pulls `AdvisoryRange` from `VulnerabilityMetadata`:
-- Ecosystem, package name, affected range string
-- Fixed, introduced, last_affected versions
-- Source attribution
-
-### Version Applicability
-
-`assess_version_applicability()` determines if a version is affected:
-
-| Status | Meaning |
-|--------|---------|
-| `Affected` | Advisory range matches requested version |
-| `NotAffected` | Advisory range explicitly excludes version |
-| `Unknown` | Range syntax/ecosystem mapping prevents answer |
-| `InsufficientEvidence` | No package/version data available |
-
-### Dependency Finding
-
-`DependencyFinding` captures parsed dependency info:
-- Ecosystem, package, version
-- Source file, line, kind
-- Confidence level
-- Dependency relation (direct/transitive/unknown)
-
-### Confidence Levels
-
-| Level | Meaning |
-|-------|---------|
-| `High` | Structured ranges + exact version match |
-| `Medium` | Manifest range or best-effort parsing |
-| `Low` | No structured ranges available |
+1. Parse identifiers from fields plus free-text query.
+2. Run `security_search_subqueries()` — a `build_search_plan()` generic
+   query plus `vendor` (`"{query} vendor advisory security bulletin"`) and
+   `defensive` (`"{query} mitigation workaround fix patch"`) lanes through
+   `dispatch_subqueries()`, returning cards, warnings, `providers_failed`,
+   trust markers, and the raw `RetrievalAttempt` vec.
+3. Check `advisory_provider_capabilities()`; without any native capability,
+   push `native_advisory_search_unavailable` plus the standing
+   `generic_context_untrusted` and `severity_unavailable` advisories.
+4. Plan deduplicated identifiers in family order (CVE, GHSA, OSV, RustSec)
+   via `plan_unique_advisory_identifiers()`, then execute bounded native
+   lookups under `NativeOperationBudget`: `MAX_NATIVE_ADVISORY_IDENTIFIERS`
+   (32 unique identifiers) and
+   `MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS` (64 provider calls), surfaced
+   as `NativeAdvisoryBudgetSummary` and
+   `native_advisory_identifier_cap_reached` /
+   `native_advisory_provider_operation_cap_reached` warnings.
+5. Query advisories by package coordinate and enrich CVEs through
+   `KevClient`.
+6. Assess version applicability and parse dependency files when package /
+   version data is present.
+7. Apply `severity_min` filtering, group with `group_security_results()`,
+   generate fetches with `generate_security_suggested_fetches()`, then run
+   `materialize_evidence_roles()` and `evidence_postprocess::postprocess()`.
 
 ---
 
-## Security Search Orchestration (`src/meta/security_search.rs`)
+## Advisory Capabilities and Terminal Outcomes
 
-### Flow
+`AdvisoryCapabilities { lookup_by_id, query_by_package }` is declared per
+engine: `OsvEngine` and `GithubAdvisoryEngine` advertise both operations;
+`NvdEngine` and `RustsecEngine` advertise `lookup_by_id` only. KEV coverage
+arrives through `KevClient` enrichment rather than the scoped package-query
+path.
 
-```
-1. Parse query for security identifiers (CVE, GHSA, package, etc.)
-2. Build web search plan with security intent
-3. Run bounded parallel web search dispatch
-4. Native advisory lookups:
-   a. CVE/GHSA/RustSec → lookup_advisory() per identifier
-   b. OSV → query_advisories_by_package() + lookup_by_id()
-   c. KEV → KevClient enrichment
-5. Version applicability assessment (if package + version provided)
-6. Dependency file parsing (if dependency files found)
-7. Severity filtering
-8. Result grouping
-9. Suggested fetch generation
-```
+`src/meta/adapter/advisory.rs` executes one operation per selected provider
+(`selected_advisory_engines()`, `advisory_provider_capabilities()`).
+`NativeAdvisoryOperation` is `LookupById { vulnerability_id }` or
+`QueryByPackage { ecosystem, package, version }`. Each provider attempt ends
+in exactly one `ProviderAdvisoryStatus`: `CapabilityUnavailable` (flag
+false), `InterruptedByDeadline` (global deadline elapsed, including inner
+`tokio::time::timeout` expiry), or `Completed(Result<T, EngineError>)`.
+`ProviderAdvisoryOutcome` records provider id, operation, status, and
+`duration_ms`.
 
-### Native Operation Budget
-
-`NativeOperationBudget` limits advisory lookups:
-- 32 unique identifiers
-- 64 provider operations
-
-Budget exhaustion produces `native_advisory_identifier_cap_reached` or `native_advisory_provider_operation_cap_reached` warnings.
-
-### KEV Enrichment
-
-`KevClient` provides CISA KEV catalog lookup with TTL cache. Enriches CVEs with:
-- Vendor, product
-- Required action
-- Due date
-- Known ransomware usage
+Outcome mapping to the shared ledger (`native_advisory_attempt()`) never
+drops a provider: successes record `SuccessWithResults` /
+`SuccessZeroResults`, transport problems become `Failed` / `TimedOut` /
+`RateLimited`, unsupported operations become
+`SkippedCapabilityUnavailable`, budget-skipped providers become
+`SkippedByPolicy`, and out-of-scope lanes become `NotApplicable`. The first
+successful `lookup_advisory()` / non-empty `query_advisories_by_package()`
+wins; otherwise the first error is returned. Lookup failures therefore
+appear in the retrieval summary instead of vanishing.
 
 ---
 
-## Result Grouping (`src/meta/security_grouping.rs`)
+## Native Lookups: CVE / GHSA / OSV / RustSec / KEV
 
-Groups results into `SecurityResultGroupKind` (9 variants):
+- OSV (`OsvEngine`, `src/meta/engines/osv.rs`): `osv::lookup_by_id()`
+  (`GET /vulns/{id}`, 404 → `Ok(None)`, bounded body via
+  `read_bounded_body()`) and `osv::query_package()` (explicit
+  `package.ecosystem` / `package.name` / `version` request body).
+- GitHub Advisory (`GithubAdvisoryEngine`): `search_by_cve`,
+  `search_by_ghsa`, and `search_by_package` back both `lookup_advisory()`
+  (CVE- / GHSA-prefixed ids) and `query_advisories_by_package()`.
+- NVD (`NvdEngine`): `lookup_by_cve()` for CVE-prefixed ids plus
+  `keyword_search()` for generic queries.
+- RustSec (`RustsecEngine`): `lookup_by_id()` for RUSTSEC-prefixed ids plus
+  `search_by_keyword()`.
+- KEV (`KevClient`, `src/meta/engines/kev.rs`; `CisaKevEngine`): TTL-cached
+  catalog fetch from `KEV_CATALOG_URL` (`DEFAULT_CACHE_TTL` one hour,
+  `with_cache_ttl()` override), `lookup()` by CVE id, enrichment with
+  vendor/product, required action, due date, and ransomware usage; engine
+  `lookup_advisory()` synthesizes `VulnerabilityMetadata` with
+  `source: VulnerabilitySource::CisaKev` for CVE ids.
 
-| Group | Content |
-|-------|---------|
-| `AuthoritativeAdvisories` | Primary advisory sources (OSV, NVD, GHSA, RustSec) |
-| `VendorAdvisories` | Vendor-provided security bulletins |
-| `PackageAdvisories` | Package registry advisory records |
-| `KevEntries` | CISA KEV catalog entries |
-| `PatchCommitsOrReleases` | Fix commits, patched releases |
-| `ExploitDiscussion` | Exploit analysis, PoC discussions |
-| `DefensiveGuidance` | Mitigation, hardening guidance |
-| `GeneralContext` | General security context |
-| `Other` | Unclassified results |
-
-Native advisory capability split (`advisory_capabilities()`): id+package
-(OSV, GitHub Advisory); id only (NVD, RustSec, CISA KEV).
-
----
-
-## Suggested Fetches (`src/meta/security_suggested_fetches.rs`)
-
-Generates `SecuritySuggestedFetch` from:
-- Resolved advisory IDs (OSV/NVD/GHSA/RustSec URLs)
-- Ecosystem package pages
-- Top group results
-- Dependency file findings
-
-Supports flags: `include_exploit_context`, `include_defensive_guidance`, `include_vendor_advisories`.
-
-Uses `fetch_ranking` pipeline in `FetchRankMode::Security` mode.
+`VulnerabilityMetadata::merge()` deduplicates id/range/reference vectors
+across providers and collapses mismatched sources to `Generic`.
 
 ---
 
-## Retrieval Attempt Ledger
+## Applicability Assessment
 
-All native advisory lookups produce `RetrievalAttempt` records:
-- `provider_id`: executing provider
-- `outcome`: `RetrievalAttemptOutcome` (`SuccessWithResults`, `SuccessZeroResults`, `Failed`, `TimedOut`, `RateLimited`, `SkippedCapabilityUnavailable`, `SkippedByPolicy`, `InterruptedByDeadline`, `NotApplicable`, …)
-- `result_count`: findings from this operation
-- `error_class`: classified failure reason
+`extract_advisory_ranges()` (`src/meta/advisory_range.rs`) converts
+`affected_ranges` / `patched_ranges` / `vulnerable_versions` into
+`AdvisoryRange { ecosystem, package, affected_range, fixed_versions,
+introduced_versions, last_affected_versions, source }`, requiring a parsable
+`PackageEcosystem` and non-empty package.
 
-These merge into the retrieval summary alongside web-search results. Lookup failures are never silently discarded.
+`assess_version_applicability()` returns a tri-state
+`ApplicabilityOutcome { status, reasons, matched_ranges }`: exact fixed
+match → `NotAffected`; explicit last-affected match or satisfied affected
+range → `Affected`; no structured ranges or unparseable syntax →
+`Unknown`. Multi-range combination uses `RangeMatch::combine()` — `Affected`
+dominates, all-`NotAffected` stays `NotAffected`, any `Unknown` mixed with
+`NotAffected` collapses to `Unknown`, so unevaluable ranges can never
+produce a false safe verdict. `ApplicabilityStatus` is `Affected` /
+`NotAffected` / `Unknown` (default) / `InsufficientEvidence` (query lacks
+package/version data); `ApplicabilityConfidence` is `High` (structured
+ranges + exact match) / `Medium` / `Low` (default).
+
+Dependency parsing yields `DependencyFinding { ecosystem, package, version,
+source_file, source_line, source_kind, confidence, relation }` with
+`DependencySource` (`LockFile`, `Manifest`, `Dockerfile`, `WorkflowFile`,
+`AdvisoryMetadata`, `RequestField`) and `DependencyRelation` (`Direct`,
+`Transitive`, `Unknown`).
+
+---
+
+## Version Range and Comparison (`src/meta/version_compare.rs`)
+
+`compare_versions_for_ecosystem()` and `version_satisfies_range()` dispatch
+per ecosystem: crates/npm/Go/NuGet/RubyGems/Packagist/PyPI use semver-like
+comparison (`compare_semver_like()` over numeric core segments with zero
+padding, pre-release below release, build metadata ignored) and semver
+range evaluation (`evaluate_semver_range()`); Maven uses `compare_maven()`
+/ `evaluate_maven_range()`; OCI and GitHub Actions support equality only.
+Uncomparable inputs return `None`, which the applicability layer treats as
+`Unknown` rather than `NotAffected`.
+
+---
+
+## Severity Filtering
+
+When `severity_min` is set, vulnerabilities without a qualifying severity
+are dropped via `meets_minimum()`, and grouped cards carrying advisory
+metadata below the threshold are retained only if they lack severity data
+entirely (generic context is not severity-filtered away). The outcome is
+always announced: `severity_min_applied: dropped {vulns} vulnerabilities
+and {cards} source cards below severity_min={level}`, or
+`severity_min_unenforced` when no card or vulnerability carries severity
+metadata.
+
+---
+
+## Grouping and Suggested Fetches
+
+`classify_security_result()` routes cards into `SecurityResultGroupKind` (9
+variants: `AuthoritativeAdvisories`, `VendorAdvisories`,
+`PackageAdvisories`, `KevEntries`, `PatchCommitsOrReleases`,
+`ExploitDiscussion`, `DefensiveGuidance`, `GeneralContext`, `Other`):
+cisa.gov hosts → `KevEntries`; osv.dev / nvd.nist.gov / github.com/advisories
+/ ghsa / rustsec.org → `AuthoritativeAdvisories`; advisory paths and
+`SourceKind::SecurityAdvisory` → `VendorAdvisories`; commit/pull/release /
+changelog URLs → `PatchCommitsOrReleases`; exploit/poc/metasploit →
+`ExploitDiscussion`; mitigation/hardening/defensive/best-practice →
+`DefensiveGuidance`; repo issue URLs → `PackageAdvisories`; everything else
+→ `GeneralContext`. `group_security_results()` emits groups in
+`CANONICAL_GROUP_ORDER` with labels from `security_group_label()`.
+
+`generate_security_suggested_fetches()` builds `FetchCandidate`s via
+`FetchCandidateBuilder::new()` for authoritative CVE/GHSA/OSV/RustSec URLs
+plus ecosystem package pages, top group results, and dependency-file
+locators, then ranks in `FetchRankMode::Security`. `include_exploit_context`,
+`include_defensive_guidance`, and `include_vendor_advisories` filter their
+group kinds when `Some(false)`; `None` keeps default-on behavior while
+authoritative advisories and KEV entries are always included as primary
+evidence.
+
+---
+
+## No Silent Omissions
+
+`RetrievalAttemptOutcome` covers every terminal state:
+`SuccessWithResults`, `SuccessZeroResults`, `Failed`, `TimedOut`,
+`RateLimited`, `SkippedByPolicy`, `SkippedCapabilityUnavailable`,
+`NotApplicable`, `InterruptedByDeadline`, `TruncatedAfterPartialSuccess`.
+Capability skips (`CapabilityUnavailable`), deadline interruptions,
+budget-skipped providers (`SkippedByPolicy`), and `NotApplicable` lanes all
+produce ledger entries with provider id, subquery id, operation id, outcome,
+result count, error class, and duration. Missing native capability,
+untrusted generic context, unavailable severity, and budget exhaustion each
+produce named warnings, so an empty advisory section is always explained,
+never silent.
 
 ---
 

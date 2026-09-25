@@ -1,1025 +1,285 @@
 # eggsearch MCP Response Handling Contract
 
 **Audience:** Coding-agent harness developers (codegg and similar).
-**Status:** Phase 14 Workstream 3 — stable, versioned contract.
-**Scope:** MCP tool responses from `web_search`, `repo_search`,
-`security_search`, `research_search`, `repo_fetch`, `web_fetch`,
-`batch_fetch`, `build_evidence_bundle`, and `provider_status`.
+**Status:** Stable, versioned contract.
+**Scope:** MCP tool responses from the ten stable tools in
+`src/mcp/tool_contract.rs` (`ALL_CONTRACTS`).
+**Sources:** `src/mcp/tool_contract.rs`, `src/mcp/projection.rs`,
+`src/mcp/output_schema.rs`, `src/mcp/server.rs`
+(`apply_contract_metadata`, `contract_fingerprint`),
+`src/mcp/tools/common.rs` (`map_tool_result`, `ToolError`,
+`RepairHint`), `tests/docs_tool_names.rs`, `tests/evidence_contract.rs`.
 
-This document defines the machine-readable contract that harnesses must
-implement to correctly consume, deduplicate, triage, and route eggsearch
-MCP output. All types, codes, and semantics here are **stable** — breaking
-changes follow the semver-compatible schema migration rules in AGENTS.md.
+This document defines the machine-readable contract harnesses must
+implement to consume, deduplicate, triage, and route eggsearch MCP
+output. All types, codes, and semantics here are **stable** — the
+stable contract is the ten MCP tools plus the CLI, and breaking
+changes follow additive-only evolution (see §8).
 
-## 0. MCP 2026-07-28 protocol and error contract
+---
 
-Successful calls return native `structuredContent` plus a text JSON fallback.
-Prefer `structuredContent`; validate `outputSchema` when practical. Every
-tool advertises `outputSchema` (generated from the typed envelope where one
-exists; permissive stable-envelope schemas for `web_search`, `web_fetch`,
-and `provider_status` where open-ended metadata is intentional).
-`tools/list` is name-sorted; cache it by the FNV-1a content fingerprint of
-names, descriptions, annotations, and serialized input/output schemas, not
-by tool count. Negotiate 2026-07-28 (`server/discover`, stateless metadata)
-when supported and fall back to legacy initialize sessions otherwise; tool
-names and semantics are stable across eras.
+## 1. Stable Tool Surface
 
-Distinguish tool-level `isError` from transport/protocol failure. Recoverable
-semantic failures are `isError: true` results with stable `code` and bounded
-`repair { field, accepted[<=20], suggested_value }`. Stable codes:
-`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`,
-`provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`,
-`manual_interaction_required`, `upstream_failed`. Only uninterpretable
-invocation shapes are JSON-RPC `invalid_params`; server faults are
-`internal_error` without stack traces.
+Exactly ten tools, canonical names in deterministic alphabetical
+order (`tool_names()`). `tests/docs_tool_names.rs` fails the build on
+any other count and on phantom tool-like names in docs.
 
-## 0.1 Response projection and host storage
+| Tool | Domain | Disclosure | Purpose |
+|------|--------|-----------|---------|
+| `batch_fetch` | fetch | deferred | bounded multi-target fetch over explicit targets |
+| `build_evidence_bundle` | evidence | deferred | deterministic evidence packaging for handoff |
+| `provider_status` | diagnostic | diagnostic | diagnostic provider and capability report |
+| `repo_fetch` | repository | deferred | bounded repository file or span inspection |
+| `repo_map` | repository | deferred | repository structure discovery without contents |
+| `repo_search` | repository | core | structured repository evidence discovery |
+| `research_search` | research | deferred | multi-source research evidence discovery |
+| `security_search` | security | deferred | vulnerability and advisory evidence discovery |
+| `web_fetch` | web | core | bounded single-URL inspection |
+| `web_search` | web | core | general web source discovery |
 
-All search/fetch tools except diagnostic-only `provider_status` accept optional
-`response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`).
-`build_evidence_bundle` accepts it but returns identical canonical content in
-all modes. Canonical responses are captured before projection; projection runs
-at the MCP boundary and only trims model-visible JSON.
+Each `ToolContract` carries `name`, `description` (selection-oriented,
+budgeted), `purpose`, `use_when`, `not_for`, `domain`
+(`ToolDomain::as_str`: `web`, `fetch`, `repository`, `security`,
+`research`, `evidence`, `diagnostic`), `disclosure`
+(`ToolDisclosureHint::as_str`: `core`, `deferred`, `diagnostic` —
+advisory for hosts, never policy-enforcing), `read_only` (true for
+all ten), `open_world` (true except `build_evidence_bundle` and
+`provider_status`), `related_tools`, `next_tools`, `keywords`, and
+`aliases` (discovery-only, never wire names). `annotations()` derives
+static MCP hints from `read_only`/`open_world`; annotations never vary
+by arguments — `provider_status` reports `open_world_hint = false`
+even though `probe: true` performs bounded live liveness checks.
+`discovery_text()` concatenates domain, disclosure, purpose,
+use-when/not-for, keywords, aliases, and the related/next graphs for
+host catalog indexing without returning full input schemas.
 
-- `compact` preserves query identity, cards/groups, stable IDs, locators,
-  trust + injection markers, evidence roles, 1 excerpt per card, essential
-  warnings, explicit failure/absence state (`providers_failed` + minimal
-  `retrieval_status`), `next_actions`/`suggested_fetches`, and conflict
-  indicators. Full routing/telemetry/document/link detail is omitted.
-- `standard` adds full `retrieval_summary`, `conflict_metadata`,
-  `workflow_coverage`, capability summaries, and fetch/cache metadata.
+`is_known_tool(name)` gates the ten canonical names. Harnesses must
+ignore `next_actions` entries whose `tool` fails this check, and
+`sanitize_next_actions()` drops unknown tools and empty reason codes,
+clamps priority to 1–5, and truncates to `MAX_NEXT_ACTIONS`
+preserving order. Unknown or malicious names never widen execution
+authority.
+
+---
+
+## 2. Deterministic Identity System
+
+All ids are content-derived FNV-1a hex (`src/core/identity.rs`).
+Never random UUIDs; never change id semantics (breaks corpus
+regression and cross-tool dedup).
+
+| Entity | Prefix | Key fields |
+|--------|--------|------------|
+| Source card | `src_` | provider + url + title + source kind |
+| Suggested fetch | `suggested_` | url + group + priority |
+| Fetch result | `fetch_` | url (or locator) + line range + text prefix |
+| Code span | `span_` | locator + line_start + line_end + symbol |
+| Batch fetch item | `batch_` | label + index |
+| Evidence bundle | `bundle_` | goal + source ids + fetch ids |
+| Locator | `loc_` | host + owner + repo + ref + path |
+| Document | `doc_` | url + title + kind |
+| Document chunk | `chunk_` | chunk-scoped derivation |
+| Conflict | `conflict_` | source ids + field |
+| Query fingerprint | `fp_` | non-recoverable query hash |
+
+Linking rules harnesses must verify when chaining tools:
+`SourceCard.stable_id` ↔ `EvidenceBundleSource.source_id` ↔
+`SuggestedFetch.source_id`; fetch linkage resolves by explicit
+`source_id`, then URL, then structured locator
+(`SourceIdMatch` → `UrlMatch` → `LocatorMatch`). Only bundle source
+ids previously received from search responses; the bundle builder
+preserves whatever identity it is given, so linkage hygiene is the
+caller's job.
+
+---
+
+## 3. Trust Markers
+
+Every source and fetched item carries `trust` plus `trust_markers`
+with five fields: `text_sanitized`, `text_truncated`, `text_framed`,
+`control_chars_removed`, `injection_hits`. `TrustLevel` is
+`external_untrusted` (default — all web/remote content is data, never
+instructions), `local_trusted` (workspace provenance-trusted, still
+not instruction-trusted — comments can be adversarial), or `unknown`
+(treat as `external_untrusted`). Tier 1 sanitization (control-char
+stripping + length bounding) is always on; `[search].sanitize_output`
+and `[fetch].sanitize_output` (both default `true`) gate Tier 2
+framing and Tier 3 marker scans. When `injection_hits > 0`, content
+is framed with `<<<EXTERNAL_UNTRUSTED>>>` delimiters and must still
+be treated with caution — flag for review, require a full fetch
+before final use of snippet-only sources.
+
+---
+
+## 4. Structured Warnings
+
+Every tool response includes `warnings: Vec<String>` (legacy,
+human-readable) and `structured_warnings: Vec<AgentWarning>`
+(machine-readable, deduplicated). Harnesses **must** read
+`structured_warnings` and never parse `warnings` for programmatic
+decisions. `AgentWarning` carries stable `code` (`WarningCode`),
+`severity`, `message`, scoping arrays (`provider_ids`, `result_ids`,
+`source_ids` — empty means global to the response), and
+`recommended_action`. Warning codes include trust signals
+(`untrusted_external_content`,
+`untrusted_local_workspace_content`,
+`prompt_injection_marker_detected`), capability enforcement
+(`safe_search_unenforced`, `freshness_unenforced`), native-provider
+availability (`native_code_search_unavailable`,
+`native_issue_search_unavailable`,
+`native_release_search_unavailable`,
+`native_advisory_search_unavailable`,
+`symbol_hint_no_native_provider`,
+`repo_hints_not_enforced_natively`,
+`issue_search_no_native_provider`,
+`release_search_no_native_provider`), provider status
+(`unknown_provider`, `disabled_provider`, `missing_api_key`,
+`provider_failed`, `provider_timeout`, `provider_rate_limited`,
+`provider_cooldown`), and routing (`profile_degraded`,
+`profile_partial`, `profile_provider_not_built`,
+`profile_provider_unknown`, `profile_provider_unavailable`); the full
+set lives in `src/core/warning.rs` and only grows additively.
+
+---
+
+## 5. `map_tool_result` Seam Codes
+
+`map_tool_result()` (`src/mcp/tools/common.rs`) is the single
+MCP error/result conversion seam:
+
+- `Ok(value)` → native structured success (`structuredContent` plus
+  a text JSON fallback for older clients).
+- `ToolError::InvalidRequest` → JSON-RPC `invalid_params`. Only
+  uninterpretable invocation shapes go here.
+- `ToolError::Validation` (legacy) and `ToolError::Execution` →
+  recoverable `isError: true` results with a stable `code` and
+  bounded `repair { field, accepted, suggested_value }`.
+- `ToolError::Internal` → JSON-RPC `internal_error`, never leaking
+  stack traces.
+
+Stable semantic `ToolErrorCode` strings (`as_str()`):
+`invalid_semantic_value`, `conflicting_arguments`,
+`capability_unavailable`, `provider_unavailable`, `policy_denied`,
+`budget_invalid`, `locator_invalid`, `manual_interaction_required`,
+`upstream_failed` — plus the protocol-level `invalid_request` and
+`internal`, which are transport codes, not repairable semantics.
+`RepairHint` is bounded: `accepted` capped at 20 entries, field
+strings at 128 chars, `suggested_value` at 256 chars. Distinguish
+tool-level `isError` from transport failure; match on `code` to
+decide whether a repaired retry is worthwhile.
+
+---
+
+## 6. `ResponseDetail` Modes
+
+All search/fetch tools accept `response_detail`
+(`compact`/`standard`/`diagnostic`, default `diagnostic` via
+`from_opt()`); `parse_raw()` accepts all modes case-insensitively.
+Canonical responses are captured before projection; `project()`
+trims only model-visible JSON at the MCP boundary.
+
+- `compact` preserves query identity, cards/groups, stable ids,
+  locators, trust + injection markers, evidence roles, 1 excerpt per
+  card, essential warnings, explicit failure/absence state (minimal
+  `retrieval_status`: `has_failures`, `has_absences`,
+  `has_truncation`, attempted/completed/failed job counts),
+  `conflict_indicator` (`has_conflicts`, `conflict_count`),
+  `routing_summary` (selected/skipped counts, `degraded`, `partial`),
+  `capability_summary` (enforced/approximated/not-enforced counts
+  where applicable), and `next_actions`/`suggested_fetches`. Full
+  routing, telemetry, document/link detail, and per-dimension
+  retrieval detail are omitted. Output is stamped `response_detail`
+  plus `projection_excerpts_trimmed`.
+- `standard` keeps the full `retrieval_summary`,
+  `conflict_metadata`, `workflow_coverage`, capability summaries,
+  and fetch/cache metadata, adding `routing_summary` and the
+  `response_detail` stamp.
 - `diagnostic` is the full passthrough payload.
 
-Harnesses must store full `structuredContent` internally (stable IDs, trust
-markers, warnings, retrieval summaries, provenance, next-action templates,
-canonical bundle data) and inject only the selected projection into
-model-visible context. Compact output must never be interpreted as evidence
-absence when `retrieval_status.has_failures` or non-empty `providers_failed`
-is present.
-
-## 0.2 Progressive disclosure integration
-
-Eggsearch owns the contract; CodeGG owns catalog, hydration, and policy.
-The runtime shape is `small immediate palette -> compact discovery ->
-hydrate 1–few definitions -> call -> follow next_actions`.
-
-- Discovery source: `src/mcp/tool_contract.rs` (`purpose`, `use_when`,
-  `not_for`, `domain`, `disclosure`, `keywords`, `aliases`,
-  `related_tools`, `next_tools`, `discovery_text()`). Discovery results must
-  carry compact selection metadata only, 3–5 matches by default with
-  `total_matches`, and never full `parameters` schemas. Prefer BM25 for
-  minimal-with-discovery profiles.
-- Hydration: add the complete `ToolDefinition` for selected deferred tools
-  via the existing deferred store; persist for the current run bounded by an
-  LRU/relevance cap of 3–5 beyond the core palette; evict only between
-  provider requests. Hydration is monotonic and never bypasses denied tools,
-  plan mode, missing backends, parent ceilings, or hidden disclosure. Raw
-  `mcp__eggsearch__*` tools stay hidden.
-- Next actions: `sanitize_next_actions()` drops unknown tools, empty reasons,
-  and over-limit entries (max 5, priority 1–5). Harnesses must apply the same
-  filter, hydrate high-priority targets without another discovery round
-  trip (`web_search` → `web_fetch`/`batch_fetch`; `repo_search` →
-  `repo_fetch`/`repo_map`/`batch_fetch`; `research_search` → `web_fetch`/
-  `repo_fetch`/`batch_fetch`/`build_evidence_bundle`; `security_search` →
-  `web_fetch`/`batch_fetch`/`build_evidence_bundle`), and treat hints as
-  optional. Unknown or malicious names are ignored.
-- Role palettes: ordinary coding (`web_search`, `repo_search`,
-  optionally `web_fetch`); research (`research_search`, `repo_search`, plus
-  selected fetch/evidence tools); security review (`security_search` plus
-  required fetch/evidence tools). Disclosure hints are advisory only.
-- Cache: key `tools/list` by `tool_fingerprint()` (names, descriptions,
-  annotations, input/output schemas, plus canonical discovery metadata) and
-  the server version, never by count. Apply hydration after cache retrieval.
+`build_evidence_bundle` accepts `response_detail` but returns
+identical canonical content in all modes; `provider_status` likewise
+passes through. Harnesses must store full `structuredContent`
+internally and inject only the selected projection into
+model-visible context. Compact output must never be read as evidence
+absence when `retrieval_status.has_failures` or non-empty
+`providers_failed` is present.
 
 ---
 
-## 1. Deterministic Identity System
+## 7. `tools/list` Fingerprint
 
-Every tool response carries **deterministic, content-derived IDs**
-alongside the legacy random UUID-based `id` fields. Harnesses should
-use the deterministic IDs for deduplication, cross-tool linking, and
-evidence tracking.
-
-### 1.1 ID Formats
-
-| Entity | Prefix | Key Fields | Example |
-|--------|--------|------------|---------|
-| Source card | `src_` | provider_id + url + title + source_kind | `src_a1b2c3d4e5f6a7b8` |
-| Suggested fetch | `suggested_` | url + group + priority | `suggested_1a2b3c4d5e6f7890` |
-| Fetch result | `fetch_` | url (or locator) + line_start + line_end + text_prefix | `fetch_2b3c4d5e6f789012` |
-| Code span | `span_` | locator + line_start + line_end + symbol | `span_3c4d5e6f78901234` |
-| Batch fetch item | `batch_` | label + index | `batch_5e6f789012345678` |
-| Evidence bundle | `bundle_` | goal + source_ids + fetch_ids | `bundle_4d5e6f7890123456` |
-| Locator | `loc_` | host + owner + repo + ref_name + path | `loc_5e6f789012345678` |
-| Document | `doc_` | url + title + kind | `doc_6f78901234567890` |
-| Document chunk | `chunk_` | doc_id + chunk_index + heading_path | `chunk_7890123456789012` |
-
-### 1.2 Linking Rules
-
-```
-SourceCard.stable_id  <-->  EvidenceBundleSource.source_id
-SourceCard.stable_id  <-->  SuggestedFetch.source_id
-FetchKey(fetch_url)   <-->  EvidenceBundleFetchedItem.fetch_id
-FetchKey(fetch_url)   <-->  RepoFetchResponse.fetch_id
-```
-
-**Invariant:** `bundle_source_ids` ⊆ `search_result_stable_ids`.
-Every source ID in an evidence bundle must originate from a search
-response the caller previously received.
-
-### 1.3 ID Verification
-
-Harnesses should verify ID linkage when chaining tools:
-
-```rust
-fn verify_source_link(
-    source: &SourceCard,
-    fetch: &RepoFetchResponse,
-) -> bool {
-    fetch.stable_id.as_deref() == compute_fetch_id(&fetch.fetched_url, &fetch.text)
-}
-```
+`apply_contract_metadata()` overwrites each tool's description and
+annotations from the canonical registry, attaches the permissive
+output schema, and sorts by name so `tools/list` is deterministic
+and cacheable across transports and protocol eras.
+`contract_fingerprint()` hashes canonical names, descriptions,
+annotations, serialized input/output schemas, and discovery metadata
+(domain, disclosure, purpose, use-when/not-for, keywords, aliases,
+related/next) with FNV-1a; `tool_fingerprint()` exposes it.
+Harnesses must cache `tools/list` by this fingerprint plus the
+server version — never by tool count — and apply hydration state
+after retrieving a cached base surface.
 
 ---
 
-## 2. Structured Warnings
+## 8. Additive-Only Evolution and Schema Budgets
 
-Every MCP tool response includes:
-- `warnings: Vec<String>` — legacy human-readable strings
-- `structured_warnings: Vec<AgentWarning>` — machine-readable, deduplicated
+Breaking changes (require a major version bump): removing or
+renaming an enum variant, struct field, `WarningCode`, or
+`FetchRankReason` variant; changing a serialized enum string or a
+deterministic id for the same input; changing a recipe id or step
+tool reference. Non-breaking additions: appended enum variants, new
+optional (`skip_serializing_if`) fields, new warning/reason codes,
+new tool capabilities, new `server_capabilities` flags. Harnesses
+must treat unknown enum variants and optional fields as opaque —
+skip them, never crash.
 
-Harnesses **MUST** read `structured_warnings` and never parse `warnings`
-for programmatic decisions.
-
-### 2.1 Warning Severity → Harness Action
-
-```rust
-fn handle_warning(warning: &AgentWarning) {
-    match warning.severity {
-        Error => {
-            // Blocks action. Show error panel. Optionally request user review.
-            block_or_request_user_review(warning);
-        }
-        Warning => {
-            // Degrades capability. Show in review panel as advisory.
-            show_in_review_panel(warning);
-        }
-        Notice | Info => {
-            // Attach to evidence metadata for downstream inspection.
-            attach_to_evidence_metadata(warning);
-        }
-    }
-}
-```
-
-### 2.2 Key Warning Codes
-
-| Code | Severity | Meaning |
-|------|----------|---------|
-| `safe_search_unenforced` | Warning | safe_search requested but no provider enforces it |
-| `freshness_unenforced` | Warning | freshness hint requested but no provider enforces it |
-| `native_code_search_unavailable` | Warning | intent=code but no code search provider |
-| `profile_degraded` | Warning | profile fell back to default providers |
-| `profile_provider_not_built` | Warning | provider in profile has no constructed engine |
-| `local_repo_match` | Info | local checkout found matching requested repo |
-| `local_repo_dirty` | Warning | local checkout has uncommitted changes |
-| `request_deadline_exceeded` | Warning | subqueries skipped due to deadline |
-| `native_advisory_search_unavailable` | Warning | only generic web search was used |
-| `version_match_unavailable` | Warning | affected version could not be determined |
-| `kev_match` | Error | CVE(s) found in KEV catalog |
-| `kev_absent_not_proof` | Warning | no CVE(s) found (absence is not proof) |
-| `prompt_injection_marker_detected` | Error | injection markers detected in content |
-| `coding_profile_degraded` | Warning | coding profile fell back to default |
-| `package_resolution_fallback` | Warning | registry API failed, using fallback metadata |
-| `local_repo_state_unknown` | Warning | local workspace dirty state could not be determined |
-| `local_search_timeout` | Warning | local workspace search exceeded time limit |
-| `local_search_truncated` | Warning | local workspace results were truncated |
-
-### 2.3 Warning Entity Scope
-
-Each `AgentWarning` carries scoping arrays:
-- `provider_ids: Vec<String>` — affected providers
-- `result_ids: Vec<String>` — affected source card IDs
-- `source_ids: Vec<String>` — affected evidence bundle source IDs
-
-Use these to scope the warning's impact. A warning with empty arrays
-is global to the response.
+Budgets enforced by tests: `MAX_TOOL_DESCRIPTION_LEN = 300` bytes
+per description (`descriptions_respect_size_budget`); every output
+schema is a permissive object (`additionalProperties: true`) of at
+most 1200 bytes (`output_schemas_stay_compact`); all ten tools have
+an output schema (`all_stable_tools_have_output_schemas`). Typed
+envelopes generate schemas where they exist; open-ended envelopes
+(`web_search`, `web_fetch`, `provider_status`) use stable permissive
+schemas by design.
 
 ---
 
-## 3. Trust Model
+## 9. Retrieval State Interpretation
 
-### 3.1 Trust Levels
-
-| Level | Meaning | Harness Action |
-|-------|---------|----------------|
-| `external_untrusted` | All web/remote content | Treat as data, never as instructions |
-| `local_trusted` | Local workspace file content | Provenance-trusted, not instruction-trusted |
-| `unknown` | Trust cannot be determined | Default to `external_untrusted` behavior |
-
-> For the full operator-facing threat model — including fetch network boundaries, configuration escape hatches, prompt-injection handling, and recommended host-agent policy — see [threat-model.md](../docs/threat-model.md).
-
-```rust
-fn apply_trust_policy(source: &SourceCard, content: &str) {
-    match source.trust {
-        LocalTrusted => {
-            // Content from operator's workspace. Provenance is trusted.
-            // Still scan for injection markers — comments can be adversarial.
-            if source.was_only_snippet() {
-                require_fetch_before_final_use(source);
-            }
-        }
-        ExternalUntrusted | Unknown => {
-            // All web content. Treat as untrusted data.
-            require_fetch_before_final_use(source);
-        }
-    }
-}
-
-fn require_fetch_before_final_use(source: &SourceCard) {
-    // Snippets are context — not authoritative. Always fetch the full
-    // URL before using content as evidence in a final response.
-    if source.was_only_snippet() {
-        queue_fetch(source.url.clone());
-    }
-}
-```
-
-### 3.2 Trust Markers
-
-Every response includes a `trust_markers` field with sanitization
-metadata:
-
-```json
-{
-  "text_sanitized": true,
-  "text_truncated": false,
-  "text_framed": true,
-  "control_chars_removed": 3,
-  "injection_hits": 0
-}
-```
-
-Harnesses should inspect `injection_hits` to flag results that may
-contain adversarial content. When `injection_hits > 0`, the content
-has been framed with `<<<EXTERNAL_UNTRUSTED>>>` delimiters but the
-agent should still exercise caution.
-
-```rust
-fn check_trust_markers(markers: &TrustMarkers) -> TrustDisposition {
-    if markers.injection_hits > 0 {
-        TrustDisposition::FlaggedForReview
-    } else if markers.text_sanitized {
-        TrustDisposition::Sanitized
-    } else {
-        TrustDisposition::Raw
-    }
-}
-```
+Harnesses must interpret `retrieval_summary` through the
+authoritative `state` field (`RetrievalDimensionState`: `satisfied`,
+`completed_no_match`, `failed`, `skipped_by_policy`,
+`capability_unavailable`, `interrupted`, `partial`,
+`not_applicable`), `attempt_outcome` for exact operation outcomes
+(10 `RetrievalAttemptOutcome` variants), and
+`truncation_evidence` for completeness — never through
+`absence_kind` alone. Priority order for the same role: `satisfied`
+→ `partial` → `failed` → `interrupted` → `completed_no_match` →
+`skipped_by_policy` → `capability_unavailable` →
+`not_applicable`. State-aware helpers (`is_absence_only()`,
+`is_failure_only()`, `has_indeterminate()`, `absent_roles()`,
+`failed_providers()`) encode these rules; required roles with
+capability or policy skips stay indeterminate in workflow coverage.
+`not_applicable` counts exist at both levels
+(`not_applicable_count`, `not_applicable_job_count`) and fold into
+completed counts. `limit_reached_unknown` is possible, unconfirmed
+truncation — never treat it as confirmed.
 
 ---
 
-## 4. Next Actions
+## 10. Keyless-Core Invariant
 
-Search responses include `next_actions: Vec<AgentNextAction>` with
-up to 5 machine-readable follow-up hints.
-
-### 4.1 Action Structure
-
-```json
-{
-  "tool": "repo_fetch",
-  "reason_code": "inspect_top_source",
-  "priority": 1,
-  "input_template": {
-    "owner": "<owner>",
-    "repo": "<repo>",
-    "path": "<path>"
-  },
-  "source_ids": ["src_a1b2c3d4e5f6a7b8"]
-}
-```
-
-### 4.2 Priority Semantics
-
-| Priority | Meaning | Harness Behavior |
-|----------|---------|-----------------|
-| 1 | Most productive next step | Auto-suggest or execute if safe |
-| 2 | High value alternative | Show as primary suggestion |
-| 3 | Worthwhile follow-up | Show in suggestions panel |
-| 4 | Optional enrichment | Show as secondary option |
-| 5 | Exploratory | Show only on explicit request |
-
-### 4.3 Reason Code Examples
-
-| Reason Code | Tool | Meaning |
-|-------------|------|---------|
-| `inspect_top_source` | `repo_fetch` | Fetch the highest-ranked source card |
-| `fetch_primary_advisory` | `web_fetch` | Fetch a primary security advisory |
-| `fetch_counterpoint` | `web_fetch` | Fetch contradicting evidence |
-| `bundle_evidence` | `build_evidence_bundle` | Package gathered evidence for handoff |
-| `fetch_source_code` | `repo_fetch` | Fetch source code from a suggested URL |
-| `resolve_package` | `repo_search` | Resolve package metadata from registry |
-
-### 4.4 Input Template Handling
-
-Harnesses must replace `<placeholders>` in `input_template` with
-actual values from the response context. Placeholders use angle-bracket
-notation and correspond to fields on the target tool's request type.
+A clean install with no config file and no credential env vars
+starts successfully and serves keyless search/fetch. Harnesses must
+not prompt for API keys, gate tool calls on credentials, or treat
+missing credentials as global failure; inspect `provider_status`
+only when availability itself is relevant. Prefer native adapters
+when routable; continue with keyless providers otherwise; never
+label generic web results as native forge evidence. Credential
+suggestions are contextual, optional, and paired with a keyless
+fallback.
 
 ---
 
-## 5. Suggested Fetch Reason Codes
-
-Suggested fetches on `repo_search`, `security_search`, and
-`research_search` responses include stable reason codes.
-
-### 5.1 FetchRankReason Variants
-
-**Provenance stability:**
-- `pinned_raw_permalink` — commit-pinned raw content URL (most stable)
-- `pinned_browser_permalink` — commit-stable browser URL
-- `mutable_raw_url` — mutable raw content
-- `mutable_browser_url` — mutable browser URL
-- `generic_web_url` — generic web page
-
-**Evidence confidence:**
-- `exact_confidence` — exact match evidence
-- `strong_confidence` — strong match evidence
-- `weak_confidence` — weak match evidence
-- `unknown_confidence` — confidence could not be determined
-
-**Source role:**
-- `source_role_implementation` — implementation code
-- `source_role_documentation` — documentation
-- `source_role_readme` — README
-- `source_role_example` — example code
-- `source_role_test` — test code
-- `source_role_changelog` — changelog
-- `source_role_migration` — migration guide
-- `source_role_benchmark` — benchmark
-- `source_role_configuration` — configuration file
-
-**Source kind:**
-- `kind_official_docs` — official documentation
-- `kind_package_registry` — package registry listing
-- `kind_release_notes` — release notes
-- `kind_issue_thread` — issue discussion
-- `kind_pull_request` — pull request
-- `kind_security_advisory` — security advisory
-- `kind_source_file` — source code file
-
-**Evidence strength:**
-- `sparse_code_evidence` — limited code-level evidence
-
-**Security:**
-- `authoritative_advisory` — authoritative security advisory
-- `vendor_advisory` — vendor-provided security advisory
-- `security_consideration` — security-related evidence
-
-**Research:**
-- `primary_research_source` — primary research source
-- `reference_implementation` — reference implementation
-- `benchmark_source` — benchmark data source
-
-**Query context:**
-- `symbol_hint_match` — symbol name matched
-- `path_hint_match` — file path matched
-- `language_hint_match` — programming language matched
-- `file_hint_match` — filename matched
-- `error_context_match` — error text matched (exact-error mode)
-- `version_migration_context` — version/migration context present
-- `package_name_match` — package name matched
-- `source_type_match` — source type matched query intent
-
-### 5.2 Harness Selection Logic
-
-```rust
-fn select_fetch(candidates: &[SuggestedFetch]) -> &SuggestedFetch {
-    // Candidates are pre-ranked by score. Prefer:
-    // 1. Pinned provenance (raw permalink > browser permalink)
-    // 2. Exact/strong confidence
-    // 3. Implementation/documentation source role
-    // 4. Symbol/path hint match for code queries
-    candidates.iter().max_by_key(|f| f.score.unwrap_or(0))
-}
-```
-
----
-
-## 6. Security Applicability
-
-`security_search` responses with `assess_applicability: true` include
-per-package/version applicability assessments.
-
-### 6.1 Status Definitions
-
-| Status | Meaning | Harness Action |
-|--------|---------|----------------|
-| `affected` | Advisory range matches requested version | Flag for upgrade/review |
-| `not_affected` | Advisory range explicitly excludes version | Mark as resolved |
-| `unknown` | Range syntax/ecosystem mapping prevents answer | Fetch more evidence |
-| `insufficient_evidence` | No package/version data available | Request dependency files |
-
-### 6.2 Confidence Levels
-
-| Level | Meaning |
-|-------|---------|
-| `high` | Structured ranges + exact version match |
-| `medium` | Manifest range or best-effort parsing |
-| `low` | No structured ranges available |
-
-### 6.3 Remediation Categories
-
-| Category | Harness Action |
-|----------|----------------|
-| `upgrade` | Suggest version bump in manifest |
-| `pin` | Pin to specific safe version |
-| `replace` | Suggest alternative dependency |
-| `remove_dependency` | Remove dependency entirely |
-| `configuration_mitigation` | Apply config-level hardening |
-| `feature_disable` | Disable vulnerable feature/code path |
-| `vulnerable_api_avoidance` | Avoid calling vulnerable API surface |
-| `transitive_override` | Override transitive dependency version |
-| `vendor_patch` | Apply vendor-provided patch |
-| `monitor_only` | Monitor for upstream fixes; no immediate action |
-| `manual_review` | Manual review required; insufficient evidence |
-| `no_action_supported_by_evidence` | No actionable remediation from evidence |
-
-```rust
-fn suggest_remediation(assessment: &ApplicabilityAssessment) -> Vec<Action> {
-    assessment.rem remediation.iter().map(|r| match r.category {
-        Upgrade => Action::BumpVersion(r.fixed_versions.clone()),
-        Pin => Action::PinVersion(r.fixed_versions.clone()),
-        ConfigurationMitigation => Action::ApplyConfigMitigation(r.description.clone()),
-        MonitorOnly => Action::AddToWatchlist(r.description.clone()),
-        ManualReview => Action::FlagForHumanReview(r.description.clone()),
-        NoActionSupportedByEvidence => Action::None,
-        _ => Action::Custom(r.category.as_str().into(), r.description.clone()),
-    }).collect()
-}
-```
-
-### 6.4 Safety Boundary
-
-Every applicability response includes the warning:
-`applicability_not_exploitability`. Harnesses must NOT treat
-`affected` status as proof of exploitability or `not_affected` as
-proof of safety. This is metadata comparison, not runtime analysis.
-
----
-
-## 7. Research Evidence Model
-
-`research_search` responses include structured evidence analysis:
-claims, conflicts, source quality, and evidence gaps.
-
-### 7.1 Research Claims
-
-```json
-{
-  "id": "claim_abc123",
-  "text": "axum provides faster routing than actix-web based on benchmarks",
-  "claim_type": "performance",
-  "confidence": "medium",
-  "supporting_source_ids": ["src_def456", "src_ghi789"],
-  "conflicting_source_ids": ["src_jkl012"],
-  "missing_evidence": ["reproducible benchmark with identical workload"],
-  "source_quality_notes": ["sources are vendor blogs, not peer-reviewed"]
-}
-```
-
-**Harness handling:** Claims are deterministic metadata, NOT truth
-judgments. Harnesses should:
-1. Use `supporting_source_ids` to fetch primary evidence
-2. Use `conflicting_source_ids` to present counterpoints
-3. Use `missing_evidence` to suggest follow-up fetches
-4. Never assert claims as factual without verification
-
-### 7.2 Research Conflicts
-
-Conflicts link opposing sources with a topic:
-
-```json
-{
-  "id": "conflict_xyz789",
-  "topic": "axum vs actix-web performance",
-  "claim_ids": ["claim_abc123"],
-  "side_a_source_ids": ["src_def456"],
-  "side_b_source_ids": ["src_jkl012"],
-  "notes": ["benchmarks use different workloads"]
-}
-```
-
-Harnesses should present both sides and let the user decide.
-
-### 7.3 Evidence Gaps
-
-| Gap Kind | Meaning | Recommended Action |
-|----------|---------|-------------------|
-| `no_primary_source` | No authoritative source found | Fetch official docs |
-| `no_recent_source` | All sources are stale | Fetch recent discussions/releases |
-| `no_benchmark_source` | No benchmarks found | Search for benchmarks |
-| `no_security_source` | No security analysis found | Search security advisories |
-| `no_migration_changelog` | No changelogs/migration guides | Fetch changelog |
-| `only_secondary_sources` | Only blog/news sources found | Fetch primary sources |
-| `conflicting_evidence_unresolved` | Conflicting claims remain unresolved | Fetch counterpoints |
-| `version_context_missing` | No version context provided | Request version info |
-
-### 7.4 Source Quality Signals
-
-| Signal | Meaning |
-|--------|---------|
-| `primary_source` | Official/primary documentation |
-| `maintained_current` | Recently updated content |
-| `version_specific` | Content is version-pinned |
-| `commit_pinned` | URL contains commit SHA |
-| `reproducible_benchmark` | Benchmark with reproducible methodology |
-| `peer_reviewed` | Peer-reviewed or standards body |
-| `stale_source` | Content is outdated |
-| `secondary_source` | Derived/summarized content |
-| `anecdotal_source` | Personal experience, not systematic |
-| `marketing_source` | Vendor marketing material |
-
----
-
-## 8. Local Workspace Metadata
-
-When `repo_search` includes local workspace results, source cards carry
-additional identity and state metadata.
-
-### 8.1 Local Repo Match
-
-```json
-{
-  "local_repo_match": {
-    "root_path": "/Users/dev/projects/myrepo",
-    "remote_host": "github",
-    "remote_owner": "myorg",
-    "remote_repo": "myrepo",
-    "branch": "main",
-    "commit": "a1b2c3d",
-    "dirty_state": "clean",
-    "match_confidence": "exact",
-    "reasons": ["remote URL matches requested owner/repo"]
-  }
-}
-```
-
-### 8.2 Match Confidence
-
-| Level | Meaning |
-|-------|---------|
-| `exact` | Remote URL matches requested host/owner/repo exactly |
-| `strong` | Owner/repo matches but host differs (alias resolution) |
-| `weak` | Partial match (name similarity only) |
-
-### 8.3 Dirty State
-
-| State | Meaning | Harness Action |
-|-------|---------|----------------|
-| `clean` | No uncommitted changes | Proceed normally |
-| `dirty` | Uncommitted changes exist | Warn user; content may be stale relative to HEAD |
-| `unknown` | Could not determine dirty state | Treat as dirty (conservative) |
-| `not_git` | Not a git repository | Ignore dirty state |
-
-### 8.4 File Classification Flags
-
-Source cards from local workspace results include file classification metadata:
-```json
-{
-  "file_classification": {
-    "is_source": true,
-    "is_test": false,
-    "is_config": false,
-    "is_documentation": false,
-    "is_generated": false,
-    "language": "rust",
-    "size_bytes": 4096
-  }
-}
-```
-
-Harnesses can use classification flags to:
-- Filter results by file type (source, test, config, docs)
-- Detect generated files that may be stale
-- Apply language-specific tooling
-
-### 8.5 Workspace ID
-
-Local workspace results include a `workspace_id` string that identifies the
-local checkout across calls. Use this to:
-- Track local workspace state across tool invocations
-- Deduplicate results from the same workspace
-- Correlate `repo_search`, `repo_fetch`, and `repo_map` calls
-
-```json
-{
-  "workspace_id": "ws_a1b2c3d4e5f6a7b8"
-}
-```
-
-The workspace ID is deterministic and derived from the workspace root path.
-It does not change between calls unless the workspace configuration changes.
-
-### 8.6 Symbol Provenance
-
-Local `repo_search` matches carry additive `symbol_provenance`
-(`structured` or `regex_fallback`), `enclosing_symbol`, and
-`is_exact_definition`. Structured definitions use `Exact` confidence with
-`ProviderSymbolMatch`; regex fallback uses `Strong` with
-`ProviderTextMatch`. Ranking order: exact structured definition >
-structured symbol match > lexical regex match > ordinary text match.
-Treat unknown provenance values as opaque.
-
-### 8.7 Repo-Map Structural Enrichment
-
-Local `repo_map` responses additively include `packages`,
-`language_distribution`, `modules`, `entrypoints`, `top_symbols`,
-`test_relationships` (heuristic `syntax`/`path`/`name_reference`/`package`
-confidence, never coverage claims), `build_configs`, and
-`structure_truncated`. All structural fields are bounded by `[local]`
-budgets and may be empty on budget breach or scan failure.
-
-### 9. Retrieval Dimension State
-
-| State | Meaning | Harness Action |
-|-------|---------|----------------|
-| `satisfied` | Evidence was retrieved (results found) | Use evidence; fetch full source before final use |
-| `completed_no_match` | Provider responded successfully with zero results | Mark role as attempted; no evidence available |
-| `failed` | Provider returned an error | Flag provider as degraded; consider retry |
-| `skipped_by_policy` | Provider was excluded by budget or configuration | Note budget exhaustion; no retry needed |
-| `capability_unavailable` | Provider does not support the requested capability | Do not retry this provider for this capability |
-| `interrupted` | Global deadline prevented completion | Note deadline; remaining providers may still succeed |
-| `partial` | Results were truncated after partial success | Fetch additional pages or sources if available |
-| `not_applicable` | Role was not requested for this operation | Ignore for evidence purposes |
-
-### 9.2 State Interpretation Order
-
-When multiple dimensions exist for the same evidence role, harnesses
-should interpret states in this priority order (highest to lowest):
-
-1. `satisfied` — evidence exists, use it
-2. `partial` — partial evidence exists, supplement if possible
-3. `failed` — provider error, flag for retry
-4. `interrupted` — deadline, may succeed on retry with more time
-5. `completed_no_match` — no evidence from this provider
-6. `skipped_by_policy` — excluded by policy/budget
-7. `capability_unavailable` — provider cannot serve this role
-8. `not_applicable` — role not requested
-
-### 9.3 Dimension Count Fields
-
-The `retrieval_summary` includes both attempt-level and dimension-level
-count fields:
-
-| Field | Level | Meaning |
-|-------|-------|---------|
-| `attempted_job_count` | Attempt | Total terminal retrieval attempts |
-| `completed_job_count` | Attempt | Attempts with success or not-applicable |
-| `failed_job_count` | Attempt | Attempts that failed, timed out, rate-limited, or were interrupted |
-| `policy_skipped_count` | Attempt | Attempts skipped by policy |
-| `capability_skipped_count` | Attempt | Attempts skipped due to unavailable capability |
-| `attempted_dimension_count` | Dimension | Total role-expanded dimensions |
-| `completed_dimension_count` | Dimension | Dimensions with evidence or no-match |
-| `failed_dimension_count` | Dimension | Dimensions with failure or deadline interruption |
-| `not_applicable_count` | Dimension | Dimensions where the role was not applicable |
-
-**Invariant:** `attempted_job_count == completed_job_count + failed_job_count + policy_skipped_count + capability_skipped_count`.
-
-### 9.4 Dimension State Fixtures
-
-```json
-{
-  "retrieval_summary": {
-    "attempted_job_count": 4,
-    "completed_job_count": 2,
-    "failed_job_count": 1,
-    "policy_skipped_count": 1,
-    "capability_skipped_count": 0,
-    "attempted_dimension_count": 4,
-    "completed_dimension_count": 2,
-    "failed_dimension_count": 1,
-    "not_applicable_count": 0,
-    "dimensions": [
-      {
-        "evidence_role": "primary_implementation",
-        "provider_id": "duckduckgo",
-        "state": "satisfied",
-        "absence_kind": "not_applicable",
-        "attempt_outcome": "success_with_results",
-        "result_count": 5,
-        "truncated": false
-      },
-      {
-        "evidence_role": "official_documentation",
-        "provider_id": "startpage",
-        "state": "failed",
-        "absence_kind": "provider_failed",
-        "attempt_outcome": "failed",
-        "error_class": "connection_refused",
-        "truncated": false
-      },
-      {
-        "evidence_role": "usage_example",
-        "provider_id": "brave",
-        "state": "skipped_by_policy",
-        "absence_kind": "provider_skipped_by_policy",
-        "attempt_outcome": "skipped_by_policy",
-        "truncated": false
-      },
-      {
-        "evidence_role": "authoritative_security_advisory",
-        "provider_id": "osv",
-        "state": "completed_no_match",
-        "absence_kind": "no_matching_evidence_found",
-        "attempt_outcome": "success_zero_results",
-        "truncated": false
-      }
-    ]
-  }
-}
-```
-
-### 9.5 Native Advisory Budget Warnings
-
-Security responses may include budget-related warnings:
-
-| Code | Severity | Meaning |
-|------|----------|---------|
-| `native_advisory_identifier_cap_reached` | Warning | Unique identifier limit reached; additional identifiers not scheduled |
-| `native_advisory_provider_operation_cap_reached` | Warning | Provider-operation limit reached; provider operations skipped by policy |
-| `native_advisory_provider_does_not_supply_manifest_metadata` | Warning | Advisory provider does not provide dependency manifest metadata |
-
-These warnings are advisory. The retrieval summary's dimension states
-(`SkippedByPolicy` for budget-excluded providers) provide the
-machine-readable signal.
-
----
-
-## 10. Capability Discovery
-
-`provider_status` returns provider descriptors, cached health snapshots,
-`code_hosts`, `server_capabilities`, `tool_capabilities`, and
-`workflow_recipes`. When `probe: true`, the tool performs bounded live
-liveness probes through the shared probe service (same core used by
-`eggsearch doctor --probe`) and returns a typed `probe` section with
-`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`.
-When `probe` is omitted or `false`, the tool returns cheap process-local
-config/health only. Non-routable providers are reported as skipped with a
-stable `skip_code` rather than a network failure.
-
-Each provider descriptor includes `routable` (bool), `skip_reason`
-(optional human-readable string), and `skip_code` (optional machine-readable
-code from the `ProviderSkipCode` enum). Stable `skip_code` values:
-`unknown_provider`, `disabled_by_user`, `missing_api_key`,
-`missing_searxng_config`, `missing_base_url`, `invalid_base_url`,
-`missing_local_backend`, `credential_not_configured`,
-`credential_env_missing`, `credential_invalid`, `cooldown_active`,
-`not_built`, `unknown`.
-
-### 10.1 Server Capabilities
-
-```json
-{
-  "generic_search": true,
-  "explicit_fetch": true,
-  "batch_fetch": true,
-  "repo_search": true,
-  "repo_fetch": true,
-  "repo_map": true,
-  "document_fetch": true,
-  "security_search": true,
-  "research_search": true,
-  "evidence_bundle": true,
-  "pdf_fetch": false,
-  "local_workspace": true
-}
-```
-
-Harnesses should check capabilities before invoking specialized tools.
-If a capability is `false`, fall back to `web_search` with appropriate
-`intent` hints.
-
-### 10.2 Tool Capabilities
-
-Per-tool feature details:
-
-```json
-{
-  "repo_fetch": {
-    "remote_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"],
-    "workspace": true,
-    "line_ranges": true,
-    "context_lines": true,
-    "max_chars_enforced": true,
-    "symbol_search": true,
-    "expand_to_block": true,
-    "max_block_lines": true
-  },
-  "repo_search": {
-    "profiles": ["generic", "coding", "security", "research"],
-    "package_resolution": ["crates_io", "pypi", "npm", "go", "maven", "nuget", "rubygems", "packagist", "oci", "github_actions"],
-    "local_workspace": true,
-    "subquery_telemetry": true,
-    "supported_hosts": ["github", "gitlab", "codeberg", "gitea", "forgejo"]
-  }
-}
-```
-
-### 10.3 Routing Decision
-
-Every search response includes a `routing_decision` field:
-
-```json
-{
-  "routing_decision": {
-    "requested_profile": "coding",
-    "selected_providers": ["github_code", "duckduckgo"],
-    "skipped_providers": [
-      {
-        "provider_id": "gitlab_code",
-        "reason": "[not_built] Not built",
-        "reason_code": "not_built"
-      }
-    ],
-    "degraded": false,
-    "partial": false,
-    "reason": "coding profile applied successfully"
-  }
-}
-```
-
-Harnesses should use `routing_decision.degraded` to decide whether to
-warn the user about reduced capability.
-
-### 10.4 Retrieval outcome semantics
-
-Security responses retain one retrieval attempt per selected native provider
-operation. The attempt's `provider_id` is the executing provider, not an
-identifier-family guess. Interpret outcomes as follows:
-
-- `success_zero_results` means the provider completed and found no match;
-- `failed`, `timed_out`, `rate_limited`, and `interrupted_by_deadline` are retrieval failures;
-- `skipped_capability_unavailable` means the operation applied but the provider cannot perform it;
-- `skipped_by_policy` means an otherwise capable provider was deliberately suppressed;
-- `not_applicable` means the operation did not apply;
-- `limit_reached_unknown` is possible, unconfirmed truncation.
-
-Advisory records may deduplicate across providers, but attempts must not be
-deduplicated away. Required roles with capability or policy skips remain
-indeterminate in workflow coverage.
-
-### 10.5 `web_fetch` Metadata-Only Mode
-
-`web_fetch` supports `extract_mode = "metadata_only"` for explicit URL
-fetches.
-
-- HTML pages return title and description metadata without body text or
-  a structured document.
-- Non-HTML responses suppress body text and do not build a structured
-  document.
-- PDF responses with the `pdf` feature enabled return a minimal
-  document that carries fetch context but no extracted body text.
-
-Use `metadata_only` when you need page metadata but not the body.
-
-### 10.6 Extractive Excerpts and Result Timestamps (Additive)
-
-`SourceCard` may carry `excerpts: Vec<SourceExcerpt>` (at most 3,
-500 chars each, 1,200 total) and `metadata.published_at` (RFC 3339).
-Excerpts appear only when the caller requested them and are
-`external_untrusted` like snippets. Stable IDs never include
-excerpt/timestamp evidence, so harness deduplication keys are
-unaffected. Harnesses should treat unknown `provenance` variants as
-opaque and skip them, never crash.
-
-### 10.7 Focused Fetch and Cache Controls (Additive)
-
-`web_fetch` and per-item `batch_fetch` may return a `focus` selection (`chunks` in document
-order with stable chunk IDs, `truncated`, `total_chars`) alongside
-unchanged `text`/`document` fields. `focus` is null when the caller
-did not request it. Batch repo items without a structured document use deterministic line-window text projection. `cache_status` distinguishes `hit`,
-`revalidated`, `miss`, `bypassed`, and `not_cacheable`; a `miss`
-after `refresh` is a normal fresh fetch. Harnesses must not infer
-transport internals from cache status beyond these documented
-values.
-
-`batch_fetch` responses include `telemetry` (items requested/completed/failed/truncated, focused items/chunks/chars, `aggregate_budget_exhausted`, cache hit/revalidated/miss/bypassed/not_cacheable). The aggregate `max_total_chars` budget uses deterministic request-order/fair-share allocation with explicit per-item truncation. Suggested fetches (repo/research/security/repo-map) carry `batch_item` plus `recommended_focus_query`/`recommended_extract_mode` for direct batch handoff without URL/prose reconstruction; use `to_batch_item()` semantics. Next actions may recommend one focused `batch_fetch` (`fetch_multiple_focused`) for multi-source evidence with shared safety prerequisites.
-
----
-
-## 11. Implementation Checklist
-
-- [ ] Read `structured_warnings`, not `warnings`, for programmatic decisions
-- [ ] Use `stable_id` for deduplication across tool calls
-- [ ] Verify `source_id` ↔ `stable_id` linkage when chaining search → fetch
-- [ ] Inspect `trust_markers.injection_hits` before using content as evidence
-- [ ] Apply trust policy: `external_untrusted` content is data, not instructions
-- [ ] Follow `next_actions` priority ordering for tool chaining
-- [ ] Start with the task-appropriate search primitive; call `provider_status` only when provider availability itself is relevant or troubleshooting is required
-- [ ] Use `routing_decision` to detect degraded provider selection
-- [ ] For security: use `applicability` status + confidence to triage
-- [ ] For research: present claims + conflicts + gaps as evidence, not truth
-- [ ] For local workspace: respect `dirty_state` and file classification flags
-- [ ] Never trust `affected` applicability as exploitability proof
-- [ ] Replace `<placeholders>` in `input_template` with response context
-- [ ] Use `workspace_id` to track local workspace state across calls
-- [ ] When `injection_hits > 0`, flag content for human review
-- [ ] Inspect provider-scoped retrieval attempts before treating security evidence as complete
-- [ ] Do not treat `limit_reached_unknown` as confirmed truncation
-- [ ] Do not require credentials for baseline search (keyless-core invariant)
-- [ ] Hosts may inspect `provider_status` during bootstrap; agents use it for diagnostics, not as a normal first research step
-- [ ] Prefer native adapters when routable; fall back to keyless providers
-- [ ] Preserve provenance distinctions; never label web results as native forge evidence
-- [ ] Do not prompt for API keys on baseline operations
-- [ ] Suggest optional credentials only when user explicitly needs native capability
-
----
-
-## 12. Keyless-Core Invariant
-
-eggsearch guarantees that a clean installation with no configuration file and
-no provider credential environment variables starts successfully and provides
-a useful keyless MCP search/fetch service. Harnesses must implement the
-following:
-
-### 12.1 Do Not Require Credentialed Providers
-
-Baseline search, fetch, security, and research operations must work without
-API keys. Harnesses must NOT:
-- Prompt the user for API keys to perform baseline search
-- Require credentials before attempting a tool call
-- Treat missing credentials as a global server failure
-
-### 12.2 Inspect Provider Status
-
-Hosts may inspect `provider_status` during bootstrap or diagnostics to determine:
-- Whether the server core is healthy
-- Which providers are routable
-- Whether missing credentials are provider-scoped
-
-Agents normally start with the task-appropriate search primitive and call `provider_status` only when provider availability itself is relevant or troubleshooting is required.
-
-### 12.3 Prefer Native Adapters When Routable
-
-When a native adapter (GitHub, GitLab, etc.) is routable, prefer it for
-specialized operations. This provides better provenance and precision.
-
-### 12.4 Continue with Keyless Providers When Adapters Unavailable
-
-When optional adapters are not routable (missing credentials, disabled),
-continue with keyless web providers. The response may be degraded but must
-not fail.
-
-### 12.5 Preserve Provenance Distinctions
-
-Never label a generic web search result as native forge evidence. Use
-`evidence_role` and `routing_decision` to distinguish provenance modes:
-- `native forge adapter used` — adapter provided the result
-- `keyless public HTTP/local route used` — explicit fetch, no adapter
-- `generic web discovery used` — keyless web search result
-- `provider capability unavailable` — adapter not routable
-- `provider skipped because credential missing` — provider-scoped skip
-
-### 12.6 Do Not Prompt for Keys on Baseline Operations
-
-Harnesses must not display "API key required" warnings or prompts for
-baseline search operations. Credential-related prompts are appropriate only
-when the user explicitly requests a capability that requires native adapter
-access (e.g., private repository access, exact code search on a specific
-forge).
-
-### 12.7 Suggest Optional Credentials Contextually
-
-When a user's workflow would benefit from native adapter access (e.g.,
-searching a private GitHub repository), suggest the optional credential
-configuration. This suggestion must be:
-- Contextual to the specific workflow, not a global prompt
-- Labeled as optional enhancement, not a requirement
-- Accompanied by a keyless fallback alternative
-
----
-
-## 13. Schema Stability Rules
-
-The following are **breaking changes** that require a major version bump:
-
-- Removing or renaming an enum variant
-- Removing or renaming a struct field
-- Changing a serialized enum string value
-- Changing a deterministic ID for the same input
-- Removing a `WarningCode` or `FetchRankReason` variant
-- Changing a recipe ID or step tool reference
-
-The following are **non-breaking** additions:
-
-- New enum variants (appended, not inserted)
-- New optional struct fields (`skip_serializing_if = "Option::is_none"`)
-- New warning codes
-- New reason codes
-- New tool capabilities
-- New `server_capabilities` flags
-
-Harnesses should treat unknown enum variants and optional fields as
-opaque — skip them, never crash.
+**Back to:** [overview.md](overview.md)

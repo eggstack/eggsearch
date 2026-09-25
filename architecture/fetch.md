@@ -1,340 +1,500 @@
-# HTTP Fetch & Extraction Deep Dive
+# Fetch Deep Dive
 
-**Location:** `src/fetch/` (11 top-level files + 2 subdirectories)
-**Purpose:** Fetch HTTP(S) URLs, enforce limits, extract readable content, and render HTML. Independent of the metasearch adapter.
-
----
-
-## Module Map
-
-| File | Responsibility |
-|------|---------------|
-| `mod.rs` | Module declarations and re-exports |
-| `client.rs` | `FetchClient` — HTTP fetch client with limits enforcement |
-| `egress.rs` | `EggressDialer` — optional listener-free proxy-chain route beneath eggfetch |
-| `extract.rs` | `HtmlExtractor`, `extract_content()` — HTML→text/markdown extraction |
-| `detect.rs` | Content type detection |
-| `limits.rs` | `FetchLimits`, `validate_fetch_target()` — URL/size validation |
-| `cache.rs` | `FetchCache` — two-tier LRU cache (raw + derived), `CacheScope`, `CacheFreshness` |
-| `origin.rs` | `OriginController` — per-origin concurrency, circuit breaker, retry policy |
-| `types.rs` | `FetchError`/`FetchErrorKind` |
-| `span.rs` | `SelectedSpan` — symbol/span-aware block expansion for `repo_fetch` |
-| `pdf.rs` | PDF text extraction via `lopdf` (feature-gated `pdf`) |
-
-### Subdirectories
-
-| Dir | Files | Responsibility |
-|-----|-------|---------------|
-| `fetch/browser/` | 8 files | Headless Chrome/Chromium rendering via CDP |
-| `fetch/render/` | 8 files | HTML structural rendering (blocks, text, markdown, code, CSV, notebooks) |
+**Location:** `src/fetch/` (10 top-level files + `browser/` + `render/`, 8 files each)
+**Purpose:** Bounded single-URL HTTP(S) fetch with SSRF enforcement, two-tier
+cache, origin control, content detection, structural rendering, and sanitized
+output. Independent of `meta`; consumed by `web_fetch`, `batch_fetch`,
+`repo_fetch` follow-ups, and CLI `fetch`. Entry: `src/fetch/mod.rs`.
 
 ---
 
-## FetchClient (`client.rs`)
+## 1. Bounded Pipeline
 
-The HTTP fetch client. Handles:
+One URL flows through seven stages. Every stage is bounded; truncation is
+recorded, never silent.
 
-- **Request construction** — headers, timeouts, redirects
-- **Limits enforcement** — max bytes, max time, content-type validation
-- **Response classification** — success, redirect, error
-- **Bounded body reading** — never reads unbounded responses
-
-Transport is `eggfetch-core`: `FetchClient` owns one shared client with
-automatic redirects disabled, and each validated hop is pinned to its approved
-ordered address snapshot via `resolved_addresses()`. DNS validation and SSRF
-authorization stay in `limits.rs`; eggfetch's resolved-route cache is a
-transport reuse optimization, never authorization. Redirects are followed
-manually (every hop re-validated), truncation at `max_bytes` reports
-`truncated` rather than a hard body-limit error, and per-hop total deadlines
-cover body streaming.
-
-Timeout overrides use a hybrid transport policy. Equal or shorter overrides
-clone the shared eggfetch client and tighten `FetchLimits.timeout_ms`, relying
-on the request-level `client_timeout()` for the stricter logical deadline.
-Longer overrides construct one client through the same centralized helper as
-normal startup, with the widened client-scoped connect timeout required by
-eggfetch's resolved-route transport. `batch_fetch` resolves this adjusted
-client once before spawning item futures. Both normal and conditional fetches
-derive DNS validation, request timeouts, redirect validation, and timeout error
-mapping from the same effective limits.
-
-### Key Methods
-
-```rust
-impl FetchClient {
-    async fn fetch(
-        &self,
-        url_str: &str,
-        max_chars: Option<usize>,
-        extract_mode: ExtractMode,
-        include_links: bool,
-        pdf_options: Option<&PdfFetchOptions>,
-    ) -> Result<WebFetchResponse, FetchError>;
-}
+```
+validate_fetch_target (SSRF)
+  -> cache lookup (raw tier -> derived tier)
+  -> FetchClient bounded HTTP (manual redirects + address pinning)
+  -> content detection (classify_content_type + detect::classify)
+  -> extraction / rendering (render/*, extract, pdf)
+  -> span / focus projection (span.rs, core/focus.rs via core/fetch_policy.rs)
+  -> sanitize (core/sanitize.rs, three tiers)
 ```
 
----
+1. **Validate.** `limits::validate_url` (sync shape check) runs first;
+   `limits::validate_fetch_target` / `validate_fetch_target_with_resolved_addrs`
+   (async full check + DNS) runs per attempt and per redirect hop.
+2. **Cache.** Raw hit with fresh validators short-circuits the network; a fresh
+   raw body under changed extraction params re-derives locally via
+   `FetchClient::derive_from_raw` without refetching (§3).
+3. **Transport.** `FetchClient::fetch` (or `fetch_conditional` for revalidation)
+   performs the bounded HTTP exchange (§2).
+4. **Detect.** `classify_content_type` (HTML / PDF / text gate) decides whether
+   the body is even readable; `detect::classify` picks the document kind,
+   language, and line-preserving flag for the renderer (§5).
+5. **Render.** HTML goes through `render/blocks.rs`; code, CSV, notebooks, and
+   Markdown sources go through their dedicated renderers; PDFs take the
+   feature-gated `pdf.rs` path (§6, §7).
+6. **Project.** `repo_fetch` line/symbol selection uses `span::select_span`;
+   `web_fetch` / `batch_fetch` focus queries project over the extracted
+   `FetchDocument` via `core/fetch_policy.rs`. Both are post-extraction
+   projections: they never change what is cached.
+7. **Sanitize.** `client::sanitize_field` applies Tier 1 (control-char strip +
+   length bound, always on) plus Tier 2 framing and Tier 3 injection-marker
+   scan when `sanitize_output` is true. Every field records `TrustMarkers`;
+   every response carries the `external_untrusted` warning.
 
-## Optional Egress Route (`egress.rs`)
-
-`EggressDialer` implements eggfetch's `Dialer` seam with
-`OutboundConnector::connect_tcp_detailed` and typed error mapping
-(Timeout→Timeout, Authentication→Authentication, Policy→Rejected,
-DNS/refused/unreachable→Connection, TLS/protocol/other→Other). Passwords
-resolve from `password_env` at build time; `Debug`/diagnostics stay
-redacted. `apply_route()` leaves direct builders untouched when no route is
-configured and fails closed when a route is configured without the `egress`
-feature.
-
-Route scope is Outcome B: provider search-engine upstreams may use the
-chain via `build_http_client_with_egress`. `FetchClient` dynamic targets
-keep resolved-address pinning on the direct route because eggfetch 0.2.0
-rejects custom-dialer plus `resolved_addresses`. Forge, package-resolver,
-updater, loopback health, rmcp, and browser traffic remain direct in this
-phase. Eggfetch owns pooling, destination TLS/SNI, decompression,
-redirects, and deadlines above the dialer; the opt-in feature is
-compile-qualified across the seven maintained targets by the
-`egress-feature-qualify` workflow without publishing egress-enabled
-binaries. The workflow preflight requires exact set equality with
-`packaging/release-targets.txt`, its path filters cover the
-provider-route construction seam, and the same contract is enforced
-locally by `packaging/check-egress-qualify-contract.sh` and
-`tests/egress_qualify_contract.rs`.
-
----
-
-## Content Extraction (`extract.rs`)
-
-HTML→text/markdown extraction pipeline:
-
-1. **Parse HTML** — `scraper` crate with CSS selectors
-2. **Extract readable content** — remove scripts, styles, nav
-3. **Convert to text/markdown** — block pipeline in `render/` (`text.rs`/`markdown.rs`); `pulldown-cmark` is used only for `.md` source files (`render/markdown_source.rs`)
-4. **Extract metadata** — title, description, links
-5. **Bound output** — `FetchLimits` enforces max chars
-
-### Extraction Modes
-
-| Mode | Output |
-|------|--------|
-| `Text` | Plain text |
-| `Markdown` | Markdown-formatted text |
-| `MetadataOnly` | Title, description, links only |
+Code-host source URLs are rewritten to raw content URLs before fetching; the
+rewritten URL passes through the same validation pipeline, and the rewrite is
+reported via `FetchTransform`.
 
 ---
 
-## Two-Tier Cache (`cache.rs`)
+## 2. FetchClient (`client.rs`)
 
-### Raw Cache
-- Stores original bounded transport bytes (HTML/PDF/text) or bounded rendered browser DOM
-- Keyed by canonical URL + scope; a fresh raw hit can be re-derived locally for changed extraction params
-- Preserves original format for re-extraction
+`FetchClient { client, limits, user_agent, sanitize_output }` owns one shared
+`eggfetch_core::Client` built by `build_transport_client`:
 
-### Derived Cache
-- Stores extracted/sanitized content including the structured `FetchDocument` with stable chunks
-- Keyed by scope + raw hash + extraction params
-- Avoids re-extraction for same content
-- Internal hits use shared immutable `Arc` entries; the public owned-return getter remains a compatibility wrapper. Equal/shorter timeout-only `FetchClient` overrides reuse the shared eggfetch transport, longer overrides build one widened client, and batch web fetches create one adjusted handle per batch.
+- `follow_redirects(false)` — redirects are **disabled** in transport and
+  followed **manually**, one hop at a time.
+- `client_timeout(timeout_ms)` sets pool / connect / write / read / total to the
+  same budget, and each request builder re-applies it from the effective limits.
+- Every hop resolves via `validate_fetch_target_with_resolved_addrs` and pins
+  the request to that validated address snapshot, so the connect path cannot
+  drift to a different DNS answer mid-attempt. DNS validation and SSRF
+  authorization stay in `limits.rs`; eggfetch's resolved-route cache is
+  transport reuse only.
 
-### Cache Scopes
+### Per-fetch loop (`fetch`)
 
-| Scope | Purpose |
-|-------|---------|
-| `Anonymous` | Default shared cache |
-| `Profile(opaque_id)` | Browser profile-scoped cache (opaque IDs, never display names) |
+1. `validate_url` on the initial URL, then optional code-host rewrite.
+2. Clamp caller `max_chars` to `[1, max_chars_cap]`; keep a separate
+   `max_chars_raw = max_chars_cap` budget for `raw_text` so internal consumers
+   (`repo_fetch` line/span selection) see full source text while tool output
+   stays clamped to the caller budget.
+3. Loop: validate current URL with resolved addresses → send → on 3xx require a
+   non-empty `Location`, resolve relative targets, reject past `redirect_limit`,
+   re-validate the target (failures map to `RedirectTargetBlocked`), continue.
+4. On the final response, harvest `etag` / `last-modified` / `cache-control` /
+   `expires` / `vary` for the cache layer.
+5. `Content-Length` pre-check: a declared length above `max_bytes` fails fast
+   with `ContentTooLarge`. Unparseable lengths warn and fall through to the
+   authoritative streaming cap.
+6. Non-2xx becomes `HttpStatus`. Content-type gating runs twice from one source
+   of truth: pre-body on headers + URL extension, then post-body with `%PDF-`
+   magic sniff for mis-served PDFs.
+7. Body streams through `append_bounded` (cap `max_bytes`, UTF-8-safe, sets
+   `truncated`); `derive_from_raw` then builds the response, so cache raw hits
+   reuse the exact rendering path as network fetches.
 
-### Cache Policy (`FetchCachePolicy`, `max_cache_age_seconds`)
+`fetch_conditional` repeats the loop with caller conditional headers for stale
+revalidation; a 304 returns empty-body status so the cache layer can refresh
+validators in place.
 
-Agent-visible controls on `web_fetch` (and per web item on `batch_fetch`):
+### Timeout / byte / redirect / content-type policy
+
+| Policy | Rule |
+|--------|------|
+| Timeout | `FetchLimits::timeout_ms` (default 8000). DNS phase consumes at most half (1500 ms floor); the remainder covers the HTTP round-trip plus body streaming. Send errors mapping to timeout become `FetchError::Timeout(timeout_ms)`. |
+| Bytes | `max_bytes` (default 2,000,000) caps the streamed body; `max_chars_default` (12,000) and `max_chars_cap` (50,000) cap extracted text and `raw_text` respectively. `max_url_len` is 8192 bytes. |
+| Redirects | `redirect_limit` (default 5) counts followed hops; exceeding it returns `RedirectLimitExceeded`. Missing/empty `Location` is `InvalidRedirectLocation`. |
+| Content-type | HTML (`text/html`, `application/xhtml+xml`), text (`text/*`, JSON/TOML/YAML/JS/XML families), and PDF (by type, `.pdf` extension, or magic) are accepted; anything else is `UnsupportedContentType`. PDF additionally requires the compile feature **and** `pdf_enabled` (`PdfNotCompiledIn` / `PdfDisabled`). |
+
+### Widened-client reuse rule (`with_timeout_ms`)
+
+`TimeoutOverrideMode::Shared` vs `Widened` compares requested against base
+`timeout_ms`:
+
+- Equal or shorter: clone the shared eggfetch client and tighten only the
+  logical `FetchLimits.timeout_ms`; the request-level `client_timeout()` enforces
+  the stricter deadline without rebuilding transport.
+- Longer: build one widened client through the same `build_transport_client`
+  helper, because the wider client-scoped connect timeout is required by
+  eggfetch's resolved-route transport.
+
+Batch setup resolves this adjusted client once per batch before spawning item
+futures — one adjustment per call, not per item.
+
+## 3. Two-Tier Cache (`cache.rs`)
+
+`FetchCache` holds two independent LRU tiers behind an `operation_gate` plus
+per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
+
+### Raw tier: transport bytes
+
+- `RawCacheKey { url, scope }` where `url` is the canonicalized form from
+  `core::identity::canonicalize_url` (`build_raw_cache_key`).
+- `RawFetchCacheEntry` stores `final_url`, `status`, filtered headers, `body:
+  Arc<[u8]>`, `fetched_at`, `freshness`, `validators`, `scope`, content-type,
+  content-length, redirect count, `representation` (`Http` vs `BrowserDom`),
+  `truncated`, and `browser_escalated`.
+- Either bounded HTTP bytes or the bounded rendered browser DOM can populate
+  the tier; both re-derive through the same rendering path.
+- Over-size bodies are refused, not partially stored.
+
+### Derived tier: extracted documents
+
+- `DerivedCacheKey { scope, raw_content_hash, extraction_key }` where the hash
+  is `xxh3_64(body)` (`build_raw_response_hash`) and `ExtractionCacheKey`
+  covers `extract_mode`, exact `max_chars`, `include_links`, `pdf_pages`,
+  `pdf_ocr`, `include_media`, `renderer_version: 1`, and `sanitize_output`.
+- `DerivedDocumentCacheEntry` stores the extracted title/description/text,
+  `raw_text`, links, truncation flags, the structured `FetchDocument` (blocks,
+  outline, chunks), trust markers, and transport tag.
+- Internal hot paths share entries as `Arc` (`get_derived_shared`); the owned
+  `get_derived` is a compatibility wrapper.
+- A fresh raw hit under changed extraction params re-derives locally: same
+  bytes, new derived key, no network I/O.
+
+### Scopes and freshness
+
+- `CacheScope::Anonymous` is the shared default; `CacheScope::Profile(ProfileId)`
+  partitions browser-profile fetches by **opaque** profile ID (`prof_<fnv>`),
+  never the display name. `invalidate_scope` scans both tiers under a write gate
+  so profile deletion cannot leave a half-invalidated view.
+- `CacheFreshness::from_headers` parses `cache-control` (`max-age`, `s-maxage`
+  preferred per RFC 7234, `no-store`, `no-cache`, `private`), `expires`
+  (RFC 2822 / 3339 / legacy-zone HTTP dates), `etag`, `last-modified`, and
+  `vary`. `is_fresh` requires an explicit origin lifetime — entries without
+  freshness headers are stale (no default TTL).
+- `should_cache_response` refuses `no-store`, non-2xx, `private` in anonymous
+  scope, any `Vary` token besides `Accept-Encoding`, and image/audio/video plus
+  `application/octet-stream` bodies.
+- Stale entries with validators revalidate with `If-None-Match` (preferred) or
+  `If-Modified-Since` (`build_request_conditional_headers`); 304 merges only
+  supplied fields per RFC 9111 §4.3.4 (`apply_304_headers`). `CacheStatus`
+  reports `Hit`, `Revalidated`, `Miss`, `Bypassed`, or `NotCacheable`.
+
+### Cache policy: reuse tightens only
+
+Agent-visible `FetchCachePolicy` (`core/fetch.rs`, validated by
+`core/fetch_policy.rs::validate_cache_age`) plus `max_cache_age_seconds`
+(0–2,592,000) ride on `web_fetch` and per `batch_fetch` web item:
 
 | Policy | Behavior |
 |--------|----------|
-| `default` | Serve a fresh eligible entry; otherwise revalidate with validators when possible, else fetch |
-| `bypass` | Skip cache reads; network fetch still populates the cache unless the origin forbids storage |
-| `refresh` | Never serve solely for being locally fresh; revalidate with `ETag`/`Last-Modified` when available, else fetch |
+| `default` | Serve a fresh eligible entry; else revalidate with validators when available, else fetch. |
+| `bypass` | Skip cache reads; the network fetch still populates the cache unless the origin forbids storage. |
+| `refresh` | Never serve on local freshness alone; revalidate with `ETag` / `Last-Modified` when available, else fetch. |
 
-`max_cache_age_seconds` (0-2,592,000) is an upper bound on acceptable entry age that only tightens origin freshness; `0` forces revalidation without disabling storage. Neither control bypasses SSRF, redirect, origin-concurrency, profile-isolation, content, or sanitization policy. `CacheStatus` reports `hit`, `revalidated`, `miss` (fresh fetch, including after refresh), `bypassed`, or `not_cacheable`. Conditional revalidation treats HTTP 304 as a revalidation signal (not a redirect).
-
-### Cache Freshness
-
-`CacheFreshness::is_fresh()` consults `no_store`/`no_cache`, `max-age` vs `fetched_at`, and `Expires`. Entries without origin freshness headers are treated as stale (no default TTL). Batch fetch stores set `fetched_at` like single fetch stores do, so batch entries are equally eligible for hits.
-
-Responses with `Vary: *` or any request header other than `Accept-Encoding` are not cached because the cache does not retain those request-header variants. This conservative rule also applies when supported and unsupported `Vary` tokens are mixed.
-
-## Focused Fetch (`core/focus.rs` + `core/fetch_policy.rs`)
-
-`select_focus_chunks()` ranks the already-extracted `FetchDocument` chunks against a caller `focus` query with dependency-free lexical scoring (normalized token overlap, exact-phrase boost, heading-path overlap, case-sensitive code-symbol boost; stable tie-break by document order), expands picks to scoring neighbors within the chunk cap, and enforces chunk/character budgets in document order. No embeddings, no model calls, no extra URL traversal. The `FocusedFetchSelection` (`chunks`, `truncated`, `total_chars`) is additive on `WebFetchResponse` and per-item `batch_fetch` payloads; focus projection never enters the raw or derived cache keys.
-
-`web_fetch` and `batch_fetch` share validation/projection via `core/fetch_policy.rs` (`validate_focus_*`, `apply_focus_to_document()`). Batch web items project over the fetched document; batch repo items project over the document when present and otherwise over deterministic line-window text via `select_focus_for_text()`. UTF-8 boundaries use character counts. `focus` with `metadata_only` is rejected.
+`max_cache_age_seconds` is an upper bound on acceptable entry age (`0` forces
+revalidation without disabling storage). Neither control bypasses SSRF,
+redirect, origin-concurrency, profile-isolation, content, or sanitization
+policy. Conditional revalidation treats HTTP 304 as a revalidation signal, not
+a redirect.
 
 ---
 
-## Origin Controller (`origin.rs`)
+## 4. OriginController (`origin.rs`)
 
-Per-origin request management:
+Per-origin (`OriginKey { scheme, host, port }`) concurrency, retry, and circuit
+breaking shared by the fetch path:
 
-- **Concurrency limits** — max parallel requests per origin
-- **Circuit breaker** — detect and handle failing origins
-- **Retry policy** — exponential backoff for transient failures
-- **Failure classification** — distinguish permanent vs transient errors
-
-### Key Types
-
-```rust
-struct OriginController {
-    // Per-origin state
-}
-
-struct OriginPolicy {
-    http_concurrency: usize,       // default 2
-    browser_concurrency: usize,    // default 1
-    retry_max_attempts: usize,     // default 2
-    retry_base_delay_ms: u64,      // default 250
-    retry_max_delay_ms: u64,       // default 4000
-    circuit_failure_threshold: u8, // default 3
-    circuit_duration_ms: u64,      // default 60_000
-}
-```
+- `OriginPolicy` defaults: `http_concurrency` 2, `browser_concurrency` 1,
+  `retry_max_attempts` 2, `retry_base_delay_ms` 250, `retry_max_delay_ms` 4000,
+  `circuit_failure_threshold` 3, `circuit_duration_ms` 60,000.
+- `acquire` takes an owned semaphore permit after rejecting open circuits
+  (`CircuitOpen { remaining_ms }`); `record_success` clears consecutive failures
+  and any open circuit; `record_failure` applies jittered exponential backoff
+  (`base * 2^count`, capped) and opens the circuit at the threshold (capped at
+  120 s). `NonRetryable` resets the counter and returns `NoBackoff`.
+- Classification: `classify_http_status` (429 → `RateLimited`, 502–504 →
+  `Retryable`), `classify_network_error` (reset/refused/DNS/broken-pipe/EOF →
+  `Retryable`), plus typed eggfetch classifiers so timeouts and refused/DNS
+  failures drive retryable backoff.
+- `parse_retry_after` accepts delta-seconds or HTTP dates clamped to 300 s;
+  `should_retry` enforces the attempt cap for `Retryable` / `RateLimited` only.
+  State is LRU-capped by `max_entries` (oldest last-access evicted).
 
 ---
 
-## Fetch Limits (`limits.rs`)
+## 5. Content Detection and Link Extraction
 
-URL and content validation:
+### `detect.rs`
 
-| Limit | Default | Purpose |
-|-------|---------|---------|
-| `max_url_len` | 8,192 | Max URL byte length |
-| `max_bytes` | 2,000,000 | Max response body size |
-| `max_chars_default` | 12,000 | Default extraction length |
-| `max_chars_cap` | 50,000 | Hard extraction upper bound |
-| `timeout_ms` | 8,000 | Request timeout (DNS gets half, floor 1,500) |
-| `redirect_limit` | 5 | Max redirect hops (every hop re-validated for SSRF) |
-| `allow_private_network` / `allow_localhost` | `false` / `false` | SSRF policy gates |
-| `pdf_enabled` (+ `pdf_max_pages` 25, per-page/total char caps) | `false` | PDF extraction gate (requires `pdf` feature) |
+`classify(content_type, url, body) -> DetectedContent { kind, language,
+line_preserving }` with strict priority: Content-Type header → URL extension →
+byte heuristics. Header and extension tables cover Markdown, JSON (`+json`
+suffix included), TOML, YAML, diff/patch, CSV/TSV, XML/RSS/Atom/SOAP, notebook
+(`.ipynb`), AsciiDoc, RST, and per-language code types with language hints.
+Unknown or `text/plain` bodies fall to an 8 KB / 200-line heuristic (shebang,
+imports, `fn`/`def`/`func`/`struct`/`class` signals, brace depth) returning
+`Code` or `PlainText`. The `line_preserving` flag selects the line-preserving
+renderer in `FetchClient`.
 
-Allowed schemes are hardcoded to `http`/`https` in `validate_url()`; there is no `allowed_schemes` field on `FetchLimits`.
+### `extract.rs`
 
-### URL Validation
-
-```rust
-fn validate_fetch_target(url: &str, limits: &FetchLimits) -> Result<()>;
-```
-
-Checks:
-- Valid URL format, max 8,192 bytes
-- Scheme is `http`/`https` (hardcoded)
-- No embedded credentials, no localhost literals
-- No localhost/private IPs after DNS resolution (unless policy-gated)
-- Redirect targets re-validated on every hop
+Legacy HTML helpers kept alongside the block pipeline: `HtmlExtractor` /
+`extract_content` (title, meta description, body text with chrome-element
+stripping, depth-capped recursion, non-UTF-8 lossy fallback with
+`NON_UTF8_WARNING`) and `extract_links_from_html`. Link collection caps at
+`MAX_LINKS = 100` and reports `(links, total_seen, truncated)`;
+`classify_link` assigns `SamePageAnchor`, `Pdf`, `Image`, `SourceCode`,
+`Download`, `Feed`, GitHub/GitLab `Issue` / `PullRequest` / `Release`,
+`SecurityAdvisory`, `Documentation` / `ApiReference`, `SameDomain`, or
+`External`, plus `same_domain` and `rel` fields.
 
 ---
 
-## Browser Rendering (`fetch/browser/`)
-
-Headless Chrome/Chromium via Chrome DevTools Protocol (feature-gated `browser`).
+## 6. Render Subsystem (`render/`, 8 files)
 
 | File | Responsibility |
 |------|---------------|
-| `mod.rs` | Module declarations |
-| `types.rs` | `BrowserConfig`, `BrowserAvailability`, `BrowserFamily` |
-| `discover.rs` | `discover_browser()` — find Chrome/Chromium binary |
-| `lifecycle.rs` | `BrowserLifecycle` — process management, startup/shutdown |
-| `navigate.rs` | Page navigation, wait strategies |
-| `intercept.rs` | Request interception, blocking |
-| `classify.rs` | Response classification |
-| `profiles.rs` | `ProfileManager` — persistent browser profiles |
+| `mod.rs` | Re-exports; `render_blocks` / `RenderedBlocks` entry |
+| `blocks.rs` | HTML → `Vec<RenderedBlock>` + outline (headings, paragraphs, lists, code, tables, quotes, definitions) |
+| `text.rs` | `render_blocks_text` — blocks → plain text |
+| `markdown.rs` | `render_blocks_markdown` — blocks → Markdown (`#` headings, fenced code, `[text](url)` links) |
+| `code.rs` | `render_code` / `render_diff` / `render_plaintext` — line-preserving renderers with 1-based line ranges |
+| `csv.rs` | `render_csv` — bounded table preview (100-row cap, column-count header) |
+| `notebook.rs` | `render_notebook` — Jupyter cells to `[cell N (type)]` blocks; never executes code, outputs skipped |
+| `markdown_source.rs` | `render_markdown_source` — pulldown-cmark parse of `.md` sources (tables, strikethrough) |
 
-### Browser Capabilities
+`blocks::render_blocks(html, base_url, max_chars, markdown)` returns
+`(title, description, RenderedBlocks, warnings, non_utf8)`:
 
-- JavaScript-heavy page rendering
-- SPA content extraction
-- Cookie/session persistence via profiles
-- Request interception and blocking
+- Content-root selection probes `main`, `article`, `[role=main]`, `body` in
+  order and takes the first root yielding ≥1 block and ≥50 chars; sparse roots
+  fall back to `body`.
+- Skips chrome subtrees (`script`/`style`/`nav`/`header`/`footer`/`aside`,
+  `hidden` / `aria-hidden`); headings build blocks plus outline entries with
+  slug anchors; `<pre>` preserves whitespace with language detection; tables
+  render as pipe Markdown with an irregular-row warning.
+- Truncation is block-boundary-aware: whole blocks are kept while the character
+  budget lasts, code blocks snap to a newline when past the halfway point, and
+  stale outline entries are pruned. `text` vs `markdown` modes differ only in
+  the final projection plus inline `` `code` `` / `[text](url)` collection.
 
-### Key Constants
-
-```rust
-DEFAULT_STARTUP_TIMEOUT_MS: 10_000
-DEFAULT_NAVIGATION_TIMEOUT_MS: 20_000
-DEFAULT_POST_LOAD_WAIT_MS: 1_500
-MAX_GLOBAL_CONCURRENCY: 4
-MAX_PER_ORIGIN_CONCURRENCY: 4
-```
+Non-HTML bodies dispatch on `detect.rs`: notebooks, CSV, XML/RST/AsciiDoc,
+Markdown sources, diffs, line-preserving code, or plain paragraphs. Code/diff
+renderers split at 200 lines per block with per-block line ranges; CSV caps at
+100 rows with a column/row header; notebooks cap at 200 cells and degrade to a
+single `RawText` block for non-notebook JSON.
 
 ---
 
-## HTML Rendering (`fetch/render/`)
+## 7. PDF Gate (`pdf.rs`, feature `pdf`)
 
-Structural HTML rendering pipeline:
+Double-gated: the `pdf` Cargo feature must be compiled in **and**
+`FetchLimits::pdf_enabled` must be true, else `PdfNotCompiledIn` / `PdfDisabled`
+before any body bytes are retained. Detection combines Content-Type,
+`.pdf` URL extension, and `%PDF-` magic.
+
+`extract_pdf_text(bytes, max_chars, PdfLimits, PdfExtractOptions)` via `lopdf`:
+
+- `PdfLimits { max_pages` (25), `max_chars_per_page` (12,000),
+  `max_total_chars` (50,000) `}` bound pages, per-page text, and the running
+  total (exceeding the total stops after the current page with a warning).
+- Page selection parses `1-3,5` specs (`parse_pdf_page_spec`:
+  1-indexed, sorted, deduplicated, range and `max_pages` caps) and validates
+  against the real page count (`PdfPageOutOfRange`, `PdfPageCapExceeded`,
+  `PdfPageSpecInvalid`).
+- Encrypted documents require `password` (`RedactedString`) or fail with
+  `PdfEncrypted`; unparseable bytes fail with `PdfParseError`. OCR policies
+  `Auto` / `Always` fail closed with `PdfOcrUnavailable` — this build never
+  performs OCR.
+- Output is page-indexed `Paragraph` blocks plus a `Page N` outline, legacy
+  `--- Page N ---` text, Info-dictionary metadata, outline extraction, and
+  per-page quality (`CleanText` 1.0 down to `Blank` 0.0) rolled into
+  `quality_score` and `content_ok`. All-blank documents return
+  `PdfNoExtractableText`.
+- `MetadataOnly` extract mode skips text extraction and returns fetch metadata
+  with an empty PDF document shell.
+
+---
+
+## 8. Egress Route (`egress.rs`, feature `egress`)
+
+Opt-in listener-free HTTP/SOCKS proxy-chain dialer beneath eggfetch.
+`EggressDialer` implements eggfetch's `Dialer` with
+`OutboundConnector::connect_tcp_detailed` and typed error mapping
+(Timeout→Timeout, Authentication→Authentication, Policy→Rejected,
+DNS/refused/unreachable→Connection, TLS/protocol/other→Other).
+
+- `build_connector` validates the `[egress]` chain: `http` / `socks4` /
+  `socks5` schemes only, proxy passwords resolve from `password_env` at build
+  time (missing/empty/incomplete credentials fail), and diagnostics stay
+  redacted (`route_summary` never leaks usernames or env names).
+- `apply_route` leaves direct builders untouched when no route is configured
+  and **fails closed** when a route is configured without the `egress`
+  feature (rebuild with `--features egress` or disable `[egress]`).
+- Scope is provider search-engine upstreams only. Dynamic SSRF-pinned
+  `FetchClient` paths never use this module; forge, package-resolver, updater,
+  loopback health, rmcp, and browser traffic stay direct. Eggfetch keeps owning
+  HTTP, pooling, destination TLS/SNI, decompression, redirect mechanics, and
+  deadlines above the dialer. Prebuilt/default binaries exclude the feature.
+
+---
+
+## 9. Browser Rendering (`browser/`, 8 files, feature `browser`)
+
+Headless Chrome/Chromium over CDP. Without the feature, browser paths fail with
+`BrowserNotCompiledIn`; with the feature but `enabled = false`, with
+`BrowserDisabled`.
 
 | File | Responsibility |
 |------|---------------|
-| `mod.rs` | Module declarations |
-| `blocks.rs` | Block decomposition (headings, paragraphs, lists, code) |
-| `text.rs` | Plain text extraction |
-| `markdown.rs` | Markdown rendering |
-| `markdown_source.rs` | Source-aware markdown rendering |
-| `code.rs` | Code block handling |
-| `csv.rs` | CSV table rendering |
-| `notebook.rs` | Jupyter notebook rendering |
+| `mod.rs` | Module declarations + re-exports |
+| `types.rs` | `BrowserConfig`, `RenderPolicy`, availability/discovery states, transport types, limits |
+| `discover.rs` | `discover_browser` — explicit path vs auto-discovery |
+| `lifecycle.rs` | `BrowserLifecycle` — process launch, restart budget, ephemeral cleanup |
+| `navigate.rs` | `browser_fetch` / `browser_fetch_with_policy` + DOM→response conversion |
+| `intercept.rs` | SSRF request interception (`is_request_allowed[_with_dns]`) |
+| `classify.rs` | `classify_response` → `FetchDisposition` |
+| `profiles.rs` | `ProfileManager` — persistent origin-scoped profiles |
 
-### Render Pipeline
+### Discovery: explicit path never falls back
 
-```
-HTML
-  → Block decomposition (ego-tree traversal)
-  → Block classification (heading, paragraph, code, list, table)
-  → Per-block rendering (text, markdown, code)
-  → Output assembly
-```
+`discover_browser(configured_path)` returns `BrowserDiscoveryState`:
+
+- Non-empty explicit path: validate it; success → `Available(Configured)`,
+  anything else → `ExplicitPathInvalid { path }`. No auto-discovery fallback.
+- Otherwise probe Linux well-known paths, macOS bundles (`~` expanded), then
+  `PATH` binaries. Each candidate must exist, be a file, and survive a
+  5 s `--version` probe. Nothing found → `NotFound`.
+
+### Lifecycle: ephemeral vs persistent
+
+- **Anonymous ephemeral** (`BrowserLifecycle::new`): incognito launch with a
+  fresh `ctx-<nanos^pid^counter>` user-data dir (0700); `close`/drop removes
+  the directory. Each navigation additionally mints and disposes an isolated
+  browser context.
+- **Profile-scoped persistent** (`for_persistent_profile`): launches against
+  an existing profile `chrome-data` directory (must be a directory or launch
+  fails); no per-navigation context isolation, no directory cleanup on close.
+- Hardening flags are fixed: `--headless=new`, `--no-sandbox`,
+  `--disable-default-args`, media autoplay gated by `block_media`, plus
+  background-networking/sync/extension suppressions.
+- `ensure_browser` allows exactly one restart and is safe under concurrent cold
+  starts. `BrowserConfig` clamps timeouts (`startup` 10 s / max 60 s,
+  `navigation` 20 s / max 120 s, `post_load` 1.5 s / max 30 s, `verification`
+  10 s / max 60 s), `max_requests` (100 / 1000), `max_dom_bytes` (4 M / 50 M),
+  and global/per-origin concurrency (1 / 4).
+
+### Navigation with per-request SSRF
+
+`browser_fetch_with_policy` rejects `RenderPolicy::HttpOnly`, validates the
+initial URL with `is_request_allowed_with_dns`, then:
+
+1. Installs a CDP `Fetch.requestPaused` interceptor that re-validates **every**
+   request (navigation, redirects, subresources) — Chromium resolves DNS and
+   follows redirects internally, so initial-URL validation alone would leave
+   rebinding escapes.
+2. Captures the main `Document` response status/content-type, then `goto` +
+   `wait_for_navigation` under `navigation_timeout_ms`, sleeps
+   `post_load_wait_ms`, and re-checks the post-redirect final URL before
+   reading content.
+3. `classify_response` maps status/title/text-length/body-snippet to
+   `UsefulContent`, `JavascriptShell`, `NonInteractiveVerification`,
+   `InteractiveChallenge`, and HTTP error dispositions. Interactive challenges
+   error immediately; non-interactive verifications wait up to
+   `verification_timeout_ms`.
+4. DOM length is checked before and after `page.content()` against
+   `max_dom_bytes`; the DOM converts through `browser_result_to_response` — the
+   same render + detect + link + sanitize pipeline as HTTP, tagged
+   `transport: "browser"`.
+
+`intercept.rs` policy is fail-closed public-only: scheme allowlist, no
+credentials, private-hostname/IP literal rejection (including IPv4-mapped and
+IPv4-compatible IPv6 via the shared `limits::classify_ip`), and a 3 s DNS
+resolution check rejecting private resolutions. It does not take
+`allow_localhost` / `allow_private_network` overrides.
+
+### Profiles: opaque IDs, origin-scoped logins
+
+`ProfileManager` owns persistent logins under a 0700 root with per-profile
+`chrome-data`, atomic `profile.toml` writes, `flock` locks (`ProfileBusy`),
+symlink and path-escape rejection, an `allowed_profiles` allowlist, a
+32-profile cap, and schema version 1 with browser-major compatibility checks.
+
+- Display names are 1–64 ASCII `[A-Za-z0-9_-]`; origins must be bare
+  `http(s)://host:port` (no paths, credentials, localhost, or loopback).
+- The on-disk directory and every cache scope use the **opaque** ID
+  `prof_<16-hex-fnv(display, origin)>` — display names never appear in paths
+  or `CacheScope::Profile`. `resolve_for_origin` additionally binds each use to
+  the profile's registered origin.
 
 ---
 
-## PDF Extraction (`pdf.rs`)
+## 10. Span and Focus Projection
 
-Feature-gated (`pdf`). Uses `lopdf` for text extraction:
+### `span.rs`: symbol-aware block expansion for `repo_fetch`
 
-- Parse PDF structure
-- Extract text blocks
-- Preserve reading order
-- Bound output length
+`select_span(lines, language, symbol, symbol_kind, match_text, explicit range,
+expand_to_block, max_block_lines)` is deterministic and lexical — regex
+definition matchers per language family (Rust, Python, JS/TS, Go, generic
+brace-class for the rest), case-sensitive, with `Exact` / `Strong` / `Weak`
+confidence and human-readable `reasons`:
+
+- Explicit range without expansion → `ExplicitRange` verbatim.
+- Explicit range with expansion → midpoint expanded to the enclosing block.
+- Symbol hit → enclosing block (`SymbolDefinition`, or `SymbolReference` when
+  the kind is unknown), including Rust attributes/doc-comments and Python
+  decorators/comments above the definition.
+- `match_text` → first case-insensitive hit plus a bounded context window
+  (capped at 20 lines of context).
+- Nothing provided → `WholeFileBounded`; provided-but-unfound → `None` (no
+  match), never a silent whole-file fallback.
+
+Expansion is structural: brace counting (Rust/Go/C-family/JS-with-braces),
+indentation (Python), statement boundaries (braceless JS arrows), Markdown
+heading sections, TOML tables, YAML key subtrees. Results clamp to
+`max_block_lines` with `truncated_by_max_block_lines` recorded.
+
+### Focus: deterministic lexical projection (`core/focus.rs` + `core/fetch_policy.rs` + `core/fetch_locator.rs`)
+
+`select_focus_chunks` ranks the already-extracted `FetchDocument` chunks
+against a caller `focus` query with dependency-free lexical scoring
+(normalized token overlap, exact-phrase boost, heading-path overlap,
+case-sensitive code-symbol boost, document-order tie-break), expands picks to
+scoring neighbors within the chunk cap, and enforces chunk/character budgets in
+document order. No embeddings, no model calls, no extra URL traversal. The
+`FocusedFetchSelection` (`chunks`, `truncated`, `total_chars`) is **additive**
+on `WebFetchResponse` and per-item `batch_fetch` payloads.
+
+- Shared validation/projection lives in `core/fetch_policy.rs`:
+  `validate_focus_query` (non-empty, length-capped),
+  `validate_focus_max_chunks` / `validate_focus_max_chars`,
+  `validate_focus_for_extract_mode` (focus with `metadata_only` is rejected),
+  `focus_max_*_or_default`, and `apply_focus_to_document` (requires a fetched
+  document plus a query). Batch repo items without a document project over
+  deterministic line-window text.
+- Shared locator semantics live in `core/fetch_locator.rs` (`FetchLocator ::
+  WebUrl | Repo | Local` plus path/host validation) so batch, repo, and
+  suggested-fetch conversions agree without collapsing into one generic tool.
+- Focus projection **never enters raw or derived cache keys**: identical URLs
+  share cache entries regardless of focus query, and different focus windows
+  re-project from the same stored document.
 
 ---
 
-## Span Selection (`span.rs`)
+## 11. Errors (`types.rs`) and Safety Invariants
 
-Symbol/span-aware block expansion for `repo_fetch`:
+`FetchError` (30 variants) with a payload-free `FetchErrorKind` mirror and
+`error_code()` strings for MCP mapping: URL/SSRF (`InvalidUrl`,
+`UnsupportedScheme`, `PrivateNetworkBlocked`, `UrlTooLong`,
+`EmbeddedCredentialsBlocked`), redirects (`RedirectLimitExceeded`,
+`RedirectTargetBlocked`, `InvalidRedirectLocation`), transport (`Timeout`,
+`HttpStatus`, `NetworkError`, `ContentTooLarge`, `UnsupportedContentType`,
+`ExtractError`), PDF (9 variants), browser (8 variants), and `Unknown`.
 
-- Extract specific line ranges
-- Expand to enclosing symbols (functions, structs, etc.)
-- Context-aware code extraction
+Invariants that hold across the subsystem:
 
----
-
-## Error Handling
-
-`FetchError` (`types.rs`, 30 variants) covers the full failure space:
-
-- URL/SSRF: `InvalidUrl`, `UnsupportedScheme`, `PrivateNetworkBlocked`, `UrlTooLong`, `EmbeddedCredentialsBlocked`
-- Redirects: `RedirectLimitExceeded`, `RedirectTargetBlocked`, `InvalidRedirectLocation`
-- Transport: `Timeout(u64)`, `HttpStatus(u16, String)`, `NetworkError(String)`, `ContentTooLarge`, `UnsupportedContentType`, `ExtractError(String)`
-- PDF: `PdfNotCompiledIn`, `PdfDisabled`, `PdfParseError`, `PdfEncrypted`, `PdfNoExtractableText`, `PdfPageSpecInvalid`, `PdfPageOutOfRange`, `PdfPageCapExceeded`, `PdfOcrUnavailable`
-- Browser: `BrowserNotCompiledIn`, `BrowserDisabled`, `BrowserNotFound`, `BrowserLaunchFailed`, `BrowserNavigationFailed`, `BrowserPolicyViolation`, `BrowserInteractiveChallenge`, `BrowserDomTooLarge`
-- Fallback: `Unknown(String)`
-
-`FetchErrorKind` mirrors the same taxonomy (copyable, no payloads) for MCP error mapping.
-
----
-
-## Security Considerations
-
-- **SSRF prevention** — `validate_fetch_target()` blocks localhost/private IPs
-- **Bounded reads** — never read unbounded response bodies
-- **Redirect limits** — max redirect hops to prevent loops
-- **Content-type validation** — only process expected content types
-- **Circuit breakers** — prevent cascading failures
+- SSRF first: validation blocks localhost/private IPs and credentials before
+  any socket, on the initial URL and every redirect, browser navigation,
+  subresource, and final URL.
+- Bounded I/O: streaming bodies cap at `max_bytes` with UTF-8-safe truncation;
+  forge reads use `read_bounded_body()`, git work uses `run_bounded_command()`
+  with process-group kill.
+- All untrusted text passes `sanitize_field()`; stable IDs stay content-derived
+  FNV-1a (`fetch_id`, `doc_id`); `CacheScope::Profile` uses opaque IDs; invalid
+  explicit browser paths are `ExplicitPathInvalid` with no fallback.
 
 ---
 
-[← Back to Overview](overview.md)
+- [Overview](overview.md) | [Core](core.md) | [Metasearch](meta.md) |
+  [Engines](engines.md) | [MCP](mcp.md) | [Commands](commands.md) |
+  [Config](config.md) | [Evidence & Workflow](evidence-workflow.md) |
+  [Hardening](hardening.md) | [Testing](testing.md) | [Build](build.md) |
+  [Maintenance](maintenance.md)
