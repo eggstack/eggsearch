@@ -6,8 +6,10 @@ pub(crate) mod containers;
 pub(crate) mod dotnet;
 pub(crate) mod github_actions;
 pub(crate) mod go;
+pub(crate) mod gradle;
 pub(crate) mod maven;
 pub(crate) mod npm;
+pub(crate) mod nuget;
 pub(crate) mod python;
 pub(crate) mod python_locks;
 pub(crate) mod ruby;
@@ -51,16 +53,12 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
         "composer.lock" => {
             DependencyParseReport::complete(composer::parse_composer_lock(content, path))
         }
-        "pom.xml" => DependencyParseReport::complete(maven::parse_pom_xml(content, path)),
+        "pom.xml" => maven::parse_pom_xml(content, path),
         "gradle.lockfile" => {
-            DependencyParseReport::complete(maven::parse_gradle_lockfile(content, path))
+            DependencyParseReport::complete(gradle::parse_gradle_lockfile(content, path))
         }
-        name if name.ends_with(".csproj") => {
-            DependencyParseReport::complete(dotnet::parse_csproj(content, path))
-        }
-        "packages.lock.json" => {
-            DependencyParseReport::complete(dotnet::parse_packages_lock_json(content, path))
-        }
+        "packages.lock.json" => nuget::parse_packages_lock_json(content, path),
+        name if name.ends_with(".csproj") => dotnet::parse_csproj(content, path),
         name if name.ends_with(".yml") || name.ends_with(".yaml") => {
             parse_yaml_routed_file(path, content)
         }
@@ -68,7 +66,7 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
             DependencyParseReport::complete(containers::parse_dockerfile(content, path))
         }
         name if name.starts_with("build.gradle") => {
-            DependencyParseReport::complete(maven::parse_build_gradle(content, path))
+            DependencyParseReport::complete(gradle::parse_build_gradle(content, path))
         }
         _ => DependencyParseReport::unsupported(format!(
             "unrecognized dependency filename for '{filename}'"
@@ -106,34 +104,6 @@ fn parse_yaml_routed_file(path: &str, content: &str) -> DependencyParseReport {
 /// Returns empty vec with no panics for malformed files.
 pub fn parse_dependency_file(path: &str, content: &str) -> Vec<DependencyFinding> {
     parse_dependency_file_report(path, content).findings
-}
-
-pub(crate) fn extract_xml_tag(line: &str, tag: &str) -> Option<String> {
-    let open = format!("<{tag}>");
-    let close = format!("</{tag}>");
-    if let Some(start) = line.find(&open) {
-        let rest = &line[start + open.len()..];
-        if let Some(end) = rest.find(&close) {
-            let val = rest[..end].trim();
-            if !val.is_empty() {
-                return Some(val.to_string());
-            }
-        }
-    }
-    // Self-closing: <version>${...}</version> or <version>1.0</version>
-    None
-}
-
-pub(crate) fn extract_xml_attr(line: &str, attr: &str) -> Option<String> {
-    let pattern = format!("{attr}=\"");
-    let start = line.find(&pattern)? + pattern.len();
-    let end = line[start..].find('"')? + start;
-    let val = line[start..end].trim();
-    if val.is_empty() {
-        None
-    } else {
-        Some(val.to_string())
-    }
 }
 
 #[cfg(test)]
@@ -491,7 +461,7 @@ com.google.guava:guava:31.1-jre=runtimeClasspath
     #[test]
     fn parse_build_gradle() {
         let findings = parse_dependency_file("build.gradle", BUILD_GRADLE);
-        assert_eq!(findings.len(), 4); // excludes reactor-core due to variable ref
+        assert_eq!(findings.len(), 5);
         let spring = findings
             .iter()
             .find(|f| f.package == "org.springframework:spring-core")
@@ -499,21 +469,35 @@ com.google.guava:guava:31.1-jre=runtimeClasspath
         assert_eq!(spring.version.as_deref(), Some("5.3.23"));
         assert_eq!(spring.ecosystem, PackageEcosystem::Maven);
         assert_eq!(spring.source_kind, DependencySource::Manifest);
+        let reactor = findings
+            .iter()
+            .find(|f| f.package == "io.projectreactor:reactor-core")
+            .unwrap();
+        assert_eq!(reactor.exact_version(), None);
+        assert_eq!(
+            reactor.version_requirement.as_deref(),
+            Some("${reactorVersion}")
+        );
     }
 
     const PACKAGES_LOCK_JSON: &str = r#"{
-  "version": 2,
-  "libraries": {
-    "Newtonsoft.Json/13.0.3": {
-      "type": "package",
-      "build": {}
-    },
-    "NUnit/3.13.3": {
-      "type": "package",
-      "build": {}
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "Newtonsoft.Json": {
+        "type": "Direct",
+        "requested": "[13.0.3, )",
+        "resolved": "13.0.3",
+        "contentHash": "abc123"
+      },
+      "NUnit": {
+        "type": "Transitive",
+        "requested": "[3.13.3, )",
+        "resolved": "3.13.3",
+        "contentHash": "def456"
+      }
     }
-  },
-  "projectFileDependencyGroups": {}
+  }
 }"#;
 
     #[test]
@@ -525,7 +509,13 @@ com.google.guava:guava:31.1-jre=runtimeClasspath
             .find(|f| f.package == "Newtonsoft.Json")
             .unwrap();
         assert_eq!(newtonsoft.version.as_deref(), Some("13.0.3"));
+        assert_eq!(newtonsoft.exact_version(), Some("13.0.3"));
+        assert_eq!(
+            newtonsoft.version_requirement.as_deref(),
+            Some("[13.0.3, )")
+        );
         assert_eq!(newtonsoft.ecosystem, PackageEcosystem::Nuget);
+        assert_eq!(newtonsoft.target_context.as_deref(), Some("net8.0"));
     }
 
     #[test]

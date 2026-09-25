@@ -18,7 +18,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Upstream parsing | `src/meta/engines/<provider>.rs` via `EngineSearchRequest` | Workflow policy, role assignment, coverage |
 | Shared workflow mechanics | `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) + `fetch_ranking.rs` (`FetchCandidateBuilder`) | Typed domain semantics — `repo`/`research`/`security` keep their own planners, grouping, suggested-fetch builders on the shared primitives |
 | Bounded dispatch | `src/meta/dispatch/` (`types` owns job/config/output types + capability partition; `execution` owns the bounded concurrent executor) | Engine-specific parsing, workflow policy, role derivation from `rq_` labels |
-| Dependency parsing | `src/meta/dependency_parse/` (`mod` owns normalized `parse_dependency_file` dispatch, the `DependencyParseReport` seam, path-aware basename extraction, and Go vendor-manifest gating; `cargo`/`npm`/`go`/`python`+`python_locks`/`ruby`/`composer`/`maven`/`dotnet`/`containers`/`github_actions` own one ecosystem each, with Python split into requirements vs lock parsers) | Path/size/root validation, applicability policy |
+| Dependency parsing | `src/meta/dependency_parse/` (`mod` owns normalized `parse_dependency_file` dispatch, the `DependencyParseReport` seam, path-aware basename extraction, and Go vendor-manifest gating; `cargo`/`npm`/`go`/`python`+`python_locks`/`maven`+`gradle`/`dotnet`+`nuget`/`ruby`/`composer`/`containers`/`github_actions` own one ecosystem each, with Python split into requirements vs lock parsers and .NET/JVM split into manifest vs lock parsers) | Path/size/root validation, applicability policy |
 | Local workspace | `src/meta/local/` facade + `local_backend.rs` (search orchestration), `local_inventory.rs` (git discovery/identity), `local_inventory_cache.rs` (cache + git runner), `local_symbols.rs` (structured parsing), `local_ignore.rs`, `safe_open.rs` | Cross-owner logic; single cache abstraction only |
 | Forge access | `src/meta/forge_adapter.rs` (execution + shared safety owner: base-URL validation, address classification, bounded reads via `read_bounded_body`/`ForgeReadBudget`, redirect rejection) | Duplicated SSRF/credential/redirect policy in per-host code |
 | Evidence packaging | `src/meta/evidence_bundle.rs` (`build_evidence_bundle`: dedup, linking, caps, trust/provider summaries, gaps) | Ranking math and candidate ordering (owned by `fetch_ranking.rs`) |
@@ -89,8 +89,10 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/dependency_parse/python_locks.rs` | 400 | 81,920 | Python poetry/uv/pipfile lock parsers |
 | `src/meta/dependency_parse/ruby.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/composer.rs` | 400 | 81,920 | One ecosystem per file |
-| `src/meta/dependency_parse/maven.rs` | 400 | 81,920 | One ecosystem per file |
-| `src/meta/dependency_parse/dotnet.rs` | 400 | 81,920 | One ecosystem per file |
+| `src/meta/dependency_parse/maven.rs` | 400 | 81,920 | Maven POM structural parsing |
+| `src/meta/dependency_parse/gradle.rs` | 400 | 81,920 | Gradle lockfile/build heuristics |
+| `src/meta/dependency_parse/dotnet.rs` | 400 | 81,920 | csproj structural parsing |
+| `src/meta/dependency_parse/nuget.rs` | 400 | 81,920 | NuGet lock target graphs |
 | `src/meta/dependency_parse/containers.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/github_actions.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/local_inventory_cache.rs` | 2,000 | 81,920 | Move cache + git runner under `local/`; bounded-execution invariants locked by git guards |

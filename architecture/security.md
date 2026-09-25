@@ -224,6 +224,33 @@ requirement is never a resolved version even when pinned. Poetry/uv
 (`toml`) and Pipfile (`serde_json`) locks yield exact resolved versions
 with source/path/git/index provenance preserved.
 
+NuGet `packages.lock.json` is parsed as the versioned `dependencies`
+target graph (never the legacy `libraries` shape): the target-framework
+key (with optional runtime identifier) becomes target context, the
+package key is the identity, `resolved` is exact evidence,
+`requested` stays a requirement, `Direct`/`Transitive`/
+`CentralTransitive`-like types map to relations (unknown future types
+map to `Unknown` without rejection), `Project` entries become
+project-reference provenance with no resolved version, and content
+hashes are integrity metadata only. Unknown lock versions or
+non-package target maps yield partial/unsupported diagnostics.
+
+`.csproj` and Maven POM inputs are parsed structurally with `quick-xml`
+0.38 (`default-features = false`, streaming pull parser over `&str`;
+no encoding/serde/async surface, no external entity resolution, linear
+scan over the 1 MiB-bounded input). `PackageReference` works across
+line layouts in attribute and child-`Version` forms with `Condition`
+and target-framework context preserved; versions stay requirements.
+POM project dependencies are separated from `dependencyManagement`,
+nested `exclusions`, plugin dependencies, and parent coordinates by
+element-depth analysis; scope/optionality become target context and
+`${...}` interpolation stays an unresolved requirement. Truncated XML
+yields partial/malformed reports rather than silent empty output.
+Gradle lockfiles keep exact coordinates with deterministic dedup;
+`build.gradle`/`build.gradle.kts` accept literal and `("...")`
+coordinates (including `platform(...)` wrappers) with dynamic/property
+versions recorded as unresolved requirements, never resolved versions.
+
 ---
 
 ## Version Range and Comparison (`src/meta/version_compare.rs`)
