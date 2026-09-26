@@ -103,3 +103,8 @@ Corrective execution order is therefore:
 
 The original M001-M007 closure records remain historical evidence and must not
 be silently amended to claim the corrective cases were covered.
+
+M008 implementation `3fd3076c4ad9680490b35a96759cab3f5022e6bc` is closed by
+`plans/closure/dependency-evidence-hardening/008-status.md`. M009 is now the
+only remaining dependency-evidence milestone and stays blocked until hosted CI
+is green on the exact M008 closure candidate.

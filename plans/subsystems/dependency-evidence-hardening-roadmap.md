@@ -1,6 +1,6 @@
 # Dependency Evidence Hardening Roadmap
 
-Status: active — corrective closure
+Status: active — final closure qualification
 
 Long-term references:
 
@@ -464,7 +464,8 @@ Dependency: M001-M007 closed.
 
 Exit: corrective regressions and canonical/fuzz gates pass; closure record
 `plans/closure/dependency-evidence-hardening/008-status.md` is accepted with
-no unresolved correctness blocker.
+no unresolved correctness blocker. M008 closed at implementation commit
+`3fd3076c4ad9680490b35a96759cab3f5022e6bc`.
 
 ### M009 — Final closure and registry reconciliation
 
@@ -486,5 +487,5 @@ roadmap/registry both closed against the same corrected candidate.
 
 | Milestone | Status | Dependency |
 |---|---|---|
-| M008 provenance/identity/parse-status corrective | ready | M001-M007 closed; post-M007 audit at `a10f23ba` |
+| M008 provenance/identity/parse-status corrective | closed | Closure `plans/closure/dependency-evidence-hardening/008-status.md`; implementation `3fd3076` |
 | M009 final closure reconciliation | blocked | M008 closure + exact-candidate required CI |

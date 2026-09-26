@@ -1,6 +1,6 @@
 # Plan 009 — Corrective Applicability Provenance, Identity, and Parse-Status Closure
 
-Status: implementation plan
+Status: closed
 
 Source roadmap:
 `plans/subsystems/dependency-evidence-hardening-roadmap.md`
