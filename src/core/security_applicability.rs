@@ -308,35 +308,139 @@ pub fn advisory_confidence_for_ranges(range_count: usize) -> ApplicabilityConfid
 /// Canonicalize a package name for comparison using ecosystem rules.
 ///
 /// PyPI names are lowercased with runs of `-`, `_`, `.` collapsed to `-`.
-/// All other ecosystems use a conservative case-insensitive comparison
-/// with the display name preserved in findings.
+/// NuGet names are case-insensitive; identities without a documented
+/// registry normalization rule use exact matching.
 pub fn canonical_package_name(ecosystem: &PackageEcosystem, name: &str) -> String {
-    if *ecosystem == PackageEcosystem::Pypi {
-        let mut out = String::with_capacity(name.len());
-        let mut prev_dash = false;
-        for c in name.chars() {
-            if c == '-' || c == '_' || c == '.' {
-                if !prev_dash {
-                    out.push('-');
-                    prev_dash = true;
+    match ecosystem {
+        PackageEcosystem::Pypi => {
+            let mut out = String::with_capacity(name.len());
+            let mut prev_dash = false;
+            for c in name.chars() {
+                if c == '-' || c == '_' || c == '.' {
+                    if !prev_dash {
+                        out.push('-');
+                        prev_dash = true;
+                    }
+                } else {
+                    prev_dash = false;
+                    out.extend(c.to_lowercase());
                 }
-            } else {
-                prev_dash = false;
-                out.extend(c.to_lowercase());
             }
+            out
         }
-        out
-    } else {
-        name.to_string()
+        PackageEcosystem::Nuget => name.to_lowercase(),
+        _ => name.to_string(),
     }
 }
 
 /// Conservative ecosystem-aware package identity comparison.
 pub fn packages_match(ecosystem: &PackageEcosystem, a: &str, b: &str) -> bool {
-    if *ecosystem == PackageEcosystem::Pypi {
-        canonical_package_name(ecosystem, a) == canonical_package_name(ecosystem, b)
-    } else {
-        a.eq_ignore_ascii_case(b)
+    canonical_package_name(ecosystem, a) == canonical_package_name(ecosystem, b)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdvisoryProvenanceCompatibility {
+    Compatible,
+    Incompatible,
+    Unverified,
+}
+
+pub fn advisory_provenance_compatibility(
+    finding: &DependencyFinding,
+) -> AdvisoryProvenanceCompatibility {
+    use AdvisoryProvenanceCompatibility::*;
+    if finding.exact_version().is_none() {
+        return Unverified;
+    }
+    if matches!(
+        finding.reference_kind,
+        Some(
+            DependencyReferenceKind::Path
+                | DependencyReferenceKind::Workspace
+                | DependencyReferenceKind::Local
+                | DependencyReferenceKind::Git
+                | DependencyReferenceKind::Url
+        )
+    ) {
+        return Incompatible;
+    }
+    let provenance = finding
+        .provenance
+        .as_deref()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if provenance.starts_with("git+")
+        || [
+            "replace =>",
+            "workspace",
+            "path:",
+            "git:",
+            "source git",
+            "source path",
+            "source filesystem",
+            "source url",
+            "type: git",
+            "type: directory",
+            "type: file",
+            "type: url",
+            "link:",
+        ]
+        .iter()
+        .any(|marker| provenance.contains(marker))
+    {
+        return Incompatible;
+    }
+    match finding.ecosystem {
+        PackageEcosystem::CratesIo => {
+            if provenance.starts_with("registry+https://github.com/rust-lang/crates.io-index")
+                || provenance.starts_with("registry+https://index.crates.io/")
+            {
+                Compatible
+            } else {
+                Unverified
+            }
+        }
+        PackageEcosystem::Go => {
+            if finding
+                .source_file
+                .as_deref()
+                .map(|p| p.ends_with("vendor/modules.txt"))
+                .unwrap_or(false)
+                && !provenance.contains("replace =>")
+            {
+                Compatible
+            } else {
+                Unverified
+            }
+        }
+        PackageEcosystem::Npm => {
+            if provenance.is_empty() || provenance.contains("registry.npmjs.org") {
+                Compatible
+            } else {
+                Unverified
+            }
+        }
+        PackageEcosystem::Pypi => {
+            if provenance.is_empty()
+                || provenance.contains("https://pypi.org/")
+                || provenance.contains("http://pypi.org/")
+            {
+                Compatible
+            } else {
+                Unverified
+            }
+        }
+        PackageEcosystem::Rubygems => {
+            if provenance.contains("rubygems.org") {
+                Compatible
+            } else {
+                Unverified
+            }
+        }
+        PackageEcosystem::Nuget | PackageEcosystem::Maven | PackageEcosystem::Packagist => {
+            Unverified
+        }
+        PackageEcosystem::Oci | PackageEcosystem::GithubActions => Unverified,
     }
 }
 

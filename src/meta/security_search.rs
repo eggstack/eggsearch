@@ -884,9 +884,9 @@ pub async fn run_security_search_plan(
         use crate::core::security_applicability::DependencyParserBudget;
         use crate::meta::advisory_range::{
             assemble_dependency_evidence, assess_version_applicability, build_finding_index,
-            cap_file_list, extract_advisory_ranges, matching_positions, primary_advisory_id,
-            request_version_assessment, resolved_finding_assessment, weak_evidence_assessment,
-            weak_evidence_summary,
+            cap_file_list, extract_advisory_ranges, finding_assessment_fingerprint,
+            matching_positions, primary_advisory_id, request_version_assessment,
+            resolved_finding_assessment, weak_evidence_assessment, weak_evidence_summary,
         };
 
         let budget = DependencyParserBudget::standard();
@@ -971,16 +971,28 @@ pub async fn run_security_search_plan(
                 let finding = &dependency_findings[position];
                 let advisory_id = primary_advisory_id(vuln);
                 if let Some(ver) = finding.exact_version() {
-                    let outcome = assess_version_applicability(ver, &ranges, &finding.ecosystem);
-                    let assessment = resolved_finding_assessment(
-                        finding,
-                        ver,
-                        advisory_id.clone(),
-                        &outcome,
-                        ranges.len(),
-                        evidence_urls.clone(),
+                    let compatibility =
+                        crate::core::security_applicability::advisory_provenance_compatibility(
+                            finding,
+                        );
+                    let mut assessment = if compatibility == crate::core::security_applicability::AdvisoryProvenanceCompatibility::Compatible {
+                        let outcome = assess_version_applicability(ver, &ranges, &finding.ecosystem);
+                        resolved_finding_assessment(finding, ver, advisory_id.clone(), &outcome, ranges.len(), evidence_urls.clone())
+                    } else {
+                        let outcome = crate::meta::advisory_range::ApplicabilityOutcome { status: crate::core::security_applicability::ApplicabilityStatus::Unknown, matched_ranges: Vec::new(), reasons: vec![format!("exact-version applicability withheld because dependency artifact provenance is not established ({})", finding.provenance.as_deref().unwrap_or("no registry source metadata"))] };
+                        resolved_finding_assessment(finding, ver, advisory_id.clone(), &outcome, 0, evidence_urls.clone())
+                    };
+                    if compatibility != crate::core::security_applicability::AdvisoryProvenanceCompatibility::Compatible {
+                        assessment.matched_ranges.clear();
+                        assessment.fixed_versions.clear();
+                        assessment.warnings.push("dependency_provenance_unverified_for_advisory".to_string());
+                    }
+                    let fingerprint = finding_assessment_fingerprint(finding);
+                    let key = (
+                        advisory_id,
+                        finding.package.clone(),
+                        format!("{ver}|{fingerprint}"),
                     );
-                    let key = (advisory_id, finding.package.clone(), ver.to_string());
                     if seen_assessments.insert(key) {
                         applicability_assessments.push(assessment);
                     }
@@ -990,7 +1002,11 @@ pub async fn run_security_search_plan(
                         advisory_id.clone(),
                         evidence_urls.clone(),
                     );
-                    let key = (advisory_id, finding.package.clone(), String::new());
+                    let key = (
+                        advisory_id,
+                        finding.package.clone(),
+                        finding_assessment_fingerprint(finding),
+                    );
                     if seen_assessments.insert(key) {
                         applicability_assessments.push(assessment);
                     }
@@ -1009,6 +1025,21 @@ pub async fn run_security_search_plan(
             .count();
         if let Some(summary) = weak_evidence_summary(weak_count) {
             warnings.push(summary);
+        }
+        let provenance_unverified_count = applicability_assessments
+            .iter()
+            .filter(|assessment| {
+                assessment
+                    .warnings
+                    .iter()
+                    .any(|warning| warning == "dependency_provenance_unverified_for_advisory")
+            })
+            .count();
+        if provenance_unverified_count > 0 {
+            warnings.push(SearchWarning::new(
+                "_system",
+                format!("dependency_provenance_unverified_for_advisory: exact-version public advisory applicability was withheld for {provenance_unverified_count} dependency findings with unestablished artifact identity"),
+            ));
         }
 
         if !applicability_assessments.is_empty() {

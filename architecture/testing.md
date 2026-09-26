@@ -326,3 +326,11 @@ Keep `docs/test-inventory.md` and `skills/eggsearch-dev/SKILL.md` in sync when a
 ---
 
 [← Back to Overview](overview.md)
+# Dependency evidence corrective regressions
+
+The dependency evidence suites cover exact ecosystem package identity,
+provenance-gated applicability, semantically distinct assessment evidence,
+and malformed-versus-empty structured parser reports. Structured syntax
+regressions cover Cargo manifests and locks, Composer, Poetry, uv, and
+Pipfile; property tests exercise malformed bytes through the filename-aware
+dispatch boundary.

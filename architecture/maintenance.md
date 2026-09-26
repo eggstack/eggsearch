@@ -18,7 +18,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Upstream parsing | `src/meta/engines/<provider>.rs` via `EngineSearchRequest` | Workflow policy, role assignment, coverage |
 | Shared workflow mechanics | `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) + `fetch_ranking.rs` (`FetchCandidateBuilder`) | Typed domain semantics — `repo`/`research`/`security` keep their own planners, grouping, suggested-fetch builders on the shared primitives |
 | Bounded dispatch | `src/meta/dispatch/` (`types` owns job/config/output types + capability partition; `execution` owns the bounded concurrent executor) | Engine-specific parsing, workflow policy, role derivation from `rq_` labels |
-| Dependency parsing | `src/meta/dependency_parse/` (`mod` owns normalized `parse_dependency_file` dispatch, the `DependencyParseReport` seam, path-aware basename extraction, and Go vendor-manifest gating; `cargo`/`npm`/`go`/`python`+`python_locks`/`maven`+`gradle`/`dotnet`+`nuget`/`ruby`/`composer`/`containers`/`github_actions` own one ecosystem each, with Python split into requirements vs lock parsers and .NET/JVM split into manifest vs lock parsers; per-file budget truncation lives in the parsers via `DependencyParserBudget.file_budget()`, collection caps and the finding index live in `meta/advisory_range.rs`) | Path/size/root validation, applicability policy |
+| Dependency parsing | `src/meta/dependency_parse/` (`mod` owns normalized `parse_dependency_file` dispatch, the `DependencyParseReport` seam, path-aware basename extraction, and Go vendor-manifest gating; `status` owns recognized structured syntax/document-shape validation; ecosystem submodules own one parser each; per-file budget truncation lives in the parsers, collection caps and finding index live in `meta/advisory_range.rs`) | Path/size/root validation, applicability policy |
 | Local workspace | `src/meta/local/` facade + `local_backend.rs` (search orchestration), `local_inventory.rs` (git discovery/identity), `local_inventory_cache.rs` (cache + git runner), `local_symbols.rs` (structured parsing), `local_ignore.rs`, `safe_open.rs` | Cross-owner logic; single cache abstraction only |
 | Forge access | `src/meta/forge_adapter.rs` (execution + shared safety owner: base-URL validation, address classification, bounded reads via `read_bounded_body`/`ForgeReadBudget`, redirect rejection) | Duplicated SSRF/credential/redirect policy in per-host code |
 | Evidence packaging | `src/meta/evidence_bundle.rs` (`build_evidence_bundle`: dedup, linking, caps, trust/provider summaries, gaps) | Ranking math and candidate ordering (owned by `fetch_ranking.rs`) |
@@ -81,7 +81,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/forge_adapter.rs` | 3,050 | 101,000 | Host-independent vs host-specific split; safety invariants locked by forge guards |
 | `src/meta/local_backend.rs` | 2,700 | 100,000 | Move backend logic under `local/` |
 | `src/meta/evidence_bundle.rs` | 2,150 | 81,920 | Owns packaging + gap analysis, never ranking |
-| `src/meta/dependency_parse/mod.rs` | 800 | 81,920 | Dispatch + shared XML helpers + corpus tests |
+| `src/meta/dependency_parse/mod.rs` | 800 | 81,920 | Dispatch + corpus tests |
 | `src/meta/dependency_parse/cargo.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/npm.rs` | 400 | 81,920 | npm v1-v3/shrinkwrap |
 | `src/meta/dependency_parse/yarn.rs` | 400 | 81,920 | Yarn Classic + shared selector helpers |
@@ -205,3 +205,12 @@ Start at `src/lib.rs` and `architecture/overview.md`; operator docs live in `doc
 ---
 
 [← Back to Overview](overview.md)
+# Dependency evidence ownership
+
+`core/security_applicability.rs` owns the ecosystem package identity matrix and
+the typed advisory provenance compatibility decision. `meta/advisory_range.rs`
+owns finding indexing and dispatch-level assessment matching;
+`meta/security_search.rs` applies the provenance decision and preserves
+distinct source/target assessments. `meta/dependency_parse/status.rs` owns
+filename-aware syntax and document-shape status at the structured parser
+boundary.

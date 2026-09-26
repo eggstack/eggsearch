@@ -15,6 +15,7 @@ pub(crate) mod pnpm_v9;
 pub(crate) mod python;
 pub(crate) mod python_locks;
 pub(crate) mod ruby;
+pub(crate) mod status;
 pub(crate) mod yarn;
 pub(crate) mod yarn_berry;
 
@@ -26,6 +27,10 @@ pub(crate) mod yarn_berry;
 /// structured detection in later milestones.
 pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyParseReport {
     let filename = dispatch_basename(path);
+
+    if let Some(report) = status::structured_input_error(filename, content) {
+        return report;
+    }
 
     let report = match filename {
         "Cargo.lock" => DependencyParseReport::complete(cargo::parse_cargo_lock(content, path)),

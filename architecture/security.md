@@ -189,9 +189,8 @@ evidence never becomes `NotAffected`.
 `compose_confidence()` bounds every assessment by both sides: High requires
 High dependency evidence and High advisory/range confidence. `packages_match()`
 compares package identity with ecosystem rules (PyPI canonicalization:
-lowercase, collapse runs of `-`, `_`, `.` to `-`; all other ecosystems use
-conservative case-insensitive comparison, never global punctuation
-rewriting). Dependency-driven assessments populate `version_source` and
+lowercase, collapse runs of `-`, `_`, `.` to `-`; NuGet is case-insensitive;
+all other ecosystems compare exact text). Dependency-driven assessments populate `version_source` and
 `dependency_relation` from the matching finding; caller-supplied
 package+version uses `version_source: RequestField` as exact request
 evidence.
@@ -417,3 +416,29 @@ never silent.
 ---
 
 **Back to:** [overview.md](overview.md)
+# Dependency provenance and identity
+
+Exact advisory applicability requires a resolved version and compatible
+artifact evidence. Cargo findings require an explicit crates.io index source;
+source-less Cargo lock entries are treated as local/workspace or unverified.
+Go vendored module entries are eligible unless the manifest marks a
+replacement. npm lock entries with omitted source metadata use npm's default
+registry convention, while explicit registry URLs must be `registry.npmjs.org`.
+PyPI default lock entries and explicit `pypi.org` sources, plus Gemfile.lock
+entries from `rubygems.org`, may be assessed. Maven, NuGet, Packagist, OCI, and
+GitHub Actions findings lack a checked-in public-registry origin contract and
+remain unverified. Cargo git/path entries, Go replacements, local or workspace
+references, and npm/Composer/Python custom sources are withheld as `Unknown`
+when public registry identity is not established. Findings remain in the
+response, with `dependency_provenance_unverified_for_advisory` on the
+assessment.
+
+Package identity is ecosystem-specific: PyPI lowercases and folds runs of
+hyphen, underscore, and period to one hyphen; NuGet compares case-insensitively
+([NuGet package ID matching](https://learn.microsoft.com/en-us/nuget/consume-packages/finding-and-choosing-packages));
+npm identifiers are exact because published names must be lowercase
+([npm naming rules](https://docs.npmjs.com/package-name-guidelines/)); other
+ecosystems use exact text until a registry-specific normalization contract is
+established. Go module paths are exact and never globally case-folded
+([Go Modules Reference](https://go.dev/ref/mod)); Cargo package-name fields are
+case-sensitive ([Cargo registry index](https://doc.rust-lang.org/cargo/reference/registry-index.html)).

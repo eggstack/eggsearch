@@ -251,3 +251,10 @@ Related reading:
 ---
 
 [← Back to Overview](overview.md)
+# Dependency parser failure invariant
+
+Recognized structured TOML and JSON dependency documents retain an explicit
+parse status. Invalid syntax is `Malformed`; valid syntax with an unsupported
+root shape is `Unsupported`; a valid supported empty document is `Complete`
+with no findings. An empty finding list alone is never proof of successful
+parsing.

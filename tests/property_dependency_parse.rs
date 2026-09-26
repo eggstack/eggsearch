@@ -123,4 +123,23 @@ proptest! {
         let canonical = canonical_package_name(&ecosystem, &name);
         prop_assert!(packages_match(&ecosystem, &name, &canonical));
     }
+
+    #[test]
+    fn malformed_structured_payloads_keep_malformed_status(seed in any::<u64>()) {
+        let cases = [
+            ("Cargo.toml", format!("[dependencies\n# {seed}")),
+            ("Cargo.lock", format!("[[package]\nname = \"broken{seed}\"\nversion = [")),
+            ("composer.lock", format!("{{\"packages\":[,],\"seed\":{seed}}}")),
+            ("poetry.lock", format!("[[package]\nname = \"broken{seed}\"\nversion = [")),
+            ("uv.lock", format!("[[package]\nname = \"broken{seed}\"\nversion = [")),
+            ("Pipfile.lock", format!("{{\"default\": [,], \"seed\": {seed}}}")),
+            ("pom.xml", format!("<project><seed>{seed}</project>")),
+            ("broken.csproj", format!("<Project><seed>{seed}</Project>")),
+        ];
+        for (path, payload) in cases {
+            let report = parse_dependency_file_report(path, &payload);
+            prop_assert_eq!(report.status, eggsearch::core::security_applicability::ParseStatus::Malformed, "{}", path);
+            prop_assert!(report.findings.is_empty(), "{path}");
+        }
+    }
 }

@@ -588,8 +588,19 @@ pub fn build_finding_index(
 fn index_key(ecosystem: &PackageEcosystem, package: &str) -> (String, String) {
     (
         ecosystem.as_str().to_string(),
-        crate::core::security_applicability::canonical_package_name(ecosystem, package)
-            .to_lowercase(),
+        crate::core::security_applicability::canonical_package_name(ecosystem, package),
+    )
+}
+
+pub fn finding_assessment_fingerprint(finding: &DependencyFinding) -> String {
+    format!(
+        "{}|{}|{:?}|{}|{}|{:?}",
+        finding.provenance.as_deref().unwrap_or(""),
+        finding.target_context.as_deref().unwrap_or(""),
+        finding.reference_kind,
+        finding.reference_value.as_deref().unwrap_or(""),
+        finding.source_file.as_deref().unwrap_or(""),
+        finding.source_kind
     )
 }
 

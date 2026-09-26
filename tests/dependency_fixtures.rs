@@ -12,6 +12,76 @@ fn parse(
 }
 
 #[test]
+fn structured_syntax_errors_never_look_like_empty_success() {
+    let cases = [
+        ("Cargo.toml", "[dependencies"),
+        ("Cargo.lock", "[[package]"),
+        ("composer.lock", "{"),
+        ("package-lock.json", "{"),
+        ("npm-shrinkwrap.json", "{"),
+        ("packages.lock.json", "{"),
+        ("poetry.lock", "[[package]"),
+        ("uv.lock", "[[package]"),
+        ("Pipfile.lock", "{"),
+    ];
+    for (path, invalid) in cases {
+        let report = parse_dependency_file_report(path, invalid);
+        assert_eq!(report.status, ParseStatus::Malformed, "{path}");
+        assert!(report.findings.is_empty(), "{path}");
+    }
+}
+
+#[test]
+fn valid_empty_structured_documents_remain_complete() {
+    let cases = [
+        ("Cargo.toml", "[package]\nname='empty'\nversion='0.1.0'"),
+        ("Cargo.lock", "version = 3\n\n[[package]]\n"),
+        ("composer.lock", r#"{"packages":[],"packages-dev":[]}"#),
+        ("poetry.lock", "[[package]]\n"),
+        ("uv.lock", "[[package]]\n"),
+        ("Pipfile.lock", r#"{"default":{},"develop":{}}"#),
+        (
+            "package-lock.json",
+            r#"{"lockfileVersion":3,"packages":{}}"#,
+        ),
+        (
+            "npm-shrinkwrap.json",
+            r#"{"lockfileVersion":3,"packages":{}}"#,
+        ),
+        ("packages.lock.json", r#"{"version":1,"dependencies":{}}"#),
+        ("pom.xml", "<project></project>"),
+        ("Demo.csproj", "<Project></Project>"),
+    ];
+    for (path, empty) in cases {
+        let report = parse_dependency_file_report(path, empty);
+        assert_eq!(report.status, ParseStatus::Complete, "{path}: {report:?}");
+        assert!(report.findings.is_empty(), "{path}");
+    }
+    for (path, invalid) in [("pom.xml", "<project>"), ("Demo.csproj", "<Project>")] {
+        assert_eq!(
+            parse_dependency_file_report(path, invalid).status,
+            ParseStatus::Malformed,
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn valid_unknown_structured_shapes_remain_unsupported() {
+    for (path, content) in [
+        ("Cargo.toml", "[unrecognized]\nvalue = true"),
+        ("Pipfile.lock", "{}"),
+        ("composer.lock", r#"{"libraries":[]}"#),
+    ] {
+        assert_eq!(
+            parse_dependency_file_report(path, content).status,
+            ParseStatus::Unsupported,
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn cargo_lock_fixture() {
     let findings = parse(
         "Cargo.lock",

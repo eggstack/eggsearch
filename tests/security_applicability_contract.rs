@@ -1223,12 +1223,155 @@ fn finding_source_kind_and_relation_are_preserved() {
 
 #[test]
 fn package_mismatch_remains_unmatched() {
-    assert!(!packages_match(
-        &PackageEcosystem::Npm,
-        "lodash",
-        "underscore"
-    ));
-    assert!(packages_match(&PackageEcosystem::Npm, "Lodash", "lodash"));
+    let cases = [
+        (PackageEcosystem::Npm, "lodash", "underscore", false),
+        (PackageEcosystem::Npm, "lodash", "lodash", true),
+        (PackageEcosystem::Npm, "Lodash", "lodash", false),
+        (
+            PackageEcosystem::Go,
+            "Example.com/Mod",
+            "example.com/mod",
+            false,
+        ),
+        (
+            PackageEcosystem::Go,
+            "example.com/mod",
+            "example.com/mod",
+            true,
+        ),
+        (
+            PackageEcosystem::CratesIo,
+            "Example_Crate",
+            "example-crate",
+            false,
+        ),
+        (
+            PackageEcosystem::Maven,
+            "Org.Example:Thing",
+            "org.example:thing",
+            false,
+        ),
+        (PackageEcosystem::Rubygems, "Rack", "rack", false),
+        (
+            PackageEcosystem::Packagist,
+            "Acme/Package",
+            "acme/package",
+            false,
+        ),
+        (
+            PackageEcosystem::GithubActions,
+            "Owner/Action",
+            "owner/action",
+            false,
+        ),
+        (
+            PackageEcosystem::Oci,
+            "Library/Image",
+            "library/image",
+            false,
+        ),
+        (
+            PackageEcosystem::Nuget,
+            "Newtonsoft.Json",
+            "newtonsoft.json",
+            true,
+        ),
+    ];
+    for (ecosystem, left, right, expected) in cases {
+        assert_eq!(
+            packages_match(&ecosystem, left, right),
+            expected,
+            "{ecosystem:?}: {left} vs {right}"
+        );
+    }
+}
+
+#[test]
+fn public_advisory_identity_requires_compatible_dependency_provenance() {
+    use eggsearch::core::security_applicability::{
+        advisory_provenance_compatibility, AdvisoryProvenanceCompatibility as Compatibility,
+    };
+    let base = DependencyFinding {
+        ecosystem: PackageEcosystem::CratesIo,
+        package: "serde".to_string(),
+        version: Some("1.0.0".to_string()),
+        source_file: Some("Cargo.lock".to_string()),
+        source_line: None,
+        source_kind: DependencySource::LockFile,
+        confidence: None,
+        relation: None,
+        resolved_version: Some("1.0.0".to_string()),
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: Some("registry+https://github.com/rust-lang/crates.io-index".to_string()),
+        target_context: None,
+        integrity_hash: None,
+    };
+    assert_eq!(
+        advisory_provenance_compatibility(&base),
+        Compatibility::Compatible
+    );
+    let mut source_missing = base.clone();
+    source_missing.provenance = None;
+    assert_eq!(
+        advisory_provenance_compatibility(&source_missing),
+        Compatibility::Unverified
+    );
+    let mut git = base.clone();
+    git.provenance = Some("git+https://example.invalid/fork#abc".to_string());
+    assert_eq!(
+        advisory_provenance_compatibility(&git),
+        Compatibility::Incompatible
+    );
+    git.provenance = None;
+    git.reference_kind = Some(DependencyReferenceKind::Path);
+    assert_eq!(
+        advisory_provenance_compatibility(&git),
+        Compatibility::Incompatible
+    );
+
+    let mut vendored = base.clone();
+    vendored.ecosystem = PackageEcosystem::Go;
+    vendored.package = "example.com/module".to_string();
+    vendored.source_file = Some("vendor/modules.txt".to_string());
+    vendored.provenance = None;
+    assert_eq!(
+        advisory_provenance_compatibility(&vendored),
+        Compatibility::Compatible
+    );
+    vendored.provenance = Some("replace => example.com/fork v1.2.3".to_string());
+    assert_eq!(
+        advisory_provenance_compatibility(&vendored),
+        Compatibility::Incompatible
+    );
+}
+
+#[test]
+fn provenance_and_target_change_assessment_dedup_identity() {
+    let base = DependencyFinding {
+        ecosystem: PackageEcosystem::Go,
+        package: "example.com/mod".to_string(),
+        version: Some("1.2.3".to_string()),
+        source_file: Some("vendor/modules.txt".to_string()),
+        source_line: None,
+        source_kind: DependencySource::LockFile,
+        confidence: None,
+        relation: None,
+        resolved_version: Some("1.2.3".to_string()),
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: Some("linux".to_string()),
+        integrity_hash: None,
+    };
+    let mut replacement = base.clone();
+    replacement.provenance = Some("replace => ../fork".to_string());
+    assert_ne!(
+        eggsearch::meta::advisory_range::finding_assessment_fingerprint(&base),
+        eggsearch::meta::advisory_range::finding_assessment_fingerprint(&replacement)
+    );
 }
 
 #[test]
@@ -1247,6 +1390,11 @@ fn pypi_names_canonicalize_for_comparison_but_preserve_display() {
         "my-package"
     ));
     assert!(packages_match(&PackageEcosystem::Pypi, "Django", "django"));
+    assert!(packages_match(
+        &PackageEcosystem::Pypi,
+        "Django__REST",
+        "django-rest"
+    ));
     assert_eq!(
         canonical_package_name(&PackageEcosystem::Npm, "My_Package"),
         "My_Package"

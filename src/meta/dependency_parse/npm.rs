@@ -190,6 +190,19 @@ fn non_registry_provenance(
             Some(format!("file: {url}")),
         );
     }
+    if url.starts_with("https://") || url.starts_with("http://") {
+        if url::Url::parse(url)
+            .ok()
+            .is_some_and(|parsed| parsed.host_str() == Some("registry.npmjs.org"))
+        {
+            return (None, None, None);
+        }
+        return (
+            Some(Kind::Url),
+            Some(url.to_string()),
+            Some(format!("registry url: {url}")),
+        );
+    }
     if url.starts_with("http:") && !url.contains("registry") {
         return (
             Some(Kind::Url),
@@ -198,6 +211,30 @@ fn non_registry_provenance(
         );
     }
     (None, None, None)
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::non_registry_provenance;
+    use crate::core::security_applicability::DependencyReferenceKind;
+
+    #[test]
+    fn npm_registry_identity_requires_the_exact_registry_host() {
+        assert_eq!(
+            non_registry_provenance("https://registry.npmjs.org/pkg/-/pkg-1.0.0.tgz"),
+            (None, None, None)
+        );
+
+        let (kind, _, provenance) =
+            non_registry_provenance("https://registry.internal.example/pkg.tgz");
+        assert_eq!(kind, Some(DependencyReferenceKind::Url));
+        assert!(provenance.is_some());
+
+        let (kind, _, provenance) =
+            non_registry_provenance("https://registry.npmjs.org.attacker.example/pkg.tgz");
+        assert_eq!(kind, Some(DependencyReferenceKind::Url));
+        assert!(provenance.is_some());
+    }
 }
 
 fn report_v1_dependencies(

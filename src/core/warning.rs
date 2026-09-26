@@ -155,6 +155,8 @@ pub enum WarningCode {
     DependencyFindingBudgetExceeded,
     /// Weak dependency evidence was ignored for exact applicability.
     WeakEvidenceIgnoredForExactApplicability,
+    /// Dependency artifact provenance did not establish public registry identity.
+    DependencyProvenanceUnverifiedForAdvisory,
     /// Applicability assessment present (not exploitability determination).
     ApplicabilityNotExploitability,
     /// No advisories found for requested package/version.
@@ -268,6 +270,9 @@ impl WarningCode {
             Self::WeakEvidenceIgnoredForExactApplicability => {
                 "weak_evidence_ignored_for_exact_applicability"
             }
+            Self::DependencyProvenanceUnverifiedForAdvisory => {
+                "dependency_provenance_unverified_for_advisory"
+            }
             Self::ApplicabilityNotExploitability => "applicability_not_exploitability",
             Self::PackageSecurityNoAdvisories => "package_security_no_advisories",
             Self::PackageSecurityLookupFailed => "package_security_lookup_failed",
@@ -348,6 +353,7 @@ impl WarningCode {
             | Self::DependencyFileBudgetExceeded
             | Self::DependencyFindingBudgetExceeded
             | Self::WeakEvidenceIgnoredForExactApplicability
+            | Self::DependencyProvenanceUnverifiedForAdvisory
             | Self::PackageSecurityNoAdvisories
             | Self::PackageSecuritySkipped
             | Self::PackageResolutionFallback
@@ -514,6 +520,9 @@ impl WarningCode {
             }
             Self::WeakEvidenceIgnoredForExactApplicability => {
                 Some("Weak dependency evidence cannot support exact applicability claims.")
+            }
+            Self::DependencyProvenanceUnverifiedForAdvisory => {
+                Some("Dependency source identity is not established for this public advisory.")
             }
             _ => None,
         }
@@ -844,6 +853,10 @@ const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
         WarningCode::WeakEvidenceIgnoredForExactApplicability,
     ),
     (
+        "dependency_provenance_unverified_for_advisory",
+        WarningCode::DependencyProvenanceUnverifiedForAdvisory,
+    ),
+    (
         "applicability_not_exploitability",
         WarningCode::ApplicabilityNotExploitability,
     ),
@@ -1092,6 +1105,7 @@ mod tests {
             WarningCode::MaxResultsClamped,
             WarningCode::FetchWarning,
             WarningCode::UnknownWarning,
+            WarningCode::DependencyProvenanceUnverifiedForAdvisory,
         ];
         for code in &codes {
             let s = code.as_str();
@@ -1341,6 +1355,20 @@ mod tests {
             "safe_search requested but no provider enforces safe search filtering"
         );
         assert!(aw.provider_ids.is_empty());
+    }
+
+    #[test]
+    fn dependency_provenance_warning_has_stable_structured_code() {
+        let warning = SearchWarning::new(
+            "_system",
+            "dependency_provenance_unverified_for_advisory: identity withheld",
+        );
+        let structured = search_warning_to_agent_warning(&warning);
+        assert_eq!(
+            structured.code,
+            WarningCode::DependencyProvenanceUnverifiedForAdvisory
+        );
+        assert_eq!(structured.severity, WarningSeverity::Warning);
     }
 
     #[test]
