@@ -82,3 +82,24 @@ Write a corrective plan rather than widening a milestone if:
   without measured maintenance benefit;
 - a parser cannot distinguish unsupported syntax from a valid empty result;
 - a fix requires changing the ten-tool MCP surface.
+
+
+## Post-M007 corrective closure addendum
+
+The original M001-M007 sequence reached qualification at M007, but a later
+code-level audit at `a10f23ba92be05d4b42ba1f373c895895cbf88aa` found three
+unclosed correctness conditions: provenance was not enforced during advisory
+matching, package identity still used global case folding outside PyPI, and
+several structured parser syntax failures could be wrapped as Complete-empty.
+
+Corrective execution order is therefore:
+
+1. M008 / Plan 009 — provenance, identity, dedup, and parse-status correctness.
+2. Write and accept `plans/closure/dependency-evidence-hardening/008-status.md`.
+3. M009 / Plan 010 — exact-candidate qualification and planning/registry
+   reconciliation only.
+4. Write `009-status.md` and mark the subsystem closed only in that final
+   reconciliation commit.
+
+The original M001-M007 closure records remain historical evidence and must not
+be silently amended to claim the corrective cases were covered.

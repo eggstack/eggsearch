@@ -102,3 +102,23 @@ The handoff is complete when M001-M007 each have closure records, the subsystem
 roadmap and registry agree on status, and no supported parser can promote a
 requirement, checksum, mutable reference, or unsupported partial parse into
 High-confidence exact dependency applicability.
+
+
+## Post-M007 corrective handoff
+
+Gate C was satisfied for the original M007 candidate, but it is no longer the
+terminal workstream gate. A later audit found correctness conditions outside
+the original closure coverage.
+
+Before treating this workstream as complete:
+
+1. execute
+   `009-corrective-applicability-provenance-and-parse-status.md`;
+2. require accepted `closure/dependency-evidence-hardening/008-status.md`;
+3. execute
+   `010-final-closure-and-registry-reconciliation.md`;
+4. require accepted `009-status.md` and matching closed roadmap/registry
+   status.
+
+Do not rewrite M001-M007 closure records. If M008 uncovers another material
+correctness defect, create another corrective plan and keep M009 blocked.

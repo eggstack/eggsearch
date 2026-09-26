@@ -1,6 +1,6 @@
 # Dependency Evidence Hardening Roadmap
 
-Status: active
+Status: active — corrective closure
 
 Long-term references:
 
@@ -430,3 +430,61 @@ security applicability consumer can no longer overstate dependency evidence.
 | M005 JavaScript lockfiles | closed | Closure `plans/closure/dependency-evidence-hardening/005-status.md` at `be389a0` |
 | M006 Actions/OCI refs | closed | Closure `plans/closure/dependency-evidence-hardening/006-status.md` at `f0eb6a1` |
 | M007 budgets/qualification | closed | Closure `plans/closure/dependency-evidence-hardening/007-status.md` at `18b4c03` |
+
+
+## 14. Post-M007 corrective closure
+
+A post-qualification audit of baseline
+`a10f23ba92be05d4b42ba1f373c895895cbf88aa` found three correctness gaps
+not exercised by the original M001-M007 closure evidence:
+
+- source provenance is retained but not used as an advisory-applicability gate;
+- the shared package index still applies global case folding outside the
+  ecosystem-specific PyPI normalization path;
+- some structured parsers return an empty Vec on syntax failure and are then
+  wrapped as `ParseStatus::Complete`.
+
+These findings do not rewrite or invalidate the historical evidence recorded
+by M001-M007. They require a new corrective milestone under the planning
+process corrective-pass rule.
+
+### M008 — Corrective provenance, identity, and parse-status closure
+
+Class: invariant + corrective capability.
+
+Plan:
+`plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md`.
+
+Objective: enforce source compatibility before exact advisory applicability,
+make package identity rules explicit per ecosystem, preserve semantically
+distinct provenance during assessment dedup, and make malformed structured
+inputs observably non-Complete.
+
+Dependency: M001-M007 closed.
+
+Exit: corrective regressions and canonical/fuzz gates pass; closure record
+`plans/closure/dependency-evidence-hardening/008-status.md` is accepted with
+no unresolved correctness blocker.
+
+### M009 — Final closure and registry reconciliation
+
+Class: polish + closure infrastructure.
+
+Plan:
+`plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`.
+
+Objective: qualify the corrected M008 candidate and reconcile roadmap,
+registry, sequencing, handoff, and terminal closure evidence without changing
+production behavior.
+
+Hard dependency: M008 closed.
+
+Exit: `plans/closure/dependency-evidence-hardening/009-status.md` accepted;
+roadmap/registry both closed against the same corrected candidate.
+
+## 15. Corrective milestone status
+
+| Milestone | Status | Dependency |
+|---|---|---|
+| M008 provenance/identity/parse-status corrective | ready | M001-M007 closed; post-M007 audit at `a10f23ba` |
+| M009 final closure reconciliation | blocked | M008 closure + exact-candidate required CI |
