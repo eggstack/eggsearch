@@ -40,11 +40,13 @@ The runner scores each query against live tool definitions (real
 description-token overlap plus curated domain vocabulary), then reports
 top-1 accuracy (rank 1 in `acceptable`), recall@3, MRR, compact
 discovery bytes, and serialized definition bytes with estimated tokens
-(bytes/4, ceiling). CI gates:
+(bytes/4, ceiling). CI gates (enforced in
+`tests/tool_surface_evaluation.rs` against the canonical
+`MAX_TOOL_DESCRIPTION_LEN` registry cap):
 
-- each description at most 1000 chars;
-- total advertised definitions at most 86000 bytes;
-- server instructions at most 6000 bytes;
+- each description at most 300 chars;
+- total advertised definitions at most 80000 bytes;
+- server instructions at most 2000 bytes;
 - compact top-3 discovery at most 512 bytes;
 - top-1 accuracy at least 0.90, recall@3 at least 0.95, MRR at least 0.90;
 - every `acceptable`/`expected_followups`/`forbidden_primary` reference
@@ -60,7 +62,7 @@ Pre-consolidation surface (v0.3.8, before Plans 001-005):
 - server instructions: 5275 bytes;
 - compact top-3 discovery: at most 273 bytes.
 
-Post-consolidation surface (Plans 001-005 landed):
+Post-consolidation surface (Plans 001-005 landed, v0.3.9):
 
 - total definition bytes: 73037 (~18260 estimated tokens);
 - longest description: `repo_search` (186 chars, contract cap 300);
@@ -68,7 +70,7 @@ Post-consolidation surface (Plans 001-005 landed):
 - compact top-3 discovery: at most 260 bytes (contract `purpose` lines);
 - deterministic discovery: 43/43 top-1, recall@3 1.0, MRR 1.0;
 - fingerprint:
-  `eggsearch-0.3.8|tools=batch_fetch:150,build_evidence_bundle:144,provider_status:148,repo_fetch:150,repo_map:146,repo_search:186,research_search:160,security_search:159,web_fetch:159,web_search:160|bytes=73037`.
+  `eggsearch-0.3.9|tools=batch_fetch:150,build_evidence_bundle:144,provider_status:148,repo_fetch:150,repo_map:146,repo_search:186,research_search:160,security_search:159,web_fetch:159,web_search:160|bytes=73037`.
 
 The description/instruction cuts account for nearly all of the
 improvement; total bytes moved less because structured output schemas
