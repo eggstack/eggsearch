@@ -157,6 +157,9 @@ pub enum WarningCode {
     WeakEvidenceIgnoredForExactApplicability,
     /// Dependency artifact provenance did not establish public registry identity.
     DependencyProvenanceUnverifiedForAdvisory,
+    /// Explicit package/version request could not be assessed because advisory
+    /// ecosystem metadata is missing or unrecognized.
+    RequestEcosystemUnassessed,
     /// Applicability assessment present (not exploitability determination).
     ApplicabilityNotExploitability,
     /// No advisories found for requested package/version.
@@ -273,6 +276,7 @@ impl WarningCode {
             Self::DependencyProvenanceUnverifiedForAdvisory => {
                 "dependency_provenance_unverified_for_advisory"
             }
+            Self::RequestEcosystemUnassessed => "request_ecosystem_unassessed",
             Self::ApplicabilityNotExploitability => "applicability_not_exploitability",
             Self::PackageSecurityNoAdvisories => "package_security_no_advisories",
             Self::PackageSecurityLookupFailed => "package_security_lookup_failed",
@@ -354,6 +358,7 @@ impl WarningCode {
             | Self::DependencyFindingBudgetExceeded
             | Self::WeakEvidenceIgnoredForExactApplicability
             | Self::DependencyProvenanceUnverifiedForAdvisory
+            | Self::RequestEcosystemUnassessed
             | Self::PackageSecurityNoAdvisories
             | Self::PackageSecuritySkipped
             | Self::PackageResolutionFallback
@@ -855,6 +860,10 @@ const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
     (
         "dependency_provenance_unverified_for_advisory",
         WarningCode::DependencyProvenanceUnverifiedForAdvisory,
+    ),
+    (
+        "request_ecosystem_unassessed",
+        WarningCode::RequestEcosystemUnassessed,
     ),
     (
         "applicability_not_exploitability",

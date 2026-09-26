@@ -190,7 +190,12 @@ evidence never becomes `NotAffected`.
 High dependency evidence and High advisory/range confidence. `packages_match()`
 compares package identity with ecosystem rules (PyPI canonicalization:
 lowercase, collapse runs of `-`, `_`, `.` to `-`; NuGet is case-insensitive;
-all other ecosystems compare exact text). Dependency-driven assessments populate `version_source` and
+all other ecosystems compare exact text). Request-field and dependency-file
+package matching share this one ecosystem identity policy through
+`explicit_request_identity_ecosystem()`; unmapped advisory ecosystems never
+inherit crates.io identity or version semantics and surface
+`request_ecosystem_unassessed` instead of a firm assessment.
+Dependency-driven assessments populate `version_source` and
 `dependency_relation` from the matching finding; caller-supplied
 package+version uses `version_source: RequestField` as exact request
 evidence.

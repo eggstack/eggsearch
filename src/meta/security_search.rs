@@ -884,9 +884,10 @@ pub async fn run_security_search_plan(
         use crate::core::security_applicability::DependencyParserBudget;
         use crate::meta::advisory_range::{
             assemble_dependency_evidence, assess_version_applicability, build_finding_index,
-            cap_file_list, extract_advisory_ranges, finding_assessment_fingerprint,
-            matching_positions, primary_advisory_id, request_version_assessment,
-            resolved_finding_assessment, weak_evidence_assessment, weak_evidence_summary,
+            cap_file_list, explicit_request_identity_ecosystem, extract_advisory_ranges,
+            finding_assessment_fingerprint, matching_positions, primary_advisory_id,
+            request_version_assessment, resolved_finding_assessment, weak_evidence_assessment,
+            weak_evidence_summary,
         };
 
         let budget = DependencyParserBudget::standard();
@@ -918,6 +919,7 @@ pub async fn run_security_search_plan(
         let target_version = resolved_ids.version.as_deref();
         let target_package = resolved_ids.package.as_deref();
         let target_ecosystem = resolved_ids.ecosystem.as_deref();
+        let mut request_ecosystem_unassessed = 0usize;
 
         for vuln in &vulnerabilities {
             let ranges = extract_advisory_ranges(vuln);
@@ -928,41 +930,39 @@ pub async fn run_security_search_plan(
                 .collect::<Vec<_>>();
 
             if let (Some(pkg), Some(ver)) = (target_package, target_version) {
-                let vuln_pkg = vuln.package.as_deref().unwrap_or("");
-                let vuln_eco = vuln.ecosystem.as_deref().unwrap_or("");
-
-                let pkg_matches = vuln_pkg.eq_ignore_ascii_case(pkg);
-                let eco_matches = target_ecosystem
-                    .map(|e| e.eq_ignore_ascii_case(vuln_eco))
-                    .unwrap_or(true);
-
-                if pkg_matches && eco_matches {
-                    let advisory_id = primary_advisory_id(vuln);
-                    let outcome = assess_version_applicability(
-                        ver,
-                        &ranges,
-                        &ranges
-                            .first()
-                            .map(|r| r.ecosystem.clone())
-                            .unwrap_or(crate::core::package::PackageEcosystem::CratesIo),
-                    );
-                    let ecosystem = vuln
-                        .ecosystem
-                        .as_deref()
-                        .and_then(crate::core::package::PackageEcosystem::parse)
-                        .unwrap_or(crate::core::package::PackageEcosystem::CratesIo);
-                    let assessment = request_version_assessment(
-                        pkg,
-                        ver,
-                        ecosystem,
-                        advisory_id.clone(),
-                        &outcome,
-                        ranges.len(),
-                        evidence_urls.clone(),
-                    );
-                    let key = (advisory_id, pkg.to_string(), ver.to_string());
-                    if seen_assessments.insert(key) {
-                        applicability_assessments.push(assessment);
+                match explicit_request_identity_ecosystem(
+                    pkg,
+                    target_ecosystem,
+                    vuln.package.as_deref(),
+                    vuln.ecosystem.as_deref(),
+                ) {
+                    Some(ecosystem) => {
+                        let advisory_id = primary_advisory_id(vuln);
+                        let outcome = assess_version_applicability(ver, &ranges, &ecosystem);
+                        let assessment = request_version_assessment(
+                            pkg,
+                            ver,
+                            ecosystem,
+                            advisory_id.clone(),
+                            &outcome,
+                            ranges.len(),
+                            evidence_urls.clone(),
+                        );
+                        let key = (advisory_id, pkg.to_string(), ver.to_string());
+                        if seen_assessments.insert(key) {
+                            applicability_assessments.push(assessment);
+                        }
+                    }
+                    None => {
+                        let advisory_mapped = vuln
+                            .ecosystem
+                            .as_deref()
+                            .and_then(crate::core::package::PackageEcosystem::parse)
+                            .is_some();
+                        let has_package = vuln.package.as_deref().is_some_and(|p| !p.is_empty());
+                        if !advisory_mapped && has_package {
+                            request_ecosystem_unassessed += 1;
+                        }
                     }
                 }
             }
@@ -1039,6 +1039,12 @@ pub async fn run_security_search_plan(
             warnings.push(SearchWarning::new(
                 "_system",
                 format!("dependency_provenance_unverified_for_advisory: exact-version public advisory applicability was withheld for {provenance_unverified_count} dependency findings with unestablished artifact identity"),
+            ));
+        }
+        if request_ecosystem_unassessed > 0 {
+            warnings.push(SearchWarning::new(
+                "_system",
+                format!("request_ecosystem_unassessed: explicit package/version request could not be assessed for {request_ecosystem_unassessed} advisories with missing or unrecognized ecosystem metadata; no Affected/NotAffected claim was emitted for those advisories"),
             ));
         }
 

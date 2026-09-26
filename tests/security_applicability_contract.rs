@@ -1679,3 +1679,396 @@ fn every_diagnostic_code_maps_to_a_stable_warning() {
     );
     assert!(weak_evidence_summary(0).is_none());
 }
+
+#[cfg(feature = "mock")]
+mod explicit_request_identity {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use eggsearch::core::config::AppConfig;
+    use eggsearch::mcp::state::ServerState;
+    use eggsearch::mcp::tools::{run_security_search, SecuritySearchArgs};
+    use eggsearch::meta::MetadataSearchAdapter;
+
+    struct FixedAdvisoryEngine {
+        vulns: Vec<VulnerabilityMetadata>,
+    }
+
+    impl eggsearch::meta::engines::SearchEngine for FixedAdvisoryEngine {
+        fn name(&self) -> &'static str {
+            "test_advisory"
+        }
+
+        fn search<'a>(
+            &'a self,
+            _request: &'a eggsearch::meta::engines::EngineSearchRequest,
+        ) -> eggsearch::meta::engines::BoxFuture<
+            'a,
+            Result<
+                Vec<eggsearch::meta::engines::models::SearchResult>,
+                eggsearch::meta::engines::error::EngineError,
+            >,
+        > {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn advisory_capabilities(&self) -> eggsearch::meta::engines::AdvisoryCapabilities {
+            eggsearch::meta::engines::AdvisoryCapabilities {
+                lookup_by_id: false,
+                query_by_package: true,
+            }
+        }
+
+        fn query_advisories_by_package<'a>(
+            &'a self,
+            _ecosystem: &'a str,
+            _package: &'a str,
+            _version: Option<&'a str>,
+            _max_results: usize,
+            _timeout: Duration,
+        ) -> eggsearch::meta::engines::BoxFuture<
+            'a,
+            Result<Vec<VulnerabilityMetadata>, eggsearch::meta::engines::error::EngineError>,
+        > {
+            let vulns = self.vulns.clone();
+            Box::pin(async move { Ok(vulns) })
+        }
+    }
+
+    fn make_vuln(
+        ecosystem: Option<&str>,
+        package: Option<&str>,
+        affected: Vec<&str>,
+        patched: Vec<&str>,
+    ) -> VulnerabilityMetadata {
+        VulnerabilityMetadata {
+            cve_ids: vec!["CVE-2024-4242".to_string()],
+            ghsa_ids: Vec::new(),
+            osv_ids: Vec::new(),
+            rustsec_ids: Vec::new(),
+            ecosystem: ecosystem.map(String::from),
+            package: package.map(String::from),
+            affected_ranges: affected.into_iter().map(String::from).collect(),
+            patched_ranges: patched.into_iter().map(String::from).collect(),
+            vulnerable_versions: Vec::new(),
+            patched_versions: Vec::new(),
+            severity: None,
+            cvss_score: None,
+            cvss_vector: None,
+            epss_score: None,
+            kev: None,
+            published_at: None,
+            modified_at: None,
+            withdrawn_at: None,
+            references: Vec::new(),
+            source: VulnerabilitySource::Osv,
+        }
+    }
+
+    async fn run_with_vulns(
+        vulns: Vec<VulnerabilityMetadata>,
+        package: &str,
+        ecosystem: Option<&str>,
+        version: &str,
+    ) -> serde_json::Value {
+        let engine: Arc<dyn eggsearch::meta::engines::SearchEngine> =
+            Arc::new(FixedAdvisoryEngine { vulns });
+        let mut cfg = AppConfig::default();
+        cfg.search
+            .providers
+            .insert("test_advisory".to_string(), true);
+        let adapter = MetadataSearchAdapter::from_engines(vec![engine], Duration::from_secs(5));
+        let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+        run_security_search(
+            state,
+            SecuritySearchArgs {
+                query: Some("explicit request identity probe".to_string()),
+                package: Some(package.to_string()),
+                ecosystem: ecosystem.map(String::from),
+                version: Some(version.to_string()),
+                assess_applicability: Some(true),
+                providers: vec!["test_advisory".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("security_search ok")
+    }
+
+    fn applicability(response: &serde_json::Value) -> Vec<serde_json::Value> {
+        response
+            .get("applicability")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn warning_texts(response: &serde_json::Value) -> Vec<String> {
+        response
+            .get("warnings")
+            .and_then(|v| v.as_array())
+            .map(|warnings| {
+                warnings
+                    .iter()
+                    .filter_map(|w| w.get("message").and_then(|m| m.as_str()).map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn go_case_variant_produces_no_assessment() {
+        let vuln = make_vuln(
+            Some("go"),
+            Some("Example.com/Mod"),
+            vec![">= v1.0.0, < v2.0.0"],
+            vec!["v2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "example.com/mod", Some("go"), "v1.2.3").await;
+        let assessments = applicability(&response);
+        assert!(
+            assessments.is_empty(),
+            "Go case-variant request must not match advisory identity: {assessments:?}"
+        );
+        let vulns = response
+            .get("vulnerabilities")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(vulns.len(), 1, "advisory result itself is preserved");
+    }
+
+    #[tokio::test]
+    async fn go_exact_spelling_uses_go_version_semantics() {
+        let vuln = make_vuln(
+            Some("go"),
+            Some("Example.com/Mod"),
+            vec![">= v1.0.0, < v2.0.0"],
+            vec!["v2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "Example.com/Mod", Some("go"), "v1.2.3").await;
+        let assessments = applicability(&response);
+        assert_eq!(assessments.len(), 1, "exact Go spelling must assess");
+        assert_eq!(
+            assessments[0].get("status").and_then(|s| s.as_str()),
+            Some("affected")
+        );
+        assert_eq!(
+            assessments[0].get("package").and_then(|s| s.as_str()),
+            Some("Example.com/Mod")
+        );
+        assert_eq!(
+            assessments[0].get("ecosystem").and_then(|s| s.as_str()),
+            Some("go")
+        );
+        assert_eq!(
+            assessments[0]
+                .get("version_source")
+                .and_then(|s| s.as_str()),
+            Some("request_field")
+        );
+    }
+
+    #[tokio::test]
+    async fn pypi_normalization_continues_to_match() {
+        for request in ["my-package", "MY_PACKAGE", "my.package"] {
+            let vuln = make_vuln(
+                Some("pypi"),
+                Some("my_package"),
+                vec![">= 1.0.0, < 2.0.0"],
+                vec!["2.0.0"],
+            );
+            let response = run_with_vulns(vec![vuln], request, Some("pypi"), "1.5.0").await;
+            let assessments = applicability(&response);
+            assert_eq!(
+                assessments.len(),
+                1,
+                "PyPI request {request} must match my_package"
+            );
+            assert_eq!(
+                assessments[0].get("package").and_then(|s| s.as_str()),
+                Some(request)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn nuget_case_variant_continues_to_match() {
+        let vuln = make_vuln(
+            Some("nuget"),
+            Some("Newtonsoft.Json"),
+            vec![">= 13.0.0, < 13.0.2"],
+            vec!["13.0.2"],
+        );
+        let response = run_with_vulns(vec![vuln], "newtonsoft.json", Some("nuget"), "13.0.1").await;
+        let assessments = applicability(&response);
+        assert_eq!(assessments.len(), 1, "NuGet must stay case-insensitive");
+        assert_eq!(
+            assessments[0].get("status").and_then(|s| s.as_str()),
+            Some("affected")
+        );
+    }
+
+    #[tokio::test]
+    async fn exact_identity_ecosystems_reject_case_variants() {
+        let vuln = make_vuln(
+            Some("npm"),
+            Some("lodash"),
+            vec![">= 4.0.0, < 4.17.21"],
+            vec!["4.17.21"],
+        );
+        let response = run_with_vulns(vec![vuln], "Lodash", Some("npm"), "4.17.20").await;
+        assert!(
+            applicability(&response).is_empty(),
+            "npm case variant must not match under exact identity"
+        );
+
+        let vuln = make_vuln(
+            Some("crates_io"),
+            Some("serde"),
+            vec![">= 1.0.0, < 1.0.200"],
+            vec!["1.0.200"],
+        );
+        let response = run_with_vulns(vec![vuln], "Serde", Some("crates_io"), "1.0.100").await;
+        assert!(
+            applicability(&response).is_empty(),
+            "crates.io case variant must not match under exact identity"
+        );
+    }
+
+    #[tokio::test]
+    async fn mismatched_request_ecosystem_produces_no_assessment() {
+        let vuln = make_vuln(
+            Some("pypi"),
+            Some("lodash"),
+            vec![">= 1.0.0, < 2.0.0"],
+            vec!["2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "lodash", Some("npm"), "1.5.0").await;
+        assert!(
+            applicability(&response).is_empty(),
+            "different request/advisory ecosystems must not assess"
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_advisory_ecosystem_produces_no_fallback_assessment() {
+        let vuln = make_vuln(
+            Some("terraform"),
+            Some("serde"),
+            vec![">= 1.0.0, < 2.0.0"],
+            vec!["2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "serde", Some("crates_io"), "1.5.0").await;
+        let assessments = applicability(&response);
+        assert!(
+            assessments.is_empty(),
+            "unmapped ecosystem must not fall back to crates.io: {assessments:?}"
+        );
+        for assessment in &assessments {
+            assert_ne!(
+                assessment.get("ecosystem").and_then(|s| s.as_str()),
+                Some("crates_io"),
+                "no fabricated crates.io assessment: {assessment:?}"
+            );
+        }
+        let warnings = warning_texts(&response);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("request_ecosystem_unassessed")),
+            "unmapped advisory ecosystem must warn: {warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_advisory_ecosystem_produces_no_fallback_assessment() {
+        let vuln = make_vuln(
+            None,
+            Some("serde"),
+            vec![">= 1.0.0, < 2.0.0"],
+            vec!["2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "serde", Some("crates_io"), "1.5.0").await;
+        assert!(
+            applicability(&response).is_empty(),
+            "missing ecosystem must not fall back to crates.io"
+        );
+        let warnings = warning_texts(&response);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("request_ecosystem_unassessed")),
+            "missing advisory ecosystem must warn: {warnings:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn exact_request_path_keeps_request_field_source_and_confidence() {
+        let vuln = make_vuln(
+            Some("crates_io"),
+            Some("serde"),
+            vec![">= 1.0.0, < 2.0.0"],
+            vec!["2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "serde", Some("crates_io"), "1.5.0").await;
+        let assessments = applicability(&response);
+        assert_eq!(assessments.len(), 1);
+        assert_eq!(
+            assessments[0].get("status").and_then(|s| s.as_str()),
+            Some("affected")
+        );
+        assert_eq!(
+            assessments[0]
+                .get("version_source")
+                .and_then(|s| s.as_str()),
+            Some("request_field")
+        );
+        assert_eq!(
+            assessments[0].get("confidence").and_then(|s| s.as_str()),
+            Some("high")
+        );
+        assert_eq!(
+            assessments[0].get("package").and_then(|s| s.as_str()),
+            Some("serde")
+        );
+        assert_eq!(
+            assessments[0].get("ecosystem").and_then(|s| s.as_str()),
+            Some("crates_io")
+        );
+    }
+
+    #[tokio::test]
+    async fn request_ecosystem_warning_maps_to_stable_code() {
+        use eggsearch::core::warning::{convert_warnings, WarningCode};
+        let vuln = make_vuln(
+            Some("terraform"),
+            Some("serde"),
+            vec![">= 1.0.0, < 2.0.0"],
+            vec!["2.0.0"],
+        );
+        let response = run_with_vulns(vec![vuln], "serde", Some("crates_io"), "1.5.0").await;
+        let warnings = response
+            .get("warnings")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let search_warnings: Vec<eggsearch::core::result::SearchWarning> = warnings
+            .iter()
+            .map(|w| {
+                eggsearch::core::result::SearchWarning::new(
+                    "_system",
+                    w.get("message").and_then(|m| m.as_str()).unwrap_or(""),
+                )
+            })
+            .collect();
+        let structured = convert_warnings(&search_warnings);
+        assert!(
+            structured
+                .iter()
+                .any(|w| w.code == WarningCode::RequestEcosystemUnassessed),
+            "warning must map to RequestEcosystemUnassessed: {structured:?}"
+        );
+    }
+}

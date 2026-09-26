@@ -619,6 +619,33 @@ pub fn matching_positions(
         .unwrap_or_default()
 }
 
+pub fn explicit_request_identity_ecosystem(
+    request_package: &str,
+    request_ecosystem: Option<&str>,
+    vuln_package: Option<&str>,
+    vuln_ecosystem: Option<&str>,
+) -> Option<PackageEcosystem> {
+    let advisory_ecosystem = vuln_ecosystem.and_then(PackageEcosystem::parse)?;
+    if let Some(request_ecosystem) = request_ecosystem {
+        let parsed_request = PackageEcosystem::parse(request_ecosystem)?;
+        if parsed_request != advisory_ecosystem {
+            return None;
+        }
+    }
+    let advisory_package = vuln_package.unwrap_or_default();
+    if advisory_package.is_empty() {
+        return None;
+    }
+    if !crate::core::security_applicability::packages_match(
+        &advisory_ecosystem,
+        advisory_package,
+        request_package,
+    ) {
+        return None;
+    }
+    Some(advisory_ecosystem)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1181,5 +1208,136 @@ mod tests {
             &PackageEcosystem::CratesIo,
         );
         assert_eq!(outcome.status, ApplicabilityStatus::Affected);
+    }
+
+    #[test]
+    fn explicit_request_go_case_variant_does_not_match() {
+        let matched = explicit_request_identity_ecosystem(
+            "example.com/mod",
+            Some("go"),
+            Some("Example.com/Mod"),
+            Some("go"),
+        );
+        assert_eq!(matched, None);
+    }
+
+    #[test]
+    fn explicit_request_go_exact_spelling_matches() {
+        let matched = explicit_request_identity_ecosystem(
+            "Example.com/Mod",
+            Some("go"),
+            Some("Example.com/Mod"),
+            Some("go"),
+        );
+        assert_eq!(matched, Some(PackageEcosystem::Go));
+    }
+
+    #[test]
+    fn explicit_request_pypi_normalization_matches() {
+        assert_eq!(
+            explicit_request_identity_ecosystem(
+                "my-package",
+                Some("pypi"),
+                Some("my_package"),
+                Some("pypi"),
+            ),
+            Some(PackageEcosystem::Pypi)
+        );
+        assert_eq!(
+            explicit_request_identity_ecosystem(
+                "MY-PACKAGE",
+                Some("pypi"),
+                Some("my_package"),
+                Some("pypi"),
+            ),
+            Some(PackageEcosystem::Pypi)
+        );
+        assert_eq!(
+            explicit_request_identity_ecosystem(
+                "my.package",
+                Some("pypi"),
+                Some("my-package"),
+                Some("pypi"),
+            ),
+            Some(PackageEcosystem::Pypi)
+        );
+    }
+
+    #[test]
+    fn explicit_request_nuget_case_variant_matches() {
+        let matched = explicit_request_identity_ecosystem(
+            "newtonsoft.json",
+            Some("nuget"),
+            Some("Newtonsoft.Json"),
+            Some("nuget"),
+        );
+        assert_eq!(matched, Some(PackageEcosystem::Nuget));
+    }
+
+    #[test]
+    fn explicit_request_exact_identity_ecosystems_reject_case_variants() {
+        assert_eq!(
+            explicit_request_identity_ecosystem("Lodash", Some("npm"), Some("lodash"), Some("npm"),),
+            None
+        );
+        assert_eq!(
+            explicit_request_identity_ecosystem(
+                "example-crate",
+                Some("crates_io"),
+                Some("Example_Crate"),
+                Some("crates_io"),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn explicit_request_mismatched_ecosystem_does_not_match() {
+        let matched = explicit_request_identity_ecosystem(
+            "lodash",
+            Some("npm"),
+            Some("lodash"),
+            Some("pypi"),
+        );
+        assert_eq!(matched, None);
+    }
+
+    #[test]
+    fn explicit_request_unknown_advisory_ecosystem_does_not_match() {
+        assert_eq!(
+            explicit_request_identity_ecosystem(
+                "serde",
+                Some("crates_io"),
+                Some("serde"),
+                Some("terraform"),
+            ),
+            None
+        );
+        assert_eq!(
+            explicit_request_identity_ecosystem("serde", None, Some("serde"), Some("terraform"),),
+            None
+        );
+        assert_eq!(
+            explicit_request_identity_ecosystem("serde", Some("crates_io"), Some("serde"), None,),
+            None
+        );
+    }
+
+    #[test]
+    fn explicit_request_invalid_caller_ecosystem_does_not_match() {
+        let matched = explicit_request_identity_ecosystem(
+            "serde",
+            Some("not-an-ecosystem"),
+            Some("serde"),
+            Some("crates_io"),
+        );
+        assert_eq!(matched, None);
+    }
+
+    #[test]
+    fn explicit_request_omitted_caller_ecosystem_uses_advisory_ecosystem() {
+        let matched =
+            explicit_request_identity_ecosystem("serde", None, Some("serde"), Some("crates_io"));
+        assert_eq!(matched, Some(PackageEcosystem::CratesIo));
     }
 }
