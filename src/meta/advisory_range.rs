@@ -4,7 +4,8 @@ use crate::core::package::PackageEcosystem;
 use crate::core::security::VulnerabilityMetadata;
 use crate::core::security_applicability::{
     advisory_confidence_for_ranges, compose_confidence, AdvisoryRange, ApplicabilityAssessment,
-    ApplicabilityConfidence, ApplicabilityStatus, DependencyFinding, DependencySource, RangeMatch,
+    ApplicabilityConfidence, ApplicabilityStatus, DependencyFinding, DependencyParserBudget,
+    DependencySource, ParseDiagnostic, RangeMatch,
 };
 use crate::meta::version_compare::{compare_versions_for_ecosystem, version_satisfies_range};
 
@@ -482,6 +483,129 @@ pub fn weak_evidence_assessment(
         source_ids: Vec::new(),
         fetch_ids: Vec::new(),
     }
+}
+
+pub fn cap_file_list(
+    files: &[String],
+    max: usize,
+) -> (&[String], Option<crate::core::result::SearchWarning>) {
+    if files.len() <= max {
+        return (files, None);
+    }
+    let skipped = &files[max..];
+    let first_skipped = skipped.first().map(String::as_str).unwrap_or("unknown");
+    (
+        &files[..max],
+        Some(crate::core::result::SearchWarning::new(
+            "_system",
+            format!(
+                "dependency_file_budget_exceeded: kept {max} files in request order; {first_skipped} and later files were not read"
+            ),
+        )),
+    )
+}
+
+pub fn assemble_dependency_evidence(
+    entries: Vec<(String, String)>,
+    budget: DependencyParserBudget,
+) -> (
+    Vec<DependencyFinding>,
+    Vec<crate::core::result::SearchWarning>,
+) {
+    let mut findings = Vec::new();
+    let mut warnings = Vec::new();
+    for (path, content) in &entries {
+        let report = crate::meta::dependency_parse::parse_dependency_file_report(path, content);
+        for diagnostic in &report.diagnostics {
+            warnings.push(parse_diagnostic_warning(path, diagnostic));
+        }
+        findings.extend(report.findings);
+    }
+    let (findings, aggregate_note) = crate::core::security_applicability::truncate_aggregate(
+        findings,
+        budget.max_findings_per_request,
+    );
+    if let Some(note) = aggregate_note {
+        warnings.push(parse_diagnostic_warning("aggregate", &note));
+    }
+    (findings, warnings)
+}
+
+pub fn parse_diagnostic_warning(
+    path: &str,
+    diagnostic: &ParseDiagnostic,
+) -> crate::core::result::SearchWarning {
+    let code = match diagnostic.code.as_str() {
+        "dependency_parse_malformed" => "dependency_parse_malformed",
+        "dependency_format_unsupported" => "dependency_format_unsupported",
+        "dependency_parse_partial" => "dependency_parse_partial",
+        "dependency_finding_budget_exceeded" => "dependency_finding_budget_exceeded",
+        _ => "dependency_parse_partial",
+    };
+    let location = short_path(path);
+    let mut message = format!("{code}: {location}: {}", diagnostic.message);
+    if let Some(line) = diagnostic.line {
+        message.push_str(&format!(" (line {line})"));
+    }
+    crate::core::result::SearchWarning::new("_system", message)
+}
+
+fn short_path(path: &str) -> String {
+    const MAX_PATH_CHARS: usize = 200;
+    if path.chars().count() <= MAX_PATH_CHARS {
+        path.to_string()
+    } else {
+        path.chars().take(MAX_PATH_CHARS).collect()
+    }
+}
+
+pub fn weak_evidence_summary(weak_count: usize) -> Option<crate::core::result::SearchWarning> {
+    if weak_count == 0 {
+        return None;
+    }
+    Some(crate::core::result::SearchWarning::new(
+        "_system",
+        format!(
+            "weak_evidence_ignored_for_exact_applicability: {weak_count} requirement, reference, or integrity observations were assessed as Unknown rather than Affected or NotAffected"
+        ),
+    ))
+}
+
+pub fn build_finding_index(
+    findings: &[DependencyFinding],
+) -> std::collections::HashMap<(String, String), Vec<usize>> {
+    let mut index: std::collections::HashMap<(String, String), Vec<usize>> =
+        std::collections::HashMap::new();
+    for (position, finding) in findings.iter().enumerate() {
+        index
+            .entry(index_key(&finding.ecosystem, &finding.package))
+            .or_default()
+            .push(position);
+    }
+    index
+}
+
+fn index_key(ecosystem: &PackageEcosystem, package: &str) -> (String, String) {
+    (
+        ecosystem.as_str().to_string(),
+        crate::core::security_applicability::canonical_package_name(ecosystem, package)
+            .to_lowercase(),
+    )
+}
+
+pub fn matching_positions(
+    vuln: &VulnerabilityMetadata,
+    index: &std::collections::HashMap<(String, String), Vec<usize>>,
+) -> Vec<usize> {
+    let vuln_package = vuln.package.as_deref().unwrap_or("");
+    let vuln_ecosystem = vuln.ecosystem.as_deref().unwrap_or("");
+    let Some(ecosystem) = PackageEcosystem::parse(vuln_ecosystem) else {
+        return Vec::new();
+    };
+    index
+        .get(&index_key(&ecosystem, vuln_package))
+        .cloned()
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

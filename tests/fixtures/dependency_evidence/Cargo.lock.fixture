@@ -1,0 +1,18 @@
+# THIS FILE IS A MINIMIZED TEST FIXTURE MODELED FROM REAL TOOL OUTPUT.
+# Format: Cargo.lock (cargo generate-lockfile shape).
+[[package]]
+name = "serde"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f5c1a8a5c3d9b4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+
+[[package]]
+name = "tokio"
+version = "1.35.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a4c8b3d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5"
+
+[[package]]
+name = "internal-tool"
+version = "0.1.0"
+source = "git+https://example.com/internal-tool#abc123def456"

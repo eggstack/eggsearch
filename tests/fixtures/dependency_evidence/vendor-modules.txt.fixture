@@ -1,0 +1,4 @@
+## MINIMIZED TEST FIXTURE MODELED FROM REAL vendor/modules.txt OUTPUT.
+# github.com/gin-gonic/gin v1.9.1 => github.com/fork/gin v1.10.0
+## explicit; go 1.21
+# golang.org/x/crypto v0.16.0

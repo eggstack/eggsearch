@@ -373,3 +373,111 @@ pub struct ApplicabilityAssessment {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fetch_ids: Vec<String>,
 }
+
+/// Aggregate resource policy for dependency evidence collection.
+///
+/// Limits are constants so truncation boundaries are testable and
+/// stable. The per-file finding cap sits above the maximum finding
+/// density of a 1 MiB input at realistic entry sizes; the aggregate
+/// cap bounds the applicability cross-product.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DependencyParserBudget {
+    pub max_files_per_request: usize,
+    pub max_findings_per_file: usize,
+    pub max_findings_per_request: usize,
+    pub max_diagnostics: usize,
+    pub max_diagnostic_chars: usize,
+    pub max_nesting_depth: usize,
+}
+
+impl DependencyParserBudget {
+    pub const fn standard() -> Self {
+        Self {
+            max_files_per_request: 32,
+            max_findings_per_file: 10_000,
+            max_findings_per_request: 20_000,
+            max_diagnostics: 32,
+            max_diagnostic_chars: 300,
+            max_nesting_depth: 64,
+        }
+    }
+}
+
+/// Truncate a finding list to the per-file cap, preserving stable source
+/// order. Returns the kept findings plus a budget diagnostic when the
+/// cap applied.
+pub fn truncate_findings(
+    findings: Vec<DependencyFinding>,
+    max: usize,
+) -> (Vec<DependencyFinding>, Option<ParseDiagnostic>) {
+    if findings.len() <= max {
+        return (findings, None);
+    }
+    let mut kept = findings;
+    kept.truncate(max);
+    (
+        kept,
+        Some(ParseDiagnostic {
+            code: "dependency_finding_budget_exceeded".to_string(),
+            message: format!("finding budget exceeded: kept {max} findings in stable source order"),
+            line: None,
+        }),
+    )
+}
+
+/// Truncate a finding list to the aggregate request cap, preserving
+/// stable collection order.
+pub fn truncate_aggregate(
+    findings: Vec<DependencyFinding>,
+    max: usize,
+) -> (Vec<DependencyFinding>, Option<ParseDiagnostic>) {
+    if findings.len() <= max {
+        return (findings, None);
+    }
+    let mut kept = findings;
+    kept.truncate(max);
+    (
+        kept,
+        Some(ParseDiagnostic {
+            code: "dependency_finding_budget_exceeded".to_string(),
+            message: format!(
+                "aggregate finding budget exceeded: kept {max} findings in stable collection order"
+            ),
+            line: None,
+        }),
+    )
+}
+
+/// Bound a parse report: findings to the per-file cap, diagnostics to
+/// the count cap, and diagnostic text to the character cap.
+pub fn truncate_report(
+    mut report: DependencyParseReport,
+    budget: DependencyParserBudget,
+) -> DependencyParseReport {
+    let (findings, budget_note) = truncate_findings(report.findings, budget.max_findings_per_file);
+    report.findings = findings;
+    if let Some(note) = budget_note {
+        report.diagnostics.push(note);
+        report.status = ParseStatus::Partial;
+    }
+    if report.diagnostics.len() > budget.max_diagnostics {
+        report.diagnostics.truncate(budget.max_diagnostics);
+        report.status = ParseStatus::Partial;
+    }
+    for diagnostic in &mut report.diagnostics {
+        if diagnostic.message.chars().count() > budget.max_diagnostic_chars {
+            let truncated: String = diagnostic
+                .message
+                .chars()
+                .take(budget.max_diagnostic_chars)
+                .collect();
+            diagnostic.message = truncated;
+        }
+        if let Some(line) = diagnostic.line {
+            if line == 0 {
+                diagnostic.line = None;
+            }
+        }
+    }
+    report
+}

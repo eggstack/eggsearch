@@ -821,3 +821,79 @@ fn security_remediation_serde_roundtrip() {
     assert_eq!(parsed.fixed_versions, vec!["3.0.0"]);
     assert_eq!(parsed.confidence, EvidenceConfidence::Exact);
 }
+
+// ===========================================================================
+// M007. Multi-file evidence collection: weak evidence cannot create false
+// safe verdicts, one malformed file cannot erase valid findings, and
+// truncation is visible as partial evidence rather than absence.
+// ===========================================================================
+
+#[test]
+fn mixed_evidence_collection_preserves_valid_findings() {
+    use eggsearch::core::security_applicability::DependencyParserBudget;
+    use eggsearch::meta::advisory_range::assemble_dependency_evidence;
+
+    let entries = vec![
+        (
+            "Cargo.lock".to_string(),
+            "[[package]]\nname = \"serde\"\nversion = \"1.0.193\"\n".to_string(),
+        ),
+        (
+            "packages.lock.json".to_string(),
+            "{invalid json".to_string(),
+        ),
+        ("requirements.txt".to_string(), "flask==2.3.2\n".to_string()),
+    ];
+    let (findings, warnings) =
+        assemble_dependency_evidence(entries, DependencyParserBudget::standard());
+    let serde = findings
+        .iter()
+        .find(|f| f.package == "serde")
+        .expect("valid lock findings must survive a malformed sibling file");
+    assert_eq!(serde.exact_version(), Some("1.0.193"));
+    for finding in &findings {
+        if !finding.has_resolved_evidence() {
+            assert!(
+                finding.exact_version().is_none(),
+                "weak evidence for {} must never expose an exact version",
+                finding.package
+            );
+        }
+    }
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.message.starts_with("dependency_parse_malformed: ")),
+        "malformed sibling must surface a stable-code warning"
+    );
+}
+
+#[test]
+fn aggregate_truncation_is_visible_partial_evidence() {
+    use eggsearch::core::security_applicability::{DependencyParserBudget, ParseStatus};
+    use eggsearch::meta::advisory_range::assemble_dependency_evidence;
+    use eggsearch::meta::dependency_parse::parse_dependency_file_report;
+
+    let budget = DependencyParserBudget {
+        max_findings_per_request: 1,
+        ..DependencyParserBudget::standard()
+    };
+    let entries = vec![
+        (
+            "Cargo.lock".to_string(),
+            "[[package]]\nname = \"a\"\nversion = \"1.0\"\n\n[[package]]\nname = \"b\"\nversion = \"2.0\"\n"
+                .to_string(),
+        ),
+    ];
+    let direct = parse_dependency_file_report("Cargo.lock", &entries[0].1);
+    assert_eq!(direct.status, ParseStatus::Complete);
+    assert_eq!(direct.findings.len(), 2);
+    let (findings, warnings) = assemble_dependency_evidence(entries, budget);
+    assert_eq!(findings.len(), 1);
+    assert!(
+        warnings.iter().any(|w| w
+            .message
+            .starts_with("dependency_finding_budget_exceeded: ")),
+        "truncation must be machine-readable, never silent absence"
+    );
+}

@@ -1,0 +1,4 @@
+# MINIMIZED TEST FIXTURE MODELED FROM REAL go.sum OUTPUT.
+github.com/gin-gonic/gin v1.9.0 h1:87MgK+G0Zv0tf7HuSiDvikZa68pQ5ZURA2uD74Jw5Bzdo=
+github.com/gin-gonic/gin v1.9.0/go.mod h1:Kl7YgYB7xS22xQZzLoaQ0V2n+OUoZKBK8v3dRzC4s=
+golang.org/x/crypto v0.1.0 h1:eXTl8ywEViSfv1mHDo3vZ4q01V6kGBx0nFziC9fA9g=

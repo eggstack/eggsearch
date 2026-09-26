@@ -22,6 +22,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling |
+| `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
 | `evidence_contract` | `mock` (mostly) | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
 | `config_validation` | None | Config rules and validation |
@@ -41,7 +42,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 
 Placement authority is the table in `architecture/testing.md`.
 
-## Property Tests (16 suites)
+## Property Tests (17 suites)
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
@@ -61,6 +62,7 @@ Placement authority is the table in `architecture/testing.md`.
 | `property_forge_url` | None | 17 | Forge URL validation, credential rejection, loopback, private ranges |
 | `property_conflict` | None | 24 | Conflict detection, entity scoping, source attribution |
 | `property_retrieval` | None | 44 | Retrieval attempt ledger, absence kinds, truncation evidence |
+| `property_dependency_parse` | None | 8 | Dispatch determinism, per-file budgets, identity/provenance invariants, line bounds, canonicalization |
 
 ## Fault Injection & Adversarial
 

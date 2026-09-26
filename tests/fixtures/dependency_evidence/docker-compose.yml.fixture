@@ -1,0 +1,5 @@
+services:
+  web:
+    image: "registry.example:5000/web:2.0@sha256:def456"
+  db:
+    image: postgres:15-alpine

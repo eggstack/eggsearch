@@ -168,3 +168,10 @@ path = "fuzz_targets/research_role_mapping.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dependency_parse"
+path = "fuzz_targets/dependency_parse.rs"
+test = false
+doc = false
+bench = false

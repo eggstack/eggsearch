@@ -1,0 +1,9 @@
+# MINIMIZED TEST FIXTURE MODELED FROM REAL uv.lock OUTPUT.
+[[package]]
+name = "requests"
+version = "2.28.0"
+
+[[package]]
+name = "git-pkg"
+version = "1.2.0"
+source = { git = "https://example.com/git-pkg.git", rev = "v1.2.0" }

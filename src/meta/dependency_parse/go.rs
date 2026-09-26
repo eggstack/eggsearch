@@ -117,11 +117,21 @@ pub(crate) fn parse_go_sum(content: &str, path: &str) -> Vec<DependencyFinding> 
 
     for line in content.lines() {
         line_num += 1;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 {
             let module = parts[0];
             let version = parts[1];
+            if module.is_empty() || version.is_empty() {
+                continue;
+            }
             let clean_version = version.split('/').next().unwrap_or(version);
+            if clean_version.is_empty() {
+                continue;
+            }
             let key = (module.to_string(), clean_version.to_string());
             if seen.insert(key) {
                 findings.push(DependencyFinding {
@@ -134,7 +144,10 @@ pub(crate) fn parse_go_sum(content: &str, path: &str) -> Vec<DependencyFinding> 
                     reference_value: None,
                     provenance: Some("go.sum checksum history".to_string()),
                     target_context: None,
-                    integrity_hash: Some(parts.get(2).unwrap_or(&"").to_string()),
+                    integrity_hash: parts
+                        .get(2)
+                        .filter(|hash| !hash.is_empty())
+                        .map(|hash| hash.to_string()),
                     source_file: Some(path.to_string()),
                     source_line: Some(line_num),
                     source_kind: DependencySource::LockFile,

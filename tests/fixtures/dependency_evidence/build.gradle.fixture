@@ -1,0 +1,8 @@
+// MINIMIZED TEST FIXTURE MODELED FROM REAL build.gradle FILES.
+dependencies {
+    implementation 'org.springframework:spring-core:5.3.23'
+    implementation("com.google.guava:guava:31.1-jre")
+    testImplementation 'junit:junit:4.13.2'
+    api 'io.projectreactor:reactor-core:${reactorVersion}'
+    implementation platform('org.springframework.boot:spring-boot-dependencies:3.1.0')
+}

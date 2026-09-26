@@ -1,0 +1,26 @@
+lockfileVersion: 9.0
+
+settings:
+  auto-install-peers: true
+
+packages:
+
+  lodash@4.17.21:
+    resolution: {integrity: sha512-x}
+
+  '@babel/core@7.20.12':
+    resolution: {integrity: sha512-y}
+
+snapshots:
+
+  lodash@4.17.21:
+    dependencies:
+      foo: 1.0.0
+
+importers:
+
+  .:
+    dependencies:
+      lodash:
+        specifier: ^4.17.21
+        version: 4.17.21

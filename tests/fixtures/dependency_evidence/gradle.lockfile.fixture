@@ -1,0 +1,4 @@
+# MINIMIZED TEST FIXTURE MODELED FROM REAL gradle.lockfile OUTPUT.
+# This is a Gradle lockfile. Do not edit.
+org.springframework:spring-core:5.3.23=compileClasspath,runtimeClasspath
+com.google.guava:guava:31.1-jre=runtimeClasspath

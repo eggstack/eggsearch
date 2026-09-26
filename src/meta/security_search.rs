@@ -881,23 +881,27 @@ pub async fn run_security_search_plan(
     let mut dependency_findings = Vec::new();
 
     if req.assess_applicability == Some(true) {
-        use crate::core::security_applicability::packages_match;
+        use crate::core::security_applicability::DependencyParserBudget;
         use crate::meta::advisory_range::{
-            assess_version_applicability, extract_advisory_ranges, primary_advisory_id,
+            assemble_dependency_evidence, assess_version_applicability, build_finding_index,
+            cap_file_list, extract_advisory_ranges, matching_positions, primary_advisory_id,
             request_version_assessment, resolved_finding_assessment, weak_evidence_assessment,
+            weak_evidence_summary,
         };
-        use crate::meta::dependency_parse::parse_dependency_file;
 
-        // Track (advisory_id, package, version) to deduplicate assessments
+        let budget = DependencyParserBudget::standard();
         let mut seen_assessments: std::collections::HashSet<(String, String, String)> =
             std::collections::HashSet::new();
 
-        for file_path in &req.dependency_files {
+        let mut entries = Vec::new();
+        let (selected_files, file_budget_note) =
+            cap_file_list(&req.dependency_files, budget.max_files_per_request);
+        if let Some(note) = file_budget_note {
+            warnings.push(note);
+        }
+        for file_path in selected_files {
             match read_bounded_file(file_path, &dependency_file_roots) {
-                Ok(content) => {
-                    let findings = parse_dependency_file(file_path, &content);
-                    dependency_findings.extend(findings);
-                }
+                Ok(content) => entries.push((file_path.clone(), content)),
                 Err(_) => {
                     warnings.push(SearchWarning::new(
                         "_system",
@@ -906,6 +910,10 @@ pub async fn run_security_search_plan(
                 }
             }
         }
+        let (collected, mut evidence_warnings) = assemble_dependency_evidence(entries, budget);
+        warnings.append(&mut evidence_warnings);
+        dependency_findings.extend(collected);
+        let finding_index = build_finding_index(&dependency_findings);
 
         let target_version = resolved_ids.version.as_deref();
         let target_package = resolved_ids.package.as_deref();
@@ -913,6 +921,11 @@ pub async fn run_security_search_plan(
 
         for vuln in &vulnerabilities {
             let ranges = extract_advisory_ranges(vuln);
+            let evidence_urls = vuln
+                .references
+                .iter()
+                .map(|r| r.url.clone())
+                .collect::<Vec<_>>();
 
             if let (Some(pkg), Some(ver)) = (target_package, target_version) {
                 let vuln_pkg = vuln.package.as_deref().unwrap_or("");
@@ -938,11 +951,6 @@ pub async fn run_security_search_plan(
                         .as_deref()
                         .and_then(crate::core::package::PackageEcosystem::parse)
                         .unwrap_or(crate::core::package::PackageEcosystem::CratesIo);
-                    let evidence_urls = vuln
-                        .references
-                        .iter()
-                        .map(|r| r.url.clone())
-                        .collect::<Vec<_>>();
                     let assessment = request_version_assessment(
                         pkg,
                         ver,
@@ -950,7 +958,7 @@ pub async fn run_security_search_plan(
                         advisory_id.clone(),
                         &outcome,
                         ranges.len(),
-                        evidence_urls,
+                        evidence_urls.clone(),
                     );
                     let key = (advisory_id, pkg.to_string(), ver.to_string());
                     if seen_assessments.insert(key) {
@@ -959,44 +967,48 @@ pub async fn run_security_search_plan(
                 }
             }
 
-            for finding in &dependency_findings {
-                let vuln_pkg = vuln.package.as_deref().unwrap_or("");
-                let vuln_eco = vuln.ecosystem.as_deref().unwrap_or("");
-
-                if packages_match(&finding.ecosystem, &finding.package, vuln_pkg)
-                    && finding.ecosystem.as_str().eq_ignore_ascii_case(vuln_eco)
-                {
-                    let advisory_id = primary_advisory_id(vuln);
-                    let evidence_urls = vuln
-                        .references
-                        .iter()
-                        .map(|r| r.url.clone())
-                        .collect::<Vec<_>>();
-                    if let Some(ver) = finding.exact_version() {
-                        let outcome =
-                            assess_version_applicability(ver, &ranges, &finding.ecosystem);
-                        let assessment = resolved_finding_assessment(
-                            finding,
-                            ver,
-                            advisory_id.clone(),
-                            &outcome,
-                            ranges.len(),
-                            evidence_urls,
-                        );
-                        let key = (advisory_id, finding.package.clone(), ver.to_string());
-                        if seen_assessments.insert(key) {
-                            applicability_assessments.push(assessment);
-                        }
-                    } else {
-                        let assessment =
-                            weak_evidence_assessment(finding, advisory_id.clone(), evidence_urls);
-                        let key = (advisory_id, finding.package.clone(), String::new());
-                        if seen_assessments.insert(key) {
-                            applicability_assessments.push(assessment);
-                        }
+            for position in matching_positions(vuln, &finding_index) {
+                let finding = &dependency_findings[position];
+                let advisory_id = primary_advisory_id(vuln);
+                if let Some(ver) = finding.exact_version() {
+                    let outcome = assess_version_applicability(ver, &ranges, &finding.ecosystem);
+                    let assessment = resolved_finding_assessment(
+                        finding,
+                        ver,
+                        advisory_id.clone(),
+                        &outcome,
+                        ranges.len(),
+                        evidence_urls.clone(),
+                    );
+                    let key = (advisory_id, finding.package.clone(), ver.to_string());
+                    if seen_assessments.insert(key) {
+                        applicability_assessments.push(assessment);
+                    }
+                } else {
+                    let assessment = weak_evidence_assessment(
+                        finding,
+                        advisory_id.clone(),
+                        evidence_urls.clone(),
+                    );
+                    let key = (advisory_id, finding.package.clone(), String::new());
+                    if seen_assessments.insert(key) {
+                        applicability_assessments.push(assessment);
                     }
                 }
             }
+        }
+
+        let weak_count = applicability_assessments
+            .iter()
+            .filter(|assessment| {
+                assessment
+                    .warnings
+                    .iter()
+                    .any(|warning| warning == "weak_evidence_ignored_for_exact_applicability")
+            })
+            .count();
+        if let Some(summary) = weak_evidence_summary(weak_count) {
+            warnings.push(summary);
         }
 
         if !applicability_assessments.is_empty() {

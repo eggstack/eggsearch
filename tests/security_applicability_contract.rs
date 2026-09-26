@@ -1352,3 +1352,182 @@ fn dispatch_handles_windows_paths_for_known_files() {
     assert_eq!(report.findings.len(), 1);
     assert_eq!(report.findings[0].exact_version(), Some("1.0.193"));
 }
+
+// ---------------------------------------------------------------------------
+// 13. M007 parser budgets and diagnostic warning codes
+// ---------------------------------------------------------------------------
+
+use eggsearch::core::security_applicability::{
+    truncate_aggregate, truncate_findings, truncate_report, DependencyParserBudget,
+};
+use eggsearch::core::warning::WarningCode;
+
+fn synthetic_finding(package: &str) -> DependencyFinding {
+    DependencyFinding {
+        ecosystem: PackageEcosystem::CratesIo,
+        package: package.to_string(),
+        version: Some("1.0.0".to_string()),
+        source_file: Some("Cargo.lock".to_string()),
+        source_line: None,
+        source_kind: DependencySource::LockFile,
+        confidence: Some(ApplicabilityConfidence::High),
+        relation: Some(DependencyRelation::Transitive),
+        resolved_version: Some("1.0.0".to_string()),
+        version_requirement: None,
+        reference_kind: None,
+        reference_value: None,
+        provenance: None,
+        target_context: None,
+        integrity_hash: None,
+    }
+}
+
+#[test]
+fn per_file_budget_boundaries() {
+    let budget = DependencyParserBudget::standard();
+    let below: Vec<DependencyFinding> = (0..budget.max_findings_per_file)
+        .map(|i| synthetic_finding(&format!("pkg-{i}")))
+        .collect();
+    let (kept, note) = truncate_findings(below, budget.max_findings_per_file);
+    assert_eq!(kept.len(), budget.max_findings_per_file);
+    assert!(note.is_none());
+
+    let above: Vec<DependencyFinding> = (0..budget.max_findings_per_file + 1)
+        .map(|i| synthetic_finding(&format!("pkg-{i}")))
+        .collect();
+    let (kept, note) = truncate_findings(above, budget.max_findings_per_file);
+    assert_eq!(kept.len(), budget.max_findings_per_file);
+    assert_eq!(kept[0].package, "pkg-0");
+    assert_eq!(
+        kept[budget.max_findings_per_file - 1].package,
+        format!("pkg-{}", budget.max_findings_per_file - 1)
+    );
+    let note = note.expect("above-limit input must produce a diagnostic");
+    assert_eq!(note.code, "dependency_finding_budget_exceeded");
+}
+
+#[test]
+fn aggregate_budget_boundaries() {
+    let budget = DependencyParserBudget::standard();
+    let exact: Vec<DependencyFinding> = (0..budget.max_findings_per_request)
+        .map(|i| synthetic_finding(&format!("pkg-{i}")))
+        .collect();
+    let (kept, note) = truncate_aggregate(exact, budget.max_findings_per_request);
+    assert_eq!(kept.len(), budget.max_findings_per_request);
+    assert!(note.is_none());
+
+    let over: Vec<DependencyFinding> = (0..budget.max_findings_per_request + 100)
+        .map(|i| synthetic_finding(&format!("pkg-{i}")))
+        .collect();
+    let (kept, note) = truncate_aggregate(over, budget.max_findings_per_request);
+    assert_eq!(kept.len(), budget.max_findings_per_request);
+    assert!(note.is_some());
+}
+
+#[test]
+fn file_list_budget_boundaries() {
+    use eggsearch::meta::advisory_range::cap_file_list;
+    let budget = DependencyParserBudget::standard();
+    let exact: Vec<String> = (0..budget.max_files_per_request)
+        .map(|i| format!("f{i}.lock"))
+        .collect();
+    let (kept, note) = cap_file_list(&exact, budget.max_files_per_request);
+    assert_eq!(kept.len(), budget.max_files_per_request);
+    assert!(note.is_none());
+
+    let mut over = exact.clone();
+    over.push("extra.lock".to_string());
+    let (kept, note) = cap_file_list(&over, budget.max_files_per_request);
+    assert_eq!(kept.len(), budget.max_files_per_request);
+    let note = note.expect("above-limit file list must warn");
+    assert!(note
+        .message
+        .starts_with("dependency_file_budget_exceeded: "));
+}
+
+#[test]
+fn diagnostic_count_and_length_are_bounded() {
+    let budget = DependencyParserBudget {
+        max_diagnostics: 2,
+        max_diagnostic_chars: 10,
+        ..DependencyParserBudget::standard()
+    };
+    let report = DependencyParseReport {
+        findings: Vec::new(),
+        status: ParseStatus::Complete,
+        diagnostics: vec![
+            eggsearch::core::security_applicability::ParseDiagnostic {
+                code: "dependency_parse_partial".to_string(),
+                message: "a very long diagnostic message exceeding the cap".to_string(),
+                line: None,
+            },
+            eggsearch::core::security_applicability::ParseDiagnostic {
+                code: "dependency_parse_partial".to_string(),
+                message: "second".to_string(),
+                line: None,
+            },
+            eggsearch::core::security_applicability::ParseDiagnostic {
+                code: "dependency_parse_partial".to_string(),
+                message: "third".to_string(),
+                line: None,
+            },
+        ],
+    };
+    let bounded = truncate_report(report, budget);
+    assert_eq!(bounded.diagnostics.len(), 2);
+    assert!(bounded.diagnostics[0].message.chars().count() <= 10);
+    assert_eq!(bounded.status, ParseStatus::Partial);
+}
+
+#[test]
+fn every_diagnostic_code_maps_to_a_stable_warning() {
+    use eggsearch::core::warning::convert_warnings;
+    use eggsearch::meta::advisory_range::{parse_diagnostic_warning, weak_evidence_summary};
+    let cases = [
+        (
+            "dependency_parse_malformed",
+            WarningCode::DependencyParseMalformed,
+        ),
+        (
+            "dependency_format_unsupported",
+            WarningCode::DependencyFormatUnsupported,
+        ),
+        (
+            "dependency_parse_partial",
+            WarningCode::DependencyParsePartial,
+        ),
+        (
+            "dependency_finding_budget_exceeded",
+            WarningCode::DependencyFindingBudgetExceeded,
+        ),
+    ];
+    for (code, expected) in cases {
+        let warning = parse_diagnostic_warning(
+            "Cargo.lock",
+            &eggsearch::core::security_applicability::ParseDiagnostic {
+                code: code.to_string(),
+                message: "detail".to_string(),
+                line: None,
+            },
+        );
+        let structured = convert_warnings(std::slice::from_ref(&warning));
+        assert_eq!(structured.len(), 1);
+        assert_eq!(structured[0].code, expected, "code: {code}");
+    }
+    let file_warning = eggsearch::core::result::SearchWarning::new(
+        "_system",
+        "dependency_file_budget_exceeded: kept 32 files",
+    );
+    let structured = convert_warnings(std::slice::from_ref(&file_warning));
+    assert_eq!(
+        structured[0].code,
+        WarningCode::DependencyFileBudgetExceeded
+    );
+    let summary = weak_evidence_summary(3).expect("nonzero weak count must warn");
+    let structured = convert_warnings(std::slice::from_ref(&summary));
+    assert_eq!(
+        structured[0].code,
+        WarningCode::WeakEvidenceIgnoredForExactApplicability
+    );
+    assert!(weak_evidence_summary(0).is_none());
+}

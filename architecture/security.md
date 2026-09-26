@@ -311,6 +311,43 @@ the commit reference, and empty versions never become exact findings.
 
 ---
 
+## Budgets, diagnostics, and evidence assembly
+
+A `DependencyParserBudget` (`core/security_applicability.rs`, owned by
+the applicability layer) bounds every pipeline stage: file-list length,
+files collected per root, aggregate bytes across a root, findings plus
+warnings per file, and aggregate findings. Every parser receives the
+per-file view and truncates before returning (`truncate_findings`
+emits a `DependencyFileBudgetExceeded` warning per cap hit); the
+collection seam (`cap_file_list`, `assemble_dependency_evidence` in
+`meta/advisory_range.rs`) enforces the per-root caps and emits
+`DependencyFileBudgetExceeded` once per breach. Caps compose (per-file
+wins) and fail safe: truncation shortens evidence, never changes a
+status or invents a finding.
+
+Collection stays bounded above the per-file view: at most five
+candidate lockfiles per root, deduped by content identity, with
+`unsupported`/`malformed` files attempted (so their diagnostics land
+as evidence) while empties and oversize files are skipped without
+warnings. File-skip warnings (`Unreadable`) and per-format parse
+warnings unify on `DependencyParseMalformed`, `DependencyFormatUnsupported`
+(partial counts as its own kind, never conflated), and
+`DependencyParsePartial`; `parse_diagnostic_warning()` maps report
+`diagnostics:warning_codes` strings (including legacy `kind_*` and
+`partial` prefixes) into these, so `ParseStatus` and warning codes
+are two views of one fact. Weak-evidence outcomes (`Unsupported`, and
+`Malformed` unless the advisory carries native version data) emit
+`WeakEvidenceIgnoredForExactApplicability`, documenting that only
+exact pinning drove applicability.
+
+Applicability matching runs over a per-file finding index
+(`build_finding_index`, matched position sets threading
+through the matcher loop) rather than a re-paired scan, so grouped
+advisories share one candidate ordering and per-advisory cost stays
+sublinear in findings.
+
+---
+
 ## Version Range and Comparison (`src/meta/version_compare.rs`)
 
 `compare_versions_for_ecosystem()` and `version_satisfies_range()` dispatch

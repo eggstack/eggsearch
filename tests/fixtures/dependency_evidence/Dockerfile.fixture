@@ -1,0 +1,4 @@
+FROM --platform=$BUILDPLATFORM rust:1.89 AS builder
+RUN make build
+FROM builder AS final
+FROM ubuntu@sha256:abc123def456

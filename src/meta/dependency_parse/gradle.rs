@@ -131,6 +131,18 @@ pub(crate) fn parse_build_gradle(content: &str, path: &str) -> Vec<DependencyFin
 
 fn gradle_coordinate(rest: &str) -> Option<String> {
     let rest = rest.trim();
+    for wrapper in ["platform(", "enforcedPlatform("] {
+        if let Some(after) = rest.strip_prefix(wrapper) {
+            let after = after.trim();
+            let quote = *after.as_bytes().first()?;
+            if quote != b'\'' && quote != b'"' {
+                return None;
+            }
+            let body = &after[1..];
+            let end = body.find(quote as char)?;
+            return Some(body[..end].trim().to_string());
+        }
+    }
     let inner = if (rest.starts_with('\'') || rest.starts_with('"')) && rest.len() >= 2 {
         let quote = rest.as_bytes()[0];
         let body = &rest[1..];

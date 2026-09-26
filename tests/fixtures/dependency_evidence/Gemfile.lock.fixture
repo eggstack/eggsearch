@@ -1,0 +1,28 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    rails (7.1.0)
+      activesupport (= 7.1.0)
+    activesupport (7.1.0)
+      base64
+      benchmark (>= 0.3)
+
+GIT
+  remote: https://example.com/foo.git
+  revision: abc123def456
+  branch: main
+  specs:
+    foo (0.2.0)
+
+PATH
+  remote: vendor/bar
+  specs:
+    bar (0.1.0)
+
+PLATFORMS
+  ruby
+  x86_64-linux
+
+DEPENDENCIES
+  rails
+  foo!

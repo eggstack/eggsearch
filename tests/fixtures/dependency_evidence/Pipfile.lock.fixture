@@ -1,0 +1,22 @@
+{
+    "_meta": {
+        "hash": {"sha256": "deadbeef"},
+        "requires": {"python_version": "3.10"}
+    },
+    "default": {
+        "requests": {
+            "hashes": ["sha256:abc"],
+            "version": "==2.28.0"
+        },
+        "git-pkg": {
+            "git": "https://example.com/git-pkg.git",
+            "ref": "v1.2.0"
+        }
+    },
+    "develop": {
+        "pytest": {
+            "hashes": ["sha256:def"],
+            "version": "==7.4.0"
+        }
+    }
+}

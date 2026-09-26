@@ -252,7 +252,10 @@ fn report_v1_dependencies(
                     });
                 }
             }
-            if depth < 64 {
+            if depth
+                < crate::core::security_applicability::DependencyParserBudget::standard()
+                    .max_nesting_depth
+            {
                 if let Some(nested) = entry.get("dependencies").and_then(|d| d.as_object()) {
                     stack.push((nested, depth + 1));
                 }

@@ -143,6 +143,18 @@ pub enum WarningCode {
     VersionMismatch,
     /// Could not read a dependency file.
     DependencyFileReadError,
+    /// A dependency file could not be parsed.
+    DependencyParseMalformed,
+    /// A dependency format or version is not supported.
+    DependencyFormatUnsupported,
+    /// A dependency file was only partially parsed.
+    DependencyParsePartial,
+    /// The dependency file count for one request was capped.
+    DependencyFileBudgetExceeded,
+    /// Dependency findings were truncated at a file or aggregate budget.
+    DependencyFindingBudgetExceeded,
+    /// Weak dependency evidence was ignored for exact applicability.
+    WeakEvidenceIgnoredForExactApplicability,
     /// Applicability assessment present (not exploitability determination).
     ApplicabilityNotExploitability,
     /// No advisories found for requested package/version.
@@ -248,6 +260,14 @@ impl WarningCode {
             Self::VersionMatchUnavailable => "version_match_unavailable",
             Self::VersionMismatch => "version_mismatch",
             Self::DependencyFileReadError => "dependency_file_read_error",
+            Self::DependencyParseMalformed => "dependency_parse_malformed",
+            Self::DependencyFormatUnsupported => "dependency_format_unsupported",
+            Self::DependencyParsePartial => "dependency_parse_partial",
+            Self::DependencyFileBudgetExceeded => "dependency_file_budget_exceeded",
+            Self::DependencyFindingBudgetExceeded => "dependency_finding_budget_exceeded",
+            Self::WeakEvidenceIgnoredForExactApplicability => {
+                "weak_evidence_ignored_for_exact_applicability"
+            }
             Self::ApplicabilityNotExploitability => "applicability_not_exploitability",
             Self::PackageSecurityNoAdvisories => "package_security_no_advisories",
             Self::PackageSecurityLookupFailed => "package_security_lookup_failed",
@@ -322,6 +342,12 @@ impl WarningCode {
             | Self::VersionMatchUnavailable
             | Self::VersionMismatch
             | Self::DependencyFileReadError
+            | Self::DependencyParseMalformed
+            | Self::DependencyFormatUnsupported
+            | Self::DependencyParsePartial
+            | Self::DependencyFileBudgetExceeded
+            | Self::DependencyFindingBudgetExceeded
+            | Self::WeakEvidenceIgnoredForExactApplicability
             | Self::PackageSecurityNoAdvisories
             | Self::PackageSecuritySkipped
             | Self::PackageResolutionFallback
@@ -470,6 +496,24 @@ impl WarningCode {
             }
             Self::UnknownWarning => {
                 Some("Unclassified warning; review the original message for details.")
+            }
+            Self::DependencyParseMalformed => {
+                Some("Dependency file could not be parsed; findings from it are absent.")
+            }
+            Self::DependencyFormatUnsupported => {
+                Some("Dependency format or version is unsupported; evidence is absent, not negative.")
+            }
+            Self::DependencyParsePartial => {
+                Some("Dependency parse is partial; treat absence as unknown, not safe.")
+            }
+            Self::DependencyFileBudgetExceeded => {
+                Some("Dependency file count was capped; later files were not read.")
+            }
+            Self::DependencyFindingBudgetExceeded => {
+                Some("Dependency findings were truncated in stable order; absence is not proof.")
+            }
+            Self::WeakEvidenceIgnoredForExactApplicability => {
+                Some("Weak dependency evidence cannot support exact applicability claims.")
             }
             _ => None,
         }
@@ -774,6 +818,30 @@ const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
     (
         "dependency_file_read_error",
         WarningCode::DependencyFileReadError,
+    ),
+    (
+        "dependency_parse_malformed",
+        WarningCode::DependencyParseMalformed,
+    ),
+    (
+        "dependency_format_unsupported",
+        WarningCode::DependencyFormatUnsupported,
+    ),
+    (
+        "dependency_parse_partial",
+        WarningCode::DependencyParsePartial,
+    ),
+    (
+        "dependency_file_budget_exceeded",
+        WarningCode::DependencyFileBudgetExceeded,
+    ),
+    (
+        "dependency_finding_budget_exceeded",
+        WarningCode::DependencyFindingBudgetExceeded,
+    ),
+    (
+        "weak_evidence_ignored_for_exact_applicability",
+        WarningCode::WeakEvidenceIgnoredForExactApplicability,
     ),
     (
         "applicability_not_exploitability",

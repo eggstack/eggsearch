@@ -43,6 +43,7 @@ fuzz-smoke:
 	cd fuzz && cargo fuzz run validate_url -- -max_total_time=60
 	cd fuzz && cargo fuzz run sanitize_pipeline -- -max_total_time=60
 	cd fuzz && cargo fuzz run bounded_response_reader -- -max_total_time=60
+	cd fuzz && cargo fuzz run dependency_parse -- -max_total_time=60
 
 live-smoke:
 	cargo test --features live-smoke --test corpus_runner -- --ignored

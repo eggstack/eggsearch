@@ -1,6 +1,6 @@
 # Testing
 
-**Location:** `tests/` (76 `*.rs` suites), `src/**/tests` (module unit tests), `benches/perf.rs`, `fuzz/fuzz_targets/` (22 targets)
+**Location:** `tests/` (78 `*.rs` suites), `src/**/tests` (module unit tests), `benches/perf.rs`, `fuzz/fuzz_targets/` (23 targets)
 **Purpose:** Behavioral contracts first, property tests for pure functions, fault injection for dispatch, corpus regression for multi-step workflows, fuzz for adversarial input, Criterion for characterization.
 
 Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in `skills/eggsearch-dev/SKILL.md` and the table below is the placement authority. This document explains how the layers fit together and which commands are canonical.
@@ -16,7 +16,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
-| `tests/property_*.rs` (16 suites) | Pure-function `proptest` coverage |
+| `tests/property_*.rs` (17 suites) | Pure-function `proptest` coverage |
 | `tests/dispatch_fault_injection.rs` | Provider failure/timeout/concurrency/panic |
 | `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
@@ -145,6 +145,7 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored
 | `property_forge_url` | Forge URL builders and credential rejection |
 | `property_conflict` | Entity-scoped conflict detectors |
 | `property_retrieval` | Attempt ledger, absence kinds, truncation evidence |
+| `property_dependency_parse` | Dependency-parse dispatch determinism, per-file budgets, identity/provenance invariants, line bounds |
 
 Pattern: assert invariants (determinism, idempotency, bounds, non-panic on arbitrary input), not single examples.
 
@@ -182,15 +183,15 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 
 ## Fuzz harnesses
 
-22 `cargo-fuzz` + `libfuzzer` targets are registered as `[[bin]]` entries in `fuzz/Cargo.toml` (the source of truth), covering URL validation, redirect chains, content-type classification, HTML and byte-level extraction, mixed-UTF-8 handling, PDF extraction, the sanitize pipeline and its stages, chunk boundaries, document chunking, the production bounded chunk-append path, workflow parsing and resolution, absence classification, conflict detection, and retrieval bookkeeping. Fuzz-only dependencies never enter the runtime graph.
+23 `cargo-fuzz` + `libfuzzer` targets are registered as `[[bin]]` entries in `fuzz/Cargo.toml` (the source of truth), covering URL validation, redirect chains, content-type classification, HTML and byte-level extraction, mixed-UTF-8 handling, PDF extraction, the sanitize pipeline and its stages, chunk boundaries, document chunking, the production bounded chunk-append path, workflow parsing and resolution, absence classification, conflict detection, retrieval bookkeeping, and typed dependency-evidence parsing. Fuzz-only dependencies never enter the runtime graph.
 
-Smoke-run the three key targets with:
+Smoke-run the four key targets with:
 
 ```bash
 make fuzz-smoke
 ```
 
-which runs `validate_url`, `sanitize_pipeline`, and `bounded_response_reader` for 60 seconds each. Longer campaigns use `cargo +nightly fuzz run <target> -- -max_total_time=300`. Seed corpora stay minimal (a handful of distinct-path inputs per target, no network-derived seeds, 8 KB per file) and crash artifacts are promoted into deterministic regression tests (property file, adversarial JSON entry, or behavioral suite) rather than re-fuzzed blindly. Full harness design, seed rules, and the crash promotion process live in `architecture/hardening.md`.
+which runs `validate_url`, `sanitize_pipeline`, `bounded_response_reader`, and `dependency_parse` for 60 seconds each. Longer campaigns use `cargo +nightly fuzz run <target> -- -max_total_time=300`. Seed corpora stay minimal (a handful of distinct-path inputs per target, no network-derived seeds, 8 KB per file) and crash artifacts are promoted into deterministic regression tests (property file, adversarial JSON entry, or behavioral suite) rather than re-fuzzed blindly. Full harness design, seed rules, and the crash promotion process live in `architecture/hardening.md`.
 
 ---
 

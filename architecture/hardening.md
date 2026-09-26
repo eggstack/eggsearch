@@ -145,7 +145,7 @@ Permits are `OwnedSemaphorePermit`s scoped to the fetch; success resets the fail
 
 ## Property, adversarial, and fault-injection strategy
 
-- **Property (`tests/property_*.rs`, 16 suites):** invariant assertions over arbitrary input — determinism, idempotency (`strip_control_chars`, `canonicalize_url`), bound respect, UTF-8 safety, offset validity, merge commutativity/associativity (`TrustMarkers`), root containment, ledger validity, and never-panic renderers. Each file names its module under test so the invariant stays beside the code it pins.
+- **Property (`tests/property_*.rs`, 17 suites):** invariant assertions over arbitrary input — determinism, idempotency (`strip_control_chars`, `canonicalize_url`), bound respect, UTF-8 safety, offset validity, merge commutativity/associativity (`TrustMarkers`), root containment, ledger validity, dependency-parse dispatch determinism and per-file budgets, and never-panic renderers. Each file names its module under test so the invariant stays beside the code it pins.
 - **Adversarial (`tests/corpus/adversarial/`, 9 files, ~270 cases):** hand-built edge corpora. `adversarial_corpus.rs` asserts structural validity; behavioral suites assert handling.
 - **Fault injection (`tests/dispatch_fault_injection.rs`):** provider success/partial/total failure, timeouts, hangs, concurrency saturation, panic containment, health and cooldown transitions, deterministic ordering, exact partial-result telemetry. Requires the `mock` feature.
 - **Probe conformance (`tests/provider_probe_conformance.rs`):** the shared probe service under the same failure taxonomy plus explicit-request-after-degraded semantics and descriptor source-of-truth for native versus local domain filtering.
@@ -187,12 +187,13 @@ Promote real incidents into the cheapest layer that captures them: pure-function
 | `property_forge_url` | `core/repo_fetch.rs` | Generated URLs parse and round-trip owner/repo/ref/path, slash-refs and SHAs encode, browser versus raw forms stay on expected hosts |
 | `property_conflict` | `core/conflict.rs` | Version-range, date, benchmark, mutable-versus-pinned, and metadata conflicts fire only on comparable values, entity keys scope comparison, output deterministic under permutation |
 | `property_retrieval` | `core/retrieval_status.rs`, `core/workflow_coverage.rs` | Ledger accepts well-formed and rejects violations, absence classification separates no-evidence from failure, coverage maps roles and failures deterministically |
+| `property_dependency_parse` | `meta/dependency_parse/` | Dispatch deterministic across ecosystems, per-file budgets constant per input, identity/provenance semantics stable, source lines bounded, URL/canonical forms equivalent |
 
 Dispatch fault injection (`tests/dispatch_fault_injection.rs`, requires `mock`) covers the adapter layer the property suites cannot reach: all-succeed, partial-failure, all-fail, timeout-without-blocking, dedup, completion-order independence, hang cancellation, mixed scenarios, `max_results` respect, engine selection, health transitions and cooldowns, concurrency saturation, malformed-metadata tolerance, global deadlines, exact telemetry, counter release on panic, and cross-run determinism.
 
 ## Fuzz-target design
 
-22 `cargo-fuzz`/`libfuzzer` targets in `fuzz/fuzz_targets/`, registered in `fuzz/Cargo.toml`. Each target is a thin loop over one parsing or bounding boundary asserting the production invariant:
+23 `cargo-fuzz`/`libfuzzer` targets in `fuzz/fuzz_targets/`, registered in `fuzz/Cargo.toml`. Each target is a thin loop over one parsing or bounding boundary asserting the production invariant:
 
 | Group | Targets | Invariant |
 |-------|---------|-----------|
@@ -203,6 +204,7 @@ Dispatch fault injection (`tests/dispatch_fault_injection.rs`, requires `mock`) 
 | Bounding | `bounded_response_reader`, `chunk_boundary`, `build_document_chunks` | Byte caps hold across chunked accumulation; chunk IDs stay unique and contiguous |
 | Workflow and retrieval | `workflow_kind_parse`, `workflow_resolution`, `research_role_mapping`, `classify_absence`, `detect_entity_scoped_conflicts`, `retrieval_failure_expansion`, `attempt_summary_generation` | Parsers total, roles resolve, absence versus failure stays distinguished, ledger summaries validate |
 | Identity | `canonicalize_url` | Canonicalization via `source_id` never panics and stays idempotent |
+| Dependency evidence | `dependency_parse` | Arbitrary lockfile bytes across every ecosystem never panic; per-file budgets, line bounds, and canonicalization hold |
 
 Representative shapes:
 
@@ -221,7 +223,7 @@ fuzz_target!(|data: &str| {
 });
 ```
 
-The bounded-reader target feeds arbitrary bytes as a chunk stream through the production `push_bounded_chunk()` and asserts the cap holds after every append. Smoke coverage is `make fuzz-smoke` (60 s each on `validate_url`, `sanitize_pipeline`, `bounded_response_reader`); full campaigns extend the timer.
+The bounded-reader target feeds arbitrary bytes as a chunk stream through the production `push_bounded_chunk()` and asserts the cap holds after every append. The dependency-parse target routes arbitrary bytes plus a random ecosystem discriminant through `parse_dependency_file` and asserts determinism, per-file budgets, identity/provenance stability, and line bounds. Smoke coverage is `make fuzz-smoke` (60 s each on `validate_url`, `sanitize_pipeline`, `bounded_response_reader`, `dependency_parse`); full campaigns extend the timer.
 
 ### Seed corpus rules
 

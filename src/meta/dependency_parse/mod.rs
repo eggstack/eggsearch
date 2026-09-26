@@ -27,7 +27,7 @@ pub(crate) mod yarn_berry;
 pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyParseReport {
     let filename = dispatch_basename(path);
 
-    match filename {
+    let report = match filename {
         "Cargo.lock" => DependencyParseReport::complete(cargo::parse_cargo_lock(content, path)),
         "Cargo.toml" => DependencyParseReport::complete(cargo::parse_cargo_toml(content, path)),
         "package-lock.json" => npm::parse_package_lock(content, path),
@@ -71,6 +71,21 @@ pub fn parse_dependency_file_report(path: &str, content: &str) -> DependencyPars
         _ => DependencyParseReport::unsupported(format!(
             "unrecognized dependency filename for '{filename}'"
         )),
+    };
+    let budget = crate::core::security_applicability::DependencyParserBudget::standard();
+    let mut report = crate::core::security_applicability::truncate_report(report, budget);
+    clamp_source_lines(&mut report, content);
+    report
+}
+
+fn clamp_source_lines(report: &mut DependencyParseReport, content: &str) {
+    let line_count = content.lines().count().max(1) as u32;
+    for finding in &mut report.findings {
+        if let Some(line) = finding.source_line {
+            if line < 1 || line > line_count {
+                finding.source_line = Some(line_count);
+            }
+        }
     }
 }
 

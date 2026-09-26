@@ -67,7 +67,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 
-This table is representative, not exhaustive — 76 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 78 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -157,4 +157,4 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 
 ## Fuzz Targets
 
-22 fuzz targets live under `fuzz/fuzz_targets` and are registered in `fuzz/Cargo.toml`. Smoke-run three key targets with `make fuzz-smoke`.
+23 fuzz targets live under `fuzz/fuzz_targets` and are registered in `fuzz/Cargo.toml`. Smoke-run four key targets with `make fuzz-smoke`.

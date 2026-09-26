@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="NUnit">
+      <Version>3.13.3</Version>
+    </PackageReference>
+    <PackageReference
+      Include="WindowsOnly"
+      Version="1.0.0"
+      Condition="'$(OS)' == 'Windows'" />
+  </ItemGroup>
+</Project>
