@@ -37,7 +37,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Performance optimization and footprint | closed | `plans/subsystems/performance-optimization-roadmap.md` | M001-M005 closed | None. Corrective candidate `0af540b8`; qualify `35542118569`. |
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
 | MCP tool-surface consolidation | active | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M005 implementation landed, closure records pending; M006 ready | M001-M005 landed in HEAD (contract, schema slimming, 2026 protocol/errors, projection, CodeGG disclosure); M006 evaluation baseline now exists. |
-| Dependency evidence hardening | active | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M001-M006 closed; M007 ready | ADR-0004 accepted. Format milestones complete; aggregate qualification gate open. |
+| Dependency evidence hardening | active | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M001-M007 closed; implementation complete | ADR-0004 accepted. Format milestones complete; aggregate qualification closed. |
 
 ## Dependency-ready implementation plans
 
@@ -88,7 +88,7 @@ Dependency evidence hardening has intentionally gated follow-on work:
 | M004 Ruby/Composer provenance | closed | M001-M006 closed | `plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md` |
 | M005 JavaScript lockfiles | closed | M001-M006 closed | `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md` |
 | M006 Actions/OCI references | closed | M001-M006 closed | `plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md` |
-| M007 budgets/diagnostics/qualification | ready | none (M001-M006 closed) | `plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md` |
+| M007 budgets/diagnostics/qualification | closed | none | `plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md` |
 
 ## Closure work and current control points
 

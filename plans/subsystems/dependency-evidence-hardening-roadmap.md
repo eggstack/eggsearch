@@ -429,4 +429,4 @@ security applicability consumer can no longer overstate dependency evidence.
 | M004 Ruby/Composer provenance | closed | Closure `plans/closure/dependency-evidence-hardening/004-status.md` at `fff47bf` |
 | M005 JavaScript lockfiles | closed | Closure `plans/closure/dependency-evidence-hardening/005-status.md` at `be389a0` |
 | M006 Actions/OCI refs | closed | Closure `plans/closure/dependency-evidence-hardening/006-status.md` at `f0eb6a1` |
-| M007 budgets/qualification | ready | M001-M006 closed |
+| M007 budgets/qualification | closed | Closure `plans/closure/dependency-evidence-hardening/007-status.md` at `18b4c03` |
