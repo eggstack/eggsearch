@@ -106,6 +106,8 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/security_search.rs` | 2,300 | 88,000 | Security orchestration with native advisory + applicability pipeline |
 | `src/meta/suggested_fetches.rs` | 1,600 | 81,920 | Ordinary-file ceiling |
 | `src/meta/provider_diagnostics.rs` | 2,200 | 81,920 | Provider health + routing; capability-skip semantics locked by dispatch guards |
+| `src/meta/research_workflow.rs` | 1,900 | 81,920 | Research multi-source orchestration; typed workflow preserved, do not flatten into generic workflow |
+| `src/meta/adapter/tests.rs` | 2,700 | 100,000 | Adapter behavioral fixtures only; production modules stay under ordinary ceilings |
 
 ---
 

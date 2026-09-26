@@ -697,6 +697,8 @@ fn orchestration_module_size_ratchet() {
         ("src/meta/security_search.rs", 2300, 88_000),
         ("src/meta/suggested_fetches.rs", 1600, 81_920),
         ("src/meta/provider_diagnostics.rs", 2200, 81_920),
+        ("src/meta/research_workflow.rs", 1900, 81_920),
+        ("src/meta/adapter/tests.rs", 2700, 100_000),
     ];
     for (path, max_lines, max_bytes) in ceilings {
         let content = read_source(path);
