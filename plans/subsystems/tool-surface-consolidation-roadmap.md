@@ -177,4 +177,4 @@ backward compatibility, and passing routine gates.
 | M004 | closing | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | — | Implementation landed; closure record pending |
 | M005 | closing | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | — | Implementation landed; closure record pending |
 | M006 | closed | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | `plans/closure/mcp-tool-surface-consolidation/006-status.md` | None |
-| M007 | ready | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | — | M001 |
+| M007 | closed | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | `plans/closure/mcp-tool-surface-consolidation/007-status.md` | None |

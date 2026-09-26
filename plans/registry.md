@@ -36,7 +36,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | HTTP transport consolidation | closed | `plans/subsystems/transport-consolidation-roadmap.md` | M001-M003 closed | None. `eggfetch-core 0.2.0` at `bac6f49f`; qualify `35692096012`. |
 | Performance optimization and footprint | closed | `plans/subsystems/performance-optimization-roadmap.md` | M001-M005 closed | None. Corrective candidate `0af540b8`; qualify `35542118569`. |
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
-| MCP tool-surface consolidation | active | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M005 implementation landed, closure records pending; M006 closed, M007 ready | M001-M005 landed in HEAD (contract, schema slimming, 2026 protocol/errors, projection, CodeGG disclosure); M006 closed at `plans/closure/mcp-tool-surface-consolidation/006-status.md`. |
+| MCP tool-surface consolidation | active | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M005 implementation landed, closure records pending; M006 closed, M007 closed | M001-M005 landed in HEAD; M006 closed at `plans/closure/mcp-tool-surface-consolidation/006-status.md`, M007 closed at `plans/closure/mcp-tool-surface-consolidation/007-status.md`. Remaining work is M001-M005 closure records. |
 | Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
 
 ## Dependency-ready implementation plans
@@ -49,7 +49,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Tool-surface consolidation | M004 result projection and context budget | closing | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | Implementation landed; closure record pending. |
 | Tool-surface consolidation | M005 CodeGG progressive-disclosure integration | closing | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | Implementation landed; closure record pending. |
 | Tool-surface consolidation | M006 agentic evaluation | closed | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | Closed with `plans/closure/mcp-tool-surface-consolidation/006-status.md`; candidate `fbf8457`. |
-| Tool-surface consolidation | M007 maintenance decomposition and overlap ratchet | ready | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | Requires M001. |
+| Tool-surface consolidation | M007 maintenance decomposition and overlap ratchet | closed | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | Closed with `plans/closure/mcp-tool-surface-consolidation/007-status.md`; candidate `85a44b7`. |
 | Dependency evidence hardening | M001 typed evidence and applicability trust boundary | closed | `plans/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md` | Closed at `bce32e7`; closure `plans/closure/dependency-evidence-hardening/001-status.md`. |
 | Dependency evidence hardening | M002 Cargo/Go/Python + dispatch | closed | `plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md` | Closed at `e1464f6`; closure `plans/closure/dependency-evidence-hardening/002-status.md`. |
 | Dependency evidence hardening | M003 .NET/JVM structured correctness | closed | `plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md` | Closed at `0d934f5`; closure `plans/closure/dependency-evidence-hardening/003-status.md`. |
@@ -70,10 +70,10 @@ Corrective closure sequence: `plans/implementation/dependency-evidence-hardening
 
 ## Current execution order and dependency gates
 
-**Tool-surface gate:** M001-M005 implementation has landed; what remains
-is closure records plus M006 evaluation and M007 decomposition. Do not run
-evaluation against pre-consolidation bytes and present it as consolidation
-evidence.
+**Tool-surface gate:** M001-M005 implementation has landed; M006
+evaluation and M007 decomposition are closed. What remains is M001-M005
+closure records. Do not run evaluation against pre-consolidation bytes
+and present it as consolidation evidence.
 
 **Closed-workstream gate:** phases 1-28 (now `plans/archive/phase-*.md`) are
 closed historical evidence. Their closure records live in `plans/closure/`
@@ -82,7 +82,9 @@ under the owning subsystem roadmap instead.
 
 ## Blocked work
 
-Tool-surface M006 is unblocked by the M001-M005 implementation landing.
+Tool-surface M006 and M007 are closed; no tool-surface blocker remains.
+M001-M005 closure records are pending but unblocked (implementation
+landed, no technical dependency).
 
 Dependency evidence M001-M010 are closed; no dependency blocker remains.
 
