@@ -1,6 +1,6 @@
 # Tool Surface Consolidation Roadmap
 
-Status: active
+Status: closed
 
 Long-term references:
 
@@ -171,10 +171,10 @@ backward compatibility, and passing routine gates.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 | closing | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | — | Implementation landed; closure record pending |
-| M002 | closing | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | — | Implementation landed; closure record pending |
-| M003 | closing | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | — | Implementation landed; closure record pending |
-| M004 | closing | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | — | Implementation landed; closure record pending |
-| M005 | closing | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | — | Implementation landed; closure record pending |
+| M001 | closed | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | `plans/closure/mcp-tool-surface-consolidation/001-status.md` | None |
+| M002 | closed | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | `plans/closure/mcp-tool-surface-consolidation/002-status.md` | None |
+| M003 | closed | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | `plans/closure/mcp-tool-surface-consolidation/003-status.md` | None |
+| M004 | closed | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | `plans/closure/mcp-tool-surface-consolidation/004-status.md` | None |
+| M005 | closed | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | `plans/closure/mcp-tool-surface-consolidation/005-status.md` | None (eggsearch-side contract; CodeGG downstream tracked as handoff) |
 | M006 | closed | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | `plans/closure/mcp-tool-surface-consolidation/006-status.md` | None |
 | M007 | closed | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | `plans/closure/mcp-tool-surface-consolidation/007-status.md` | None |
