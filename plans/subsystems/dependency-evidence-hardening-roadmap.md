@@ -1,6 +1,6 @@
 # Dependency Evidence Hardening Roadmap
 
-Status: closed
+Status: active — M010 corrective follow-up
 
 Long-term references:
 
@@ -489,3 +489,36 @@ roadmap/registry both closed against the same corrected candidate.
 |---|---|---|
 | M008 provenance/identity/parse-status corrective | closed | Closure `plans/closure/dependency-evidence-hardening/008-status.md`; implementation `3fd3076` |
 | M009 final closure reconciliation | closed | Terminal closure `plans/closure/dependency-evidence-hardening/009-status.md`; candidate `12d8f9b`, CI `36217887427` |
+
+
+## 16. Post-closure request identity corrective
+
+A post-M009 audit of `deb345b5b15f09043d3f3b6bf722e7b5ba72e363` found one
+narrow applicability inconsistency outside the dependency-finding path:
+caller-supplied `package + version` still matches advisory package strings
+with `eq_ignore_ascii_case()` and can default an unmapped advisory ecosystem
+to crates.io. M008's dependency-finding index already uses the accepted
+ecosystem-specific identity matrix.
+
+Historical M001-M009 closure evidence remains unchanged. This finding is
+registered as a new corrective milestone.
+
+### M010 — Explicit request ecosystem identity consistency
+
+Class: invariant + corrective capability.
+
+Plan:
+`plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md`.
+
+Objective: make request-field and dependency-file applicability use one
+`PackageEcosystem` identity contract and remove implicit crates.io fallback
+semantics for unmapped advisory ecosystems.
+
+Dependency: M001-M009 closed.
+
+Status: ready.
+
+Exit: request-path regressions and canonical gates pass, hosted CI is green on
+the exact candidate, and
+`plans/closure/dependency-evidence-hardening/010-status.md` is accepted in
+the same commit that returns this roadmap and the registry to `closed`.

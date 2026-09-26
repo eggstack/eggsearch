@@ -128,3 +128,22 @@ accepted corrective evidence is `plans/closure/dependency-evidence-hardening/008
 Hosted CI run `36217887427` passed on exact closure candidate
 `12d8f9bf52217cef30e53006ee412dac25b79f03`. M009 then passed exact-candidate
 qualification and closed the subsystem in `plans/closure/dependency-evidence-hardening/009-status.md`.
+
+
+## Post-M009 M010 handoff
+
+The workstream was closed by M009, but a later audit found one request-field
+identity bypass. Before treating dependency-evidence applicability as terminal
+again:
+
+1. execute
+   `011-explicit-request-ecosystem-identity-consistency.md`;
+2. require direct-request regressions for Go, PyPI, NuGet, exact-identity
+   ecosystems, mismatched ecosystems, and unmapped advisory ecosystems;
+3. require `make check`, `make bench-check`, and hosted CI on the exact
+   closure candidate;
+4. write `closure/dependency-evidence-hardening/010-status.md` and return the
+   roadmap/registry to closed in that same closure commit.
+
+Do not reopen parser/provenance scope from M008 unless new evidence requires a
+separate corrective plan.

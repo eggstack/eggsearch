@@ -109,3 +109,20 @@ M008 implementation `3fd3076c4ad9680490b35a96759cab3f5022e6bc` is closed by
 `36217887427` passed on exact M008 closure candidate
 `12d8f9bf52217cef30e53006ee412dac25b79f03`. M009 qualification passed and
 the subsystem is closed by `plans/closure/dependency-evidence-hardening/009-status.md`.
+
+
+## Post-M009 request identity follow-up
+
+After M009 closed the earlier corrective sequence, audit of
+`deb345b5b15f09043d3f3b6bf722e7b5ba72e363` found that the explicit
+caller-supplied package/version branch in `security_search` still bypasses
+the M008 ecosystem identity matrix and can default unknown advisory ecosystems
+to crates.io.
+
+M010 / Plan 011 is the only reopened dependency-evidence work. It has no parser
+dependency and should remain a small applicability-boundary correction. Accept
+`closure/dependency-evidence-hardening/010-status.md` and return the roadmap
+and registry to closed only after focused/canonical tests and hosted CI pass on
+the same candidate.
+
+M001-M009 closure records remain historical evidence and must not be rewritten.
