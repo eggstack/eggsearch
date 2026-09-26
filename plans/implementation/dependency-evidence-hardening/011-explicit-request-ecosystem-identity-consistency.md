@@ -1,6 +1,6 @@
 # Plan 011 — Explicit Request Ecosystem Identity Consistency
 
-Status: implementation plan
+Status: closed
 
 Source roadmap:
 `plans/subsystems/dependency-evidence-hardening-roadmap.md`

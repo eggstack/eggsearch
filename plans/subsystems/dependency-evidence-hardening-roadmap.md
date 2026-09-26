@@ -1,6 +1,6 @@
 # Dependency Evidence Hardening Roadmap
 
-Status: active — M010 corrective follow-up
+Status: closed — M010 corrective complete
 
 Long-term references:
 
@@ -489,6 +489,7 @@ roadmap/registry both closed against the same corrected candidate.
 |---|---|---|
 | M008 provenance/identity/parse-status corrective | closed | Closure `plans/closure/dependency-evidence-hardening/008-status.md`; implementation `3fd3076` |
 | M009 final closure reconciliation | closed | Terminal closure `plans/closure/dependency-evidence-hardening/009-status.md`; candidate `12d8f9b`, CI `36217887427` |
+| M010 explicit request ecosystem identity | closed | Closure `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005` |
 
 
 ## 16. Post-closure request identity corrective
@@ -516,9 +517,13 @@ semantics for unmapped advisory ecosystems.
 
 Dependency: M001-M009 closed.
 
-Status: ready.
+Status: closed.
 
 Exit: request-path regressions and canonical gates pass, hosted CI is green on
 the exact candidate, and
 `plans/closure/dependency-evidence-hardening/010-status.md` is accepted in
 the same commit that returns this roadmap and the registry to `closed`.
+
+Closure: `plans/closure/dependency-evidence-hardening/010-status.md`;
+implementation `23676ccc34af76eebb4e1adccfb34aa3c8f9203e`, hosted CI run
+`36253474005`.

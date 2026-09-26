@@ -37,7 +37,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Performance optimization and footprint | closed | `plans/subsystems/performance-optimization-roadmap.md` | M001-M005 closed | None. Corrective candidate `0af540b8`; qualify `35542118569`. |
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
 | MCP tool-surface consolidation | active | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M005 implementation landed, closure records pending; M006 ready | M001-M005 landed in HEAD (contract, schema slimming, 2026 protocol/errors, projection, CodeGG disclosure); M006 evaluation baseline now exists. |
-| Dependency evidence hardening | active | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective ready | M001-M009 historical closures retained. Explicit request-field applicability still bypasses the ecosystem identity matrix and has an unsafe crates.io fallback. |
+| Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
 
 ## Dependency-ready implementation plans
 
@@ -59,7 +59,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Dependency evidence hardening | M007 budgets/diagnostics/qualification | closed | `plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md` | Closed at `18b4c03`; closure `plans/closure/dependency-evidence-hardening/007-status.md`. |
 | Dependency evidence hardening | M008 provenance/identity/parse-status corrective | closed | `plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md` | Implementation `3fd3076`; closure `plans/closure/dependency-evidence-hardening/008-status.md`. |
 | Dependency evidence hardening | M009 final closure reconciliation | closed | `plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md` | Closure `plans/closure/dependency-evidence-hardening/009-status.md`; exact candidate `12d8f9b`, CI `36217887427`. |
-| Dependency evidence hardening | M010 explicit request ecosystem identity | ready | `plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md` | Post-M009 corrective against `deb345b5`; closure must create `010-status.md` and requalify exact candidate. |
+| Dependency evidence hardening | M010 explicit request ecosystem identity | closed | `plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md` | Implementation `23676cc`; closure `plans/closure/dependency-evidence-hardening/010-status.md`, CI `36253474005`. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
@@ -84,7 +84,7 @@ under the owning subsystem roadmap instead.
 
 Tool-surface M006 is unblocked by the M001-M005 implementation landing.
 
-Dependency evidence M010 is ready; no dependency blocker remains. M001-M009 remain closed historical evidence.
+Dependency evidence M001-M010 are closed; no dependency blocker remains.
 
 ## Closure work and current control points
 
@@ -96,7 +96,7 @@ Dependency evidence M010 is ready; no dependency blocker remains. M001-M009 rema
 | Transport consolidation | closed | `plans/closure/transport-consolidation/001-status.md`; archived phases 17-18, 24 |
 | Performance optimization | closed | `plans/closure/performance-optimization/001-status.md`; archived phases 19-23 |
 | Optional outbound routing | closed | `plans/closure/optional-outbound-routing/001-status.md`; archived phases 25-28 |
-| Dependency evidence hardening | active | Prior terminal evidence `plans/closure/dependency-evidence-hardening/009-status.md`; M010 corrective plan `plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md` is the current control point |
+| Dependency evidence hardening | closed | `plans/closure/dependency-evidence-hardening/010-status.md`; M010 corrective evidence in `010-status.md`, prior terminal evidence in `009-status.md` |
 
 ## Closure rule
 
