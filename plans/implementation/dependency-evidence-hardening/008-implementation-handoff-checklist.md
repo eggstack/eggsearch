@@ -125,5 +125,6 @@ correctness defect, create another corrective plan and keep M009 blocked.
 
 M008 closed at implementation `3fd3076c4ad9680490b35a96759cab3f5022e6bc`;
 accepted corrective evidence is `plans/closure/dependency-evidence-hardening/008-status.md`.
-M009 is unblocked on the hard dependency and remains blocked only on hosted CI
-for the exact M008 closure candidate.
+Hosted CI run `36217887427` passed on exact closure candidate
+`12d8f9bf52217cef30e53006ee412dac25b79f03`. M009 then passed exact-candidate
+qualification and closed the subsystem in `plans/closure/dependency-evidence-hardening/009-status.md`.

@@ -105,6 +105,7 @@ The original M001-M007 closure records remain historical evidence and must not
 be silently amended to claim the corrective cases were covered.
 
 M008 implementation `3fd3076c4ad9680490b35a96759cab3f5022e6bc` is closed by
-`plans/closure/dependency-evidence-hardening/008-status.md`. M009 is now the
-only remaining dependency-evidence milestone and stays blocked until hosted CI
-is green on the exact M008 closure candidate.
+`plans/closure/dependency-evidence-hardening/008-status.md`. Hosted CI run
+`36217887427` passed on exact M008 closure candidate
+`12d8f9bf52217cef30e53006ee412dac25b79f03`. M009 qualification passed and
+the subsystem is closed by `plans/closure/dependency-evidence-hardening/009-status.md`.

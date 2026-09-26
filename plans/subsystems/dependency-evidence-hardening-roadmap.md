@@ -1,6 +1,6 @@
 # Dependency Evidence Hardening Roadmap
 
-Status: active — final closure qualification
+Status: closed
 
 Long-term references:
 
@@ -488,4 +488,4 @@ roadmap/registry both closed against the same corrected candidate.
 | Milestone | Status | Dependency |
 |---|---|---|
 | M008 provenance/identity/parse-status corrective | closed | Closure `plans/closure/dependency-evidence-hardening/008-status.md`; implementation `3fd3076` |
-| M009 final closure reconciliation | blocked | M008 closure + exact-candidate required CI |
+| M009 final closure reconciliation | closed | Terminal closure `plans/closure/dependency-evidence-hardening/009-status.md`; candidate `12d8f9b`, CI `36217887427` |

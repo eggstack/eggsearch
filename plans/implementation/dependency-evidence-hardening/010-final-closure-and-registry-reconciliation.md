@@ -1,6 +1,6 @@
 # Plan 010 — Dependency Evidence Final Closure and Registry Reconciliation
 
-Status: blocked
+Status: closed
 
 Source roadmap:
 `plans/subsystems/dependency-evidence-hardening-roadmap.md`

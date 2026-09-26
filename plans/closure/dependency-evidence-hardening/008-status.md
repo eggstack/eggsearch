@@ -102,4 +102,4 @@ No production dependency changed; no dependency-tree or release-binary-size delt
 | Low, accepted limitation | Maven, NuGet, Packagist, OCI, GitHub Actions, and other unverified source cases remain Unknown because checked-in evidence does not establish public-registry artifact identity. |
 | Low, accepted limitation | The ecosystem matrix uses exact text where a shared authoritative normalization contract is not established; this can miss case-variant advisory matches but cannot merge distinct identities. |
 
-Recommendation: **closed**. M008 acceptance criteria are met. M009 remains operationally blocked until the exact M008 closure candidate has successful hosted CI evidence.
+Recommendation: **closed**. M008 acceptance criteria are met. The exact closure candidate `12d8f9bf52217cef30e53006ee412dac25b79f03` passed hosted CI run [36217887427](https://github.com/eggstack/eggsearch/actions/runs/36217887427), satisfying M009's operational dependency.
