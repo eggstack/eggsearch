@@ -37,7 +37,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Performance optimization and footprint | closed | `plans/subsystems/performance-optimization-roadmap.md` | M001-M005 closed | None. Corrective candidate `0af540b8`; qualify `35542118569`. |
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
 | MCP tool-surface consolidation | closed | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M007 closed | M001-M007 closed. Current control points `plans/closure/mcp-tool-surface-consolidation/001-status.md` through `007-status.md`. |
-| Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
+| Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |\n| Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M001-M004 ready; M005-M006 blocked | M005 hard-depends on M004. M006 hard-depends on M003 plus an upstream chromiumoxide release with optional HTTP discovery/reqwest. |
 
 ## Dependency-ready implementation plans
 
@@ -60,11 +60,17 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Dependency evidence hardening | M008 provenance/identity/parse-status corrective | closed | `plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md` | Implementation `3fd3076`; closure `plans/closure/dependency-evidence-hardening/008-status.md`. |
 | Dependency evidence hardening | M009 final closure reconciliation | closed | `plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md` | Closure `plans/closure/dependency-evidence-hardening/009-status.md`; exact candidate `12d8f9b`, CI `36217887427`. |
 | Dependency evidence hardening | M010 explicit request ecosystem identity | closed | `plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md` | Implementation `23676cc`; closure `plans/closure/dependency-evidence-hardening/010-status.md`, CI `36253474005`. |
+| Repository hardening | M001 dependency remediation + policy gate | ready | `plans/implementation/repository-hardening/001-dependency-security-and-policy-gate.md` | No hard dependency. Patch quick-xml/rustls first when serializing work. |
+| Repository hardening | M002 CI/release supply-chain provenance | ready | `plans/implementation/repository-hardening/002-ci-release-supply-chain-provenance.md` | No hard dependency; preserve 16-asset release contract. |
+| Repository hardening | M003 rmcp HTTP verification on eggfetch | ready | `plans/implementation/repository-hardening/003-rmcp-http-verification-on-eggfetch.md` | No hard dependency; keep rmcp child-process client for stdio. |
+| Repository hardening | M004 process/unsafe boundary hardening | ready | `plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md` | No hard dependency; shared process owner must preserve git/startup semantics. |
+| Repository hardening | M005 forge safety maintenance decomposition | blocked | `plans/implementation/repository-hardening/005-forge-safety-maintenance-decomposition.md` | Hard dependency: M004 closure. |
+| Repository hardening | M006 chromiumoxide zero-reqwest closure | blocked | `plans/implementation/repository-hardening/006-chromiumoxide-zero-reqwest-closure.md` | Hard dependencies: M003 closure + upstream chromiumoxide release allowing launch-only build without reqwest. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
 
-Dependency evidence sequencing: `plans/implementation/dependency-evidence-hardening/000-overview-and-sequencing.md`.
+Dependency evidence sequencing: `plans/implementation/dependency-evidence-hardening/000-overview-and-sequencing.md`.\n\nRepository hardening sequencing: `plans/implementation/repository-hardening/000-overview-and-sequencing.md`.
 Dependency evidence handoff checklist: `plans/implementation/dependency-evidence-hardening/008-implementation-handoff-checklist.md`.
 Corrective closure sequence: `plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md` then `plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`.
 
@@ -83,7 +89,11 @@ under the owning subsystem roadmap instead.
 
 Tool-surface M001-M007 are closed; no tool-surface blocker remains.
 
-Dependency evidence M001-M010 are closed; no dependency blocker remains.
+Dependency evidence M001-M010 are closed; no dependency-evidence blocker remains.
+
+Repository hardening M005 is blocked on M004 closure. M006 is blocked on M003
+closure plus an upstream chromiumoxide release that makes HTTP discovery /
+reqwest optional without regressing `Browser::launch`. M001-M004 are ready.
 
 ## Closure work and current control points
 
@@ -96,7 +106,7 @@ Dependency evidence M001-M010 are closed; no dependency blocker remains.
 | Performance optimization | closed | `plans/closure/performance-optimization/001-status.md`; archived phases 19-23 |
 | Optional outbound routing | closed | `plans/closure/optional-outbound-routing/001-status.md`; archived phases 25-28 |
 | Dependency evidence hardening | closed | `plans/closure/dependency-evidence-hardening/010-status.md`; M010 corrective evidence in `010-status.md`, prior terminal evidence in `009-status.md` |
-| MCP tool-surface consolidation | closed | `plans/closure/mcp-tool-surface-consolidation/007-status.md`; M001-M006 evidence in `001-status.md` through `006-status.md` |
+| MCP tool-surface consolidation | closed | `plans/closure/mcp-tool-surface-consolidation/007-status.md`; M001-M006 evidence in `001-status.md` through `006-status.md` |\n| Repository hardening | active | `plans/subsystems/repository-hardening-roadmap.md`; no closure record yet |
 
 ## Closure rule
 

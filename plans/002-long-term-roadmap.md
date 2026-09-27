@@ -31,7 +31,7 @@ search capability expansion (closed)
     |                                       |
     |                                       +--> optional outbound routing (closed)
     |
-    `--> tool-surface consolidation (active)
+    `--> tool-surface consolidation (closed)\n              |\n              `--> repository security / supply-chain hardening (active)
 ```
 
 ## Workstreams
@@ -76,13 +76,20 @@ closure and qualification, maintenance closure and qualification-contract
 hardening, documentation and test-hygiene cleanup. No egress-enabled binary
 is published. Roadmap: `plans/subsystems/optional-outbound-routing-roadmap.md`.
 
-### 7. Tool-surface consolidation — active
+### 7. Tool-surface consolidation — closed
 
 Contract and disclosure model, agent-facing schema slimming, MCP 2026
 protocol and error contract, agent result projection and context budget,
 CodeGG progressive-disclosure integration, agentic tool-surface evaluation,
 maintenance decomposition and overlap ratchet. Roadmap:
 `plans/subsystems/tool-surface-consolidation-roadmap.md`.
+
+### 8. Repository security, supply-chain, and maintenance hardening — active
+
+Reachable dependency remediation and policy gates, immutable Action references,
+release provenance, remaining reqwest elimination behind eggfetch ownership,
+bounded process/unsafe consolidation, and security-sensitive forge maintenance.
+Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 
 ## Dependency notes
 
@@ -91,8 +98,7 @@ maintenance decomposition and overlap ratchet. Roadmap:
 - Performance work depends on transport qualification.
 - eggfetch 0.2.0 adoption depends on performance closure.
 - Optional outbound routing depends on eggfetch 0.2.0 adoption.
-- Tool-surface consolidation is independent of the egress workstream and
-  proceeds against current `main`.
+- Tool-surface consolidation is independent of the egress workstream and is closed.\n- Repository hardening proceeds against the post-tool-surface mainline. Its M005 depends on process-boundary M004; M006 additionally depends on an upstream chromiumoxide release with a no-reqwest launch-only feature graph.
 
 ## Deferred by design
 
