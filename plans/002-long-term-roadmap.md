@@ -31,7 +31,9 @@ search capability expansion (closed)
     |                                       |
     |                                       +--> optional outbound routing (closed)
     |
-    `--> tool-surface consolidation (closed)\n              |\n              `--> repository security / supply-chain hardening (active)
+    `--> tool-surface consolidation (closed)
+              |
+              `--> repository security / supply-chain hardening (active)
 ```
 
 ## Workstreams
@@ -98,7 +100,8 @@ Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 - Performance work depends on transport qualification.
 - eggfetch 0.2.0 adoption depends on performance closure.
 - Optional outbound routing depends on eggfetch 0.2.0 adoption.
-- Tool-surface consolidation is independent of the egress workstream and is closed.\n- Repository hardening proceeds against the post-tool-surface mainline. Its M005 depends on process-boundary M004; M006 additionally depends on an upstream chromiumoxide release with a no-reqwest launch-only feature graph.
+- Tool-surface consolidation is independent of the egress workstream and is closed.
+- Repository hardening proceeds against the post-tool-surface mainline. Its M005 depends on process-boundary M004; M006 additionally depends on an upstream chromiumoxide release with a no-reqwest launch-only feature graph.
 
 ## Deferred by design
 
