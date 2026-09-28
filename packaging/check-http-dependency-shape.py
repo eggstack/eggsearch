@@ -8,12 +8,12 @@ def run(*args):
     return subprocess.run(args, check=False, capture_output=True, text=True)
 
 
-default = run("cargo", "tree", "--locked", "-i", "reqwest")
+default = run("cargo", "tree", "--color", "never", "--locked", "-i", "reqwest")
 if default.returncode == 0 or "did not match any packages" not in default.stderr:
     print("http-dependency-shape: reqwest must be absent from the default graph", file=sys.stderr)
     sys.exit(1)
 
-all_features = run("cargo", "tree", "--locked", "--all-features", "-i", "reqwest")
+all_features = run("cargo", "tree", "--color", "never", "--locked", "--all-features", "-i", "reqwest")
 if all_features.returncode != 0:
     print(all_features.stderr, file=sys.stderr)
     sys.exit(all_features.returncode)
