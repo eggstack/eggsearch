@@ -1,6 +1,8 @@
 # Plan 007 — Corrective Closure Evidence and Repository-Wide Process Ratchet
 
-Status: ready
+Status: conditionally closed
+
+Closure record: `plans/closure/repository-hardening/007-status.md`.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`

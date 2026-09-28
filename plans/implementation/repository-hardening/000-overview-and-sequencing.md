@@ -25,7 +25,7 @@ modes and should produce separate closure evidence.
 | M004 | `004-process-and-unsafe-boundary-hardening.md` | closed through M007 | none |
 | M005 | `005-forge-safety-maintenance-decomposition.md` | closed | M004 (closed) |
 | M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
-| M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | conditionally closed | none; full closure operationally depends on first successful `schedule` dependency-security run |
+| M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | conditionally closed | none; full closure operationally depends on first successful `schedule` dependency-security run; see `plans/closure/repository-hardening/007-status.md` |
 
 ## Execution deviation
 

@@ -241,7 +241,7 @@ Current milestone state after M007 corrective implementation: M001 is conditiona
 | M004 process/unsafe boundary | closed through M007 once repository-wide guards pass | `plans/closure/repository-hardening/004-status.md` + M007 |
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
 | M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
-| M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` |
+| M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 
