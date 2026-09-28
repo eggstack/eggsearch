@@ -7,6 +7,18 @@
 
 ## Overview
 
+`deny.toml` and `make dependency-policy` provide the complete-feature Cargo
+policy gate for RustSec advisories, yanked packages, sources, and licenses.
+Temporary unmaintained-advisory waivers are exact-ID entries with dependency
+context and review dates in `docs/dependency-security.md`; the checker rejects
+expired or undocumented exceptions. Reachable vulnerability notices are not
+waived.
+
+Forge endpoint/address/DNS/redirect policy is owned by
+`src/meta/forge_adapter/policy.rs`; aggregate and per-response body limits are
+owned by `src/meta/forge_adapter/budget.rs`. Provider modules share those seams
+and cannot construct independent HTTP clients or weaken the common policy.
+
 `security_search` combines three evidence lanes — parallel web dispatch
 (`security_search_subqueries()` with `advisory` / `vendor` / `defensive`
 `PlannedSubquery` lanes), native advisory operations
@@ -239,8 +251,8 @@ project-reference provenance with no resolved version, and content
 hashes are integrity metadata only. Unknown lock versions or
 non-package target maps yield partial/unsupported diagnostics.
 
-`.csproj` and Maven POM inputs are parsed structurally with `quick-xml`
-0.38 (`default-features = false`, streaming pull parser over `&str`;
+`.csproj` and Maven POM inputs are parsed structurally with `quick-xml` 0.41+
+(`default-features = false`, checked attribute iteration, streaming pull parser over `&str`;
 no encoding/serde/async surface, no external entity resolution, linear
 scan over the 1 MiB-bounded input). `PackageReference` works across
 line layouts in attribute and child-`Version` forms with `Condition`

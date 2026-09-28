@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Arc;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
@@ -28,61 +26,6 @@ const INVENTORY_BUILD_TIMEOUT: Duration = Duration::from_secs(BUILD_TIMEOUT_SECS
 
 const GIT_STDOUT_CAP: usize = 16 * 1024 * 1024;
 const GIT_STDERR_CAP: usize = 64 * 1024;
-
-const TRIGGER_TIMEOUT: u8 = 0;
-const TRIGGER_STDOUT_LIMIT: u8 = 1;
-const TRIGGER_STDERR_LIMIT: u8 = 2;
-
-struct ProcessTerminationController {
-    child_pgid: i32,
-    trigger: AtomicU8,
-    kill_sent: AtomicBool,
-}
-
-impl ProcessTerminationController {
-    fn new(child_pgid: i32) -> Self {
-        Self {
-            child_pgid,
-            trigger: AtomicU8::new(u8::MAX),
-            kill_sent: AtomicBool::new(false),
-        }
-    }
-
-    fn try_terminate(&self, trigger: u8) -> bool {
-        if self
-            .kill_sent
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-        {
-            self.trigger.store(trigger, Ordering::Relaxed);
-            if self.child_pgid > 1 {
-                #[cfg(unix)]
-                unsafe {
-                    libc::kill(-self.child_pgid, libc::SIGKILL);
-                }
-                #[cfg(windows)]
-                {
-                    let _ = Command::new("taskkill")
-                        .args(["/PID", &self.child_pgid.to_string(), "/T", "/F"])
-                        .status();
-                }
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    fn termination_reason(&self) -> CommandTermination {
-        match self.trigger.load(Ordering::Relaxed) {
-            TRIGGER_TIMEOUT => CommandTermination::TimedOut,
-            TRIGGER_STDOUT_LIMIT => CommandTermination::StdoutLimitExceeded,
-            TRIGGER_STDERR_LIMIT => CommandTermination::StderrLimitExceeded,
-            _ if self.kill_sent.load(Ordering::Relaxed) => CommandTermination::Signaled,
-            _ => CommandTermination::Exited,
-        }
-    }
-}
 
 /// A single file entry in the workspace inventory.
 #[derive(Clone, Debug)]
@@ -551,87 +494,32 @@ fn build_entry_for_file(
     })
 }
 
-/// How the bounded command was terminated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandTermination {
-    /// Process exited normally.
-    Exited,
-    /// Process was killed due to timeout.
-    TimedOut,
-    /// Stdout cap breach triggered termination.
-    StdoutLimitExceeded,
-    /// Stderr cap breach triggered termination.
-    StderrLimitExceeded,
-    /// Process could not be spawned.
-    SpawnFailed,
-    /// Process was killed by a signal.
-    Signaled,
-}
-
-/// Build inventory for a single root using `git ls-files` (returns `None` for non-git dirs).
-#[allow(dead_code)]
-#[cfg(not(feature = "mock"))]
-struct BoundedCommandResult {
-    status: Option<std::process::ExitStatus>,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-    timed_out: bool,
-    stdout_truncated: bool,
-    stderr_truncated: bool,
-    termination: CommandTermination,
-}
-
-#[allow(dead_code)]
-#[cfg(feature = "mock")]
-/// Result of a bounded command execution.
-pub struct BoundedCommandResult {
-    /// The exit status of the command, if it was spawned.
-    pub status: Option<std::process::ExitStatus>,
-    /// Captured stdout bytes.
-    pub stdout: Vec<u8>,
-    /// Captured stderr bytes.
-    pub stderr: Vec<u8>,
-    /// Whether the command was killed due to timeout.
-    pub timed_out: bool,
-    /// Whether stdout was truncated at the cap.
-    pub stdout_truncated: bool,
-    /// Whether stderr was truncated at the cap.
-    pub stderr_truncated: bool,
-    /// How the command was terminated.
-    pub termination: CommandTermination,
-}
+pub use crate::process::{BoundedCommandResult, CommandTermination};
 
 #[cfg(feature = "mock")]
+#[allow(missing_docs)]
 pub mod test_harness {
-    //! Test harness for the bounded command runner infrastructure.
-    //! Gated behind the `mock` feature so downstream binaries don't link test code.
-
     use super::*;
 
-    /// Run a command with timeout, stdout/stderr caps, and process group management.
     pub fn run(cmd: &mut Command, timeout: Duration) -> BoundedCommandResult {
-        run_bounded_command_impl(cmd, timeout, GIT_STDOUT_CAP, GIT_STDERR_CAP)
+        crate::process::run_bounded_command(cmd, timeout, GIT_STDOUT_CAP, GIT_STDERR_CAP)
     }
 
-    /// Run a command with inventory-specific caps.
     pub fn run_for_inventory(
         cmd: &mut Command,
         timeout: Duration,
         cap: usize,
     ) -> BoundedCommandResult {
-        run_bounded_command_impl(cmd, timeout, cap, GIT_STDERR_CAP)
+        crate::process::run_bounded_command(cmd, timeout, cap, GIT_STDERR_CAP)
     }
 
-    /// The default inventory build timeout.
     pub const INVENTORY_TIMEOUT: Duration = INVENTORY_BUILD_TIMEOUT;
-    /// The default stdout cap (16 MB).
     pub const STDOUT_CAP: usize = GIT_STDOUT_CAP;
-    /// The default stderr cap (64 KB).
     pub const STDERR_CAP: usize = GIT_STDERR_CAP;
 }
 
 fn run_bounded_command(cmd: &mut Command, timeout: Duration) -> BoundedCommandResult {
-    run_bounded_command_impl(cmd, timeout, GIT_STDOUT_CAP, GIT_STDERR_CAP)
+    crate::process::run_bounded_command(cmd, timeout, GIT_STDOUT_CAP, GIT_STDERR_CAP)
 }
 
 fn run_bounded_command_for_inventory(
@@ -639,7 +527,7 @@ fn run_bounded_command_for_inventory(
     timeout: Duration,
     cap: usize,
 ) -> BoundedCommandResult {
-    run_bounded_command_impl(cmd, timeout, cap, GIT_STDERR_CAP)
+    crate::process::run_bounded_command(cmd, timeout, cap, GIT_STDERR_CAP)
 }
 
 pub(crate) fn run_bounded_for_discovery(
@@ -647,155 +535,9 @@ pub(crate) fn run_bounded_for_discovery(
     timeout: Duration,
     stdout_cap: usize,
 ) -> Option<(bool, Vec<u8>)> {
-    let result = run_bounded_command_impl(cmd, timeout, stdout_cap, GIT_STDERR_CAP);
+    let result = crate::process::run_bounded_command(cmd, timeout, stdout_cap, GIT_STDERR_CAP);
     let status = result.status?;
     Some((status.success(), result.stdout))
-}
-
-fn run_bounded_command_impl(
-    cmd: &mut Command,
-    timeout: Duration,
-    stdout_cap: usize,
-    stderr_cap: usize,
-) -> BoundedCommandResult {
-    use std::io::Read;
-
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        unsafe {
-            cmd.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    Err(std::io::Error::last_os_error())
-                } else {
-                    Ok(())
-                }
-            });
-        }
-    }
-
-    let mut child = match cmd
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            return BoundedCommandResult {
-                status: None,
-                stdout: Vec::new(),
-                stderr: Vec::new(),
-                timed_out: false,
-                stdout_truncated: false,
-                stderr_truncated: false,
-                termination: CommandTermination::SpawnFailed,
-            };
-        }
-    };
-
-    let child_id = child.id() as i32;
-    let controller = Arc::new(ProcessTerminationController::new(child_id));
-    let exited = Arc::new(AtomicBool::new(false));
-
-    let controller_timeout = controller.clone();
-    let exited_timeout = exited.clone();
-    let kill_handle = std::thread::spawn(move || {
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            if exited_timeout.load(Ordering::Relaxed) {
-                return;
-            }
-            if std::time::Instant::now() >= deadline {
-                controller_timeout.try_terminate(TRIGGER_TIMEOUT);
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-    });
-
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-
-    let controller_stdout = controller.clone();
-    let stdout_thread = std::thread::spawn(move || {
-        let mut local_stdout = Vec::new();
-        let mut local_truncated = false;
-        if let Some(mut out) = stdout_handle {
-            let mut buf = [0u8; 8192];
-            loop {
-                match out.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let remaining = stdout_cap.saturating_sub(local_stdout.len());
-                        if n <= remaining {
-                            local_stdout.extend_from_slice(&buf[..n]);
-                        } else {
-                            local_stdout.extend_from_slice(&buf[..remaining]);
-                            local_truncated = true;
-                            controller_stdout.try_terminate(TRIGGER_STDOUT_LIMIT);
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-        (local_stdout, local_truncated)
-    });
-
-    let controller_stderr = controller.clone();
-    let stderr_thread = std::thread::spawn(move || {
-        let mut local_stderr = Vec::new();
-        let mut local_truncated = false;
-        if let Some(mut err) = stderr_handle {
-            let mut buf = [0u8; 8192];
-            loop {
-                match err.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let remaining = stderr_cap.saturating_sub(local_stderr.len());
-                        if n <= remaining {
-                            local_stderr.extend_from_slice(&buf[..n]);
-                        } else {
-                            local_stderr.extend_from_slice(&buf[..remaining]);
-                            local_truncated = true;
-                            controller_stderr.try_terminate(TRIGGER_STDERR_LIMIT);
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-        (local_stderr, local_truncated)
-    });
-
-    let (stdout, stdout_truncated) = stdout_thread.join().unwrap_or((Vec::new(), false));
-    let (stderr, stderr_truncated) = stderr_thread.join().unwrap_or((Vec::new(), false));
-
-    let status = child.wait().ok();
-    exited.store(true, Ordering::Relaxed);
-    let _ = kill_handle.join();
-
-    let timed_out = controller.trigger.load(Ordering::Relaxed) == TRIGGER_TIMEOUT;
-    let termination = controller.termination_reason();
-
-    BoundedCommandResult {
-        status,
-        stdout,
-        stderr,
-        timed_out,
-        stdout_truncated,
-        stderr_truncated,
-        termination,
-    }
 }
 
 /// Build inventory for a single root using `git ls-files` with bounded command execution.

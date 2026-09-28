@@ -71,6 +71,29 @@ published release. Rerunning the workflow for the same tag is safe because all
 jobs check out the tag and the assembler uploads only the newly verified
 artifact set with matching names.
 
+Every external GitHub Action in `.github/workflows/` is pinned to its full
+40-character commit SHA. Keep the upstream version in the adjacent YAML
+comment; when upgrading, review the intended upstream release and source at
+that commit, update the SHA and version comment together, then run
+`python3 packaging/check-workflow-pins.py`. `make check` enforces this policy.
+
+Release mode creates GitHub artifact attestations for all seven executable
+assets and both installers. Attestations bind artifact digests to the GitHub
+repository, workflow, and candidate commit; they do not assert that software
+is vulnerability-free. SHA-256 checksum files continue to support download
+integrity checks and the existing updater contract. To verify a downloaded
+asset with GitHub CLI, run
+`gh attestation verify <asset-path> --repo eggstack/eggsearch` and inspect the
+reported source repository, workflow, and commit. Release mode requires the
+workflow SHA and candidate commit to match, so run it from the exact candidate
+tag.
+
+Repository release immutability is enabled for future releases. The workflow
+assembles and verifies all 16 assets on a draft first; a maintainer reviews
+and manually publishes that draft only after checking the asset set and
+attestation. Published immutable releases cannot have their tag or assets
+replaced.
+
 The subsequent release sequence is:
 
 ```text

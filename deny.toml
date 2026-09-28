@@ -1,0 +1,41 @@
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2025-0052", reason = "async-std is reachable only through test-only httpmock; review by 2026-11-27" },
+    { id = "RUSTSEC-2025-0057", reason = "fxhash is a transitive scraper dependency; review by 2026-11-27" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser is reached only through optional PDF support in lopdf; review by 2026-11-27" },
+]
+
+[licenses]
+confidence-threshold = 0.8
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

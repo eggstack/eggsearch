@@ -51,6 +51,7 @@ pub mod integrations;
 pub mod mcp;
 pub mod meta;
 pub mod platform;
+pub(crate) mod process;
 pub mod startup;
 pub mod update;
 

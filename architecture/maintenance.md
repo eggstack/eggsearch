@@ -19,8 +19,8 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Shared workflow mechanics | `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) + `fetch_ranking.rs` (`FetchCandidateBuilder`) | Typed domain semantics — `repo`/`research`/`security` keep their own planners, grouping, suggested-fetch builders on the shared primitives |
 | Bounded dispatch | `src/meta/dispatch/` (`types` owns job/config/output types + capability partition; `execution` owns the bounded concurrent executor) | Engine-specific parsing, workflow policy, role derivation from `rq_` labels |
 | Dependency parsing | `src/meta/dependency_parse/` (`mod` owns normalized `parse_dependency_file` dispatch, the `DependencyParseReport` seam, path-aware basename extraction, and Go vendor-manifest gating; `status` owns recognized structured syntax/document-shape validation; ecosystem submodules own one parser each; per-file budget truncation lives in the parsers, collection caps and finding index live in `meta/advisory_range.rs`) | Path/size/root validation, applicability policy |
-| Local workspace | `src/meta/local/` facade + `local_backend.rs` (search orchestration), `local_inventory.rs` (git discovery/identity), `local_inventory_cache.rs` (cache + git runner), `local_symbols.rs` (structured parsing), `local_ignore.rs`, `safe_open.rs` | Cross-owner logic; single cache abstraction only |
-| Forge access | `src/meta/forge_adapter.rs` (execution + shared safety owner: base-URL validation, address classification, bounded reads via `read_bounded_body`/`ForgeReadBudget`, redirect rejection) | Duplicated SSRF/credential/redirect policy in per-host code |
+| Local workspace | `src/meta/local/` facade + `local_backend.rs` (search orchestration), `local_inventory.rs` (git discovery/identity), `local_inventory_cache.rs` (cache), `local_symbols.rs` (structured parsing), `local_ignore.rs`, `safe_open.rs`; `src/process.rs` owns bounded process execution and process-group setup | Cross-owner logic; single cache abstraction only |
+| Forge access | `src/meta/forge_adapter/mod.rs` facade; `policy.rs` owns endpoint/address/DNS/redirect policy; `budget.rs` owns bounded reads; `urls.rs` owns permalink construction; `github.rs`, `gitlab.rs`, `gitea.rs` own provider execution | Duplicated SSRF/credential/redirect policy or independent clients in per-host code |
 | Evidence packaging | `src/meta/evidence_bundle.rs` (`build_evidence_bundle`: dedup, linking, caps, trust/provider summaries, gaps) | Ranking math and candidate ordering (owned by `fetch_ranking.rs`) |
 | Fetch ranking | `src/meta/fetch_ranking.rs` (`FetchCandidateBuilder`, `rank_and_select`, scoring) | Domain source semantics and bundle packaging |
 | Fetch execution | `src/fetch/` (client, limits, cache, origin, browser) | Search ranking, evidence roles |
@@ -78,7 +78,13 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/dispatch/mod.rs` | 100 | 81,920 | Facade only |
 | `src/meta/dispatch/types.rs` | 400 | 81,920 | Types + capability partition |
 | `src/meta/dispatch/execution.rs` | 2,300 | 100,000 | Split deadlines/telemetry/merge out of the executor loop; ~1,400 lines are pre-existing inline fault-injection tests |
-| `src/meta/forge_adapter.rs` | 3,050 | 101,000 | Host-independent vs host-specific split; safety invariants locked by forge guards |
+| `src/meta/forge_adapter/mod.rs` | 1,200 | 81,920 | Facade and orchestration |
+| `src/meta/forge_adapter/policy.rs` | 400 | 40,960 | Shared endpoint/address/DNS/redirect policy |
+| `src/meta/forge_adapter/budget.rs` | 300 | 40,960 | Shared aggregate and per-response read bounds |
+| `src/meta/forge_adapter/urls.rs` | 180 | 20,480 | Shared immutable URL construction |
+| `src/meta/forge_adapter/github.rs` | 600 | 81,920 | GitHub execution and normalization |
+| `src/meta/forge_adapter/gitlab.rs` | 500 | 81,920 | GitLab execution and normalization |
+| `src/meta/forge_adapter/gitea.rs` | 550 | 81,920 | Gitea/Forgejo/Codeberg execution and normalization |
 | `src/meta/local_backend.rs` | 2,700 | 100,000 | Move backend logic under `local/` |
 | `src/meta/evidence_bundle.rs` | 2,150 | 81,920 | Owns packaging + gap analysis, never ranking |
 | `src/meta/dependency_parse/mod.rs` | 800 | 81,920 | Dispatch + corpus tests |
@@ -99,7 +105,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/dependency_parse/nuget.rs` | 400 | 81,920 | NuGet lock target graphs |
 | `src/meta/dependency_parse/containers.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/github_actions.rs` | 400 | 81,920 | One ecosystem per file |
-| `src/meta/local_inventory_cache.rs` | 2,000 | 81,920 | Move cache + git runner under `local/`; bounded-execution invariants locked by git guards |
+| `src/meta/local_inventory_cache.rs` | 1,800 | 60,000 | Cache and inventory coordination remain here; bounded process mechanics now live in `src/process.rs`; next slice is cache ownership under `local/` |
 | `src/meta/fetch_ranking.rs` | 1,600 | 81,920 | Ranking owner; ordinary-file ceiling |
 | `src/meta/local_inventory.rs` | 1,600 | 81,920 | Ordinary-file ceiling |
 | `src/meta/local_symbols.rs` | 1,600 | 81,920 | Ordinary-file ceiling |
@@ -116,7 +122,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 - **No comments** unless explicitly requested. `cargo fmt` required (CI fails on `cargo fmt --check`).
 - **Stable IDs are content-derived FNV-1a** (`src/core/identity.rs`). Never random UUIDs; never change ID semantics (breaks corpus regression + cross-tool dedup).
 - **Sanitize all untrusted text** through `src/core/sanitize.rs` / `sanitize_field()`.
-- **Bound all untrusted I/O:** forge responses only via `read_bounded_body()` / `read_bounded_response()` / `read_with_budget()` under `ForgeReadBudget` (never bare `.text()`/`.bytes()`/`.json()`; `bytes_stream()` only inside those bounded readers plus `read_error_body_preview`); bounded git execution via `run_bounded_command()`.
+- **Bound all untrusted I/O:** forge responses only via `read_bounded_body()` / `read_bounded_response()` / `read_with_budget()` under `ForgeReadBudget` (`src/meta/forge_adapter/budget.rs`); bounded process execution via `src/process.rs::run_bounded_command()` with concurrent stdout/stderr draining and group termination.
 - **`commit_sha` comes from `resolved_ref`**, not the entry object SHA (`build_entry_urls` suppresses `object_sha` with `let _ = object_sha;` and never passes it to permalink/browser/raw URL builders).
 - **`CacheScope::Profile` uses the opaque profile ID**, never the display name. Profile-scoped browser fetches use the profile manager's opaque-ID-resolved `chrome-data` directory and configured runtime values.
 - **Invalid explicit browser path is `ExplicitPathInvalid`** — do not fall back to auto-discovery.
@@ -124,7 +130,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 - **Tool/probe inventories are code-derived** (`tests/docs_tool_names.rs` from `src/mcp/server.rs`, `tests/docs_provider_inventory.rs` from `KNOWN_PROVIDER_IDS`, `provider_capability_contract.rs` for native enforcement): never invent tool-like or provider names in docs; keep prose in agreement with the code. Do not generate narrative documentation from code.
 - **Hot paths use shared immutable inventory/cache ownership** and score/select candidates once; preserve deterministic tie ordering when changing selectors. Keep owned-return compatibility wrappers at the boundary instead of reintroducing deep copies.
 - **Fetch timeout overrides reuse the shared transport** for equal/shorter values and build one widened client for longer values; batch setup remains one adjustment per call.
-- **Direct Tokio features stay explicitly qualified** in `Cargo.toml`; rmcp client, child-process, and Streamable HTTP client features remain required for `integrate --apply` verification.
+- **Direct Tokio features stay explicitly qualified** in `Cargo.toml`; rmcp client and child-process features remain required for stdio `integrate --apply` verification. HTTP verification uses eggfetch.
 - **Provider lists resolve through `resolve_providers()`** (validates enabled/known status); never hardcode. Missing credentials are provider-scoped skips, never global failures.
 - **Updater and installer fallbacks stay narrow:** Cargo only for unsupported hosts or confirmed exact-asset HTTP 404; checksum, transport, identity, version, and candidate-identity failures are hard stops. Crates.io `max_stable_version` is the authority, never GitHub `latest`. Never supervise client-owned stdio; startup managers apply to persistent `mcp serve` only.
 

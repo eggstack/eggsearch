@@ -23,15 +23,23 @@ fn strip_test_code(source: &str) -> String {
 
 #[test]
 fn no_unbounded_forge_body_reads() {
-    let source = read_source("src/meta/forge_adapter.rs");
-    let non_test = strip_test_code(&source);
-
     let forbidden = [".text().await", ".bytes().await", ".json().await"];
-    for pattern in &forbidden {
-        assert!(
-            !non_test.contains(pattern),
-            "forge_adapter.rs (non-test) contains forbidden unbounded read pattern: {pattern}"
-        );
+    for path in [
+        "src/meta/forge_adapter/mod.rs",
+        "src/meta/forge_adapter/policy.rs",
+        "src/meta/forge_adapter/budget.rs",
+        "src/meta/forge_adapter/github.rs",
+        "src/meta/forge_adapter/gitlab.rs",
+        "src/meta/forge_adapter/gitea.rs",
+        "src/meta/forge_adapter/urls.rs",
+    ] {
+        let non_test = strip_test_code(&read_source(path));
+        for pattern in &forbidden {
+            assert!(
+                !non_test.contains(pattern),
+                "{path} contains forbidden unbounded read pattern: {pattern}"
+            );
+        }
     }
 }
 
@@ -44,6 +52,69 @@ fn no_unbounded_git_output() {
         !non_test.contains(".output()"),
         "local_inventory_cache.rs (non-test) contains unbounded .output() call; use run_bounded_command() instead"
     );
+}
+
+#[test]
+fn forge_host_modules_share_policy_and_transport() {
+    let forbidden = [
+        "Client::builder(",
+        "follow_redirects(",
+        "lookup_host(",
+        "IpAddr",
+        "Ipv4Addr",
+        "Ipv6Addr",
+        "classify_ipv4_forge(",
+        "classify_ipv6_forge(",
+        "validate_base_url_common(",
+    ];
+    for path in [
+        "src/meta/forge_adapter/github.rs",
+        "src/meta/forge_adapter/gitlab.rs",
+        "src/meta/forge_adapter/gitea.rs",
+    ] {
+        let source = strip_test_code(&read_source(path));
+        for pattern in forbidden {
+            assert!(
+                !source.contains(pattern),
+                "{path} must use shared forge policy and transport; found {pattern}"
+            );
+        }
+    }
+}
+
+#[test]
+fn captured_production_processes_use_the_bounded_runner() {
+    for path in [
+        "src/startup.rs",
+        "src/integrations/common.rs",
+        "src/fetch/browser/discover.rs",
+        "src/meta/local_inventory_cache.rs",
+    ] {
+        let non_test = strip_test_code(&read_source(path));
+        assert!(
+            !non_test.contains(".output()") && !non_test.contains("wait_with_output()"),
+            "{path} contains a raw captured process output path"
+        );
+    }
+}
+
+#[test]
+fn process_session_setup_has_one_owner() {
+    let owner = strip_test_code(&read_source("src/process.rs"));
+    assert_eq!(owner.matches("pre_exec(").count(), 1);
+    assert_eq!(owner.matches("libc::setsid()").count(), 1);
+    for path in ["src/startup.rs", "src/meta/local_inventory_cache.rs"] {
+        let source = strip_test_code(&read_source(path));
+        assert!(
+            !source.contains("pre_exec("),
+            "{path} configures process sessions directly"
+        );
+        assert!(
+            !source.contains("libc::setsid()"),
+            "{path} calls setsid directly"
+        );
+    }
+    assert!(owner.contains("#![deny(unsafe_code)]"));
 }
 
 #[test]
@@ -62,7 +133,7 @@ fn no_path_based_reads_in_safe_open() {
 
 #[test]
 fn no_object_sha_in_commit_urls() {
-    let source = read_source("src/meta/forge_adapter.rs");
+    let source = read_source("src/meta/forge_adapter/urls.rs");
 
     // Find the build_entry_urls function body
     let fn_start = source
@@ -295,7 +366,7 @@ fn postprocess_called_with_workflow_model_for_non_web_tools() {
 
 #[test]
 fn git_runner_drains_stdout_before_stderr_concurrently() {
-    let source = read_source("src/meta/local_inventory_cache.rs");
+    let source = read_source("src/process.rs");
     let non_test = strip_test_code(&source);
 
     let has_stdout_thread = non_test.contains("std::thread::spawn")
@@ -311,20 +382,30 @@ fn git_runner_drains_stdout_before_stderr_concurrently() {
 
 #[test]
 fn forge_has_aggregate_byte_budget_type() {
-    let source = read_source("src/meta/forge_adapter.rs");
+    let source = read_source("src/meta/forge_adapter/budget.rs");
     let non_test = strip_test_code(&source);
 
     assert!(
         non_test.contains("struct ForgeReadBudget"),
-        "forge_adapter.rs must define ForgeReadBudget for aggregate byte enforcement. \
+        "forge_adapter/budget.rs must define ForgeReadBudget for aggregate byte enforcement. \
          Currently uses bare total_bytes: &mut usize without formal budget."
     );
 }
 
 #[test]
 fn all_forge_response_paths_bounded() {
-    let source = read_source("src/meta/forge_adapter.rs");
-    let non_test = strip_test_code(&source);
+    let non_test = [
+        "src/meta/forge_adapter/mod.rs",
+        "src/meta/forge_adapter/budget.rs",
+        "src/meta/forge_adapter/github.rs",
+        "src/meta/forge_adapter/gitlab.rs",
+        "src/meta/forge_adapter/gitea.rs",
+        "src/meta/forge_adapter/urls.rs",
+    ]
+    .iter()
+    .map(|path| strip_test_code(&read_source(path)))
+    .collect::<Vec<_>>()
+    .join("\n");
 
     // Every response from a forge API must go through read_bounded_response
     // or read_bounded_body. Verify no direct .bytes_stream() usage outside
@@ -669,7 +750,13 @@ fn orchestration_module_size_ratchet() {
         ("src/meta/dispatch/mod.rs", 100, 81_920),
         ("src/meta/dispatch/types.rs", 400, 81_920),
         ("src/meta/dispatch/execution.rs", 2300, 100_000),
-        ("src/meta/forge_adapter.rs", 3050, 101_000),
+        ("src/meta/forge_adapter/mod.rs", 1200, 81_920),
+        ("src/meta/forge_adapter/policy.rs", 400, 40_960),
+        ("src/meta/forge_adapter/budget.rs", 300, 40_960),
+        ("src/meta/forge_adapter/github.rs", 600, 81_920),
+        ("src/meta/forge_adapter/gitlab.rs", 500, 81_920),
+        ("src/meta/forge_adapter/gitea.rs", 550, 81_920),
+        ("src/meta/forge_adapter/urls.rs", 180, 20_480),
         ("src/meta/local_backend.rs", 2700, 100_000),
         ("src/meta/evidence_bundle.rs", 2150, 81_920),
         ("src/meta/dependency_parse/mod.rs", 800, 81_920),
@@ -690,7 +777,7 @@ fn orchestration_module_size_ratchet() {
         ("src/meta/dependency_parse/nuget.rs", 400, 81_920),
         ("src/meta/dependency_parse/containers.rs", 400, 81_920),
         ("src/meta/dependency_parse/github_actions.rs", 400, 81_920),
-        ("src/meta/local_inventory_cache.rs", 2000, 81_920),
+        ("src/meta/local_inventory_cache.rs", 1800, 60_000),
         ("src/meta/fetch_ranking.rs", 1600, 81_920),
         ("src/meta/local_inventory.rs", 1600, 81_920),
         ("src/meta/local_symbols.rs", 1600, 81_920),
@@ -1239,7 +1326,13 @@ fn egress_route_stays_out_of_loopback_paths() {
         "src/startup.rs",
         "src/integrations/common.rs",
         "src/update.rs",
-        "src/meta/forge_adapter.rs",
+        "src/meta/forge_adapter/mod.rs",
+        "src/meta/forge_adapter/policy.rs",
+        "src/meta/forge_adapter/budget.rs",
+        "src/meta/forge_adapter/github.rs",
+        "src/meta/forge_adapter/gitlab.rs",
+        "src/meta/forge_adapter/gitea.rs",
+        "src/meta/forge_adapter/urls.rs",
         "src/meta/package_resolver.rs",
         "src/mcp/http.rs",
     ] {

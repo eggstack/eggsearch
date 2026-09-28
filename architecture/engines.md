@@ -181,7 +181,7 @@ symbol-hint search; GitHub issues claims issue search plus repo/org filters and 
 GitHub releases claims release search plus repo filter and result timestamps; GitLab mirrors that
 minus language-filter/symbol-hint; Gitea claims only the single search kind per engine (plus result
 timestamps on issues/releases) with no repo/path/language filters. The forge tree/structure APIs
-used by `repo_map` live separately in `src/meta/forge_adapter.rs`, not in these engines.
+used by `repo_map` live under `src/meta/forge_adapter/`, not in these engines.
 
 | Provider ID | Engine | Credential |
 |-------------|--------|------------|

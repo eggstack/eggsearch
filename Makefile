@@ -1,6 +1,6 @@
-.PHONY: check ci fmt clippy feature-check test hygiene packaging-check release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
+.PHONY: check ci fmt clippy feature-check test hygiene dependency-policy packaging-check release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
-check: fmt clippy feature-check test hygiene packaging-check
+check: fmt clippy feature-check test hygiene dependency-policy packaging-check
 
 ci: check
 
@@ -18,6 +18,9 @@ test:
 
 hygiene:
 	./packaging/check-repo-hygiene.sh
+
+dependency-policy:
+	./packaging/check-dependency-policy.sh
 
 packaging-check:
 	./packaging/check-contract.sh

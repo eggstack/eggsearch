@@ -201,7 +201,7 @@ Ordinary agent schemas are slimmed: canonical `goal` (`understand`, `architectur
 |------------|----------------|-------|
 | Live metasearch with RRF dedup | `src/meta/` (`planner` → `dispatch/` → `grouping` → `SourceCard`) | Partial failures are soft; 4 search profiles gate provider sets |
 | Bounded fetch with SSRF protection | `src/fetch/` (`limits` → `client` → `cache` → `extract`/`render`) | No crawling; one URL per `web_fetch`, explicit fan-out via `batch_fetch` |
-| Repo evidence (search/fetch/map) | `src/meta/repo_*` + `src/meta/forge_adapter.rs` + `src/meta/local_*` | Grouped bundles; forge API walks are budget-bounded |
+| Repo evidence (search/fetch/map) | `src/meta/repo_*` + `src/meta/forge_adapter/` + `src/meta/local_*` | Grouped bundles; forge API walks are budget-bounded |
 | Security evidence | `src/meta/security_search.rs` + advisory engines | CVE/GHSA/OSV/RustSec/KEV with applicability assessment |
 | Research evidence | `src/meta/research_*` + `src/core/research.rs` | Claims/gaps/conflicts, depth control, semantic roles |
 | Deterministic evidence bundles | `src/meta/evidence_bundle.rs` + `src/core/evidence_bundle.rs` | Non-summarizing, portable multi-agent handoff |

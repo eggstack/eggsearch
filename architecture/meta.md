@@ -205,7 +205,7 @@ Health is advisory, never authoritative: `ProviderHealthRegistry` records succes
 
 ## 8. Forge and package resolvers
 
-- `src/meta/forge_adapter.rs` — native tree retrieval for GitHub, GitLab, Gitea/Forgejo, Codeberg without cloning. Entry/depth/byte/pagination/concurrency/timeout limits, bounded reads, endpoint policy (loopback/private/HTTPS), used by `repo_fetch`/`repo_map` walks.
+- `src/meta/forge_adapter/` — `policy.rs` owns shared endpoint/address/DNS/redirect validation; `budget.rs` owns bounded reads; `urls.rs` owns immutable URL construction; host modules own GitHub/GitLab/Gitea/Forgejo/Codeberg tree retrieval without cloning. Entry/depth/byte/pagination/concurrency/timeout limits apply to `repo_fetch`/`repo_map` walks.
 - `src/meta/package_resolver.rs` — `resolve_package()` bounded registry lookups (crates.io, PyPI, npm, Go, Maven, NuGet, RubyGems, Packagist, OCI, GitHub Actions). Returns URLs, versions, and warnings; failures yield deterministic fallback URLs so repo planning can continue. `repo_search` merges verified resolutions into planner hints and optionally attaches a compact security context via advisory query.
 - Forge reads use `read_bounded_body()` semantics (never bare `.text()`/`.bytes()`) with a `ForgeReadBudget` aggregate cap; redirects stay disabled at the transport. Resolver lookups use a 10 s default timeout, overridable per call from the request deadline.
 

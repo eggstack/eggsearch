@@ -35,8 +35,13 @@ pub(crate) fn parse_csproj(content: &str, path: &str) -> DependencyParseReport {
                 depth += 1;
                 let name = local_name(&element.name());
                 if name == "PackageReference" {
-                    if let Some(reference) = pending_reference(&reader, &element, content) {
-                        pending = Some(reference);
+                    match pending_reference(&reader, &element, content) {
+                        Ok(Some(reference)) => pending = Some(reference),
+                        Ok(None) => {}
+                        Err(()) => {
+                            malformed = true;
+                            break;
+                        }
                     }
                 } else if name == "Version" && pending.is_some() {
                     in_version = true;
@@ -45,13 +50,26 @@ pub(crate) fn parse_csproj(content: &str, path: &str) -> DependencyParseReport {
                     in_framework = true;
                     framework_text.clear();
                 } else if name == "ItemGroup" {
-                    group_conditions.push(condition_attr(&reader, &element));
+                    match condition_attr(&reader, &element) {
+                        Ok(condition) => group_conditions.push(condition),
+                        Err(()) => {
+                            malformed = true;
+                            break;
+                        }
+                    }
                 }
             }
             Ok(Event::Empty(element)) => {
                 let name = local_name(&element.name());
                 if name == "PackageReference" {
-                    if let Some(reference) = pending_reference(&reader, &element, content) {
+                    let reference = match pending_reference(&reader, &element, content) {
+                        Ok(reference) => reference,
+                        Err(()) => {
+                            malformed = true;
+                            break;
+                        }
+                    };
+                    if let Some(reference) = reference {
                         let context = target_context(
                             &frameworks,
                             &group_conditions,
@@ -153,15 +171,16 @@ fn pending_reference(
     reader: &Reader<&[u8]>,
     element: &quick_xml::events::BytesStart<'_>,
     content: &str,
-) -> Option<PendingReference> {
+) -> Result<Option<PendingReference>, ()> {
     let mut include: Option<String> = None;
     let mut version: Option<String> = None;
     let mut condition: Option<String> = None;
-    for attr in element.attributes().flatten() {
+    for attr in element.attributes().with_checks(true) {
+        let attr = attr.map_err(|_| ())?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
-        let Ok(value) = attr.decode_and_unescape_value(reader.decoder()) else {
-            continue;
-        };
+        let value = attr
+            .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
+            .map_err(|_| ())?;
         match key.as_str() {
             "Include" => include = Some(value.into_owned()),
             "Version" => version = Some(value.into_owned()),
@@ -169,31 +188,36 @@ fn pending_reference(
             _ => {}
         }
     }
-    let include = include.filter(|include| !include.is_empty())?;
+    let Some(include) = include.filter(|include| !include.is_empty()) else {
+        return Ok(None);
+    };
     let line = Some(byte_offset_line(content, reader.buffer_position() as usize));
-    Some(PendingReference {
+    Ok(Some(PendingReference {
         include,
         version: version.filter(|version| !version.is_empty()),
         condition: condition.filter(|condition| !condition.is_empty()),
         line,
-    })
+    }))
 }
 
 fn condition_attr(
     reader: &Reader<&[u8]>,
     element: &quick_xml::events::BytesStart<'_>,
-) -> Option<String> {
-    for attr in element.attributes().flatten() {
+) -> Result<Option<String>, ()> {
+    let mut condition = None;
+    for attr in element.attributes().with_checks(true) {
+        let attr = attr.map_err(|_| ())?;
         if attr.key.as_ref() == b"Condition" {
-            if let Ok(value) = attr.decode_and_unescape_value(reader.decoder()) {
-                let value = value.trim().to_string();
-                if !value.is_empty() {
-                    return Some(value);
-                }
+            let value = attr
+                .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, reader.decoder())
+                .map_err(|_| ())?;
+            let value = value.trim().to_string();
+            if !value.is_empty() {
+                condition = Some(value);
             }
         }
     }
-    None
+    Ok(condition)
 }
 
 fn target_context(
@@ -293,5 +317,27 @@ mod tests {
         let empty = parse_csproj("<Project></Project>", "A.csproj");
         assert_eq!(empty.status, ParseStatus::Complete);
         assert!(empty.findings.is_empty());
+    }
+
+    #[test]
+    fn many_distinct_attributes_use_checked_xml_iteration() {
+        let attributes = (0..2048)
+            .map(|index| format!(" data-{index}=\"v\""))
+            .collect::<String>();
+        let xml = format!("<Project><PackageReference Include=\"A\"{attributes}/></Project>");
+        let report = parse_csproj(&xml, "A.csproj");
+        assert_eq!(report.status, ParseStatus::Complete);
+        assert_eq!(report.findings.len(), 1);
+        assert_eq!(report.findings[0].package, "A");
+    }
+
+    #[test]
+    fn duplicate_attributes_are_reported_as_malformed() {
+        let report = parse_csproj(
+            "<Project><PackageReference Include=\"A\" Include=\"B\" /></Project>",
+            "A.csproj",
+        );
+        assert_eq!(report.status, ParseStatus::Malformed);
+        assert!(report.findings.is_empty());
     }
 }

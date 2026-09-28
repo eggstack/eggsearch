@@ -85,7 +85,8 @@ walker for non-git roots, timeouts, or cap breaches.
 
 `run_bounded_command()` enforces a 5s timeout, 16MB stdout cap
 (`GIT_STDOUT_CAP`), 64KB stderr cap (`GIT_STDERR_CAP`), concurrent
-drainage, and process-group kill (`ProcessTerminationController`);
+drainage, and process-group kill (`ProcessTerminationController`, now owned by
+`src/process.rs` and reused by startup and integration probes);
 `CommandTermination` is `Exited`, `TimedOut`, `StdoutLimitExceeded`,
 `StderrLimitExceeded`, `SpawnFailed`, or `Signaled`.
 

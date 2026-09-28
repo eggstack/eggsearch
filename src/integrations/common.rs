@@ -3,7 +3,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::Command,
     time::Duration,
 };
 
@@ -281,10 +281,11 @@ async fn apply_rendered(client: Client, transport: Transport, rendered: &Rendere
             )
             .await
         }
-        Client::Vscode => run_command(
-            &vscode::command(transport, &rendered.executable, HTTP_ENDPOINT),
-            false,
-        ),
+        Client::Vscode => run_command(&vscode::command(
+            transport,
+            &rendered.executable,
+            HTTP_ENDPOINT,
+        )),
         Client::Codegg => apply_codegg(rendered),
         Client::Cursor => apply_cursor(rendered, transport),
         Client::Zed => bail!("zed apply is print-only"),
@@ -294,16 +295,14 @@ async fn apply_rendered(client: Client, transport: Transport, rendered: &Rendere
 
 async fn apply_native(add: &[String], remove: &[String]) -> Result<()> {
     let command = &add[0];
-    let exists = Command::new(command)
-        .args(["mcp", "get", "eggsearch"])
-        .output()
+    let exists = run_process(command, &["mcp", "get", "eggsearch"], 16 * 1024)
         .with_context(|| format!("failed to run {command} mcp get"))?
         .status
-        .success();
+        .is_some_and(|status| status.success());
     if exists {
-        run_command(remove, false)?;
+        run_command(remove)?;
     }
-    run_command(add, false)
+    run_command(add)
 }
 
 fn apply_codegg(rendered: &Rendered) -> Result<()> {
@@ -549,30 +548,44 @@ fn resolve_executable(override_executable: Option<&Path>) -> Result<(String, boo
     }
 }
 
-fn run_command(argv: &[String], inherit_stderr: bool) -> Result<()> {
+fn run_command(argv: &[String]) -> Result<()> {
     let (program, args) = argv.split_first().context("empty command")?;
-    let mut command = Command::new(program);
-    command.args(args);
-    if inherit_stderr {
-        let status = command.status().context("failed to execute command")?;
-        if !status.success() {
-            bail!("command exited with {status}");
-        }
-        return Ok(());
-    }
-    {
-        let output = command.output().context("failed to execute command")?;
-        if !output.status.success() {
-            bail!("{}", command_failure(&output));
-        }
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_process(program, &args, 64 * 1024).context("failed to execute command")?;
+    if output.status.is_some_and(|status| status.success()) {
         Ok(())
+    } else {
+        bail!("{}", command_failure(&output));
     }
 }
 
-fn command_failure(output: &Output) -> String {
+fn run_process(
+    program: &str,
+    args: &[&str],
+    output_cap: usize,
+) -> Result<crate::process::BoundedCommandResult> {
+    let mut command = Command::new(program);
+    command.args(args);
+    let result = crate::process::run_bounded_command(
+        &mut command,
+        Duration::from_secs(30),
+        output_cap,
+        64 * 1024,
+    );
+    if result.status.is_none()
+        || result.timed_out
+        || result.stdout_truncated
+        || result.stderr_truncated
+    {
+        bail!("command terminated: {:?}", result.termination);
+    }
+    Ok(result)
+}
+
+fn command_failure(output: &crate::process::BoundedCommandResult) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if stderr.is_empty() {
-        format!("command exited with {}", output.status)
+        format!("command exited with {:?}", output.status)
     } else {
         stderr
     }
@@ -625,49 +638,7 @@ async fn verify_stdio(executable: &str) -> Result<()> {
 }
 
 async fn verify_http() -> Result<()> {
-    use rmcp::{transport::StreamableHttpClientTransport, ServiceExt};
-
-    let http_timeout = Duration::from_secs(5);
-    let http = eggfetch_core::Client::builder()
-        .follow_redirects(false)
-        .timeout(eggfetch_core::Timeout {
-            pool: Some(http_timeout),
-            connect: Some(http_timeout),
-            write: Some(http_timeout),
-            read: Some(http_timeout),
-            total: Some(http_timeout),
-        })
-        .max_decoded_body_size(64 * 1024)
-        .build();
-    let mut health = http
-        .get("http://127.0.0.1:11320/healthz")
-        .context("HTTP health check failed")?
-        .send()
-        .await
-        .context("HTTP health check failed")?;
-    if !health.status().is_success() {
-        bail!("HTTP health check returned {}", health.status());
-    }
-    let payload: Value = health.json().await.context("invalid /healthz JSON")?;
-    if payload.get("service").and_then(Value::as_str) != Some("eggsearch")
-        || payload.get("status").and_then(Value::as_str) != Some("ready")
-    {
-        bail!("/healthz did not identify a ready eggsearch service");
-    }
-    let transport = StreamableHttpClientTransport::from_uri(HTTP_ENDPOINT);
-    let client = ().serve(transport).await.context("MCP HTTP initialize failed")?;
-    let tools = client
-        .list_all_tools()
-        .await
-        .context("MCP HTTP tools/list failed")?;
-    check_tools(
-        &tools
-            .iter()
-            .map(|tool| tool.name.to_string())
-            .collect::<Vec<_>>(),
-    )?;
-    client.cancel().await?;
-    Ok(())
+    super::http_verification::verify(HTTP_ENDPOINT, &REQUIRED_TOOLS).await
 }
 
 fn check_tools(tools: &[String]) -> Result<()> {

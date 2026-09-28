@@ -968,16 +968,19 @@ fn update_crontab(current: &str, replacement: Option<&str>) -> io::Result<String
 }
 
 fn read_crontab() -> io::Result<String> {
-    let output = Command::new("crontab").arg("-l").output();
-    match output {
-        Ok(output) if output.status.success() => {
-            String::from_utf8(output.stdout).map_err(io::Error::other)
+    let result = bounded_startup_command("crontab", &["-l"], 64 * 1024)?;
+    match result.status {
+        Some(status) if status.success() => {
+            String::from_utf8(result.stdout).map_err(io::Error::other)
         }
-        Ok(output) if output.stdout.is_empty() => Ok(String::new()),
-        Ok(output) => Err(io::Error::other(
-            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        Some(_) if result.stdout.is_empty() && result.stderr.is_empty() => Ok(String::new()),
+        Some(_) => Err(io::Error::other(
+            String::from_utf8_lossy(&result.stderr).trim().to_string(),
         )),
-        Err(error) => Err(error),
+        None => Err(io::Error::other(format!(
+            "crontab -l terminated: {:?}",
+            result.termination
+        ))),
     }
 }
 
@@ -1004,18 +1007,7 @@ fn spawn_detached(spec: &RuntimeSpec) -> io::Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(stderr));
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        unsafe {
-            command.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
+    crate::process::configure_new_session(&mut command);
     command.spawn().map(|_| ())
 }
 
@@ -1030,9 +1022,7 @@ fn stop_owned_process(path: &Path) -> io::Result<()> {
     }
     #[cfg(unix)]
     {
-        if unsafe { libc::kill(record.pid as libc::pid_t, libc::SIGTERM) } != 0 {
-            return Err(io::Error::last_os_error());
-        }
+        crate::process::terminate_process(record.pid as libc::pid_t, libc::SIGTERM)?;
         return Ok(());
     }
     #[cfg(windows)]
@@ -1131,18 +1121,7 @@ fn absolute_path(path: &Path) -> PathBuf {
 }
 
 fn is_privileged() -> bool {
-    #[cfg(unix)]
-    {
-        unsafe { libc::geteuid() == 0 }
-    }
-    #[cfg(windows)]
-    {
-        false
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        false
-    }
+    crate::process::is_privileged_user()
 }
 
 #[cfg(any(target_os = "macos", windows))]
@@ -1155,22 +1134,48 @@ fn find_program(program: &str) -> Option<PathBuf> {
 
 #[allow(dead_code)]
 fn capture_command(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
-    if !output.status.success() {
+    let result = bounded_startup_command(program, args, 64 * 1024).ok()?;
+    if !result.status.is_some_and(|status| status.success()) {
         return None;
     }
-    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Some(String::from_utf8_lossy(&result.stdout).trim().to_string())
 }
 
 fn command_ok(program: &str, args: &[&str]) -> io::Result<()> {
-    let status = Command::new(program).args(args).status()?;
-    if status.success() {
+    let result = bounded_startup_command(program, args, 16 * 1024)?;
+    if result.status.is_some_and(|status| status.success()) {
         Ok(())
     } else {
         Err(io::Error::other(format!(
-            "{program} {args:?} exited with {status}"
+            "{program} {args:?} terminated: {:?}",
+            result.termination
         )))
     }
+}
+
+fn bounded_startup_command(
+    program: &str,
+    args: &[&str],
+    stdout_cap: usize,
+) -> io::Result<crate::process::BoundedCommandResult> {
+    let mut command = Command::new(program);
+    command.args(args);
+    let result = crate::process::run_bounded_command(
+        &mut command,
+        Duration::from_secs(10),
+        stdout_cap,
+        64 * 1024,
+    );
+    if result.timed_out || result.stdout_truncated || result.stderr_truncated {
+        return Err(io::Error::other(format!(
+            "{program} terminated: {:?}",
+            result.termination
+        )));
+    }
+    if result.status.is_none() {
+        return Err(io::Error::other(format!("failed to run {program}")));
+    }
+    Ok(result)
 }
 
 fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
@@ -1207,7 +1212,10 @@ fn launchd_log_path() -> io::Result<PathBuf> {
 fn launchd_domain() -> io::Result<String> {
     #[cfg(unix)]
     {
-        Ok(format!("gui/{}", unsafe { libc::getuid() }))
+        Ok(format!(
+            "gui/{}",
+            crate::process::real_user_id().unwrap_or_default()
+        ))
     }
     #[cfg(not(unix))]
     {

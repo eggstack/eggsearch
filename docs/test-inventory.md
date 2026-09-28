@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5296 | 23 |
-| `--features mock` | 4958 | 1 |
+| `--all-features` | 5305 | 23 |
+| `--features mock` | 4967 | 1 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -38,7 +38,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `browser_profiles` | `browser` | Browser profile management |
 | `browser_transport` | `browser` | Browser transport orchestration |
 | `browser_live_smoke` | `browser` (+ `live-smoke`, ignored) | Live browser smoke (opt-in only) |
-| `static_guards` | None | Ownership, layout, and policy guards (fail-closed) |
+| `static_guards` | None | Ownership, layout, process-session, forge policy/transport, dependency/workflow, and policy guards (fail-closed) |
 
 Placement authority is the table in `architecture/testing.md`.
 
