@@ -1,6 +1,6 @@
 # Repository Hardening — Overview and Sequencing
 
-Status: blocked; M001/M003-M005 closed, M002 conditionally closed, M006 externally blocked
+Status: active; M007 corrective ready, M002 conditionally closed, M006 externally blocked
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -25,6 +25,7 @@ modes and should produce separate closure evidence.
 | M004 | `004-process-and-unsafe-boundary-hardening.md` | closed | none |
 | M005 | `005-forge-safety-maintenance-decomposition.md` | closed | M004 (closed) |
 | M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
+| M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | ready | none; full closure operationally depends on first successful `schedule` dependency-security run |
 
 ## Execution deviation
 
@@ -33,6 +34,12 @@ dependency policy gate, package manifests, transport dependency shape, shared
 process runner, and static guards cross the planned boundaries. Separate
 requirement matrices and closure records preserve milestone-specific evidence.
 The follow-up commit only makes the Cargo tree guard independent of CI color.
+
+Post-closure review found two acceptance-evidence defects: M001's scheduled
+dependency-security workflow had not actually executed, and M004's static
+process/unsafe ratchet was scoped to known migrated files rather than the full
+production source tree. M007 corrects those gaps without rewriting the original
+closure records.
 
 M001-M004 may be implemented in parallel on separate branches, but their
 eventual merge candidates must be rebased/requalified if they touch a shared
@@ -77,3 +84,8 @@ Do not mark a later milestone closed based on a prior milestone's CI run.
 M006 remains blocked until an upstream artifact can satisfy its explicit
 dependency gate; do not substitute a permanent local fork merely to clear the
 registry.
+
+M007 may proceed immediately. If its code/guard corrections land before the
+first real scheduled dependency-security event, close M007 conditionally and
+retain that single operational condition; a workflow_dispatch run is wiring
+evidence, not scheduled-run evidence.

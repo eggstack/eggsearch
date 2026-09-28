@@ -38,7 +38,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
 | MCP tool-surface consolidation | closed | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M007 closed | M001-M007 closed. Current control points `plans/closure/mcp-tool-surface-consolidation/001-status.md` through `007-status.md`. |
 | Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
-| Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M001-M005 closed; M006 blocked | M001-M005 closure records under `plans/closure/repository-hardening/`. M006's M003 dependency is cleared; upstream chromiumoxide optional-reqwest release remains outstanding. M002 is conditionally closed pending first tagged-release evidence. |
+| Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M007 corrective ready; M002 conditional; M006 blocked | M007 corrects M001 scheduled-workflow evidence and M004 repository-wide process/unsafe ratchet. M002 remains conditional on first tagged release; M006 remains externally blocked on chromiumoxide. |
 
 ## Dependency-ready implementation plans
 
@@ -61,12 +61,13 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Dependency evidence hardening | M008 provenance/identity/parse-status corrective | closed | `plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md` | Implementation `3fd3076`; closure `plans/closure/dependency-evidence-hardening/008-status.md`. |
 | Dependency evidence hardening | M009 final closure reconciliation | closed | `plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md` | Closure `plans/closure/dependency-evidence-hardening/009-status.md`; exact candidate `12d8f9b`, CI `36217887427`. |
 | Dependency evidence hardening | M010 explicit request ecosystem identity | closed | `plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md` | Implementation `23676cc`; closure `plans/closure/dependency-evidence-hardening/010-status.md`, CI `36253474005`. |
-| Repository hardening | M001 dependency remediation + policy gate | closed | `plans/implementation/repository-hardening/001-dependency-security-and-policy-gate.md` | Closure `plans/closure/repository-hardening/001-status.md`. |
+| Repository hardening | M001 dependency remediation + policy gate | closed record; corrective evidence pending | `plans/implementation/repository-hardening/001-dependency-security-and-policy-gate.md` | Historical closure `plans/closure/repository-hardening/001-status.md`; M007 corrects missing scheduled-workflow evidence without rewriting history. |
 | Repository hardening | M002 CI/release supply-chain provenance | conditionally closed | `plans/implementation/repository-hardening/002-ci-release-supply-chain-provenance.md` | Closure `plans/closure/repository-hardening/002-status.md`; first tagged release must record generated/verified attestation and immutable behavior. |
 | Repository hardening | M003 rmcp HTTP verification on eggfetch | closed | `plans/implementation/repository-hardening/003-rmcp-http-verification-on-eggfetch.md` | Closure `plans/closure/repository-hardening/003-status.md`; default graph reqwest-free. |
-| Repository hardening | M004 process/unsafe boundary hardening | closed | `plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md` | Closure `plans/closure/repository-hardening/004-status.md`. |
+| Repository hardening | M004 process/unsafe boundary hardening | closed record; corrective ratchet pending | `plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md` | Historical closure `plans/closure/repository-hardening/004-status.md`; M007 extends the static invariant to all production Rust sources. |
 | Repository hardening | M005 forge safety maintenance decomposition | closed | `plans/implementation/repository-hardening/005-forge-safety-maintenance-decomposition.md` | M004 hard dependency cleared; closure `plans/closure/repository-hardening/005-status.md`. |
 | Repository hardening | M006 chromiumoxide zero-reqwest closure | blocked | `plans/implementation/repository-hardening/006-chromiumoxide-zero-reqwest-closure.md` | M003 is closed; remaining blocker is an upstream chromiumoxide release allowing launch-only build without reqwest. |
+| Repository hardening | M007 corrective closure evidence + process ratchet | ready | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` | No hard dependency. Full closure has one operational dependency: first successful dependency-security workflow run with event `schedule`. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
@@ -94,11 +95,13 @@ Tool-surface M001-M007 are closed; no tool-surface blocker remains.
 
 Dependency evidence M001-M010 are closed; no dependency-evidence blocker remains.
 
-Repository hardening M001-M005 are closed (M002 conditionally closed on
-first-release operational evidence). M005 was unblocked by M004 and is now
-closed. M006's M003 dependency is satisfied; it remains blocked only on an
-upstream chromiumoxide release that makes HTTP discovery / reqwest optional
-without regressing `Browser::launch`.
+Repository hardening M007 is ready and is the current corrective control
+point for M001's missing scheduled-workflow evidence and M004's incomplete
+repository-wide process/unsafe ratchet. M002 remains conditionally closed on
+first-release operational evidence. M003 and M005 remain closed. M006's M003
+dependency is satisfied; it remains blocked only on an upstream chromiumoxide
+release that makes HTTP discovery / reqwest optional without regressing
+`Browser::launch`.
 
 ## Closure work and current control points
 
@@ -112,7 +115,7 @@ without regressing `Browser::launch`.
 | Optional outbound routing | closed | `plans/closure/optional-outbound-routing/001-status.md`; archived phases 25-28 |
 | Dependency evidence hardening | closed | `plans/closure/dependency-evidence-hardening/010-status.md`; M010 corrective evidence in `010-status.md`, prior terminal evidence in `009-status.md` |
 | MCP tool-surface consolidation | closed | `plans/closure/mcp-tool-surface-consolidation/007-status.md`; M001-M006 evidence in `001-status.md` through `006-status.md` |
-| Repository hardening | active; M001-M005 closed, M006 externally blocked | `plans/closure/repository-hardening/001-status.md` through `006-status.md` |
+| Repository hardening | active; M007 corrective ready, M002 conditional, M006 externally blocked | Historical closure records `001-status.md` through `006-status.md`; current corrective control point `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` |
 
 ## Closure rule
 
