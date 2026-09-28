@@ -1,6 +1,8 @@
 # Plan 004 — Bounded Process Execution and Unsafe-Boundary Hardening
 
-Status: ready
+Status: closed
+
+Closure record: `plans/closure/repository-hardening/004-status.md`.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`

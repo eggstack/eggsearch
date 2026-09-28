@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active
+Status: active; M001-M005 closed, M006 externally blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -231,6 +231,13 @@ transport-feature change, and process refactor remain independently reviewable.
 
 ## 8. Milestones
 
+Current milestone state after implementation: M001, M003, M004, and M005 are
+closed; M002 is conditionally closed pending attestation and immutable-release
+evidence from the next tagged release. M005's M004 dependency is cleared.
+M006's M003 dependency is cleared, leaving only its external upstream
+chromiumoxide release blocker. Per-milestone evidence is in
+`plans/closure/repository-hardening/`.
+
 ### M001 — Dependency remediation and enforceable dependency policy
 
 Primary class: infrastructure + security invariant.
@@ -346,7 +353,10 @@ reqwest. M004 records process timeout/output-cap/process-group tests. M005
 records forge SSRF/redirect/read-budget parity.
 
 Release-facing changes require the repository's qualification workflow before
-a publication candidate is accepted.
+a publication candidate is accepted. Since this work does not publish a new
+version, M002's code and repository setting are implemented while its first
+release's generated/verified attestation and immutable behavior remain an
+operational closure condition.
 
 ## 11. Risks and deferred work
 
@@ -380,6 +390,6 @@ The workstream is complete when:
   session setup has exactly one documented owner;
 - forge safety policy is decomposed without behavioral drift;
 - chromiumoxide upstream support is adopted and `cargo tree --all-features -i
-  reqwest` shows no reqwest package;
+  reqwest` shows no reqwest package (M006 remains externally blocked);
 - all milestones have SHA-specific closure records and no unresolved High/Medium
   finding is hidden by a waiver.

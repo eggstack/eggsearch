@@ -1,6 +1,8 @@
 # Plan 001 — Dependency Security Remediation and Policy Gate
 
-Status: ready
+Status: closed
+
+Closure record: `plans/closure/repository-hardening/001-status.md`.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`

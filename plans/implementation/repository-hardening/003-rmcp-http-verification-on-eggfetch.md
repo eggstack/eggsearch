@@ -1,6 +1,8 @@
 # Plan 003 — rmcp HTTP Verification on Eggfetch
 
-Status: ready
+Status: closed
+
+Closure record: `plans/closure/repository-hardening/003-status.md`.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`

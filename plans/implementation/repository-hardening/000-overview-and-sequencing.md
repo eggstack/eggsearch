@@ -1,6 +1,6 @@
 # Repository Hardening — Overview and Sequencing
 
-Status: active sequencing plan
+Status: blocked; M001/M003-M005 closed, M002 conditionally closed, M006 externally blocked
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -17,14 +17,22 @@ modes and should produce separate closure evidence.
 
 ## Sequence
 
-| Milestone | Plan | Initial status | Hard dependency |
+| Milestone | Plan | Current status | Hard dependency |
 |---|---|---|---|
-| M001 | `001-dependency-security-and-policy-gate.md` | ready | none |
-| M002 | `002-ci-release-supply-chain-provenance.md` | ready | none |
-| M003 | `003-rmcp-http-verification-on-eggfetch.md` | ready | none |
-| M004 | `004-process-and-unsafe-boundary-hardening.md` | ready | none |
-| M005 | `005-forge-safety-maintenance-decomposition.md` | blocked | M004 |
+| M001 | `001-dependency-security-and-policy-gate.md` | closed | none |
+| M002 | `002-ci-release-supply-chain-provenance.md` | conditionally closed | none |
+| M003 | `003-rmcp-http-verification-on-eggfetch.md` | closed | none |
+| M004 | `004-process-and-unsafe-boundary-hardening.md` | closed | none |
+| M005 | `005-forge-safety-maintenance-decomposition.md` | closed | M004 (closed) |
 | M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
+
+## Execution deviation
+
+M001-M005 were implemented in one coordinated source candidate because the
+dependency policy gate, package manifests, transport dependency shape, shared
+process runner, and static guards cross the planned boundaries. Separate
+requirement matrices and closure records preserve milestone-specific evidence.
+The follow-up commit only makes the Cargo tree guard independent of CI color.
 
 M001-M004 may be implemented in parallel on separate branches, but their
 eventual merge candidates must be rebased/requalified if they touch a shared

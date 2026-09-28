@@ -2,6 +2,14 @@
 
 Status: blocked
 
+Latest review: 2026-09-28. M003 is now closed and removes rmcp's HTTP-client
+reqwest edge. Upstream chromiumoxide remains at 0.9.1 with reqwest declared as
+a non-optional dependency; no upstream release satisfies the optional
+HTTP-discovery dependency gate. See the latest closure status for source and
+registry evidence. This milestone remains blocked and no fork is introduced.
+
+Closure record: `plans/closure/repository-hardening/006-status.md`.
+
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
 

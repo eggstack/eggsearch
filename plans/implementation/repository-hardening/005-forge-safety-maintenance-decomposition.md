@@ -1,6 +1,8 @@
 # Plan 005 — Forge Safety Ownership Maintenance Decomposition
 
-Status: blocked
+Status: closed
+
+Closure record: `plans/closure/repository-hardening/005-status.md`.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -31,7 +33,7 @@ that owner.
 This is a behavior-preserving maintenance change. It must improve review/change
 locality without creating per-host security-policy forks.
 
-## Current evidence
+## Planning-baseline evidence
 
 `src/meta/forge_adapter.rs` is roughly 3,000 lines / 100 KB and currently
 contains both:

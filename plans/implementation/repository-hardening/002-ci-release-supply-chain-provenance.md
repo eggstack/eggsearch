@@ -1,6 +1,10 @@
 # Plan 002 — CI and Release Supply-Chain Provenance
 
-Status: ready
+Status: conditionally closed
+
+Closure record: `plans/closure/repository-hardening/002-status.md`. First
+tagged-release attestation and immutability evidence remains an operational
+condition.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
