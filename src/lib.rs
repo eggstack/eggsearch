@@ -44,6 +44,7 @@
 //! ```
 
 #![warn(missing_docs)]
+#![deny(unsafe_code)]
 
 pub mod core;
 pub mod fetch;

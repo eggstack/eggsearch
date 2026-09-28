@@ -10,6 +10,7 @@ set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 targets="$root/packaging/release-targets.txt"
 python3 "$root/packaging/check-workflow-pins.py"
+python3 "$root/packaging/check-planning-consistency.py"
 workflow="$root/.github/workflows/release-binaries.yml"
 unix_installer="$root/packaging/install.sh"
 windows_installer="$root/packaging/install.ps1"

@@ -1,6 +1,6 @@
 # Repository Hardening — Overview and Sequencing
 
-Status: active; M007 corrective ready, M002 conditionally closed, M006 externally blocked
+Status: active; M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -19,13 +19,13 @@ modes and should produce separate closure evidence.
 
 | Milestone | Plan | Current status | Hard dependency |
 |---|---|---|---|
-| M001 | `001-dependency-security-and-policy-gate.md` | closed | none |
+| M001 | `001-dependency-security-and-policy-gate.md` | conditionally closed via M007 | none |
 | M002 | `002-ci-release-supply-chain-provenance.md` | conditionally closed | none |
 | M003 | `003-rmcp-http-verification-on-eggfetch.md` | closed | none |
-| M004 | `004-process-and-unsafe-boundary-hardening.md` | closed | none |
+| M004 | `004-process-and-unsafe-boundary-hardening.md` | closed through M007 | none |
 | M005 | `005-forge-safety-maintenance-decomposition.md` | closed | M004 (closed) |
 | M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
-| M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | ready | none; full closure operationally depends on first successful `schedule` dependency-security run |
+| M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | conditionally closed | none; full closure operationally depends on first successful `schedule` dependency-security run |
 
 ## Execution deviation
 

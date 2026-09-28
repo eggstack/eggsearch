@@ -21,6 +21,440 @@ fn strip_test_code(source: &str) -> String {
     out
 }
 
+fn is_ident_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+fn strip_comments_and_strings_impl(source: &str, strip_strings: bool) -> String {
+    let bytes = source.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    let n = bytes.len();
+    while i < n {
+        let b = bytes[i];
+        if b == b'/' && i + 1 < n && bytes[i + 1] == b'/' {
+            out.push(b' ');
+            out.push(b' ');
+            i += 2;
+            while i < n && bytes[i] != b'\n' {
+                out.push(b' ');
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'/' && i + 1 < n && bytes[i + 1] == b'*' {
+            out.push(b' ');
+            out.push(b' ');
+            i += 2;
+            let mut depth = 1usize;
+            while i < n && depth > 0 {
+                if bytes[i] == b'/' && i + 1 < n && bytes[i + 1] == b'*' {
+                    out.push(b' ');
+                    out.push(b' ');
+                    i += 2;
+                    depth += 1;
+                    continue;
+                }
+                if bytes[i] == b'*' && i + 1 < n && bytes[i + 1] == b'/' {
+                    out.push(b' ');
+                    out.push(b' ');
+                    i += 2;
+                    depth -= 1;
+                    continue;
+                }
+                if bytes[i] == b'\n' {
+                    out.push(b'\n');
+                } else {
+                    out.push(b' ');
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'r' {
+            let mut j = i + 1;
+            while j < n && bytes[j] == b'#' {
+                j += 1;
+            }
+            if j < n && bytes[j] == b'"' {
+                let hashes = j - (i + 1);
+                out.push(b' ');
+                out.extend(std::iter::repeat_n(b' ', hashes));
+                out.push(b' ');
+                i = j + 1;
+                loop {
+                    if i >= n {
+                        break;
+                    }
+                    if bytes[i] == b'"' {
+                        let mut k = i + 1;
+                        let mut ok = true;
+                        for _ in 0..hashes {
+                            if k >= n || bytes[k] != b'#' {
+                                ok = false;
+                                break;
+                            }
+                            k += 1;
+                        }
+                        if ok {
+                            if strip_strings {
+                                out.push(b' ');
+                                out.extend(std::iter::repeat_n(b' ', hashes));
+                                out.push(b' ');
+                            } else {
+                                out.push(b'"');
+                                out.extend(std::iter::repeat_n(b'#', hashes));
+                            }
+                            i = k;
+                            break;
+                        }
+                    }
+                    if bytes[i] == b'\n' {
+                        out.push(b'\n');
+                    } else if strip_strings {
+                        out.push(b' ');
+                    } else {
+                        out.push(bytes[i]);
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+        }
+        if b == b'"' {
+            out.push(b'"');
+            i += 1;
+            while i < n {
+                let c = bytes[i];
+                if c == b'\\' && i + 1 < n {
+                    if strip_strings {
+                        out.push(b' ');
+                        out.push(b' ');
+                    } else {
+                        out.push(c);
+                        out.push(bytes[i + 1]);
+                    }
+                    i += 2;
+                    continue;
+                }
+                if c == b'"' {
+                    out.push(b'"');
+                    i += 1;
+                    break;
+                }
+                if c == b'\n' {
+                    out.push(b'\n');
+                } else if strip_strings {
+                    out.push(b' ');
+                } else {
+                    out.push(c);
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'\'' {
+            let mut is_char = false;
+            if i + 2 < n && bytes[i + 1] == b'\\' {
+                let mut k = i + 2;
+                while k < n && bytes[k] != b'\'' && bytes[k] != b'\n' && k - (i + 2) < 8 {
+                    k += 1;
+                }
+                if k < n && bytes[k] == b'\'' {
+                    is_char = true;
+                }
+            } else if i + 2 < n && bytes[i + 2] == b'\'' && bytes[i + 1] != b'\n' {
+                is_char = true;
+            }
+            if is_char {
+                out.push(b'\'');
+                i += 1;
+                while i < n {
+                    let c = bytes[i];
+                    if c == b'\\' && i + 1 < n {
+                        out.push(b' ');
+                        out.push(b' ');
+                        i += 2;
+                        continue;
+                    }
+                    if c == b'\'' {
+                        out.push(b'\'');
+                        i += 1;
+                        break;
+                    }
+                    if c == b'\n' {
+                        out.push(b'\n');
+                    } else {
+                        out.push(b' ');
+                    }
+                    i += 1;
+                }
+                continue;
+            }
+            out.push(b);
+            i += 1;
+            continue;
+        }
+        out.push(b);
+        i += 1;
+    }
+    String::from_utf8(out).expect("ascii preserving transform stays utf8")
+}
+
+fn strip_comments_keep_strings(source: &str) -> String {
+    strip_comments_and_strings_impl(source, false)
+}
+
+fn strip_comments_and_strings(source: &str) -> String {
+    strip_comments_and_strings_impl(source, true)
+}
+
+fn find_matching_brace(s: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut i = open;
+    while i < s.len() {
+        if s[i] == b'{' {
+            depth += 1;
+        } else if s[i] == b'}' {
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn strip_cfg_test_modules_impl(cleaned: &str) -> String {
+    let mut bytes = cleaned.as_bytes().to_vec();
+    let mut search_from = 0usize;
+    loop {
+        let hay = &bytes[search_from..];
+        let hay_str = match std::str::from_utf8(hay) {
+            Ok(v) => v,
+            Err(_) => break,
+        };
+        let rel = match hay_str.find("cfg(test)") {
+            Some(v) => v,
+            None => break,
+        };
+        let attr_pos = search_from + rel;
+        let mut attr_start = attr_pos;
+        while attr_start > 0 && bytes[attr_start - 1] != b'\n' {
+            if bytes[attr_start - 1] == b'#' {
+                attr_start -= 1;
+                break;
+            }
+            if bytes[attr_start - 1] == b'[' {
+                if attr_start >= 2 && bytes[attr_start - 2] == b'#' {
+                    attr_start -= 2;
+                    break;
+                }
+                break;
+            }
+            attr_start -= 1;
+        }
+        let mut k = attr_pos + "cfg(test)".len();
+        while k < bytes.len()
+            && (bytes[k] == b' ' || bytes[k] == b'\t' || bytes[k] == b'\n' || bytes[k] == b'\r')
+        {
+            k += 1;
+        }
+        while k < bytes.len() && bytes[k] == b']' {
+            k += 1;
+        }
+        while k < bytes.len()
+            && (bytes[k] == b' ' || bytes[k] == b'\t' || bytes[k] == b'\n' || bytes[k] == b'\r')
+        {
+            k += 1;
+        }
+        let mut is_mod = false;
+        if k + 3 <= bytes.len() && &bytes[k..k + 3] == b"mod" {
+            let before_ok = k == 0 || !is_ident_char(bytes[k - 1]);
+            let after_ok = k + 3 >= bytes.len() || !is_ident_char(bytes[k + 3]);
+            if before_ok && after_ok {
+                is_mod = true;
+            }
+        }
+        if is_mod {
+            let mut brace = k + 3;
+            while brace < bytes.len() && bytes[brace] != b'{' {
+                brace += 1;
+            }
+            if brace >= bytes.len() {
+                break;
+            }
+            if let Some(end) = find_matching_brace(&bytes, brace) {
+                for slot in &mut bytes[attr_start..=end] {
+                    if *slot != b'\n' {
+                        *slot = b' ';
+                    }
+                }
+                search_from = end + 1;
+                continue;
+            } else {
+                break;
+            }
+        }
+        let mut is_fn = false;
+        if k + 2 <= bytes.len() && &bytes[k..k + 2] == b"fn" {
+            let before_ok = k == 0 || !is_ident_char(bytes[k - 1]);
+            let after_ok = k + 2 >= bytes.len() || !is_ident_char(bytes[k + 2]);
+            if before_ok && after_ok {
+                is_fn = true;
+            }
+        }
+        if is_fn {
+            let mut brace = k + 2;
+            while brace < bytes.len() && bytes[brace] != b'{' && bytes[brace] != b';' {
+                brace += 1;
+            }
+            if brace < bytes.len() && bytes[brace] == b'{' {
+                if let Some(end) = find_matching_brace(&bytes, brace) {
+                    for slot in &mut bytes[attr_start..=end] {
+                        if *slot != b'\n' {
+                            *slot = b' ';
+                        }
+                    }
+                    search_from = end + 1;
+                    continue;
+                }
+            }
+        }
+        search_from = attr_pos + 1;
+    }
+    String::from_utf8(bytes).expect("ascii preserving transform stays utf8")
+}
+
+fn production_code_clean(source: &str) -> String {
+    let no_comments_strings = strip_comments_and_strings(source);
+    strip_cfg_test_modules_impl(&no_comments_strings)
+}
+
+fn production_code_for_shell(source: &str) -> String {
+    strip_cfg_test_modules_impl(&strip_comments_keep_strings(source))
+}
+
+fn production_rust_files() -> Vec<std::path::PathBuf> {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let root = std::path::PathBuf::from(format!("{manifest}/src"));
+    let mut files = Vec::new();
+    let mut stack = vec![root];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir).expect("src dir readable");
+        let mut batch: Vec<std::path::PathBuf> = Vec::new();
+        for entry in entries {
+            let entry = entry.expect("dir entry readable");
+            let path = entry.path();
+            if let Ok(meta) = std::fs::symlink_metadata(&path) {
+                if meta.file_type().is_symlink() {
+                    continue;
+                }
+            }
+            if path.is_dir() {
+                batch.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                files.push(path);
+            }
+        }
+        batch.sort();
+        for d in batch.into_iter().rev() {
+            stack.push(d);
+        }
+    }
+    files.sort();
+    files
+}
+
+fn has_output_call(cleaned: &str) -> bool {
+    let b = cleaned.as_bytes();
+    let mut i = 0usize;
+    while i + 7 < b.len() {
+        if b[i] == b'.' && i + 7 < b.len() && &b[i..i + 7] == b".output" {
+            let mut j = i + 7;
+            while j < b.len() && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b'\r') {
+                j += 1;
+            }
+            if j < b.len() && b[j] == b'(' {
+                j += 1;
+                while j < b.len()
+                    && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b'\r')
+                {
+                    j += 1;
+                }
+                if j < b.len() && b[j] == b')' {
+                    return true;
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+fn has_wait_with_output(cleaned: &str) -> bool {
+    cleaned.contains("wait_with_output")
+}
+
+fn has_shell_wrapper(keep_strings: &str) -> bool {
+    let b = keep_strings.as_bytes();
+    let needle = b"Command::new";
+    let shells = [
+        "sh",
+        "bash",
+        "dash",
+        "zsh",
+        "fish",
+        "cmd",
+        "powershell",
+        "pwsh",
+    ];
+    let mut i = 0usize;
+    while i + needle.len() <= b.len() {
+        if &b[i..i + needle.len()] == needle {
+            let mut j = i + needle.len();
+            while j < b.len() && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b'\r') {
+                j += 1;
+            }
+            if j < b.len() && b[j] == b'(' {
+                j += 1;
+                while j < b.len()
+                    && (b[j] == b' ' || b[j] == b'\t' || b[j] == b'\n' || b[j] == b'\r')
+                {
+                    j += 1;
+                }
+                if j < b.len() && b[j] == b'"' {
+                    j += 1;
+                    let start = j;
+                    while j < b.len() && b[j] != b'"' && b[j] != b'\n' {
+                        if b[j] == b'\\' && j + 1 < b.len() {
+                            j += 2;
+                        } else {
+                            j += 1;
+                        }
+                    }
+                    if j < b.len() && b[j] == b'"' {
+                        let name = std::str::from_utf8(&b[start..j])
+                            .unwrap_or("")
+                            .trim()
+                            .to_ascii_lowercase();
+                        let base = name.trim_end_matches(".exe").to_string();
+                        if shells.contains(&base.as_str()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 #[test]
 fn no_unbounded_forge_body_reads() {
     let forbidden = [".text().await", ".bytes().await", ".json().await"];
@@ -84,37 +518,198 @@ fn forge_host_modules_share_policy_and_transport() {
 
 #[test]
 fn captured_production_processes_use_the_bounded_runner() {
-    for path in [
-        "src/startup.rs",
-        "src/integrations/common.rs",
-        "src/fetch/browser/discover.rs",
-        "src/meta/local_inventory_cache.rs",
-    ] {
-        let non_test = strip_test_code(&read_source(path));
+    let files = production_rust_files();
+    assert!(
+        !files.is_empty(),
+        "production file walk must find src files"
+    );
+    let mut checked = 0usize;
+    for path in files {
+        let rel = path
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .expect("under manifest")
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        let source = std::fs::read_to_string(&path).expect("readable");
+        let cleaned = production_code_clean(&source);
         assert!(
-            !non_test.contains(".output()") && !non_test.contains("wait_with_output()"),
-            "{path} contains a raw captured process output path"
+            !has_output_call(&cleaned),
+            "{rel} contains a raw captured process output path"
+        );
+        assert!(
+            !has_wait_with_output(&cleaned),
+            "{rel} contains wait_with_output"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 50,
+        "walk must cover the production tree, got {checked}"
+    );
+}
+
+#[test]
+fn shell_wrappers_rejected_in_production() {
+    let files = production_rust_files();
+    for path in files {
+        let rel = path
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .expect("under manifest")
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        let source = std::fs::read_to_string(&path).expect("readable");
+        let keep = production_code_for_shell(&source);
+        assert!(
+            !has_shell_wrapper(&keep),
+            "{rel} routes a production command through an interactive shell"
         );
     }
 }
 
 #[test]
 fn process_session_setup_has_one_owner() {
-    let owner = strip_test_code(&read_source("src/process.rs"));
+    let owner = production_code_clean(&read_source("src/process.rs"));
     assert_eq!(owner.matches("pre_exec(").count(), 1);
     assert_eq!(owner.matches("libc::setsid()").count(), 1);
-    for path in ["src/startup.rs", "src/meta/local_inventory_cache.rs"] {
-        let source = strip_test_code(&read_source(path));
+    let files = production_rust_files();
+    for path in files {
+        let rel = path
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .expect("under manifest")
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        if rel == "src/process.rs" {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path).expect("readable");
+        let cleaned = production_code_clean(&source);
         assert!(
-            !source.contains("pre_exec("),
-            "{path} configures process sessions directly"
+            !cleaned.contains("pre_exec("),
+            "{rel} configures process sessions directly"
         );
         assert!(
-            !source.contains("libc::setsid()"),
-            "{path} calls setsid directly"
+            !cleaned.contains("libc::setsid()"),
+            "{rel} calls setsid directly"
+        );
+        assert!(
+            !cleaned.contains("libc::kill"),
+            "{rel} duplicates process-group kill primitives"
         );
     }
     assert!(owner.contains("#![deny(unsafe_code)]"));
+    assert!(read_source("src/lib.rs").contains("#![deny(unsafe_code)]"));
+    assert!(read_source("src/main.rs").contains("#![deny(unsafe_code)]"));
+}
+
+#[test]
+fn crate_roots_deny_unsafe_code() {
+    for path in ["src/lib.rs", "src/main.rs"] {
+        let source = read_source(path);
+        assert!(
+            source.contains("#![deny(unsafe_code)]"),
+            "{path} must enforce crate-wide unsafe denial"
+        );
+    }
+    let process = read_source("src/process.rs");
+    assert!(process.contains("#![deny(unsafe_code)]"));
+}
+
+#[test]
+fn unsafe_allow_inventory_is_explicit_and_minimal() {
+    let allowed: &[(&str, usize)] = &[
+        ("src/process.rs", 5),
+        ("src/meta/safe_open.rs", 4),
+        ("src/fetch/browser/profiles.rs", 2),
+    ];
+    let files = production_rust_files();
+    let mut total = 0usize;
+    for path in files {
+        let rel = path
+            .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+            .expect("under manifest")
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        let source = std::fs::read_to_string(&path).expect("readable");
+        let cleaned = production_code_clean(&source);
+        let count = cleaned.matches("allow(unsafe_code)").count();
+        if count == 0 {
+            continue;
+        }
+        total += count;
+        let expected = allowed.iter().find(|(p, _)| *p == rel).map(|(_, c)| *c);
+        assert!(
+            expected.is_some(),
+            "{rel} introduces allow(unsafe_code) outside the explicit inventory"
+        );
+        assert_eq!(
+            count,
+            expected.unwrap(),
+            "{rel} allow count changed; classify the new site explicitly"
+        );
+    }
+    assert_eq!(
+        total, 11,
+        "explicit unsafe allow inventory must stay minimal"
+    );
+}
+
+#[test]
+fn scanner_rejects_new_file_process_capture() {
+    let fixture = "use std::process::Command;\nfn f() {\n    let mut c = Command::new(\"git\");\n    let _ = c.output();\n}\n";
+    let cleaned = production_code_clean(fixture);
+    assert!(has_output_call(&cleaned));
+    let commented = "// let _ = c.output();\nfn f() {}\n";
+    assert!(!has_output_call(&production_code_clean(commented)));
+    let in_string = "fn f() { let s = \".output()\"; }\n";
+    assert!(!has_output_call(&production_code_clean(in_string)));
+    let multiline = "fn f() {\n    let _ = c.output\n        ();\n}\n";
+    assert!(has_output_call(&production_code_clean(multiline)));
+    let qualified = "fn f() {\n    let _ = std::process::Command::new(\"git\").output();\n}\n";
+    assert!(has_output_call(&production_code_clean(qualified)));
+    let test_only = "#[cfg(test)]\nmod tests {\n    fn f() { let _ = c.output(); }\n}\nfn g() {}\n";
+    assert!(!has_output_call(&production_code_clean(test_only)));
+}
+
+#[test]
+fn scanner_rejects_new_file_unsafe_and_shell() {
+    let unsafe_outside = "fn f() { unsafe { libc::kill(1, 9); } }\n";
+    let cleaned = production_code_clean(unsafe_outside);
+    assert!(cleaned.contains("unsafe"));
+    let shell = "fn f() { let mut c = Command::new(\"sh\"); }\n";
+    assert!(has_shell_wrapper(&production_code_for_shell(shell)));
+    let shell_qualified = "fn f() { let mut c = tokio::process::Command::new(\"bash\"); }\n";
+    assert!(has_shell_wrapper(&production_code_for_shell(
+        shell_qualified
+    )));
+    let shell_comment = "// Command::new(\"sh\")\nfn f() {}\n";
+    assert!(!has_shell_wrapper(&production_code_for_shell(
+        shell_comment
+    )));
+    let shell_string_only = "fn f() { let s = \"sh\"; }\n";
+    assert!(!has_shell_wrapper(&production_code_for_shell(
+        shell_string_only
+    )));
+    let nonshell = "fn f() { let mut c = Command::new(\"git\"); }\n";
+    assert!(!has_shell_wrapper(&production_code_for_shell(nonshell)));
+    let test_shell = "#[cfg(test)]\nmod tests { fn f() { let _ = Command::new(\"sh\"); } }\n";
+    assert!(!has_shell_wrapper(&production_code_for_shell(test_shell)));
+}
+
+#[test]
+fn dependency_security_workflow_is_scheduled_and_dispatchable() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let workflow = std::fs::read_to_string(format!(
+        "{manifest}/.github/workflows/dependency-security.yml"
+    ))
+    .expect("readable");
+    assert!(workflow.contains("schedule:"));
+    assert!(workflow.contains("cron: '0 9 * * 1'"));
+    assert!(workflow.contains("workflow_dispatch:"));
+    assert!(workflow.contains("cargo-deny"));
 }
 
 #[test]
@@ -1451,4 +2046,64 @@ fn egress_feature_budget_stays_bounded() {
         !default_line.contains("egress"),
         "default build must not enable egress: {default_line}"
     );
+}
+
+fn contains_closed_range_shorthand(text: &str) -> bool {
+    text.lines().any(|line| {
+        let low = line.to_ascii_lowercase();
+        low.contains("m001-m005") && low.contains("closed")
+    })
+}
+
+#[test]
+fn planning_status_consistency_no_closed_range_shorthand() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let roadmap = fs::read_to_string(format!(
+        "{manifest}/plans/subsystems/repository-hardening-roadmap.md"
+    ))
+    .expect("readable");
+    let registry = fs::read_to_string(format!("{manifest}/plans/registry.md")).expect("readable");
+    let overview = fs::read_to_string(format!(
+        "{manifest}/plans/implementation/repository-hardening/000-overview-and-sequencing.md"
+    ))
+    .expect("readable");
+    assert!(roadmap.contains("| M001") && roadmap.contains("| M007"));
+    assert!(overview.contains("| M001") && overview.contains("| M007"));
+    assert!(
+        !contains_closed_range_shorthand(&roadmap),
+        "roadmap must not claim M001-M005 closed"
+    );
+    assert!(
+        !contains_closed_range_shorthand(&overview),
+        "overview must not claim M001-M005 closed"
+    );
+    for line in registry.lines() {
+        if line.to_ascii_lowercase().contains("hardening")
+            && line.to_ascii_lowercase().contains("m001-m005")
+            && line.to_ascii_lowercase().contains("closed")
+        {
+            panic!("registry hardening row must not claim M001-M005 closed: {line}");
+        }
+    }
+    let bad = "Summary: M001-M005 closed\n| M002 | conditionally closed |\n";
+    assert!(contains_closed_range_shorthand(bad));
+    let good = "M001 conditionally closed via M007\nM002 conditionally closed\n";
+    assert!(!contains_closed_range_shorthand(good));
+    for (name, text) in [("roadmap", &roadmap), ("overview", &overview)] {
+        for (mid, want) in [
+            ("M001", "conditionally"),
+            ("M002", "conditionally"),
+            ("M006", "blocked"),
+            ("M007", "conditionally closed"),
+        ] {
+            let row = text
+                .lines()
+                .find(|l| l.contains(mid) && l.trim_start().starts_with('|'))
+                .unwrap_or_else(|| panic!("{name} missing row {mid}"));
+            assert!(
+                row.to_ascii_lowercase().contains(want),
+                "{name} {mid} row must contain '{want}': {row}"
+            );
+        }
+    }
 }

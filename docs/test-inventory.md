@@ -38,7 +38,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `browser_profiles` | `browser` | Browser profile management |
 | `browser_transport` | `browser` | Browser transport orchestration |
 | `browser_live_smoke` | `browser` (+ `live-smoke`, ignored) | Live browser smoke (opt-in only) |
-| `static_guards` | None | Ownership, layout, process-session, forge policy/transport, dependency/workflow, and policy guards (fail-closed) |
+| `static_guards` | None | Ownership, layout, crate-wide unsafe, repo-wide process/shell, planning consistency, workflow wiring, forge policy/transport, dependency/workflow, and policy guards (fail-closed) |
 
 Placement authority is the table in `architecture/testing.md`.
 

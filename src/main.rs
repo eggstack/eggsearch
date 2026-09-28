@@ -1,5 +1,7 @@
 //! eggsearch CLI entry point.
 
+#![deny(unsafe_code)]
+
 mod commands;
 mod config;
 

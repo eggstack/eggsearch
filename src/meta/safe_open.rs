@@ -58,6 +58,7 @@ pub struct SafeFile {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn openat_sys(
     dirfd: libc::c_int,
     name: &std::ffi::CStr,
@@ -94,6 +95,7 @@ fn openat_sys(
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn close_fd(fd: libc::c_int) {
     unsafe {
         libc::close(fd);
@@ -101,6 +103,7 @@ fn close_fd(fd: libc::c_int) {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn fstat_is_regular_and_size(fd: libc::c_int) -> Result<(bool, u64), std::io::Error> {
     let mut stat: libc::stat = unsafe { std::mem::zeroed() };
     if unsafe { libc::fstat(fd, &mut stat) } < 0 {
@@ -127,6 +130,7 @@ fn fstat_is_regular_and_size(fd: libc::c_int) -> Result<(bool, u64), std::io::Er
 ///
 /// On non-Unix platforms, `follow_symlinks=true` returns
 /// `SafeSymlinkFollowingUnsupported`.
+#[allow(unsafe_code)]
 pub fn safe_open_relative(
     root: &Path,
     relative: &str,

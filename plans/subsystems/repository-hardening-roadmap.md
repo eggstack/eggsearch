@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M007 corrective ready, M002 conditionally closed, M006 externally blocked
+Status: active; M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -231,24 +231,17 @@ transport-feature change, and process refactor remain independently reviewable.
 
 ## 8. Milestones
 
-Current milestone state after post-closure review: M003 and M005 remain closed.
-M002 remains conditionally closed pending first tagged-release attestation and
-immutable-release evidence. M006 remains externally blocked. M007 is ready to
-correct two closure defects discovered after M001/M004 closure: M001 lacks the
-required scheduled dependency-security workflow evidence, and M004's static
-process/unsafe ratchet covers the migrated file inventory rather than all
-production Rust sources. Original closure records remain historical evidence;
-M007 is the corrective control point.
+Current milestone state after M007 corrective implementation: M001 is conditionally closed via M007 pending the first scheduled dependency-security run. M002 remains conditionally closed pending first tagged-release attestation and immutable-release evidence. M003 remains closed. M004 is closed through M007 once repository-wide guards pass. M005 remains closed. M006 remains blocked on upstream chromiumoxide. M007 is conditionally closed with the single operational condition of the first scheduled dependency-security run. Original closure records remain historical evidence; M007 is the corrective control point.
 
 | Milestone | Current status | Control point |
 |---|---|---|
-| M001 dependency security/policy | closed record; corrective evidence pending through M007 | `plans/closure/repository-hardening/001-status.md` + M007 |
+| M001 dependency security/policy | conditionally closed via M007 operational evidence correction | `plans/closure/repository-hardening/001-status.md` + M007 |
 | M002 release provenance | conditionally closed | `plans/closure/repository-hardening/002-status.md` |
 | M003 rmcp HTTP verification on eggfetch | closed | `plans/closure/repository-hardening/003-status.md` |
-| M004 process/unsafe boundary | closed record; corrective ratchet pending through M007 | `plans/closure/repository-hardening/004-status.md` + M007 |
+| M004 process/unsafe boundary | closed through M007 once repository-wide guards pass | `plans/closure/repository-hardening/004-status.md` + M007 |
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
 | M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
-| M007 closure evidence + process ratchet corrective | ready | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` |
+| M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 

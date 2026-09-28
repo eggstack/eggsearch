@@ -240,6 +240,7 @@ impl ProfileLock {
         }
     }
 
+    #[allow(unsafe_code)]
     pub fn try_acquire(&mut self) -> ProfileResult<bool> {
         validate_not_symlink(&self.lock_path)?;
 
@@ -270,6 +271,7 @@ impl ProfileLock {
 }
 
 impl Drop for ProfileLock {
+    #[allow(unsafe_code)]
     fn drop(&mut self) {
         if self.lock_file.is_some() {
             #[cfg(unix)]
