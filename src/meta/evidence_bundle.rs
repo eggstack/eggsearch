@@ -307,11 +307,14 @@ fn link_fetches_to_sources(
     links
 }
 
-/// Loose URL equality: normalize trailing slashes and case for host.
+/// Loose URL equality: compare canonical forms.
+///
+/// Only the scheme/host are case-insensitive (RFC 3986); the path and
+/// query stay case-sensitive so `/A` and `/a` remain distinct
+/// resources. Reusing the canonicalizer keeps this consistent with the
+/// stable-ID normalization.
 fn urls_equal(a: &str, b: &str) -> bool {
-    let a = a.trim_end_matches('/');
-    let b = b.trim_end_matches('/');
-    a.eq_ignore_ascii_case(b)
+    crate::core::identity::canonicalize_url(a) == crate::core::identity::canonicalize_url(b)
 }
 
 /// Loose locator equality: compare host, owner, repo, path.
@@ -319,13 +322,11 @@ fn locators_equal(
     a: &crate::core::repo_fetch::RepoLocator,
     b: &crate::core::repo_fetch::RepoLocator,
 ) -> bool {
-    let a_host = a.host.map(|h| format!("{h:?}"));
-    let b_host = b.host.map(|h| format!("{h:?}"));
     let a_owner = a.owner.as_deref().unwrap_or("");
     let b_owner = b.owner.as_deref().unwrap_or("");
     let a_repo = a.repo.as_deref().unwrap_or("");
     let b_repo = b.repo.as_deref().unwrap_or("");
-    a_host == b_host
+    a.host == b.host
         && a_owner.eq_ignore_ascii_case(b_owner)
         && a_repo.eq_ignore_ascii_case(b_repo)
         && a.path == b.path
@@ -795,6 +796,89 @@ mod tests {
             bundle.source_links[0].link_reason,
             EvidenceBundleLinkReason::UrlMatch
         );
+    }
+
+    #[test]
+    fn url_equality_ignores_host_case_but_not_path_case() {
+        assert!(urls_equal(
+            "https://Example.COM/Path",
+            "https://example.com/Path"
+        ));
+        assert!(urls_equal(
+            "https://example.com/path/",
+            "https://example.com/path"
+        ));
+        assert!(urls_equal(
+            "https://example.com/a?x=1#frag",
+            "https://example.com/a?x=1"
+        ));
+        assert!(!urls_equal(
+            "https://example.com/Path",
+            "https://example.com/path"
+        ));
+        assert!(!urls_equal(
+            "https://example.com/a?x=1",
+            "https://example.com/a?x=2"
+        ));
+        assert!(!urls_equal("https://example.com/a", "https://other.com/a"));
+    }
+
+    #[test]
+    fn case_differing_fetch_url_does_not_link_to_source() {
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![make_source(
+                "https://example.com/Docs/Guide",
+                "guide",
+                "brave",
+            )],
+            fetches: vec![make_fetch("https://example.com/docs/guide", None)],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert!(bundle.source_links.is_empty());
+        assert!(bundle.fetched_items[0].source_id.is_none());
+    }
+
+    #[test]
+    fn locator_equality_compares_hosts_by_value() {
+        use crate::core::code_metadata::CodeHost;
+        use crate::core::repo_fetch::{RepoLocator, RepoLocatorKind};
+
+        let locator = |host: Option<CodeHost>, path: &str| RepoLocator {
+            kind: RepoLocatorKind::Remote,
+            host,
+            owner: Some("tokio-rs".to_string()),
+            repo: Some("tokio".to_string()),
+            ref_name: None,
+            commit_sha: None,
+            path: path.to_string(),
+            workspace_root: None,
+        };
+
+        assert!(locators_equal(
+            &locator(Some(CodeHost::Github), "src/lib.rs"),
+            &locator(Some(CodeHost::Github), "src/lib.rs")
+        ));
+        assert!(!locators_equal(
+            &locator(Some(CodeHost::Github), "src/lib.rs"),
+            &locator(Some(CodeHost::Gitlab), "src/lib.rs")
+        ));
+        assert!(!locators_equal(
+            &locator(Some(CodeHost::Github), "src/lib.rs"),
+            &locator(None, "src/lib.rs")
+        ));
+        assert!(!locators_equal(
+            &locator(Some(CodeHost::Github), "src/lib.rs"),
+            &locator(Some(CodeHost::Github), "src/Lib.rs")
+        ));
     }
 
     #[test]

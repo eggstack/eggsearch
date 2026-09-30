@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use futures::StreamExt;
+
 use crate::core::config::default_config_path;
 use crate::mcp::http::{McpPath, DEFAULT_BIND, DEFAULT_PATH, HEALTH_PATH};
 
@@ -22,6 +24,7 @@ const SYSTEMD_CONFIG: &str = "/etc/eggsearch/eggsearch.toml";
 const HEALTH_TIMEOUT: Duration = Duration::from_millis(800);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const HEALTH_POLL_ATTEMPTS: usize = 30;
+const HEALTH_BODY_LIMIT: usize = 256;
 
 const SYSTEMD_TEMPLATE: &str = include_str!("../packaging/systemd/eggsearch.service");
 const LAUNCHD_TEMPLATE: &str = include_str!("../packaging/launchd/com.eggstack.eggsearch.plist");
@@ -341,6 +344,30 @@ pub fn select_method(requested: StartupMethod, info: PlatformInfo) -> io::Result
     }
 }
 
+/// Read the health payload with a hard streaming byte cap.
+///
+/// The health endpoint is loopback, but the response is still
+/// untrusted input: a `Content-Length`-less body must not be buffered
+/// in full before the cap is enforced.
+async fn read_health_body(mut response: eggfetch_core::Response) -> io::Result<Vec<u8>> {
+    let mut body = Vec::with_capacity(HEALTH_BODY_LIMIT);
+    let mut stream = response
+        .bytes_stream()
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+        if chunk.len() > HEALTH_BODY_LIMIT.saturating_sub(body.len()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "health response body exceeded its bound",
+            ));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 /// Probe the configured loopback health endpoint without following redirects.
 pub async fn probe_health(spec: &RuntimeSpec) -> HealthState {
     let client = eggfetch_core::Client::builder()
@@ -352,14 +379,14 @@ pub async fn probe_health(spec: &RuntimeSpec) -> HealthState {
             read: Some(HEALTH_TIMEOUT),
             total: Some(HEALTH_TIMEOUT),
         })
-        .max_decoded_body_size(256)
+        .max_decoded_body_size(HEALTH_BODY_LIMIT)
         .build();
     let url = spec.health_url();
     let builder = match client.get(url.as_str()) {
         Ok(builder) => builder,
         Err(error) => return HealthState::Error(error.to_string()),
     };
-    let mut response = match builder.send_detailed().await {
+    let response = match builder.send_detailed().await {
         Ok(response) => response,
         Err(failure)
             if failure.network_failure_kind()
@@ -373,16 +400,16 @@ pub async fn probe_health(spec: &RuntimeSpec) -> HealthState {
     if !response.status().is_success() {
         return HealthState::NonReady;
     }
-    if response.content_length().is_some_and(|length| length > 256) {
+    if response
+        .content_length()
+        .is_some_and(|length| length > HEALTH_BODY_LIMIT as u64)
+    {
         return HealthState::Malformed;
     }
-    let body = match response.bytes().await {
+    let body = match read_health_body(response).await {
         Ok(body) => body,
         Err(_) => return HealthState::Malformed,
     };
-    if body.len() > 256 {
-        return HealthState::Malformed;
-    }
     let health: HealthPayload = match serde_json::from_slice(&body) {
         Ok(health) => health,
         Err(_) => return HealthState::Malformed,
@@ -1446,6 +1473,37 @@ mod tests {
         assert_eq!(
             probe_health(&loopback_spec(addr)).await,
             HealthState::Healthy
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_health_reports_malformed_for_oversized_chunked_body() {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                // A valid but oversized health payload sent chunked, so
+                // there is no `Content-Length` to reject it upfront.
+                let body = format!(
+                    r#"{{"service":"eggsearch","status":"ready","pad":"{}"}}"#,
+                    "x".repeat(1024)
+                );
+                let mut framed = String::from(
+                    "HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+                );
+                for chunk in body.as_bytes().chunks(64) {
+                    framed.push_str(&format!("{:x}\r\n", chunk.len()));
+                    framed.push_str(&String::from_utf8_lossy(chunk));
+                    framed.push_str("\r\n");
+                }
+                framed.push_str("0\r\n\r\n");
+                let _ = stream.write_all(framed.as_bytes()).await;
+            }
+        });
+        assert_eq!(
+            probe_health(&loopback_spec(addr)).await,
+            HealthState::Malformed
         );
     }
 

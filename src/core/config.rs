@@ -757,17 +757,20 @@ fn is_valid_egress_host(host: &str) -> bool {
         if label.is_empty() || label.len() > 63 {
             return false;
         }
-        let mut chars = label.chars();
-        let first = chars.next().expect("non-empty label");
+        let Some(first) = label.chars().next() else {
+            return false;
+        };
         if !first.is_ascii_alphanumeric() {
             return false;
         }
-        for ch in chars {
+        for ch in label.chars().skip(1) {
             if !(ch.is_ascii_alphanumeric() || ch == '-') {
                 return false;
             }
         }
-        let last = label.chars().last().expect("non-empty label");
+        let Some(last) = label.chars().next_back() else {
+            return false;
+        };
         if !last.is_ascii_alphanumeric() {
             return false;
         }

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
+use futures::StreamExt;
 use serde_json::{json, Value};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -35,7 +36,7 @@ async fn verify_with_client(
     endpoint: &str,
     required_tools: &[&str],
 ) -> Result<()> {
-    let mut health = http
+    let health = http
         .get(health_endpoint)
         .context("HTTP health check failed")?
         .send()
@@ -44,7 +45,8 @@ async fn verify_with_client(
     if !health.status().is_success() {
         bail!("HTTP health check returned {}", health.status());
     }
-    let payload: Value = health.json().await.context("invalid /healthz JSON")?;
+    let health_body = read_bounded_body(health, BODY_LIMIT, "HTTP health check body").await?;
+    let payload: Value = serde_json::from_slice(&health_body).context("invalid /healthz JSON")?;
     if payload.get("service").and_then(Value::as_str) != Some("eggsearch")
         || payload.get("status").and_then(Value::as_str) != Some("ready")
     {
@@ -110,7 +112,7 @@ async fn verify_with_client(
             missing.join(", ")
         );
     }
-    let mut close = http
+    let close = http
         .delete(endpoint)
         .context("MCP HTTP session close failed")?
         .header("Mcp-Session-Id", &session_id)
@@ -121,11 +123,37 @@ async fn verify_with_client(
     if !close.status().is_success() {
         bail!("MCP HTTP session close returned {}", close.status());
     }
-    let _ = close
-        .bytes()
-        .await
-        .context("MCP HTTP session close body failed")?;
+    read_bounded_body(close, BODY_LIMIT, "MCP HTTP session close body").await?;
     Ok(())
+}
+
+/// Read a response body with a hard streaming byte cap.
+///
+/// The cap is enforced while streaming, so an oversized (or
+/// `Content-Length`-less) body is rejected before it is fully buffered.
+async fn read_bounded_body(
+    mut response: eggfetch_core::Response,
+    limit: usize,
+    context: &str,
+) -> Result<Vec<u8>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        bail!("{context} exceeded its bound");
+    }
+    let mut body = Vec::with_capacity(limit.min(64 * 1024));
+    let mut stream = response
+        .bytes_stream()
+        .with_context(|| format!("{context} failed"))?;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("{context} failed"))?;
+        if chunk.len() > limit.saturating_sub(body.len()) {
+            bail!("{context} exceeded its bound");
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
 }
 
 async fn request(
@@ -146,7 +174,7 @@ async fn request(
             .header("Mcp-Session-Id", session_id)
             .header("MCP-Protocol-Version", PROTOCOL_VERSION);
     }
-    let mut response = request.send().await.context("MCP HTTP request failed")?;
+    let response = request.send().await.context("MCP HTTP request failed")?;
     if !response.status().is_success() {
         bail!("MCP HTTP request returned {}", response.status());
     }
@@ -170,13 +198,7 @@ async fn request(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("")
         .to_ascii_lowercase();
-    let body = response
-        .bytes()
-        .await
-        .context("MCP HTTP response body failed")?;
-    if body.len() > BODY_LIMIT {
-        bail!("MCP HTTP response exceeded its bound");
-    }
+    let body = read_bounded_body(response, BODY_LIMIT, "MCP HTTP response body").await?;
     let payload = if content_type.starts_with("text/event-stream") {
         parse_sse(&body)?
     } else if content_type.starts_with("application/json") {
@@ -233,6 +255,7 @@ mod tests {
         MissingTool,
         MalformedInitialize,
         Oversized,
+        OversizedHealthChunked,
         OversizedSession,
         Stalled,
         NonSuccess,
@@ -265,7 +288,10 @@ mod tests {
                 read: Some(timeout),
                 total: Some(timeout),
             })
-            .max_decoded_body_size(BODY_LIMIT)
+            // Deliberately looser than `BODY_LIMIT` so the assertions
+            // exercise the verifier's own streaming cap rather than the
+            // transport-level decoded-body limit.
+            .max_decoded_body_size(BODY_LIMIT * 2)
             .build();
         let result = verify_with_client(
             &http,
@@ -282,7 +308,24 @@ mod tests {
         result
     }
 
-    async fn health() -> Response<Body> {
+    async fn health(State(state): State<Arc<TestState>>) -> Response<Body> {
+        if matches!(state.mode, ReplyMode::OversizedHealthChunked) {
+            // Valid JSON, streamed without a `Content-Length`, so the
+            // byte cap has to be enforced while reading.
+            let body = format!(
+                "{{\"service\":\"eggsearch\",\"status\":\"ready\",\"padding\":\"{}\"}}",
+                "x".repeat(BODY_LIMIT + 1)
+            );
+            let chunks = body
+                .as_bytes()
+                .chunks(4096)
+                .map(|chunk| Ok::<_, std::io::Error>(axum::body::Bytes::copy_from_slice(chunk)))
+                .collect::<Vec<_>>();
+            return Response::builder()
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from_stream(futures::stream::iter(chunks)))
+                .expect("chunked health response");
+        }
         json_response(json!({"service":"eggsearch","status":"ready"}))
     }
 
@@ -404,6 +447,13 @@ mod tests {
     #[tokio::test]
     async fn rejects_oversized_timeout_status_and_redirect_responses() {
         assert!(serve(ReplyMode::Oversized, HTTP_TIMEOUT).await.is_err());
+        let error = serve(ReplyMode::OversizedHealthChunked, HTTP_TIMEOUT)
+            .await
+            .expect_err("oversized chunked health body must be rejected");
+        assert!(
+            error.to_string().contains("exceeded its bound"),
+            "unexpected rejection reason: {error}"
+        );
         assert!(serve(ReplyMode::OversizedSession, HTTP_TIMEOUT)
             .await
             .is_err());

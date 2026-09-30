@@ -299,8 +299,10 @@ impl FetchCache {
         raw_max_bytes: usize,
         derived_max_bytes: usize,
     ) -> Self {
-        let raw_cap = std::num::NonZeroUsize::new(max_raw_entries.max(1)).unwrap();
-        let derived_cap = std::num::NonZeroUsize::new(max_derived_entries.max(1)).unwrap();
+        let raw_cap = std::num::NonZeroUsize::new(max_raw_entries.max(1))
+            .unwrap_or(std::num::NonZeroUsize::MIN);
+        let derived_cap = std::num::NonZeroUsize::new(max_derived_entries.max(1))
+            .unwrap_or(std::num::NonZeroUsize::MIN);
         Self {
             operation_gate: RwLock::new(()),
             raw: Mutex::new(LruCache::new(raw_cap)),

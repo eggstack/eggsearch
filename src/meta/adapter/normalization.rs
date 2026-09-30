@@ -86,18 +86,29 @@ pub(crate) fn local_result_budget(effective_max_results: usize) -> usize {
     }
 }
 
+/// Rank two optional scores, highest first.
+///
+/// Non-finite scores (NaN, ±inf) are treated as absent rather than
+/// silently comparing `Equal`, so a malformed score can never take
+/// part in a tie and leak a nondeterministic order into the ranking.
+fn cmp_score_desc(a: Option<f64>, b: Option<f64>) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let a = a.filter(|score| score.is_finite());
+    let b = b.filter(|score| score.is_finite());
+    match (a, b) {
+        (Some(x), Some(y)) => y.total_cmp(&x),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
 pub(crate) fn merge_excerpts(
     existing: &mut Vec<crate::core::source_card::SourceExcerpt>,
     snippet: Option<&str>,
     mut incoming: Vec<crate::core::source_card::SourceExcerpt>,
 ) {
-    use std::cmp::Ordering;
-    incoming.sort_by(|a, b| match (a.score, b.score) {
-        (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(Ordering::Equal),
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    });
+    incoming.sort_by(|a, b| cmp_score_desc(a.score, b.score));
     let mut seen: std::collections::HashSet<String> = existing
         .iter()
         .map(|e| crate::core::source_card::excerpt_normalized_key(&e.text))
@@ -208,9 +219,7 @@ pub(crate) fn aggregate_rrf(
     let mut ranked: Vec<AggregatedResult> = map.into_values().collect();
 
     ranked.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+        cmp_score_desc(Some(a.score), Some(b.score))
             .then_with(|| a.title.cmp(&b.title))
             .then_with(|| a.url.cmp(&b.url))
     });
@@ -626,12 +635,14 @@ pub(crate) fn apply_intent_reranking(
         card.metadata.rank_reasons.extend(reasons);
     }
 
-    // Re-sort by updated scores (stable sort preserves original
-    // order for ties).
+    // Re-sort by updated scores. The tiebreak is explicit (score,
+    // title, url) rather than inherited from the incoming order, so
+    // the result stays deterministic regardless of how the caller
+    // ordered the pool.
     results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+        cmp_score_desc(a.score, b.score)
+            .then_with(|| a.title.cmp(&b.title))
+            .then_with(|| a.url.cmp(&b.url))
     });
 }
 

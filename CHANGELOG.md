@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   qualification, exact release asset validation, installer contract tests, and
   release-tree preflight diagnostics.
 
+### Fixed
+
+- Loopback health probes and MCP HTTP integration verification now enforce
+  their byte caps while streaming, so `Content-Length`-less (chunked) bodies
+  are rejected instead of being buffered in full before the size check.
+- Evidence-bundle fetch linking matches URLs by canonical form, so scheme and
+  host stay case-insensitive while the path and query remain case-sensitive
+  (`/A` and `/a` are no longer linked as the same resource). Repo locators
+  compare `CodeHost` values directly instead of their `Debug` rendering.
+- Intent/freshness reranking carries the documented `(score, title, url)`
+  tiebreak explicitly, and non-finite scores rank last instead of collapsing
+  into ties, keeping ranking order deterministic.
+
 ## [0.3.9] - 2026-09-11
 
 ### Added

@@ -817,6 +817,78 @@ fn apply_intent_reranking_boosts_docs_for_official_docs() {
 }
 
 #[test]
+fn apply_intent_reranking_tiebreak_is_input_order_independent() {
+    let card = |title: &str| {
+        SourceCard::new(
+            title,
+            format!("https://example.com/{title}"),
+            vec!["a".to_string()],
+            Some(0.01),
+            TrustLevel::ExternalUntrusted,
+        )
+    };
+    let order = |mut cards: Vec<SourceCard>| {
+        apply_intent_reranking(
+            &mut cards,
+            crate::core::query::SearchIntent::Web,
+            crate::core::query::Freshness::Any,
+        );
+        cards.into_iter().map(|c| c.title).collect::<Vec<_>>()
+    };
+
+    let forward = order(vec![card("alpha"), card("beta"), card("gamma")]);
+    let reverse = order(vec![card("gamma"), card("beta"), card("alpha")]);
+    assert_eq!(forward, vec!["alpha", "beta", "gamma"]);
+    assert_eq!(reverse, forward);
+}
+
+#[test]
+fn non_finite_scores_rank_last_and_stay_deterministic() {
+    let card = |title: &str, score: Option<f64>| {
+        SourceCard::new(
+            title,
+            format!("https://example.com/{title}"),
+            vec!["a".to_string()],
+            score,
+            TrustLevel::ExternalUntrusted,
+        )
+    };
+    let mut results = vec![
+        card("nan", Some(f64::NAN)),
+        card("none", None),
+        card("scored", Some(0.01)),
+    ];
+    apply_intent_reranking(
+        &mut results,
+        crate::core::query::SearchIntent::Web,
+        crate::core::query::Freshness::Any,
+    );
+    let titles = results.into_iter().map(|c| c.title).collect::<Vec<_>>();
+    assert_eq!(titles, vec!["scored", "nan", "none"]);
+
+    let mut excerpts = vec![
+        excerpt("nan", Some(f64::NAN)),
+        excerpt("unscored", None),
+        excerpt("scored", Some(0.5)),
+    ];
+    let mut merged = Vec::new();
+    merge_excerpts(&mut merged, None, std::mem::take(&mut excerpts));
+    let texts = merged.into_iter().map(|e| e.text).collect::<Vec<_>>();
+    assert_eq!(texts, vec!["scored", "nan", "unscored"]);
+
+    let mut existing = vec![excerpt("existing", Some(0.1))];
+    merge_excerpts(
+        &mut existing,
+        None,
+        vec![excerpt("infinite", Some(f64::INFINITY))],
+    );
+    // `merge_excerpts` orders the incoming batch only, so a non-finite
+    // score appends instead of joining a score comparison.
+    let texts = existing.into_iter().map(|e| e.text).collect::<Vec<_>>();
+    assert_eq!(texts, vec!["existing", "infinite"]);
+}
+
+#[test]
 fn candidate_pool_size_scales_by_three() {
     // Cap = 50: helper returns min(final * 3, 50).
     assert_eq!(candidate_pool_size(1, 50), 3);

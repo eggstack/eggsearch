@@ -119,7 +119,7 @@ Placement authority is the table in `architecture/testing.md`.
 | `pdf_extended.json` | 28 | PDF magic bytes, encrypted, malformed xref, cyclic refs |
 | `filesystem_extended.json` | 30 | Symlinks, path traversal, hidden paths, binary files |
 
-## Fuzz Targets (22 registered targets)
+## Fuzz Targets (23 registered targets)
 
 Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 
@@ -147,6 +147,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `attempt_summary_generation` | Attempt summary generation |
 | `workflow_resolution` | Workflow resolution |
 | `research_role_mapping` | Research role mapping |
+| `dependency_parse` | Typed dependency-evidence parsing (Cargo/npm/pip/Go/Maven/Gradle lockfile grammar) |
 
 ## Schema/Contract Tests (14 suites)
 
