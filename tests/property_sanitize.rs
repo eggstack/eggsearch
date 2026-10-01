@@ -79,7 +79,8 @@ proptest! {
         let (out, removed) = strip_control_chars(&s);
         let input_chars = s.chars().count();
         let output_chars = out.chars().count();
-        prop_assert_eq!(input_chars - output_chars, removed);
+        let separators = s.chars().filter(|c| matches!(c, '\0' | '\r' | '\u{2028}' | '\u{2029}')).count();
+        prop_assert_eq!(input_chars - output_chars + separators, removed);
     }
 
     #[test]

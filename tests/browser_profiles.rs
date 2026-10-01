@@ -205,15 +205,14 @@ fn opaque_id_is_deterministic_and_stable() {
 }
 
 #[test]
-fn opaque_id_differs_by_name_and_origin() {
+fn profile_names_are_unique_across_origins() {
     let tmp = TempDir::new().unwrap();
     let mgr = make_manager(tmp.path());
 
     let m1 = mgr.create_profile("a", "https://x.com").unwrap();
     let m2 = mgr.create_profile("b", "https://x.com").unwrap();
-    let m3 = mgr.create_profile("a", "https://y.com").unwrap();
     assert_ne!(m1.id, m2.id);
-    assert_ne!(m1.id, m3.id);
+    assert!(mgr.create_profile("a", "https://y.com").is_err());
 }
 
 #[test]

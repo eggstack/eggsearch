@@ -31,37 +31,17 @@ pub fn discover_browser(configured_path: Option<&str>) -> BrowserDiscoveryState 
         }
     }
 
-    if let Some(path) = find_in_path("google-chrome-stable") {
-        return BrowserDiscoveryState::Available(BrowserDiscovery {
-            path,
-            family: BrowserFamily::Chrome,
-            version: String::new(),
-            source: BrowserSource::AutoDiscovered,
-        });
-    }
-    if let Some(path) = find_in_path("google-chrome") {
-        return BrowserDiscoveryState::Available(BrowserDiscovery {
-            path,
-            family: BrowserFamily::Chrome,
-            version: String::new(),
-            source: BrowserSource::AutoDiscovered,
-        });
-    }
-    if let Some(path) = find_in_path("chromium") {
-        return BrowserDiscoveryState::Available(BrowserDiscovery {
-            path,
-            family: BrowserFamily::Chromium,
-            version: String::new(),
-            source: BrowserSource::AutoDiscovered,
-        });
-    }
-    if let Some(path) = find_in_path("chromium-browser") {
-        return BrowserDiscoveryState::Available(BrowserDiscovery {
-            path,
-            family: BrowserFamily::Chromium,
-            version: String::new(),
-            source: BrowserSource::AutoDiscovered,
-        });
+    for name in [
+        "google-chrome-stable",
+        "google-chrome",
+        "chromium",
+        "chromium-browser",
+    ] {
+        if let Some(path) = find_in_path(name) {
+            if let Some(discovery) = try_validate(&path, BrowserSource::AutoDiscovered) {
+                return BrowserDiscoveryState::Available(discovery);
+            }
+        }
     }
 
     BrowserDiscoveryState::NotFound
@@ -93,8 +73,11 @@ fn try_validate(path: &Path, source: BrowserSource) -> Option<BrowserDiscovery> 
         return None;
     }
 
+    if !is_executable(path) {
+        return None;
+    }
     let family = detect_family(path);
-    let version = run_version(path).unwrap_or_default();
+    let version = run_version(path)?;
 
     Some(BrowserDiscovery {
         path: path.to_path_buf(),
@@ -102,6 +85,19 @@ fn try_validate(path: &Path, source: BrowserSource) -> Option<BrowserDiscovery> 
         version,
         source,
     })
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata()
+        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 fn try_validate_expanded(path_str: &str, source: BrowserSource) -> Option<BrowserDiscovery> {

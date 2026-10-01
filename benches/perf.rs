@@ -799,6 +799,8 @@ fn bench_derived_cache_hits(c: &mut Criterion) {
                 description: Some("benchmark description".to_string()),
                 text: Some("x".repeat(text_len)),
                 raw_text: Some("y".repeat(text_len)),
+                raw_text_truncated: false,
+                raw_text_cap: None,
                 links: Vec::new(),
                 links_seen: None,
                 links_truncated: false,

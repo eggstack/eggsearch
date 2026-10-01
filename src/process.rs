@@ -106,6 +106,8 @@ pub enum CommandTermination {
     SpawnFailed,
     /// Process was killed by a signal.
     Signaled,
+    #[allow(missing_docs)]
+    ReaderPanicked,
 }
 
 /// Result of a bounded command execution.
@@ -241,15 +243,23 @@ fn run_bounded_command_impl(
         (local_stderr, local_truncated)
     });
 
-    let (stdout, stdout_truncated) = stdout_thread.join().unwrap_or((Vec::new(), false));
-    let (stderr, stderr_truncated) = stderr_thread.join().unwrap_or((Vec::new(), false));
+    let stdout_result = stdout_thread.join();
+    let stderr_result = stderr_thread.join();
+    let stdout_panicked = stdout_result.is_err();
+    let stderr_panicked = stderr_result.is_err();
+    let (stdout, stdout_truncated) = stdout_result.unwrap_or((Vec::new(), false));
+    let (stderr, stderr_truncated) = stderr_result.unwrap_or((Vec::new(), false));
 
     let status = child.wait().ok();
     exited.store(true, Ordering::Relaxed);
     let _ = kill_handle.join();
 
     let timed_out = controller.trigger.load(Ordering::Relaxed) == TRIGGER_TIMEOUT;
-    let termination = controller.termination_reason();
+    let termination = if stdout_panicked || stderr_panicked {
+        CommandTermination::ReaderPanicked
+    } else {
+        controller.termination_reason()
+    };
 
     BoundedCommandResult {
         status,

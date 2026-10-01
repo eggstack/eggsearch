@@ -929,11 +929,6 @@ pub fn rank_and_select(
         selected.push(candidate);
     }
 
-    // Re-assign sequential priorities after diversity filtering
-    for (i, candidate) in selected.iter_mut().enumerate() {
-        candidate.original_order = i;
-    }
-
     selected
 }
 

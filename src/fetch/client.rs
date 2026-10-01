@@ -167,6 +167,50 @@ impl FetchClient {
             &crate::core::fetch::PdfFetchOptions,
         >,
     ) -> Result<WebFetchResponse, FetchError> {
+        self.fetch_internal(
+            url_str,
+            max_chars,
+            extract_mode,
+            include_links,
+            pdf_options,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments, missing_docs)]
+    pub async fn fetch_with_origin_controller(
+        &self,
+        url_str: &str,
+        max_chars: Option<usize>,
+        extract_mode: ExtractMode,
+        include_links: bool,
+        pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
+        origin_controller: &super::origin::OriginController,
+    ) -> Result<WebFetchResponse, FetchError> {
+        self.fetch_internal(
+            url_str,
+            max_chars,
+            extract_mode,
+            include_links,
+            pdf_options,
+            Some(origin_controller),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn fetch_internal(
+        &self,
+        url_str: &str,
+        max_chars: Option<usize>,
+        extract_mode: ExtractMode,
+        include_links: bool,
+        #[cfg_attr(not(feature = "pdf"), allow(unused_variables))] pdf_options: Option<
+            &crate::core::fetch::PdfFetchOptions,
+        >,
+        origin_controller: Option<&super::origin::OriginController>,
+    ) -> Result<WebFetchResponse, FetchError> {
         // Validate the initial URL (scheme, length, localhost literals,
         // obvious private-network literals, credentials).
         let initial_url = validate_url(url_str, &self.limits)?;
@@ -202,8 +246,20 @@ impl FetchClient {
 
         let mut current_url = fetch_url;
         let mut redirect_count: usize = 0;
+        let initial_origin = super::origin::OriginKey::from_url(&current_url);
+        let mut redirect_permits = Vec::new();
 
         let mut response = loop {
+            let hop_origin = super::origin::OriginKey::from_url(&current_url);
+            let redirected_origin = hop_origin.as_ref() != initial_origin.as_ref();
+            if redirected_origin {
+                if let (Some(controller), Some(key)) = (origin_controller, hop_origin.as_ref()) {
+                    let permit = controller.acquire(key).await.map_err(|error| {
+                        FetchError::NetworkError(format!("origin backoff: {error}"))
+                    })?;
+                    redirect_permits.push(permit);
+                }
+            }
             // Full validation: credentials, localhost, DNS resolution, IP checks.
             let resolved_addrs =
                 validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
@@ -219,12 +275,34 @@ impl FetchClient {
                 _ => builder,
             };
 
-            let resp = builder
-                .send()
-                .await
-                .map_err(|e| map_send_error(e, self.limits.timeout_ms))?;
+            let resp = match builder.send().await {
+                Ok(response) => response,
+                Err(error) => {
+                    if redirected_origin {
+                        if let (Some(controller), Some(key)) =
+                            (origin_controller, hop_origin.as_ref())
+                        {
+                            controller
+                                .record_failure(key, super::origin::OriginFailureClass::Retryable)
+                                .await;
+                        }
+                    }
+                    return Err(map_send_error(error, self.limits.timeout_ms));
+                }
+            };
 
             let status = resp.status().as_u16();
+            if redirected_origin {
+                if let (Some(controller), Some(key)) = (origin_controller, hop_origin.as_ref()) {
+                    if status >= 400 {
+                        controller
+                            .record_failure(key, super::origin::classify_http_status(status))
+                            .await;
+                    } else {
+                        controller.record_success(key).await;
+                    }
+                }
+            }
 
             if (300..400).contains(&status) {
                 let location = resp
@@ -331,17 +409,29 @@ impl FetchClient {
             .map_err(|e| FetchError::NetworkError(e.to_string()))?;
         let mut pdf_magic_chunk = None;
         if !kind.is_pdf {
-            match stream.next().await {
-                Some(Ok(first_chunk)) => {
-                    if first_chunk.len() >= 5 && &first_chunk[..5] == b"%PDF-" {
-                        kind.is_pdf = true;
+            let mut prefix = Vec::with_capacity(5);
+            while prefix.len() < 5 {
+                match stream.next().await {
+                    Some(Ok(chunk)) => {
+                        let remaining = 5 - prefix.len();
+                        prefix.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+                        if prefix.len() == 5 {
+                            kind.is_pdf = prefix == b"%PDF-";
+                        }
+                        pdf_magic_chunk = Some(prefix.clone());
+                        if chunk.len() > remaining {
+                            let mut combined = prefix.clone();
+                            combined.extend_from_slice(&chunk[remaining..]);
+                            pdf_magic_chunk = Some(combined);
+                            break;
+                        }
                     }
-                    pdf_magic_chunk = Some(first_chunk);
+                    Some(Err(e)) => return Err(FetchError::NetworkError(e.to_string())),
+                    None => break,
                 }
-                Some(Err(e)) => {
-                    return Err(FetchError::NetworkError(e.to_string()));
-                }
-                None => {}
+            }
+            if pdf_magic_chunk.is_none() && !prefix.is_empty() {
+                pdf_magic_chunk = Some(prefix);
             }
         }
 

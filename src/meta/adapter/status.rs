@@ -117,6 +117,8 @@ impl MetadataSearchAdapter {
                 if !desc.capabilities.supports(option) {
                     unsupported.push(id.to_string());
                 }
+            } else {
+                unsupported.push(id.to_string());
             }
         }
         unsupported

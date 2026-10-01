@@ -218,7 +218,7 @@ fn a6_link_extraction_and_classification() {
 fn b1_strip_control_chars_removes_nul_cr_ascii_controls() {
     let input = "hello\x00world\r\n\x01\x02\x03\x04\x05\x06\x07\x08\x0B\x0C\x0E\x0F";
     let (cleaned, removed) = strip_control_chars(input);
-    assert_eq!(cleaned, "helloworld\n");
+    assert_eq!(cleaned, "hello world \n");
     assert!(
         removed >= 12,
         "should have removed at least 12 chars, got {removed}"

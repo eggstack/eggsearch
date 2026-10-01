@@ -1100,23 +1100,64 @@ fn read_pid_record(path: &Path) -> io::Result<PidRecord> {
 }
 
 fn process_matches(record: &PidRecord) -> bool {
-    let current = match fs::canonicalize(format!("/proc/{}/exe", record.pid)) {
-        Ok(path) => path,
-        Err(_) => return false,
-    };
-    let expected = match fs::canonicalize(&record.executable) {
-        Ok(path) => path,
-        Err(_) => return false,
-    };
-    !record.start_token.is_empty()
-        && current == expected
-        && process_start_token(record.pid).as_deref() == Some(record.start_token.as_str())
+    #[cfg(target_os = "linux")]
+    {
+        let current = match fs::canonicalize(format!("/proc/{}/exe", record.pid)) {
+            Ok(path) => path,
+            Err(_) => return false,
+        };
+        let expected = match fs::canonicalize(&record.executable) {
+            Ok(path) => path,
+            Err(_) => return false,
+        };
+        !record.start_token.is_empty()
+            && current == expected
+            && process_start_token(record.pid).as_deref() == Some(record.start_token.as_str())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let expected = match fs::canonicalize(&record.executable) {
+            Ok(path) => path,
+            Err(_) => return false,
+        };
+        let current = process_ps_field(record.pid, "comm");
+        !record.start_token.is_empty()
+            && current
+                .as_deref()
+                .and_then(|value| Path::new(value.trim()).file_name())
+                == expected.file_name()
+            && process_start_token(record.pid).as_deref() == Some(record.start_token.as_str())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = record;
+        false
+    }
 }
 
+#[cfg(target_os = "linux")]
 fn process_start_token(pid: u32) -> Option<String> {
     let text = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let (_, rest) = text.rsplit_once(") ")?;
     rest.split_whitespace().nth(19).map(str::to_string)
+}
+
+#[cfg(target_os = "macos")]
+fn process_start_token(pid: u32) -> Option<String> {
+    process_ps_field(pid, "lstart")
+}
+
+#[cfg(target_os = "macos")]
+fn process_ps_field(pid: u32, field: &str) -> Option<String> {
+    let mut command = Command::new("ps");
+    command.args(["-p", &pid.to_string(), "-o", &format!("{field}=")]);
+    let output =
+        crate::process::run_bounded_command(&mut command, Duration::from_secs(2), 4096, 1024);
+    if !output.status.is_some_and(|status| status.success()) || output.timed_out {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!value.is_empty()).then_some(value)
 }
 
 fn shell_quote(path: &Path) -> String {

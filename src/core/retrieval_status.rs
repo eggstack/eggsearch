@@ -13,6 +13,7 @@ use crate::core::workflow_coverage::{RetrievalFailure, RetrievalFailureKind};
 /// or proprietary fragments are not leaked).
 pub fn query_fingerprint_from_query(query: &str) -> String {
     let mut hasher = crate::core::identity::FnvHasher::new();
+    hasher.write(b"eggsearch-query-fingerprint-v1\0");
     hasher.write(query.as_bytes());
     format!("fp_{:016x}", hasher.finish())
 }

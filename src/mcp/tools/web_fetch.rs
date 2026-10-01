@@ -545,16 +545,30 @@ pub async fn run_web_fetch(
                 None
             };
 
-            match client
-                .fetch(
-                    trimmed_url,
-                    args.max_chars,
-                    extract_mode,
-                    include_links,
-                    args.pdf.as_ref(),
-                )
-                .await
-            {
+            let fetched = if let Some(controller) = state.origin_controller.as_ref() {
+                client
+                    .fetch_with_origin_controller(
+                        trimmed_url,
+                        args.max_chars,
+                        extract_mode,
+                        include_links,
+                        args.pdf.as_ref(),
+                        controller,
+                    )
+                    .await
+            } else {
+                client
+                    .fetch(
+                        trimmed_url,
+                        args.max_chars,
+                        extract_mode,
+                        include_links,
+                        args.pdf.as_ref(),
+                    )
+                    .await
+            };
+
+            match fetched {
                 Ok(resp) => {
                     if let Some(ref ctrl) = state.origin_controller {
                         ctrl.record_success(&origin_key).await;

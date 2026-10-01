@@ -110,7 +110,8 @@ impl OriginController {
     ) -> Result<tokio::sync::OwnedSemaphorePermit, OriginBackoffError> {
         let state = self.get_or_create_state(key).await;
 
-        if let Some(open_until) = state.failures.lock().await.circuit_open_until {
+        let circuit_open_until = state.failures.lock().await.circuit_open_until;
+        if let Some(open_until) = circuit_open_until {
             if Instant::now() < open_until {
                 let remaining_ms = open_until
                     .duration_since(Instant::now())
@@ -121,9 +122,22 @@ impl OriginController {
         }
 
         let sem = Arc::clone(&state.semaphore);
-        sem.acquire_owned()
+        let permit = sem
+            .acquire_owned()
             .await
-            .map_err(|_| OriginBackoffError::LimiterClosed)
+            .map_err(|_| OriginBackoffError::LimiterClosed)?;
+        let circuit_open_until = state.failures.lock().await.circuit_open_until;
+        if let Some(open_until) = circuit_open_until {
+            if Instant::now() < open_until {
+                let remaining_ms = open_until
+                    .duration_since(Instant::now())
+                    .as_millis()
+                    .min(u128::from(u64::MAX)) as u64;
+                drop(permit);
+                return Err(OriginBackoffError::CircuitOpen { remaining_ms });
+            }
+        }
+        Ok(permit)
     }
 
     pub async fn record_success(&self, key: &OriginKey) {

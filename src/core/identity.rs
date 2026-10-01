@@ -313,7 +313,15 @@ fn normalize_percent_encoding_component(component: &str) -> String {
             }
         }
         if let Some(ch) = component[i..].chars().next() {
-            result.push(ch);
+            if ch.is_ascii() {
+                result.push(ch);
+            } else {
+                let mut bytes = [0; 4];
+                for byte in ch.encode_utf8(&mut bytes).as_bytes() {
+                    result.push('%');
+                    result.push_str(&format!("{byte:02X}"));
+                }
+            }
             i += ch.len_utf8();
         } else {
             result.push('\u{FFFD}');
@@ -1416,6 +1424,10 @@ mod tests {
             None,
         );
         assert_eq!(raw_id, encoded_id);
+
+        let raw_query = canonicalize_url("https://example.com/search?q=café");
+        let encoded_query = canonicalize_url("https://example.com/search?q=caf%C3%A9");
+        assert_eq!(raw_query, encoded_query);
     }
 
     #[test]

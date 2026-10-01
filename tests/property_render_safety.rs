@@ -31,7 +31,8 @@ proptest! {
         let s: String = chars.into_iter().collect();
         let (cleaned, removed) = strip_control_chars(&s);
         prop_assert!(removed <= s.chars().count(), "removed count cannot exceed total chars");
-        prop_assert_eq!(cleaned.chars().count(), s.chars().count() - removed);
+        let separators = s.chars().filter(|c| matches!(c, '\0' | '\r')).count();
+        prop_assert_eq!(cleaned.chars().count(), s.chars().count() - removed + separators);
     }
 
     #[test]

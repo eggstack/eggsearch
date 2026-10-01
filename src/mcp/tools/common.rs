@@ -58,9 +58,7 @@ pub struct RepairHint {
 
 impl RepairHint {
     fn bound_str(s: &str, cap: usize) -> String {
-        let mut out: String = s.chars().take(cap).collect();
-        out.truncate(cap);
-        out
+        s.chars().take(cap).collect()
     }
 
     pub fn new(field: Option<&str>, accepted: &[&str], suggested_value: Option<&str>) -> Self {
@@ -704,8 +702,8 @@ pub(crate) fn cached_document_response(
         text: document.text.clone(),
         raw_text: document.raw_text.clone(),
         raw_text_chars_returned: document.raw_text.as_ref().map(|text| text.chars().count()),
-        raw_text_truncated: false,
-        raw_text_cap: None,
+        raw_text_truncated: document.raw_text_truncated,
+        raw_text_cap: document.raw_text_cap,
         links: document.links.clone(),
         links_seen: document.links_seen,
         links_truncated: document.links_truncated,
@@ -744,6 +742,8 @@ pub(crate) fn derived_cache_entry(
             description: response.description.clone(),
             text: response.text.clone(),
             raw_text: response.raw_text.clone(),
+            raw_text_truncated: response.raw_text_truncated,
+            raw_text_cap: response.raw_text_cap,
             links: response.links.clone(),
             links_seen: response.links_seen,
             links_truncated: response.links_truncated,

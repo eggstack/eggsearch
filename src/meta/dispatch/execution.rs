@@ -409,7 +409,7 @@ pub(crate) async fn dispatch_parallel(
                                     retrieval_metadata,
                                 ));
                                 let limit_reached_unknown =
-                                    result_count > 0 && result_count >= config.candidate_limit;
+                                    result_count > 0 && result_count > config.candidate_limit;
                                 let outcome = if result_count == 0 {
                                     RetrievalAttemptOutcome::SuccessZeroResults
                                 } else {
@@ -953,7 +953,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn candidate_limit_saturation_is_unknown_truncation() {
+    async fn candidate_limit_exact_fit_is_not_unknown_truncation() {
         let engine: Arc<dyn SearchEngine> = Arc::new(RoleEngine {
             unsupported: EvidenceRole::OfficialDocumentation,
         });
@@ -978,7 +978,7 @@ mod tests {
         assert!(!attempt.truncated);
         assert_eq!(
             attempt.truncation_evidence,
-            crate::core::retrieval_status::TruncationEvidence::LimitReachedUnknown
+            crate::core::retrieval_status::TruncationEvidence::default()
         );
     }
 

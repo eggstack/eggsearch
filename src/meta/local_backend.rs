@@ -2551,6 +2551,7 @@ mod tests {
         let backend = LocalWorkspaceBackend::new(config).unwrap();
         let req = LocalSearchRequest {
             query: "item".to_string(),
+            timeout_ms: Some(10_000),
             ..Default::default()
         };
         let rt = tokio::runtime::Runtime::new().unwrap();

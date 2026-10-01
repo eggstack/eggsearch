@@ -365,8 +365,9 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
         Ok(IpAddr::V6(_)) => format!("[{host}]:{port}"),
         _ => format!("{host}:{port}"),
     };
-    let dns_timeout = std::time::Duration::from_millis(limits.timeout_ms / 2)
-        .max(std::time::Duration::from_millis(1500));
+    let dns_timeout = (std::time::Duration::from_millis(limits.timeout_ms / 2)
+        .max(std::time::Duration::from_millis(1500)))
+    .min(std::time::Duration::from_millis(limits.timeout_ms));
     let resolved = tokio::time::timeout(
         dns_timeout,
         tokio::task::spawn_blocking(move || {

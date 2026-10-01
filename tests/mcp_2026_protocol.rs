@@ -63,6 +63,11 @@ fn repair_hints_are_bounded() {
     let refs: Vec<&str> = many.iter().map(|s| s.as_str()).collect();
     let hint = RepairHint::new(Some("field"), &refs, Some("suggested"));
     assert!(hint.accepted.len() <= 20);
+
+    let unicode = "🧭".repeat(130);
+    let hint = RepairHint::new(Some(&unicode), &[], Some(&unicode));
+    assert!(hint.field.unwrap().chars().count() <= 128);
+    assert!(hint.suggested_value.unwrap().chars().count() <= 256);
 }
 
 #[test]

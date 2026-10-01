@@ -535,12 +535,13 @@ fn resolve_executable(override_executable: Option<&Path>) -> Result<(String, boo
         return Ok((path.display().to_string(), false));
     }
     let path = std::env::current_exe().context("failed to resolve the current executable")?;
-    let ephemeral = path.components().any(|component| {
-        matches!(
-            component.as_os_str().to_str(),
-            Some("target" | "debug" | "deps")
-        )
-    });
+    let components = path
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect::<Vec<_>>();
+    let ephemeral = components
+        .windows(2)
+        .any(|pair| pair[0] == "target" && matches!(pair[1], "debug" | "deps"));
     if ephemeral {
         Ok(("eggsearch".to_string(), true))
     } else {

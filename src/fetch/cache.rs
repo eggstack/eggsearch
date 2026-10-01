@@ -208,6 +208,8 @@ pub struct CachedExtractedDocument {
     pub description: Option<String>,
     pub text: Option<String>,
     pub raw_text: Option<String>,
+    pub raw_text_truncated: bool,
+    pub raw_text_cap: Option<usize>,
     pub links: Vec<crate::core::fetch::ExtractedLink>,
     pub links_seen: Option<usize>,
     pub links_truncated: bool,
@@ -252,13 +254,26 @@ fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
         bytes += 1;
     }
     if let Some(doc) = &r.document {
+        bytes += std::mem::size_of_val(doc);
+        bytes += doc.text_format.len();
+        if let Some(metadata) = &doc.metadata {
+            bytes += std::mem::size_of_val(metadata);
+            bytes += metadata.charset.as_ref().map_or(0, String::len);
+            bytes += metadata.source_extension.as_ref().map_or(0, String::len);
+            bytes += metadata.detected_language.as_ref().map_or(0, String::len);
+        }
+        bytes +=
+            doc.outline.len() * std::mem::size_of::<crate::core::document::DocumentOutlineEntry>();
         for block in &doc.blocks {
+            bytes += std::mem::size_of_val(block);
             bytes += block.text.len();
         }
         for outline_entry in &doc.outline {
             bytes += outline_entry.title.len();
+            bytes += outline_entry.anchor.as_ref().map_or(0, String::len);
         }
         for chunk in &doc.chunks {
+            bytes += std::mem::size_of_val(chunk);
             bytes += chunk.text.len();
         }
     }
@@ -317,7 +332,13 @@ impl FetchCache {
     pub async fn get_raw(&self, key: &RawCacheKey) -> Option<RawFetchCacheEntry> {
         let _operation = self.operation_gate.read().await;
         let mut raw = self.raw.lock().await;
-        raw.get(key).cloned()
+        let entry = raw.get(key).cloned()?;
+        if crate::core::identity::canonicalize_url(&entry.final_url)
+            != crate::core::identity::canonicalize_url(&key.url)
+        {
+            return None;
+        }
+        Some(entry)
     }
 
     pub async fn insert_raw(&self, key: RawCacheKey, entry: RawFetchCacheEntry) -> bool {
@@ -1347,6 +1368,8 @@ mod tests {
                 description: None,
                 text: Some("hello".into()),
                 raw_text: Some("hello".into()),
+                raw_text_truncated: false,
+                raw_text_cap: None,
                 links: Vec::new(),
                 links_seen: None,
                 links_truncated: false,
@@ -1382,6 +1405,8 @@ mod tests {
                 description: None,
                 text: Some("x".repeat(text_len)),
                 raw_text: Some("y".repeat(text_len)),
+                raw_text_truncated: false,
+                raw_text_cap: None,
                 links: Vec::new(),
                 links_seen: None,
                 links_truncated: false,

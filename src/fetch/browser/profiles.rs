@@ -30,6 +30,7 @@ pub enum ProfileError {
     OriginRequired,
     OriginInvalid(String),
     ProfileNotFound(String),
+    NameAlreadyExists(String),
     ProfileBusy(String),
     ProfileIncomplete(String),
     ProfileIncompatible {
@@ -70,6 +71,12 @@ impl std::fmt::Display for ProfileError {
             }
             Self::ProfileNotFound(name) => {
                 write!(f, "browser profile '{name}' not found")
+            }
+            Self::NameAlreadyExists(name) => {
+                write!(
+                    f,
+                    "browser profile name '{name}' is already used for another origin"
+                )
             }
             Self::ProfileBusy(name) => {
                 write!(
@@ -182,7 +189,15 @@ fn normalize_origin(origin: &str) -> ProfileResult<String> {
             "{origin} (localhost not allowed)"
         )));
     }
-    if host_lower == "127.0.0.1" || host_lower == "::1" {
+    let ip_host = host_lower
+        .split('%')
+        .next()
+        .unwrap_or(&host_lower)
+        .trim_matches(['[', ']']);
+    let loopback = ip_host.parse::<std::net::IpAddr>().is_ok_and(|ip| {
+        super::super::limits::classify_ip(ip) == super::super::limits::AddressClass::Loopback
+    });
+    if loopback || ip_host == "0.0.0.0" || ip_host == "::" {
         return Err(ProfileError::OriginInvalid(format!(
             "{origin} (loopback not allowed)"
         )));
@@ -379,6 +394,12 @@ impl ProfileManager {
         }
 
         let existing = self.list_profiles()?;
+        if existing
+            .iter()
+            .any(|profile| profile.display_name == display_name)
+        {
+            return Err(ProfileError::NameAlreadyExists(display_name.to_string()));
+        }
         if existing.len() >= MAX_PROFILE_COUNT {
             return Err(ProfileError::ProfileLimitReached);
         }
@@ -715,6 +736,9 @@ mod tests {
         assert!(normalize_origin("ftp://example.com").is_err());
         assert!(normalize_origin("https://localhost").is_err());
         assert!(normalize_origin("https://127.0.0.1").is_err());
+        assert!(normalize_origin("https://127.0.0.2").is_err());
+        assert!(normalize_origin("https://0.0.0.0").is_err());
+        assert!(normalize_origin("https://[::ffff:127.0.0.1]").is_err());
         assert!(normalize_origin("https://example.com/path").is_err());
         assert!(normalize_origin("https://user:pass@example.com").is_err());
     }
