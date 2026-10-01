@@ -31,6 +31,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
 | Search capability and provider evidence | closed | `plans/subsystems/search-capability-roadmap.md` | M001-M005 closed | None. Pre-migration baseline `e645a3fe` (`eggsearch` 0.3.7). |
+| CodeGG legacy search parity corrective | active | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001 ready; M002-M003 blocked | M001 has no hard blocker. M002 waits on the M001 provider-model interface. M003 waits on M001+M002; downstream CodeGG additionally waits on the qualifying tagged release. |
 | Binary distribution, install/update, deployment | closed | `plans/subsystems/binary-distribution-deployment-roadmap.md` | M001-M006 closed | None. First binary release `v0.3.9` at `0cbbeee7`; qualify `34653366561`, release `34655458760`. |
 | Maintenance, consolidation, CodeGG quality | closed | `plans/subsystems/maintenance-codegg-quality-roadmap.md` | M001-M005 closed | None. Baseline `4a713ff8`. |
 | HTTP transport consolidation | closed | `plans/subsystems/transport-consolidation-roadmap.md` | M001-M003 closed | None. `eggfetch-core 0.2.0` at `bac6f49f`; qualify `35692096012`. |
@@ -44,6 +45,9 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
+| CodeGG legacy search parity corrective | M001 keyless/source-specific provider parity | ready | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | No hard dependency; add Wikipedia, arXiv, PubMed, HN Algolia, and GitHub repository discovery through the canonical provider engine surface. |
+| CodeGG legacy search parity corrective | M002 credentialed provider parity | blocked | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | Hard-blocked on M001 provider-model interface; add SerpAPI and conditionally Kagi current-v1 subject to terms revalidation. |
+| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Hard-blocked on M001+M002; tagged release publication is an operational dependency for downstream CodeGG retirement. |
 | Tool-surface consolidation | M001 contract and disclosure model | closed | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | Closed at `4b7e725`; closure `plans/closure/mcp-tool-surface-consolidation/001-status.md`. |
 | Tool-surface consolidation | M002 agent-facing schema slimming | closed | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | Closed at `b1e6ea7`; closure `plans/closure/mcp-tool-surface-consolidation/002-status.md`. |
 | Tool-surface consolidation | M003 MCP 2026 protocol and error contract | closed | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | Closed at `c102ac6`; closure `plans/closure/mcp-tool-surface-consolidation/003-status.md`. |
