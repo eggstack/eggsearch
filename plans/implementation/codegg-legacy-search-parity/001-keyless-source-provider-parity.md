@@ -1,6 +1,10 @@
 # Plan 001 — Keyless Source Provider Parity
 
-Status: ready
+Status: closed
+
+Closure record: `plans/closure/codegg-legacy-search-parity/001-status.md`
+
+Implementation commit: `e9103b4c50743037552dd0ad94eee003c7ea3d48`
 
 Source roadmap:
 

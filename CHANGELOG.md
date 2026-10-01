@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Keyless source-specific search providers `wikipedia`, `arxiv`, `pubmed`,
+  `hn_algolia`, and `github_repositories`, all behind the existing
+  `MetadataSearchAdapter` and outside `default_providers` (provider inventory
+  37 -> 42). arXiv Atom responses are parsed with the existing `quick-xml`
+  reader and every call passes through one process-wide pacing gate that
+  enforces the upstream "one request every three seconds, single connection"
+  policy even under concurrency. `pubmed` and `github_repositories` accept
+  optional operator keys (`NCBI_API_KEY`, `GITHUB_TOKEN`) that only raise
+  upstream limits, and PubMed identifies itself truthfully as `eggsearch`
+  with an optional `NCBI_API_EMAIL` contact identity rather than a fabricated
+  address. `ProviderKind::StructuredApi` was added additively for the arXiv
+  Atom contract; existing `provider_status.kind` wire values are unchanged.
 - First binary-enabled release hardening: non-publishing seven-target
   qualification, exact release asset validation, installer contract tests, and
   release-tree preflight diagnostics.

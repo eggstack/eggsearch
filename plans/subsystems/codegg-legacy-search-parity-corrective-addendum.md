@@ -52,11 +52,11 @@ The legacy CodeGG stack still contains provider behavior not represented by eggs
 | `brave` | present as `brave`/ `brave_api` | CodeGG mapping cleanup only |
 | `exa` | present | no work |
 | `tavily` | present | no work |
-| `wikipedia` | absent | add keyless structured provider |
-| `arxiv` | absent | add keyless scholarly provider |
-| `pubmed` | absent | add keyless/optional-key scholarly provider |
-| `hn_algolia` | absent | add keyless discussion provider |
-| `github` repository discovery | code/issues/releases exist, repository discovery absent | add `github_repositories` |
+| `wikipedia` | absent | added in M001 (`wikipedia`, keyless) |
+| `arxiv` | absent | added in M001 (`arxiv`, keyless) |
+| `pubmed` | absent | added in M001 (`pubmed`, keyless + optional key) |
+| `hn_algolia` | absent | added in M001 (`hn_algolia`, keyless) |
+| `github` repository discovery | code/issues/releases exist, repository discovery absent | added in M001 (`github_repositories`, keyless + optional token) |
 | `serpapi` | absent | add opt-in API-key provider |
 | `kagi` | absent; CodeGG uses obsolete v0 endpoint | add opt-in current-v1 provider with terms guardrails |
 | `google_news` RSS | absent; no current documented Google News search/RSS API contract found | do not add; preserve news capability through supported news engines and make CodeGG retire the exact source hint explicitly |
@@ -125,7 +125,8 @@ The CodeGG handoff must state that historical `provider = "google_news"` is reti
 
 ## 5. Provider model/schema impact
 
-The planned inventory grows from 37 to 44 provider IDs if every planned provider lands:
+The inventory is 42 provider IDs after M001 (was 37 at baseline). It reaches
+44 only if both remaining providers are accepted:
 
 - + `wikipedia`
 - + `arxiv`
@@ -135,7 +136,11 @@ The planned inventory grows from 37 to 44 provider IDs if every planned provider
 - + `serpapi`
 - + `kagi`
 
-Because arXiv is an Atom/XML API, M001 should add an additive provider-kind representation for structured non-JSON APIs rather than falsely classifying it as `JsonApi` or `HtmlScrape`. The implementation must document the additive serialization effect in `provider_status`.
+M001 added the additive `ProviderKind::StructuredApi` variant rather than falsely
+classifying arXiv as `JsonApi` or `HtmlScrape`, used it for `arxiv` only, and
+documented the additive `provider_status` serialization effect in
+`docs/config.md`, `architecture/core.md`, and `docs/codegg-integration.md`.
+Existing wire values (`html_scrape`, `json_api`, `api_key`, `local`) are unchanged.
 
 No new `ProviderCapabilities` flag is required for repository discovery. A provider may be useful through explicit `web_search` selection without pretending to support code search or repository indexing.
 
@@ -162,17 +167,26 @@ CodeGG legacy-backend retirement workstream
 
 ### M001 — Keyless and source-specific provider parity
 
-Status: ready.
+Status: closed at `e9103b4c50743037552dd0ad94eee003c7ea3d48`.
 
 Plan:
 
 - `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md`
 
-Adds and qualifies `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, and `github_repositories`, including any narrow provider-kind/config additions required for truthful status reporting.
+Closure:
+
+- `plans/closure/codegg-legacy-search-parity/001-status.md`
+
+Adds and qualifies `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, and
+`github_repositories`, including the additive `structured_api` provider kind.
+The provider-model interfaces this milestone was expected to freeze are now
+closed evidence, which was the only hard dependency M002 had.
 
 ### M002 — Credentialed provider parity
 
-Status: blocked on M001 only for shared provider-model changes; implementation may begin after M001 freezes those interfaces.
+Status: ready. The M001 hard dependency (frozen provider-model interfaces:
+provider kinds, optional/required credential inventory, descriptor and engine
+builder seams) is closed at `e9103b4`. No new blocker remains.
 
 Plan:
 
@@ -246,6 +260,6 @@ This corrective workstream is closed when:
 
 | Milestone | Status | Implementation plan | Blocker |
 |---|---|---|---|
-| M001 keyless/source-specific provider parity | ready | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none |
-| M002 credentialed provider parity | blocked | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | M001 provider-model interface |
-| M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | M001 + M002 |
+| M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
+| M002 credentialed provider parity | ready | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; M001 provider-model interface closed at `e9103b4` |
+| M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | M002 plus a qualifying tagged release (operational, downstream CodeGG) |
