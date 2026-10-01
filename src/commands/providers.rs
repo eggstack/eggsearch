@@ -137,6 +137,7 @@ fn kind_str(kind: &eggsearch::core::provider::ProviderKind) -> &'static str {
     match kind {
         eggsearch::core::provider::ProviderKind::HtmlScrape => "html_scrape",
         eggsearch::core::provider::ProviderKind::JsonApi => "json_api",
+        eggsearch::core::provider::ProviderKind::StructuredApi => "structured_api",
         eggsearch::core::provider::ProviderKind::ApiKey => "api_key",
         eggsearch::core::provider::ProviderKind::Local => "local",
     }

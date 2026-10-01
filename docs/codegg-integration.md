@@ -12,17 +12,18 @@ eggsearch version: see `Cargo.toml` for the live release number.
 1. [Quick Start](#quick-start)
 2. [MCP Server Startup and Configuration](#mcp-server-startup-and-configuration)
 3. [Configuration Examples](#configuration-examples)
-4. [Tool Selection Policy](#tool-selection-policy)
-5. [Progressive disclosure integration](#progressive-disclosure-integration)
-6. [Required Task Workflows](#required-task-workflows)
-6. [Trust Boundary Rules](#trust-boundary-rules)
-7. [Warning and Error Handling](#warning-and-error-handling)
-8. [Evidence Bundle Handoff](#evidence-bundle-handoff)
-9. [Performance and Response-Size Controls](#performance-and-response-size-controls)
-10. [Agent UI/UX Guidance](#agent-uiux-guidance)
-11. [Failure and Degradation Policy](#failure-and-degradation-policy)
-12. [Versioning and Compatibility](#versioning-and-compatibility)
-13. [Readiness Checklist](#readiness-checklist)
+4. [Legacy External-Search Provider Migration](#legacy-external-search-provider-migration)
+5. [Tool Selection Policy](#tool-selection-policy)
+6. [Progressive disclosure integration](#progressive-disclosure-integration)
+7. [Required Task Workflows](#required-task-workflows)
+7. [Trust Boundary Rules](#trust-boundary-rules)
+8. [Warning and Error Handling](#warning-and-error-handling)
+9. [Evidence Bundle Handoff](#evidence-bundle-handoff)
+10. [Performance and Response-Size Controls](#performance-and-response-size-controls)
+11. [Agent UI/UX Guidance](#agent-uiux-guidance)
+12. [Failure and Degradation Policy](#failure-and-degradation-policy)
+13. [Versioning and Compatibility](#versioning-and-compatibility)
+14. [Readiness Checklist](#readiness-checklist)
 
 ---
 
@@ -367,6 +368,65 @@ base_url = "https://gitlab.com"     # or self-hosted instance
 ```
 
 **Never commit real keys.** Always use env-var indirection.
+
+---
+
+## Legacy External-Search Provider Migration
+
+A harness retiring its own external-search stack maps legacy provider ids to
+eggsearch provider ids one to one. The "legacy id" column lists ids that
+existed only in the retired in-tree stack; it is not an eggsearch inventory,
+and the eggsearch inventory is whatever `provider_status` reports.
+
+| Legacy source id | eggsearch provider id | Disposition |
+|------------------|----------------------|-------------|
+| `duckduckgo` | `duckduckgo` | Unchanged |
+| `mojeek` | `mojeek` | Unchanged (still opt-in) |
+| `openalex` | `openalex` | Unchanged |
+| `brave` | `brave` / `brave_api` | Unchanged; prefer `brave_api` when a key is configured |
+| `exa` | `exa` | Unchanged |
+| `tavily` | `tavily` | Unchanged |
+| `wikipedia` | `wikipedia` | Retained as a keyless provider (this milestone) |
+| `arxiv` | `arxiv` | Retained as a keyless provider (this milestone) |
+| `pubmed` | `pubmed` | Retained as a keyless provider with an optional NCBI key (this milestone) |
+| `hn_algolia` | `hn_algolia` | Retained as a keyless provider (this milestone) |
+| `github` repository discovery | `github_repositories` | Retained as a keyless provider with an optional `GITHUB_TOKEN` (this milestone); distinct from `github_code`, `github_issues`, and `github_releases` |
+| `serpapi` | none | Not implemented; opt-in credentialed parity is a later milestone. Do not pass this id — eggsearch rejects unknown provider ids instead of substituting another source |
+| `kagi` | none | Not implemented; the legacy id referred to a superseded endpoint. Do not pass this id |
+| `google_news` (RSS) | none | **Retired with no replacement provider** (see below) |
+
+Rules for the retiring harness:
+
+- Never remap a legacy id silently. Unknown ids are rejected by
+  `resolve_providers` with a typed error; that rejection is the signal to fix
+  the caller, not to substitute a different provider.
+- `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, and `github_repositories` are
+  disabled by default and are never members of `default_providers`. Enabling
+  them in `[search.providers]` makes them routable but does not add them to
+  default fan-out; select them per request with `providers: ["<id>"]`.
+- `pubmed` and `github_repositories` work without any credential. An optional
+  `NCBI_API_KEY` or `GITHUB_TOKEN` only raises upstream rate limits and never
+  gates routing.
+- arXiv results are subject to a shared minimum-interval request gate; repeated
+  arXiv calls in one process are spaced out rather than issued concurrently.
+
+### `google_news` is retired, not remapped
+
+The legacy `google_news` RSS source has **no accepted eggsearch provider**.
+There is no current documented Google News search/RSS API contract that
+eggsearch will import, so no provider id stands behind it.
+
+- News retrieval remains available through the providers that truthfully
+  advertise native news support (`brave_api` and `tavily`) by passing
+  `intent: "news"` on `web_search`.
+- When a caller needs control over *which* source is used, pass an explicit
+  `providers` array containing one of those ids instead of relying on
+  `google_news`.
+- The retiring harness must remove or explicitly reject the exact
+  `google_news` provider hint. Rejecting it produces
+  `unknown_provider`; silently swapping in another news engine is forbidden
+  because the caller asked for a specific source and would receive different
+  evidence than requested.
 
 ---
 

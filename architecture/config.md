@@ -165,7 +165,7 @@ being silently ignored.
 
 ### Provider Kinds
 
-- **Built-in providers** (`providers` map, `KNOWN_PROVIDER_IDS`, 37
+- **Built-in providers** (`providers` map, `KNOWN_PROVIDER_IDS`, 42
   ids): keyless HTML/JSON engines plus `searxng` and
   `local_workspace`, toggled by boolean flags.
 - **Required-key API providers** (`api` map, `API_PROVIDER_IDS`, 15

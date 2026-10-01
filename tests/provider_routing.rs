@@ -272,9 +272,14 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"firecrawl_developer"));
     assert!(ids.contains(&"exa"));
     assert!(ids.contains(&"tavily"));
+    assert!(ids.contains(&"wikipedia"));
+    assert!(ids.contains(&"arxiv"));
+    assert!(ids.contains(&"pubmed"));
+    assert!(ids.contains(&"hn_algolia"));
+    assert!(ids.contains(&"github_repositories"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 37);
+    assert_eq!(ids.len(), 42);
 }
 
 #[cfg(feature = "mock")]
@@ -2428,4 +2433,73 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .arg("--allow-empty")
         .output()
         .ok();
+}
+
+#[test]
+fn keyless_source_providers_report_routable_when_explicitly_enabled() {
+    const KEYLESS_SOURCE_PROVIDERS: [&str; 5] = [
+        "wikipedia",
+        "arxiv",
+        "pubmed",
+        "hn_algolia",
+        "github_repositories",
+    ];
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Live;
+    for id in KEYLESS_SOURCE_PROVIDERS {
+        cfg.search.providers.insert(id.to_string(), true);
+    }
+    let state = Arc::new(ServerState::build(cfg.clone()).expect("state builds"));
+    for id in KEYLESS_SOURCE_PROVIDERS {
+        let (engines, _) = state.adapter.select_engines(&[id.to_string()]);
+        assert_eq!(
+            engines.len(),
+            1,
+            "{id} must resolve to exactly one engine through explicit selection"
+        );
+        assert_eq!(engines[0].name(), id);
+        assert!(
+            !state
+                .adapter
+                .provider_status()
+                .iter()
+                .any(|d| d.id == id && !d.routable),
+            "{id} must be routable when explicitly enabled and keyless"
+        );
+        assert!(
+            !state
+                .adapter
+                .provider_status()
+                .iter()
+                .find(|d| d.id == id)
+                .expect("descriptor")
+                .default,
+            "{id} must never be a default fan-out member"
+        );
+    }
+}
+
+#[test]
+fn keyless_source_providers_are_skipped_when_disabled() {
+    const KEYLESS_SOURCE_PROVIDERS: [&str; 5] = [
+        "wikipedia",
+        "arxiv",
+        "pubmed",
+        "hn_algolia",
+        "github_repositories",
+    ];
+    let state = state_with_default();
+    let status = state.adapter.provider_status();
+    for id in KEYLESS_SOURCE_PROVIDERS {
+        let descriptor = status.iter().find(|d| d.id == id).expect("descriptor");
+        assert!(!descriptor.enabled, "{id} must be disabled by default");
+        assert!(!descriptor.routable, "{id} must not be routable by default");
+        assert_eq!(
+            descriptor.skip_code,
+            Some(eggsearch::core::provider::ProviderSkipCode::DisabledByUser),
+            "{id} must report a typed skip code rather than a network failure"
+        );
+        let (engines, _) = state.adapter.select_engines(&[id.to_string()]);
+        assert!(engines.is_empty(), "{id} must not dispatch while disabled");
+    }
 }

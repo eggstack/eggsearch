@@ -175,7 +175,7 @@ Runs the deterministic 43-fixture tool-selection corpus with context byte budget
 ## Documentation
 
 - [Configuration](docs/config.md) — config file reference, profiles, defaults
-- [Provider Setup](docs/provider-setup.md) — all 37 providers, skip codes, health
+- [Provider Setup](docs/provider-setup.md) — all 42 providers, skip codes, health
 - [Optional Features](docs/features.md) — PDF extraction, browser rendering, browser profiles
 - [Tool Matrix](docs/tool-matrix.md) — compact tool reference with trust semantics
 - [Agent Workflows](docs/agent-workflows.md) — recommended tool call sequences, evidence roles

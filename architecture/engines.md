@@ -1,11 +1,11 @@
 # Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (42 files: 36 engine implementations plus 6 support modules)
+**Location:** `src/meta/engines/` (47 files: 41 engine implementations plus 6 support modules)
 **Purpose:** One self-contained implementation per upstream provider. Engines are internal to the
 metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive
 `crate::core::SourceCard` values. MCP tools call the adapter, never engines directly.
 
-The 36 engines plus the local workspace backend cover the 37 registered provider IDs
+The 41 engines plus the local workspace backend cover the 42 registered provider IDs
 (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`); `local_workspace` is served by the local
 workspace backend (`src/meta/local_backend.rs`), not an engine file.
 
@@ -21,9 +21,9 @@ workspace backend (`src/meta/local_backend.rs`), not an engine file.
 | `normalizer.rs` | URL canonicalization: fragment strip, tracking-param strip, query-param sort, locale-prefix strip, index-file strip, trailing-slash trim, scheme/host lowercase |
 | `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `NetworkError`, `Unsupported` |
 | `kev.rs` | Shared `KevClient`: fetches and caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
-| `<provider>.rs` × 36 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
+| `<provider>.rs` × 41 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
 
-Verify the count with `ls src/meta/engines | wc -l` (42, including `mod.rs`, `request.rs`,
+Verify the count with `ls src/meta/engines | wc -l` (47, including `mod.rs`, `request.rs`,
 `models.rs`, `normalizer.rs`, `error.rs`, `kev.rs`).
 
 ---
@@ -214,13 +214,55 @@ All eight advertise `supports_package_metadata` plus `supports_structured_change
 metadata lookups beyond plain search are also reachable through `package_resolver.rs`, which shares
 these upstreams.
 
-### Scholarly (3)
+### Scholarly (5)
 
 | Provider ID | Engine | Credential | Notes |
 |-------------|--------|------------|-------|
 | `openalex` | `OpenAlexEngine` | keyless | Scholarly search plus DOI lookup; result timestamps |
 | `crossref` | `CrossRefEngine` | keyless | Scholarly search plus DOI lookup |
 | `semantic_scholar` | `SemanticScholarEngine` | optional `SEMANTIC_SCHOLAR_API_KEY` | Scholarly search plus DOI lookup |
+| `arxiv` | `ArxivEngine` | keyless, shared `arxiv::RequestGate` | Atom feed parsed with `quick_xml`; scholarly search plus result timestamps; see [arXiv Pacing Gate](#arxiv-pacing-gate) |
+| `pubmed` | `PubmedEngine` | optional `NCBI_API_KEY`, optional `NCBI_API_EMAIL` contact identity | `esearch` + one bounded `esummary` batch; scholarly search plus result timestamps |
+
+### Source-specific keyless (5)
+
+Explicit-source providers, disabled by default and never members of `default_providers`.
+
+| Provider ID | Engine | Credential | Native surface |
+|-------------|--------|------------|----------------|
+| `wikipedia` | `WikipediaEngine` | keyless | MediaWiki `action=query&list=search`; result timestamps (`srprop=timestamp`) |
+| `hn_algolia` | `HnAlgoliaEngine` | keyless | HN Search API constrained to `tags=story`; native freshness/date-range via `numericFilters=created_at_i…` plus result timestamps |
+| `github_repositories` | `GithubRepositoriesEngine` | optional `GITHUB_TOKEN` | `GET /search/repositories` discovery; result timestamps (`pushed_at`); never claims `supports_code_search` or `supports_repo_indexing` |
+
+`wikipedia` and `hn_algolia` ship without an operator `base_url` override; `pubmed` and
+`github_repositories` read `base_url` from their optional `[search.api.<id>]` section the same
+way `firecrawl_developer` does. Their engine `search()` functions still accept an optional base
+URL so wire-level request/response fixtures can run against a local mock server.
+
+`wikipedia`, `hn_algolia`, and `github_repositories` reduce API-provided HTML fragments
+(MediaWiki `searchmatch` spans, HN `story_text`) through `fetch::extract::HtmlExtractor` instead of
+a bespoke stripper, then hand plain text to the common sanitization pipeline.
+
+#### arXiv Pacing Gate
+
+`arxiv::RequestGate` is the smallest provider-local synchronization primitive in the engine
+layer, added because the arXiv API terms require at most one request every three seconds on a
+single connection. It holds a `tokio::sync::Mutex<Option<Instant>>`:
+
+- acquiring sleeps until at least `interval` has elapsed since the previous request **started**,
+  so concurrent calls cannot compress the request rate;
+- the returned `GateTurn` keeps the lock, so only one arXiv request is ever in flight;
+- `arxiv::shared_gate()` is a process-wide `OnceLock<Arc<RequestGate>>`, and `ArxivEngine` holds
+  that shared instance, so the policy holds across every engine instance in the process rather
+  than per instance.
+
+The gate is deliberately provider-local: it introduces no generic scheduler, no global rate
+limiter service, and no change to the shared `eggfetch-core` client. `RequestGate::new` is the
+injection seam tests use to keep pacing assertions fast and deterministic.
+
+Other providers deliberately do **not** get a gate: `pubmed` runs its two E-utilities calls
+sequentially inside one search and relies on the existing per-provider concurrency cap, and the
+remaining providers are unaffected. This asymmetry is a recorded limitation, not an oversight.
 
 ### Local workspace (backend, not an engine)
 
@@ -235,16 +277,18 @@ these upstreams.
 Every enabled provider ID resolves to exactly one outcome: a constructed engine or a typed
 `SkippedProvider` (`missing_searxng_config`, `missing_api_key`, `missing_base_url`,
 `unknown_provider`, …). Skips surface as provider-scoped warnings — never global failures — and
-feed `provider_status` skip codes. Firecrawl Developer is keyless-optional: enabling the provider
-routes keyless, and a missing or empty optional key falls back keyless with a startup warning
-rather than `missing_api_key`. Direct env vars cover Semantic Scholar, Sourcegraph, and NVD;
-everything in `api_providers` resolves through its `api_key_env`.
+feed `provider_status` skip codes. Firecrawl Developer, PubMed, and GitHub Repositories are
+keyless-optional: enabling the provider routes keyless, and a missing or empty optional key falls
+back keyless with a startup warning rather than `missing_api_key`. Direct env vars cover Semantic
+Scholar, Sourcegraph, NVD, and the optional `NCBI_API_EMAIL` contact identity; everything in
+`api_providers` resolves through its `api_key_env`.
 
 ---
 
 ## Native Enforcement Matrix
 
-Only three providers natively enforce generic-search constraints. Everything else either ignores
+Only four providers natively enforce generic-search constraints (`brave_api`, `exa`, `tavily`,
+`hn_algolia`). Everything else either ignores
 the constraint upstream (local approximation applies downstream) or is a specialist whose native
 surface is its own API shape. Source of truth: `ProviderCapabilities` in `src/core/provider.rs`,
 pinned by `tests/provider_capability_contract.rs`; operator prose in `docs/provider-setup.md`.
@@ -268,6 +312,12 @@ Rules that follow from the matrix:
   retrieval). GitHub/GitLab/Gitea issues and releases use the client-side model only.
 - The five HTML scrapers (`duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`) and `searxng`
   claim no native capabilities at all; every constraint on those paths is local approximation.
+- Freshness is natively enforced by exactly four providers: `brave_api`, `exa`, `tavily`, and
+  `hn_algolia` (via `numericFilters=created_at_i…`). `wikipedia`, `arxiv`, `pubmed`, and
+  `github_repositories` deliberately do not claim it — none of them has a documented freshness
+  parameter mapped in this milestone, so the capability stays local approximation.
+- `arxiv` is the only provider whose `ProviderKind` is `structured_api`; every other provider keeps
+  its pre-existing kind, so no existing `provider_status.kind` wire value changed.
 - `never invent tool-like or provider names in docs`: the inventory test derives tool names from
   `src/mcp/server.rs` and provider IDs from `KNOWN_PROVIDER_IDS`. Prose must agree with the code.
 

@@ -230,6 +230,11 @@ impl Default for SearchSection {
         providers.insert("searxng".to_string(), false);
         providers.insert("osv".to_string(), true);
         providers.insert("firecrawl_developer".to_string(), false);
+        providers.insert("wikipedia".to_string(), false);
+        providers.insert("arxiv".to_string(), false);
+        providers.insert("pubmed".to_string(), false);
+        providers.insert("hn_algolia".to_string(), false);
+        providers.insert("github_repositories".to_string(), false);
         Self {
             mode: Mode::default(),
             default_max_results: 10,

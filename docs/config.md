@@ -37,7 +37,7 @@ roots = []
 
 ## Provider Requirements
 
-All 37 built-in providers:
+All 42 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
@@ -77,9 +77,16 @@ All 37 built-in providers:
 | `semantic_scholar` | api_key | `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar scholarly search |
 | `sourcegraph` | api_key | `SOURCEGRAPH_API_KEY` | Sourcegraph code search |
 | `firecrawl_developer` | json_api | optional `FIRECRAWL_API_KEY` | Firecrawl Developer Index (keyless-optional; enable in [search.providers]) |
+| `wikipedia` | json_api | — | MediaWiki Action API article search (enable in [search.providers]) |
+| `arxiv` | structured_api | — | arXiv Atom metadata API with shared request pacing (enable in [search.providers]) |
+| `pubmed` | json_api | optional `NCBI_API_KEY` | NCBI E-utilities PubMed search (optional `NCBI_API_EMAIL` contact identity) |
+| `hn_algolia` | json_api | — | Hacker News story search with native freshness filters |
+| `github_repositories` | json_api | optional `GITHUB_TOKEN` | GitHub repository discovery (not code search) |
 | `local_workspace` | local | — | Requires `[local]` config |
 
 `provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured") and a machine-readable `skip_code` (e.g. `missing_api_key`, `missing_searxng_config`, `disabled_by_user`, `cooldown_active`).
+
+The `Kind` column is the `provider_status` `kind` field. `structured_api` was added alongside `html_scrape`, `json_api`, `api_key`, and `local` for structured non-JSON upstream contracts (the arXiv Atom feed). It is purely additive: existing wire values are unchanged, and harnesses should treat an unrecognized `kind` string as an opaque category.
 
 ## Search Defaults
 

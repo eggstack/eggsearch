@@ -18,12 +18,26 @@ fn adapter_with(engines: Vec<MockEngine>) -> MetadataSearchAdapter {
 
 #[test]
 fn closure_provider_inventory_matches_reality() {
-    assert_eq!(KNOWN_PROVIDER_IDS.len(), 37);
+    assert_eq!(KNOWN_PROVIDER_IDS.len(), 42);
     for id in ["brave_api", "exa", "tavily"] {
         assert!(KNOWN_PROVIDER_IDS.contains(&id), "missing {id}");
         assert!(API_PROVIDER_IDS.contains(&id), "{id} must be credentialed");
     }
     assert!(eggsearch::core::provider::OPTIONAL_API_PROVIDER_IDS.contains(&"firecrawl_developer"));
+    for id in ["wikipedia", "arxiv", "hn_algolia"] {
+        assert!(KNOWN_PROVIDER_IDS.contains(&id), "missing {id}");
+        assert!(
+            !eggsearch::core::provider::is_api_provider(id),
+            "{id} must stay keyless without an operator credential"
+        );
+    }
+    for id in ["pubmed", "github_repositories"] {
+        assert!(KNOWN_PROVIDER_IDS.contains(&id), "missing {id}");
+        assert!(
+            eggsearch::core::provider::is_optional_api_provider(id),
+            "{id} key must stay optional"
+        );
+    }
 
     let brave = eggsearch::core::provider::built_in_provider_descriptor(
         "brave_api",

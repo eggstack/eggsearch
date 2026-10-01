@@ -48,6 +48,11 @@ pub const KNOWN_PROVIDER_IDS: &[&str] = &[
     "firecrawl_developer",
     "exa",
     "tavily",
+    "wikipedia",
+    "arxiv",
+    "pubmed",
+    "hn_algolia",
+    "github_repositories",
 ];
 
 /// Provider ids that require an operator-supplied API key via
@@ -79,7 +84,8 @@ pub fn is_api_provider(id: &str) -> bool {
 /// `[search].api.<id>.api_key_env` but remain routable keyless.
 ///
 /// The key raises upstream rate limits; it never gates construction.
-pub const OPTIONAL_API_PROVIDER_IDS: &[&str] = &["firecrawl_developer"];
+pub const OPTIONAL_API_PROVIDER_IDS: &[&str] =
+    &["firecrawl_developer", "pubmed", "github_repositories"];
 
 /// Returns `true` if `id` accepts an optional API key but works keyless.
 pub fn is_optional_api_provider(id: &str) -> bool {
@@ -127,6 +133,13 @@ pub fn provider_configured_state(
 
 /// Whether the provider scrapes HTML or speaks a JSON API, or
 /// requires an API key.
+///
+/// `StructuredApi` was added additively for structured non-JSON
+/// upstream contracts (for example the arXiv Atom feed). It never
+/// replaces or renames an existing serialized variant, so harnesses
+/// that already match on `html_scrape`, `json_api`, `api_key`, and
+/// `local` keep working; they should treat an unrecognized `kind`
+/// string as an opaque category.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
@@ -134,6 +147,8 @@ pub enum ProviderKind {
     HtmlScrape,
     /// JSON API (SearXNG).
     JsonApi,
+    /// Structured non-JSON API such as Atom/XML (arXiv).
+    StructuredApi,
     /// Requires an operator-supplied API key (reserved for future use).
     ApiKey,
     /// Local filesystem search backend.
@@ -1847,6 +1862,89 @@ pub fn built_in_provider_descriptor(
             skip_reason,
             skip_code,
         }),
+        "wikipedia" => Some(ProviderDescriptor {
+            id: "wikipedia".into(),
+            display_name: "Wikipedia".into(),
+            kind: ProviderKind::JsonApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_result_timestamps: true,
+                ..ProviderCapabilities::none()
+            },
+            routable,
+            skip_reason,
+            skip_code,
+        }),
+        "arxiv" => Some(ProviderDescriptor {
+            id: "arxiv".into(),
+            display_name: "arXiv".into(),
+            kind: ProviderKind::StructuredApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_scholarly_search: true,
+                supports_result_timestamps: true,
+                ..ProviderCapabilities::none()
+            },
+            routable,
+            skip_reason,
+            skip_code,
+        }),
+        "pubmed" => Some(ProviderDescriptor {
+            id: "pubmed".into(),
+            display_name: "PubMed".into(),
+            kind: ProviderKind::JsonApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_scholarly_search: true,
+                supports_result_timestamps: true,
+                ..ProviderCapabilities::none()
+            },
+            routable,
+            skip_reason,
+            skip_code,
+        }),
+        "hn_algolia" => Some(ProviderDescriptor {
+            id: "hn_algolia".into(),
+            display_name: "Hacker News (Algolia)".into(),
+            kind: ProviderKind::JsonApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_freshness: true,
+                supports_result_timestamps: true,
+                ..ProviderCapabilities::none()
+            },
+            routable,
+            skip_reason,
+            skip_code,
+        }),
+        "github_repositories" => Some(ProviderDescriptor {
+            id: "github_repositories".into(),
+            display_name: "GitHub Repositories".into(),
+            kind: ProviderKind::JsonApi,
+            enabled,
+            default: is_default,
+            requires_api_key: false,
+            configured: configured && enabled,
+            capabilities: ProviderCapabilities {
+                supports_result_timestamps: true,
+                ..ProviderCapabilities::none()
+            },
+            routable,
+            skip_reason,
+            skip_code,
+        }),
         _ => None,
     }
 }
@@ -2540,5 +2638,104 @@ mod tests {
         .unwrap();
         assert_eq!(desc.skip_code, Some(ProviderSkipCode::DisabledByUser));
         assert!(desc.routable);
+    }
+
+    #[test]
+    fn keyless_source_providers_are_known_and_keyless() {
+        for id in [
+            "wikipedia",
+            "arxiv",
+            "pubmed",
+            "hn_algolia",
+            "github_repositories",
+        ] {
+            let desc = built_in_provider_descriptor(id, true, false, true, true, None, None)
+                .unwrap_or_else(|| panic!("descriptor for {id}"));
+            assert!(!desc.requires_api_key, "{id} must stay keyless");
+            assert!(!is_api_provider(id), "{id} must not require an API key");
+        }
+    }
+
+    #[test]
+    fn keyless_source_providers_are_optional_credential_only() {
+        for id in ["pubmed", "github_repositories"] {
+            assert!(
+                is_optional_api_provider(id),
+                "{id} must accept an optional key that only raises limits"
+            );
+            assert_eq!(credential_requirement(id), CredentialRequirement::Optional);
+            assert!(provider_configured_state(id, false, false, false));
+        }
+        for id in ["wikipedia", "arxiv", "hn_algolia"] {
+            assert!(
+                !is_optional_api_provider(id),
+                "{id} has no operator key and must not advertise one"
+            );
+            assert_eq!(credential_requirement(id), CredentialRequirement::None);
+            assert!(provider_configured_state(id, false, false, false));
+        }
+    }
+
+    #[test]
+    fn arxiv_is_the_only_structured_api_provider() {
+        let structured: Vec<&str> = KNOWN_PROVIDER_IDS
+            .iter()
+            .copied()
+            .filter(|id| {
+                built_in_provider_descriptor(id, true, false, true, true, None, None)
+                    .is_some_and(|d| d.kind == ProviderKind::StructuredApi)
+            })
+            .collect();
+        assert_eq!(structured, vec!["arxiv"]);
+    }
+
+    #[test]
+    fn keyless_source_capability_claims_are_conservative() {
+        for id in ["wikipedia", "pubmed", "hn_algolia", "github_repositories"] {
+            let caps = built_in_provider_descriptor(id, true, false, true, true, None, None)
+                .unwrap()
+                .capabilities;
+            assert!(
+                !caps.supports_code_search && !caps.supports_repo_indexing,
+                "{id} is discovery/scholarly only and must not claim code or index access"
+            );
+            assert!(
+                !caps.supports_domain_filters,
+                "{id} does not filter domains natively"
+            );
+            assert!(!caps.supports_news, "{id} is not a news endpoint");
+            assert!(
+                !caps.supports_safe_search,
+                "{id} has no safe-search parameter"
+            );
+        }
+        let arxiv = built_in_provider_descriptor("arxiv", true, false, true, true, None, None)
+            .unwrap()
+            .capabilities;
+        assert!(arxiv.supports_scholarly_search);
+        assert!(arxiv.supports_result_timestamps);
+        assert!(!arxiv.supports_doi_lookup, "arXiv ids are not DOI lookups");
+    }
+
+    #[test]
+    fn structured_api_kind_serializes_additively() {
+        assert_eq!(
+            serde_json::to_string(&ProviderKind::StructuredApi).unwrap(),
+            "\"structured_api\""
+        );
+        for (variant, wire) in [
+            (ProviderKind::HtmlScrape, "\"html_scrape\""),
+            (ProviderKind::JsonApi, "\"json_api\""),
+            (ProviderKind::ApiKey, "\"api_key\""),
+            (ProviderKind::Local, "\"local\""),
+        ] {
+            assert_eq!(
+                serde_json::to_string(&variant).unwrap(),
+                wire,
+                "existing provider kind wire values must not change"
+            );
+        }
+        let parsed: ProviderKind = serde_json::from_str("\"structured_api\"").unwrap();
+        assert_eq!(parsed, ProviderKind::StructuredApi);
     }
 }

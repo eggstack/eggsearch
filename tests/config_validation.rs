@@ -693,6 +693,11 @@ fn all_known_provider_ids_are_in_known_list() {
         "crossref",
         "semantic_scholar",
         "sourcegraph",
+        "wikipedia",
+        "arxiv",
+        "pubmed",
+        "hn_algolia",
+        "github_repositories",
     ] {
         assert!(
             KNOWN_PROVIDER_IDS.contains(id),

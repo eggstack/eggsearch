@@ -4,6 +4,7 @@
 
 #![allow(missing_docs)]
 
+pub mod arxiv;
 pub mod brave;
 pub mod brave_api;
 pub mod cisa_kev;
@@ -20,10 +21,12 @@ pub mod github_advisory;
 pub mod github_code;
 pub mod github_issues;
 pub mod github_releases;
+pub mod github_repositories;
 pub mod gitlab_code;
 pub mod gitlab_issues;
 pub mod gitlab_releases;
 pub mod go_pkg;
+pub mod hn_algolia;
 pub mod kev;
 pub mod maven_central;
 pub mod models;
@@ -35,6 +38,7 @@ pub mod nvd;
 pub mod openalex;
 pub mod osv;
 pub mod packagist;
+pub mod pubmed;
 pub mod pypi;
 pub mod request;
 pub mod rubygems;
@@ -44,6 +48,7 @@ pub mod semantic_scholar;
 pub mod sourcegraph;
 pub mod startpage;
 pub mod tavily;
+pub mod wikipedia;
 pub mod yahoo;
 
 use std::future::Future;
@@ -287,6 +292,41 @@ pub struct TavilyEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
+}
+
+/// Keyless MediaWiki Action API engine. No operator base URL override in
+/// the shipped surface.
+pub struct WikipediaEngine {
+    pub client: Arc<Client>,
+}
+
+/// arXiv Atom API engine. The pacing gate is shared process-wide so
+/// concurrent calls cannot bypass the upstream request spacing.
+pub struct ArxivEngine {
+    pub client: Arc<Client>,
+    pub gate: Arc<arxiv::RequestGate>,
+}
+
+/// NCBI E-utilities engine. The API key and contact identity are optional
+/// and never gate routing.
+pub struct PubmedEngine {
+    pub client: Arc<Client>,
+    pub api_key: Option<String>,
+    pub email: Option<String>,
+    pub base_url: Option<String>,
+}
+
+/// Keyless GitHub repository discovery engine. An optional operator token
+/// only raises upstream limits.
+pub struct GithubRepositoriesEngine {
+    pub client: Arc<Client>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+}
+
+/// Keyless HN Search API (Algolia) engine.
+pub struct HnAlgoliaEngine {
+    pub client: Arc<Client>,
 }
 
 impl SearchEngine for DuckDuckGoEngine {
@@ -995,11 +1035,86 @@ impl SearchEngine for TavilyEngine {
     }
 }
 
+impl SearchEngine for WikipediaEngine {
+    fn name(&self) -> &'static str {
+        "wikipedia"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(wikipedia::search(&self.client, None, request))
+    }
+}
+
+impl SearchEngine for ArxivEngine {
+    fn name(&self) -> &'static str {
+        "arxiv"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(arxiv::search(&self.client, None, &self.gate, request))
+    }
+}
+
+impl SearchEngine for PubmedEngine {
+    fn name(&self) -> &'static str {
+        "pubmed"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(pubmed::search(
+            &self.client,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+            self.email.as_deref(),
+            request,
+        ))
+    }
+}
+
+impl SearchEngine for HnAlgoliaEngine {
+    fn name(&self) -> &'static str {
+        "hn_algolia"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(hn_algolia::search(&self.client, None, request))
+    }
+}
+
+impl SearchEngine for GithubRepositoriesEngine {
+    fn name(&self) -> &'static str {
+        "github_repositories"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(github_repositories::search(
+            &self.client,
+            self.base_url.as_deref(),
+            self.api_key.as_deref(),
+            request,
+        ))
+    }
+}
+
 pub use cisa_kev::CisaKevEngine;
 pub use github_advisory::GithubAdvisoryEngine;
 pub use nvd::NvdEngine;
 pub use rustsec::RustSecEngine;
-
 // Browser-like UA used as the fallback when no operator-supplied UA is provided.
 // Mimic a real browser as closely as possible to avoid bot-detection rejections
 // from HTML providers — but only when the operator has not configured their own.

@@ -747,3 +747,442 @@ async fn compressed_chunked_response_respects_total_deadline() {
     }
     server.abort();
 }
+
+fn source_provider_client() -> eggfetch_core::Client {
+    eggsearch::meta::engines::build_http_client(None).expect("client")
+}
+
+fn source_provider_request(query: &str, max_results: usize) -> EngineSearchRequest {
+    EngineSearchRequest::simple(query, max_results, Duration::from_secs(5))
+}
+
+fn oversized_source_body() -> String {
+    "x".repeat(2 * 1024 * 1024 + 1)
+}
+
+#[tokio::test]
+async fn wikipedia_request_and_response_contract() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/w/api.php")
+            .query_param("action", "query")
+            .query_param("list", "search")
+            .query_param("srsearch", "rust async")
+            .query_param("srlimit", "2")
+            .query_param("format", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"query":{"search":[{"title":"Rust (programming language)",
+                "snippet":"<span class=\"searchmatch\">Rust</span> systems language",
+                "timestamp":"2024-05-01T12:00:00Z"}]}}"#,
+            );
+    });
+    let results = eggsearch::meta::engines::wikipedia::search(
+        &source_provider_client(),
+        Some(&server.url("/w/api.php")),
+        &source_provider_request("rust async", 2),
+    )
+    .await
+    .expect("wikipedia search");
+    mock.assert();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].source_engine, "wikipedia");
+    assert_eq!(
+        results[0].url,
+        "https://en.wikipedia.org/wiki/Rust_%28programming_language%29"
+    );
+    assert_eq!(results[0].snippet.as_deref(), Some("Rust systems language"));
+}
+
+#[tokio::test]
+async fn wikipedia_failures_stay_bounded_and_provider_scoped() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let failing = server.mock(|when, then| {
+        when.method(GET).path("/w/api.php");
+        then.status(503);
+    });
+    let err = eggsearch::meta::engines::wikipedia::search(
+        &source_provider_client(),
+        Some(&server.url("/w/api.php")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("upstream failure is an error, not empty success");
+    assert!(err.to_string().contains("wikipedia"), "got: {err}");
+    failing.assert();
+
+    let big_server = MockServer::start();
+    let oversized = big_server.mock(|when, then| {
+        when.method(GET).path("/w/api.php");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(oversized_source_body());
+    });
+    let err = eggsearch::meta::engines::wikipedia::search(
+        &source_provider_client(),
+        Some(&big_server.url("/w/api.php")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("oversized bodies must be rejected");
+    assert!(err.to_string().contains("too large"), "got: {err}");
+    oversized.assert();
+}
+
+#[tokio::test]
+async fn hn_algolia_request_and_response_contract() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/v1/search")
+            .query_param("query", "rust")
+            .query_param("tags", "story")
+            .query_param("hitsPerPage", "2");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"hits":[{"objectID":"1","title":"Show HN: rust tool",
+                "url":"https://example.com/a","points":10,"num_comments":2,
+                "created_at":"2024-02-01T10:00:00.000Z"}]}"#,
+            );
+    });
+    let results = eggsearch::meta::engines::hn_algolia::search(
+        &source_provider_client(),
+        Some(&server.url("/api/v1/search")),
+        &source_provider_request("rust", 2),
+    )
+    .await
+    .expect("hn search");
+    mock.assert();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].url, "https://example.com/a");
+    assert_eq!(
+        results[0].published_at.as_deref(),
+        Some("2024-02-01T10:00:00+00:00")
+    );
+}
+
+#[tokio::test]
+async fn hn_algolia_failures_stay_bounded_and_provider_scoped() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let failing = server.mock(|when, then| {
+        when.method(GET).path("/api/v1/search");
+        then.status(429);
+    });
+    let err = eggsearch::meta::engines::hn_algolia::search(
+        &source_provider_client(),
+        Some(&server.url("/api/v1/search")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("rate limits surface as typed engine errors");
+    assert!(err.to_string().contains("hn_algolia"), "got: {err}");
+    failing.assert();
+
+    let bad_server = MockServer::start();
+    let malformed = bad_server.mock(|when, then| {
+        when.method(GET).path("/api/v1/search");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body("{\"hits\": 5}");
+    });
+    let err = eggsearch::meta::engines::hn_algolia::search(
+        &source_provider_client(),
+        Some(&bad_server.url("/api/v1/search")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("malformed payloads must fail closed");
+    assert!(err.to_string().contains("invalid JSON"), "got: {err}");
+    malformed.assert();
+}
+
+#[tokio::test]
+async fn arxiv_request_response_and_pacing_contract() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/api/query")
+            .query_param("search_query", "all:sparse retrieval")
+            .query_param("max_results", "2");
+        then.status(200)
+            .header("content-type", "application/atom+xml")
+            .body(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"><entry>
+<id>http://arxiv.org/abs/2401.00001v2</id>
+<published>2024-01-02T00:00:00Z</published>
+<title>Sparse retrieval</title>
+<summary>An abstract.</summary>
+</entry></feed>"#,
+            );
+    });
+    let gate = eggsearch::meta::engines::arxiv::RequestGate::new(Duration::from_millis(50));
+    let client = source_provider_client();
+    let url = server.url("/api/query");
+    let started = std::time::Instant::now();
+    let first = eggsearch::meta::engines::arxiv::search(
+        &client,
+        Some(&url),
+        &gate,
+        &source_provider_request("sparse retrieval", 2),
+    )
+    .await
+    .expect("arxiv search");
+    eggsearch::meta::engines::arxiv::search(
+        &client,
+        Some(&url),
+        &gate,
+        &source_provider_request("sparse retrieval", 2),
+    )
+    .await
+    .expect("second arxiv search");
+    let elapsed = started.elapsed();
+    mock.assert_hits(2);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].url, "https://arxiv.org/abs/2401.00001");
+    assert_eq!(first[0].source_engine, "arxiv");
+    assert!(
+        elapsed >= Duration::from_millis(50),
+        "repeat arXiv calls must pass through the shared pacing gate, elapsed: {elapsed:?}"
+    );
+}
+
+#[tokio::test]
+async fn arxiv_failures_stay_bounded_and_provider_scoped() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let failing = server.mock(|when, then| {
+        when.method(GET).path("/api/query");
+        then.status(503);
+    });
+    let gate = eggsearch::meta::engines::arxiv::RequestGate::new(Duration::from_millis(1));
+    let err = eggsearch::meta::engines::arxiv::search(
+        &source_provider_client(),
+        Some(&server.url("/api/query")),
+        &gate,
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("upstream failure is an error, not empty success");
+    assert!(err.to_string().contains("arxiv"), "got: {err}");
+    failing.assert();
+
+    let bad_server = MockServer::start();
+    let malformed = bad_server.mock(|when, then| {
+        when.method(GET).path("/api/query");
+        then.status(200)
+            .header("content-type", "application/atom+xml")
+            .body("<feed><entry><title>x</title>");
+    });
+    let err = eggsearch::meta::engines::arxiv::search(
+        &source_provider_client(),
+        Some(&bad_server.url("/api/query")),
+        &gate,
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("truncated Atom feeds must fail closed");
+    assert!(err.to_string().contains("truncated"), "got: {err}");
+    malformed.assert();
+}
+
+#[tokio::test]
+async fn pubmed_runs_one_esearch_and_one_esummary() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let esearch = server.mock(|when, then| {
+        when.method(GET)
+            .path("/esearch.fcgi")
+            .query_param("db", "pubmed")
+            .query_param("term", "crispr")
+            .query_param("tool", "eggsearch");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"esearchresult":{"idlist":["31357002"]}}"#);
+    });
+    let esummary = server.mock(|when, then| {
+        when.method(GET)
+            .path("/esummary.fcgi")
+            .query_param("db", "pubmed")
+            .query_param("id", "31357002")
+            .query_param("tool", "eggsearch");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"result":{"uids":["31357002"],"31357002":{"title":"A study.",
+                "source":"J Test","authors":[{"name":"Smith J"}],"epubdate":"2020 Feb 3"}}}"#,
+            );
+    });
+    let results = eggsearch::meta::engines::pubmed::search(
+        &source_provider_client(),
+        Some(&server.url("")),
+        None,
+        None,
+        &source_provider_request("crispr", 3),
+    )
+    .await
+    .expect("pubmed search");
+    esearch.assert_hits(1);
+    esummary.assert_hits(1);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].url, "https://pubmed.ncbi.nlm.nih.gov/31357002/");
+    assert_eq!(
+        results[0].published_at.as_deref(),
+        Some("2020-02-03T00:00:00+00:00")
+    );
+}
+
+#[tokio::test]
+async fn pubmed_summary_phase_failure_fails_the_call() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let esearch = server.mock(|when, then| {
+        when.method(GET).path("/esearch.fcgi");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"esearchresult":{"idlist":["1","2"]}}"#);
+    });
+    let esummary = server.mock(|when, then| {
+        when.method(GET).path("/esummary.fcgi");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"header":{}}"#);
+    });
+    let err = eggsearch::meta::engines::pubmed::search(
+        &source_provider_client(),
+        Some(&server.url("")),
+        None,
+        None,
+        &source_provider_request("crispr", 3),
+    )
+    .await
+    .expect_err("a failed summary phase must not fabricate partial metadata");
+    assert!(err.to_string().contains("result section"), "got: {err}");
+    esearch.assert();
+    esummary.assert();
+
+    let failing_server = MockServer::start();
+    let failing = failing_server.mock(|when, then| {
+        when.method(GET).path("/esearch.fcgi");
+        then.status(503);
+    });
+    let err = eggsearch::meta::engines::pubmed::search(
+        &source_provider_client(),
+        Some(&failing_server.url("")),
+        None,
+        None,
+        &source_provider_request("crispr", 3),
+    )
+    .await
+    .expect_err("upstream failure is an error, not empty success");
+    assert!(err.to_string().contains("pubmed"), "got: {err}");
+    failing.assert();
+}
+
+#[tokio::test]
+async fn github_repositories_routes_keyless_and_optional_token() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let keyless = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search/repositories")
+            .query_param("q", "rust web")
+            .query_param("per_page", "2")
+            .matches(|req| match &req.headers {
+                None => true,
+                Some(headers) => !headers
+                    .iter()
+                    .any(|(name, _)| name.eq_ignore_ascii_case("authorization")),
+            });
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{"items":[{"full_name":"tokio-rs/axum",
+                "html_url":"https://github.com/tokio-rs/axum",
+                "description":"Web framework","language":"Rust",
+                "stargazers_count":10,"pushed_at":"2024-05-30T08:00:00Z"}]}"#,
+            );
+    });
+    let results = eggsearch::meta::engines::github_repositories::search(
+        &source_provider_client(),
+        Some(&server.url("")),
+        None,
+        &source_provider_request("rust web", 2),
+    )
+    .await
+    .expect("keyless repository discovery");
+    keyless.assert();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].title, "tokio-rs/axum");
+    assert_eq!(results[0].source_engine, "github_repositories");
+
+    let keyed = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search/repositories")
+            .header("authorization", "Bearer optional-token");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"items":[]}"#);
+    });
+    eggsearch::meta::engines::github_repositories::search(
+        &source_provider_client(),
+        Some(&server.url("")),
+        Some("optional-token"),
+        &source_provider_request("rust web", 2),
+    )
+    .await
+    .expect("tokenised repository discovery");
+    keyed.assert();
+}
+
+#[tokio::test]
+async fn github_repositories_failures_stay_bounded_and_provider_scoped() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let rate_limited = server.mock(|when, then| {
+        when.method(GET).path("/search/repositories");
+        then.status(403)
+            .header("x-ratelimit-remaining", "0")
+            .header("content-type", "application/json")
+            .body(r#"{"message":"API rate limit exceeded"}"#);
+    });
+    let err = eggsearch::meta::engines::github_repositories::search(
+        &source_provider_client(),
+        Some(&server.url("")),
+        None,
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("rate-limit responses must surface as typed engine errors");
+    assert!(
+        err.to_string().contains("github_repositories"),
+        "got: {err}"
+    );
+    rate_limited.assert();
+
+    let big_server = MockServer::start();
+    let oversized = big_server.mock(|when, then| {
+        when.method(GET).path("/search/repositories");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(oversized_source_body());
+    });
+    let err = eggsearch::meta::engines::github_repositories::search(
+        &source_provider_client(),
+        Some(&big_server.url("")),
+        None,
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("oversized bodies must be rejected");
+    assert!(err.to_string().contains("too large"), "got: {err}");
+    oversized.assert();
+}

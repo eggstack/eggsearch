@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 37 search providers across nine categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 42 search providers across ten categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, reference/discussion sources, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Provider Categories at a Glance
 
@@ -8,12 +8,13 @@ eggsearch supports 37 search providers across nine categories: web search (HTML 
 |----------|----------|-----------------|
 | **Keyless defaults** | DuckDuckGo, Startpage, Yahoo | none |
 | **Keyless specialist** | OSV, NVD, CISA KEV, RustSec, OpenAlex, Crossref, all package registries | none |
-| **Keyless-optional specialist** | Firecrawl Developer Index | none (optional `FIRECRAWL_API_KEY` raises limits) |
+| **Keyless source-specific** | Wikipedia, arXiv, Hacker News (Algolia) | none |
+| **Keyless-optional specialist** | Firecrawl Developer Index, PubMed, GitHub Repositories | none (optional key/contact raises limits) |
 | **Optional configured endpoint** | SearXNG, self-hosted forge base URL | operator configuration |
 | **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Exa, Tavily, Semantic Scholar, GitHub Advisory | opt-in credential |
 | **Optional local** | local workspace | configured local root |
 
-All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy. The Firecrawl Developer Index routes keyless when enabled; a missing optional key never produces `missing_api_key`.
+All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy. The Firecrawl Developer Index, PubMed, and GitHub Repositories providers route keyless when enabled; a missing optional key never produces `missing_api_key`.
 
 ## Web Search Providers
 
@@ -82,6 +83,107 @@ api_key_env = "FIRECRAWL_API_KEY"
 A missing or empty optional env var falls back keyless with a startup warning; it never yields `missing_api_key` and never makes the provider unroutable. An explicitly invalid base URL in `[search.api.firecrawl_developer]` is still a configuration error.
 
 Native behavior: `issue_search` + `repo_filter` (no `code_search`, no `release_search`, no `scholarly_search`, no `repo_indexing`). Artifact kinds `issue:`/`pull_request:`/`readme:`/`doc:` map via URL classification with deterministic URL-fallback titles when upstream titles are absent. Matched markdown passages become bounded `ProviderPassage` excerpts (at most 3 per card, never `fetched=true`). `repos` scope comes from `repo_search` resolved `owner/repo` (never reparsed from free text); `types` is restricted only for `Docs` (`doc`+`readme`) and `Issues` (`issue`+`pull_request`) intents. Scoped `repos`/`sources` echo with `indexed=false` surfaces as a stable `scope_unindexed` warning so "scope not indexed" is never mislabeled as ordinary zero evidence. `provider_status` reports `requires_api_key=false`, `configured=true` when enabled, and `routable=true` keyless.
+
+## Source-Specific Keyless Providers
+
+These providers exist for explicit source selection, not for default fan-out. All of them are disabled by default, never appear in `default_providers`, and are reachable only through an explicit `providers` request field or an intentionally edited profile. None of them requires a credential.
+
+### Wikipedia
+
+- ID: `wikipedia`
+- Structured MediaWiki Action API search (`action=query&list=search`) against `https://en.wikipedia.org/w/api.php`
+- Enable in `[search.providers]`:
+
+```toml
+[search.providers]
+wikipedia = true
+```
+
+- Select explicitly, e.g. `web_search({"query": "...", "providers": ["wikipedia"]})`
+
+Results map to canonical article URLs (`https://en.wikipedia.org/wiki/<Title>`), the page title, and a bounded snippet. The API returns highlighted snippets as small HTML fragments; those are reduced to plain text through eggsearch's normal extraction path and then sanitized by the common pipeline. Native capabilities: `result_timestamps` only (`srprop=timestamp`, the page last-modified timestamp, preserved in `published_at`). Safe-search, language, region, domain filters, news, and freshness are not claimed — every one of those constraints is local approximation. An HTTP 200 body carrying a MediaWiki `error` object (for example `ratelimited`) fails the call as a provider-scoped parse error rather than returning empty success.
+
+### arXiv
+
+- ID: `arxiv`
+- Public arXiv metadata API (`search_query=all:<query>`) returning an Atom 1.0 feed, parsed with the repository's existing `quick-xml` reader
+- Enable in `[search.providers]`:
+
+```toml
+[search.providers]
+arxiv = true
+```
+
+Native capabilities: `scholarly_search` and `result_timestamps` (`published`, falling back to `updated`, preserved in `published_at`). Results link to the canonical abstract page with the version suffix stripped so every revision of one paper shares one stable identity.
+
+arXiv request pacing (required by the arXiv API terms of use): requests are spaced at least three seconds apart and only one request is ever in flight. A single process-wide pacing gate owns both rules, so concurrent calls queue behind it instead of bypassing it. A short-lived wait therefore consumes part of the per-engine timeout on the second call; that is the documented cost of the upstream policy, not a scheduler bug. No bulk-harvest behavior is ever requested.
+
+Attribution required by the current arXiv API guidance: results originate from arXiv, links resolve to `arxiv.org` abstract pages, and operators surfacing arXiv data should credit arXiv (see <https://info.arxiv.org/help/api/>).
+
+### Hacker News (Algolia)
+
+- ID: `hn_algolia`
+- Public HN Search API (`https://hn.algolia.com/api/v1/search`) constrained to `tags=story`
+- Enable in `[search.providers]`:
+
+```toml
+[search.providers]
+hn_algolia = true
+```
+
+Results map to the original submitted URL when present, otherwise to the canonical discussion URL `https://news.ycombinator.com/item?id=<id>`; the snippet uses the story text when available and otherwise synthesizes bounded discussion metadata (points, comments, author). Native capabilities: `freshness` (relative `day|week|month|year` and exact `YYYY-MM-DD` ranges map to `numericFilters=created_at_i>…` / `created_at_i<=…`, with an exact range taking precedence) and `result_timestamps` (`created_at`). This provider is deliberately Hacker News only: it is not a Reddit/Lobsters/community aggregator.
+
+### PubMed
+
+- ID: `pubmed`
+- NCBI E-utilities: one `esearch.fcgi` call for PMIDs followed by one bounded `esummary.fcgi` batch for citation metadata
+- Enable in `[search.providers]`:
+
+```toml
+[search.providers]
+pubmed = true
+```
+
+- Optionally raise the rate limit with an NCBI API key (never required, never logged):
+
+```toml
+[search.api.pubmed]
+enabled = true
+api_key_env = "NCBI_API_KEY"
+```
+
+- Optionally supply the contact identity requested by NCBI's E-utilities usage policy:
+
+```bash
+export NCBI_API_EMAIL="ops@example.org"
+```
+
+Every request identifies itself truthfully as `tool=eggsearch` with a real `eggsearch/<version>` User-Agent. No fabricated contact identity is ever sent: without `NCBI_API_EMAIL` the `email` parameter is simply omitted, which leaves the operator non-compliant with NCBI's request for contact information rather than silently impersonating a maintainer. Per-call result counts are bounded to 25 for interactive agent retrieval. If the summary phase fails, the whole call fails — partial or fabricated citation metadata is never returned.
+
+Native capabilities: `scholarly_search` and `result_timestamps` (`epubdate`, falling back to `pubdate`, normalized from shapes such as `2024 Feb 3`, `2024 Feb`, or `2024`; unrecognized shapes are dropped rather than guessed).
+
+### GitHub Repositories
+
+- ID: `github_repositories`
+- Official repository search endpoint (`GET /search/repositories`) — repository **discovery**, not code search
+- Enable in `[search.providers]`:
+
+```toml
+[search.providers]
+github_repositories = true
+```
+
+- Optionally raise GitHub's unauthenticated search limit (never required, never logged):
+
+```toml
+[search.api.github_repositories]
+enabled = true
+api_key_env = "GITHUB_TOKEN"
+```
+
+Keyless routing works at GitHub's unauthenticated limits; a missing token never makes the provider unroutable and never yields `missing_api_key`. Results carry the `owner/repo` full name as the title, the canonical `html_url`, the repository description (or bounded language/star/fork/issue metadata when the description is absent), and `pushed_at` as the result timestamp. Requests are ordered `sort=updated&order=desc` for deterministic freshness.
+
+Native capabilities: `result_timestamps` only. This provider deliberately does **not** claim `code_search` or `repo_indexing` — repository discovery is not file/code search — and it does not replace `github_code`, `github_issues`, or `github_releases`. Rate-limit responses (HTTP 403/429) flow through the normal provider failure and cooldown path; they are provider-scoped and never make the server unhealthy.
 
 ## API-Key Providers
 

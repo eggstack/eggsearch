@@ -6,6 +6,17 @@ use tracing::warn;
 
 use super::{EngineList, SkippedProvider};
 
+/// Read an optional operator `base_url` override for one provider id.
+fn configured_base_url(
+    api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
+    id: &str,
+) -> Option<String> {
+    api_providers
+        .get(id)
+        .and_then(|cfg| cfg.base_url.clone())
+        .filter(|u| !u.is_empty())
+}
+
 /// Build the default engine set used by the server.
 ///
 /// `searxng_base_url`, when `Some`, is the base URL of a self-hosted
@@ -42,14 +53,16 @@ pub fn build_default_engines_with_egress(
     egress: &crate::core::config::EgressSection,
 ) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
-        BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine, CrossRefEngine,
-        DuckDuckGoEngine, ExaEngine, FirecrawlDeveloperEngine, GiteaCodeEngine, GiteaIssuesEngine,
-        GiteaReleasesEngine, GithubAdvisoryEngine, GithubCodeEngine, GithubIssuesEngine,
-        GithubReleasesEngine, GitlabCodeEngine, GitlabIssuesEngine, GitlabReleasesEngine,
-        GoPkgRegistryEngine, MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine,
-        NugetRegistryEngine, NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine,
+        ArxivEngine, BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine,
+        CrossRefEngine, DuckDuckGoEngine, ExaEngine, FirecrawlDeveloperEngine, GiteaCodeEngine,
+        GiteaIssuesEngine, GiteaReleasesEngine, GithubAdvisoryEngine, GithubCodeEngine,
+        GithubIssuesEngine, GithubReleasesEngine, GithubRepositoriesEngine, GitlabCodeEngine,
+        GitlabIssuesEngine, GitlabReleasesEngine, GoPkgRegistryEngine, HnAlgoliaEngine,
+        MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine, NugetRegistryEngine,
+        NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine, PubmedEngine,
         PypiRegistryEngine, RubygemsRegistryEngine, RustSecEngine, SearxngEngine,
-        SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, TavilyEngine, YahooEngine,
+        SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, TavilyEngine,
+        WikipediaEngine, YahooEngine,
     };
 
     let client = Arc::new(build_http_client_with_egress(
@@ -115,6 +128,47 @@ pub fn build_default_engines_with_egress(
             "crossref" => engines.push(Arc::new(CrossRefEngine {
                 client: client.clone(),
             })),
+            "wikipedia" => engines.push(Arc::new(WikipediaEngine {
+                client: client.clone(),
+            })),
+            "arxiv" => engines.push(Arc::new(ArxivEngine {
+                client: client.clone(),
+                gate: crate::meta::engines::arxiv::shared_gate(),
+            })),
+            "hn_algolia" => engines.push(Arc::new(HnAlgoliaEngine {
+                client: client.clone(),
+            })),
+            "pubmed" => {
+                let api_key = crate::core::config::optional_api_key(id, api_providers);
+                if crate::core::config::optional_api_key_misconfigured(id, api_providers) {
+                    warn!(
+                        provider_id = %id,
+                        "optional API provider enabled without usable credential; continuing keyless"
+                    );
+                }
+                engines.push(Arc::new(PubmedEngine {
+                    client: client.clone(),
+                    api_key,
+                    email: std::env::var("NCBI_API_EMAIL")
+                        .ok()
+                        .filter(|e| !e.is_empty()),
+                    base_url: configured_base_url(api_providers, id),
+                }));
+            }
+            "github_repositories" => {
+                let api_key = crate::core::config::optional_api_key(id, api_providers);
+                if crate::core::config::optional_api_key_misconfigured(id, api_providers) {
+                    warn!(
+                        provider_id = %id,
+                        "optional API provider enabled without usable credential; continuing keyless"
+                    );
+                }
+                engines.push(Arc::new(GithubRepositoriesEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: configured_base_url(api_providers, id),
+                }));
+            }
             "semantic_scholar" => {
                 let api_key = std::env::var("SEMANTIC_SCHOLAR_API_KEY")
                     .ok()

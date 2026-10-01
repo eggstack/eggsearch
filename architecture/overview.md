@@ -76,7 +76,7 @@ fetch ↗
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
 | Metasearch adapter | `src/meta/` (34 top-level files plus `adapter/`, `dispatch/`, `dependency_parse/`, `engines/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
-| Vendored search engines | `src/meta/engines/` (42 files: 37 per-provider files + 5 support modules) | 36 engine structs covering 36 of 37 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, API key, advisory, registry, scholarly | [engines.md](engines.md) |
+| Vendored search engines | `src/meta/engines/` (47 files: 41 per-provider files + 6 support modules) | 41 engine structs covering 41 of 42 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, structured API, API key, advisory, registry, scholarly, source-specific | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (11 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
@@ -118,7 +118,7 @@ Everything else speaks in these types. Zero external dependencies beyond seriali
 - `source_card.rs` — `SourceCard`, the canonical output type; `SourceKind` classifies URLs into 17 kinds
 - `identity.rs` — deterministic FNV-1a content hashes for every stable ID (never random UUIDs)
 - `sanitize.rs` — 3-tier sanitization all untrusted text flows through
-- `provider.rs` — `ProviderKind`, 24-flag `ProviderCapabilities`, `KNOWN_PROVIDER_IDS` (37)
+- `provider.rs` — `ProviderKind`, 24-flag `ProviderCapabilities`, `KNOWN_PROVIDER_IDS` (42)
 - Evidence subsystem — roles (19 variants), workflow coverage, conflicts, retrieval ledger, bundles
 - Workflow request/response types per tool: web/repo/security/research/local/package
 
@@ -135,14 +135,15 @@ Wraps all search behind `MetadataSearchAdapter`; callers never touch engines dir
 
 ### engines — vendored providers ([engines.md](engines.md))
 
-36 engine structs plus the local workspace backend cover 37 registered provider IDs. Per-provider implementation files number 37; shared support modules are `mod`/`models`/`normalizer`/`request`/`error`:
+41 engine structs plus the local workspace backend cover 42 registered provider IDs. Per-provider implementation files number 41; shared support modules are `mod`/`models`/`normalizer`/`request`/`error`/`kev`:
 
 - Generic web: DuckDuckGo, Brave, Startpage, Yahoo, Mojeek, SearXNG, Brave Search API, Exa Semantic Search, Tavily Search
 - Developer index: Firecrawl Developer (keyless-optional, issues/PRs/READMEs/docs with passages)
 - Forge (code/issues/releases × GitHub/GitLab/Gitea), Sourcegraph
 - Security advisories: OSV, GitHub Advisory, NVD, CISA KEV, RustSec
 - Package registries: crates.io, PyPI, npm, Go, Maven Central, NuGet, RubyGems, Packagist
-- Scholarly: OpenAlex, Crossref, Semantic Scholar
+- Scholarly: OpenAlex, Crossref, Semantic Scholar, arXiv, PubMed
+- Source-specific keyless: Wikipedia, Hacker News (Algolia), GitHub repository discovery
 
 All implement one trait (`SearchEngine`) with defaulted advisory methods; unsupported capabilities are explicit.
 
@@ -242,16 +243,16 @@ web_fetch / batch_fetch / repo_fetch call
 
 ## Provider Model
 
-`ProviderKind` enum: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`.
+`ProviderKind` enum: `HtmlScrape`, `JsonApi`, `StructuredApi`, `ApiKey`, `Local`.
 
-37 registered providers across 4 search profiles:
+42 registered providers across 4 search profiles:
 
 | Profile | Providers |
 |---------|-----------|
 | `generic` | DuckDuckGo, Startpage, Yahoo, Mojeek, Brave (HTML), SearXNG |
 | `coding` | + GitHub/GitLab/Gitea Code/Issues/Releases, Sourcegraph |
 | `security` | + OSV, GitHub Advisory, NVD, CISA KEV, RustSec |
-| `research` | + OpenAlex, Crossref, Semantic Scholar |
+| `research` | + OpenAlex, Crossref, Semantic Scholar, arXiv, PubMed |
 
 Profiles are advisory; unavailable providers are skipped with warnings, never global errors. Per-provider capability flags gate which roles a provider can serve; unsupported requested roles become explicit capability-skip attempts in the retrieval ledger rather than silent omissions.
 
