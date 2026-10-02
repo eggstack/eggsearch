@@ -333,6 +333,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -356,7 +357,7 @@ jobs:
           ./packaging/release-validate.sh assets dist "${{ needs.preflight.outputs.mode }}" "${{ needs.preflight.outputs.commit }}" "${{ needs.preflight.outputs.tag }}" "${{ needs.preflight.outputs.version }}"
       - name: Attest release binaries and installers
         if: ${{ needs.preflight.outputs.mode == 'release' }}
-        uses: actions/attest@daf44fb950173508f38bd2406030372c1d1162b1 # v3.0.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/eggsearch-*,dist/install.sh,dist/install.ps1
       - name: Verify release artifact attestation

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-02
+
+### Fixed
+
+- Repaired the release-workflow provenance-attestation step (`actions/attest`
+  v3 to v4 SLSA-provenance mode with the documented `artifact-metadata: write`
+  permission) that blocked binary publication of 0.4.0. The 0.4.0 CodeGG
+  parity surface ships complete in this release; `v0.4.0` remains crate+tag
+  only and is never revisited.
+
 ## [0.4.0] - 2026-10-02
 
 ### Changed
