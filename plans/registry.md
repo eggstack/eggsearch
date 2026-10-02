@@ -31,7 +31,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
 | Search capability and provider evidence | closed | `plans/subsystems/search-capability-roadmap.md` | M001-M005 closed | None. Pre-migration baseline `e645a3fe` (`eggsearch` 0.3.7). |
-| CodeGG legacy search parity corrective | active | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001 closed; M002 closed; M003 blocked (operational only) | M001 closed at `e9103b4` and M002 closed at `5233315` (closures `001-status.md` and `002-status.md`); inventory is 44 with all planned providers accepted. M003's code dependency is cleared; it is blocked only on a qualifying tagged release for downstream CodeGG. |
+| CodeGG legacy search parity corrective | active (conditional closure pending release) | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001 closed; M002 closed; M003 conditionally closed (release only) | M001 `e9103b4`, M002 `5233315`, M003 conditionally closed at `8e5ec75` (closures `001-status.md`, `002-status.md`, `003-status.md`); inventory 44, all planned providers accepted, and all 16 legacy CodeGG hints mapped or explicitly retired. M003's code dependency is cleared; its only open condition is publication of tagged release v0.4.0. `make check` and `make release-check` both pass, which was not true during M001 or M002. |
 | Binary distribution, install/update, deployment | closed | `plans/subsystems/binary-distribution-deployment-roadmap.md` | M001-M006 closed | None. First binary release `v0.3.9` at `0cbbeee7`; qualify `34653366561`, release `34655458760`. |
 | Maintenance, consolidation, CodeGG quality | closed | `plans/subsystems/maintenance-codegg-quality-roadmap.md` | M001-M005 closed | None. Baseline `4a713ff8`. |
 | HTTP transport consolidation | closed | `plans/subsystems/transport-consolidation-roadmap.md` | M001-M003 closed | None. `eggfetch-core 0.2.0` at `bac6f49f`; qualify `35692096012`. |
@@ -47,7 +47,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 |---|---|---|---|---|
 | CodeGG legacy search parity corrective | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | Closed at `e9103b4`; closure `plans/closure/codegg-legacy-search-parity/001-status.md`. Added Wikipedia, arXiv, PubMed, HN Algolia, and GitHub repository discovery plus the additive `structured_api` provider kind; inventory 37 -> 42. |
 | CodeGG legacy search parity corrective | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | Closed at `5233315`; closure `plans/closure/codegg-legacy-search-parity/002-status.md`. Added opt-in `serpapi` and `kagi` (current v1, terms gate passed); inventory 42 -> 44. |
-| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Code dependency cleared (M001 and M002 both closed); the only remaining blocker is publication of a qualifying tagged release, which is operational and downstream of CodeGG. Evidence: `plans/closure/codegg-legacy-search-parity/001-status.md` and `002-status.md`. |
+| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Conditionally closed at `8e5ec75`; closure `plans/closure/codegg-legacy-search-parity/003-status.md`. Frozen disposition matrix, downstream retirement contract (min version 0.4.0), and ten qualification journeys through the real tool surface. Qualification fixed three explicit-provider routing defects and three gate-blocking defects (docs-check lint, updater `ETXTBSY` flake, contradictory proptest). Single open condition: publication of tagged release v0.4.0. |
 | Tool-surface consolidation | M001 contract and disclosure model | closed | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | Closed at `4b7e725`; closure `plans/closure/mcp-tool-surface-consolidation/001-status.md`. |
 | Tool-surface consolidation | M002 agent-facing schema slimming | closed | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | Closed at `b1e6ea7`; closure `plans/closure/mcp-tool-surface-consolidation/002-status.md`. |
 | Tool-surface consolidation | M003 MCP 2026 protocol and error contract | closed | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | Closed at `c102ac6`; closure `plans/closure/mcp-tool-surface-consolidation/003-status.md`. |
@@ -95,11 +95,15 @@ under the owning subsystem roadmap instead.
 
 ## Blocked work
 
-CodeGG legacy search parity M003 has no remaining code dependency — M001 and
-M002 are both closed — and is blocked only on the operational dependency of a
-qualifying tagged release before downstream CodeGG can retire its legacy
-backend. Both provider-parity milestones closed without leaving a
-`serpapi`/`kagi` non-migration.
+CodeGG legacy search parity M003 has no remaining code dependency and is
+conditionally closed at `8e5ec75` on one operational condition: publication of
+tagged release **v0.4.0**. All three milestones left no `serpapi`/`kagi`
+non-migration, and `google_news` is the only deliberate retirement. Once v0.4.0
+is tagged, a downstream harness may pin `>=0.4.0`, verify the eleven
+migration-relevant provider ids through `provider_status`, delete its own
+external-search clients, and remove `backend="builtin"` and
+`fallback_to_builtin`. See
+`plans/closure/codegg-legacy-search-parity/003-status.md`.
 
 Tool-surface M001-M007 are closed; no tool-surface blocker remains.
 
@@ -126,7 +130,7 @@ release that makes HTTP discovery / reqwest optional without regressing
 | Dependency evidence hardening | closed | `plans/closure/dependency-evidence-hardening/010-status.md`; M010 corrective evidence in `010-status.md`, prior terminal evidence in `009-status.md` |
 | MCP tool-surface consolidation | closed | `plans/closure/mcp-tool-surface-consolidation/007-status.md`; M001-M006 evidence in `001-status.md` through `006-status.md` |
 | Repository hardening | active; M007 conditionally closed, M001 conditionally closed via M007, M002 conditional, M006 blocked | Historical closure records `001-status.md` through `006-status.md`; current corrective control point `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` plus `plans/closure/repository-hardening/007-status.md` |
-| CodeGG legacy search parity | active; M001 and M002 closed, M003 blocked on the tagged release only | `plans/closure/codegg-legacy-search-parity/002-status.md`; implementations `e9103b4` (M001) and `5233315` (M002) |
+| CodeGG legacy search parity | active; M001 and M002 closed, M003 conditionally closed pending the tagged release | `plans/closure/codegg-legacy-search-parity/003-status.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003) |
 
 ## Closure rule
 

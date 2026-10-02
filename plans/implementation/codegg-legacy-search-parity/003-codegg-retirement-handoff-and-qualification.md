@@ -1,6 +1,19 @@
 # Plan 003 — CodeGG Retirement Handoff and Qualification
 
-Status: blocked
+Status: conditionally closed
+
+Open operational condition: tagged release publication of the qualifying
+surface (v0.4.0). The repository-side work is complete and verified; nothing
+else is outstanding.
+
+Hard dependencies (both satisfied): M001 closed at `e9103b4`, M002 closed at
+`5233315`.
+
+Qualification candidate: `8e5ec755dae2198a06bc881ecd740597b4da5440`
+
+Intended release version: 0.4.0
+
+Closure record: `plans/closure/codegg-legacy-search-parity/003-status.md`
 
 Source roadmap:
 

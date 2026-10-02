@@ -207,14 +207,40 @@ circumvention.
 
 ### M003 — Compatibility qualification and downstream handoff
 
-Status: unblocked by M002's closure; now blocked only on the operational
-dependency of a qualifying tagged release.
+Status: conditionally closed at `8e5ec755dae2198a06bc881ecd740597b4da5440`,
+with one open operational condition: publication of tagged release **v0.4.0**.
 
 Plan:
 
 - `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md`
 
+Closure:
+
+- `plans/closure/codegg-legacy-search-parity/003-status.md`
+
 Freezes the provider/disposition matrix, updates CodeGG integration documentation, runs the full provider-contract/documentation gates, and records the exact release candidate that CodeGG may consume. It does not modify the CodeGG repository.
+
+Qualification was not a rubber stamp. It found and fixed three production
+defects in explicit-provider handling (an unbuildable provider was silently
+dropped while the response claimed it had been selected; a missing credential
+was mislabeled as a disabled provider whose suggested repair does not work for
+API-key providers; an all-providers-failed search reported `internal_error`
+instead of `upstream_failed`), plus three defects that had been blocking the
+required verification gates across two prior closures (a rustdoc lint failing
+`docs-check`, an `ETXTBSY` updater flake, and a proptest whose generator
+contradicted the SSRF guard). `make check` and `make release-check` now both
+pass, which was not true during M001 or M002.
+
+All ten required user journeys execute through the real MCP tool surface; the
+credentialed and news journeys drive the real engines against a local HTTP
+fixture server. The frozen matrix has no `capability`-class stand-in: the only
+retirement is `google_news`, and news is reached through `intent: "news"` on
+`brave_api` or `tavily`, the only two providers advertising native news.
+
+Downstream CodeGG retirement remains blocked until the v0.4.0 tag exists. The
+retiring harness may then pin `>=0.4.0`, verify the eleven migration-relevant
+ids via `provider_status`, delete its own external-search clients, and remove
+`backend="builtin"` and `fallback_to_builtin`.
 
 ## 7. Verification strategy
 
@@ -274,4 +300,4 @@ This corrective workstream is closed when:
 |---|---|---|---|
 | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
 | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/002-status.md` at `5233315` |
-| M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | code dependency cleared (M001+M002 closed); remaining blocker is the operational qualifying tagged release for downstream CodeGG |
+| M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | code dependency cleared; single open condition is publication of tagged release v0.4.0; closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75` |
