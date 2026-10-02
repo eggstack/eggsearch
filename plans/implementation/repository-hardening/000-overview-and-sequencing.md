@@ -1,6 +1,6 @@
 # Repository Hardening — Overview and Sequencing
 
-Status: active; M008 corrective ready, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
+Status: active; M008 corrective closed, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -26,7 +26,7 @@ modes and should produce separate closure evidence.
 | M005 | `005-forge-safety-maintenance-decomposition.md` | closed | M004 (closed) |
 | M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
 | M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | conditionally closed | none; full closure operationally depends on first successful `schedule` dependency-security run; see `plans/closure/repository-hardening/007-status.md` |
-| M008 | `008-windows-startup-cross-target-portability-corrective.md` | ready | none; hard gate for next tagged release |
+| M008 | `008-windows-startup-cross-target-portability-corrective.md` | closed | none; release gate cleared at `44f38ab` (CI `37036453017`, egress `37036467646`, release qualify `37036489273`) |
 
 ## Execution deviation
 
@@ -94,9 +94,8 @@ evidence, not scheduled-run evidence.
 
 ## Current portability corrective
 
-M008 is the current dependency-ready corrective handoff. Routine Linux CI is
-green on baseline `a5f1b0dcd89d90d8ff4fb3bc264bdfcace7acb19`, but cross-target run `36979619135` fails both
-Windows release targets because `process_record_contents()` calls a
-`process_start_token` helper that is only defined for Linux/macOS. Do not cut
-v0.4.0 until M008 closes with green ordinary Windows CI, seven-target egress
-qualification, and release-binaries qualification.
+M008 is closed at `44f38ab`. The `a5f1b0dc` Windows regression is fixed with
+green ordinary Windows CI (run `37036453017`), seven-target egress
+qualification (run `37036467646`), and release-binaries qualification
+(run `37036489273`). The next tagged release, including `v0.4.0`, may proceed
+to its own exact-candidate qualification.

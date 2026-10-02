@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M008 corrective ready, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
+Status: active; M008 corrective closed, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -242,7 +242,7 @@ Current milestone state after M007 corrective implementation: M001 is conditiona
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
 | M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
 | M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
-| M008 Windows startup/release portability corrective | ready | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
+| M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 

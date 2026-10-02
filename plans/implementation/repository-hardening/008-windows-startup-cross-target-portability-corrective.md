@@ -1,6 +1,6 @@
 # Plan 008 — Windows Startup and Cross-Target Release Portability Corrective
 
-Status: ready
+Status: closed
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
