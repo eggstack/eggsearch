@@ -24,6 +24,10 @@ const MAX_ASSET_BYTES: usize = 128 * 1024 * 1024;
 const MAX_CANDIDATE_OUTPUT_BYTES: usize = 16 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const CANDIDATE_TIMEOUT: Duration = Duration::from_secs(10);
+const CANDIDATE_SPAWN_ATTEMPTS: u32 = 10;
+const CANDIDATE_SPAWN_RETRY_DELAY: Duration = Duration::from_millis(50);
+/// Linux `ETXTBSY`, surfaced by `std` as a raw OS error.
+const ERRNO_TEXT_FILE_BUSY: i32 = 26;
 const CARGO_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// The result of a version comparison or completed replacement.
@@ -594,14 +598,45 @@ fn sha256_file(path: &Path) -> Result<String, UpdateError> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Spawn the downloaded candidate, retrying briefly while the freshly
+/// written file is still reported as busy (`ETXTBSY`).
+///
+/// A candidate is written, synced, and closed immediately before this runs, but
+/// the kernel can still report the file as open for writing while the last
+/// writer's state settles. On a busy filesystem, or when the host is under heavy
+/// load, that surfaces as `Text file busy (os error 26)` and aborts an update
+/// that is otherwise perfectly valid. Retrying with a short bounded backoff
+/// costs nothing in the normal case and turns a spurious hard failure into a
+/// short wait. Only `ETXTBSY` is retried; every other spawn error is returned
+/// immediately.
+async fn spawn_candidate(path: &Path) -> Result<tokio::process::Child, UpdateError> {
+    let mut last: Option<std::io::Error> = None;
+    for attempt in 1..=CANDIDATE_SPAWN_ATTEMPTS {
+        let child = Command::new(path)
+            .arg("--version")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn();
+        match child {
+            Ok(child) => return Ok(child),
+            Err(error) if error.raw_os_error() == Some(ERRNO_TEXT_FILE_BUSY) => {
+                last = Some(error);
+                if attempt < CANDIDATE_SPAWN_ATTEMPTS {
+                    tokio::time::sleep(CANDIDATE_SPAWN_RETRY_DELAY).await;
+                }
+            }
+            Err(error) => return Err(UpdateError::CandidateExecution(error.to_string())),
+        }
+    }
+    Err(UpdateError::CandidateExecution(
+        last.map(|error| error.to_string())
+            .unwrap_or_else(|| "candidate is text busy".to_string()),
+    ))
+}
+
 async fn verify_candidate(path: &Path, expected: &Version) -> Result<(), UpdateError> {
-    let mut child = Command::new(path)
-        .arg("--version")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| UpdateError::CandidateExecution(error.to_string()))?;
+    let mut child = spawn_candidate(path).await?;
     let stdout = child.stdout.take().ok_or_else(|| {
         UpdateError::CandidateExecution("candidate stdout unavailable".to_string())
     })?;
@@ -1142,5 +1177,43 @@ mod tests {
         assert!(error
             .to_string()
             .contains("sudo /usr/local/bin/eggsearch update"));
+    }
+}
+
+#[cfg(test)]
+mod candidate_spawn_tests {
+    use super::*;
+    #[cfg(unix)]
+    use tempfile::tempdir;
+
+    /// A spawn failure that is not `ETXTBSY` must be reported immediately
+    /// rather than retried, so a genuinely missing or non-executable candidate
+    /// still fails fast.
+    #[tokio::test]
+    async fn spawn_candidate_does_not_retry_non_busy_errors() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        let error = spawn_candidate(&missing)
+            .await
+            .expect_err("a missing candidate must fail");
+        assert!(
+            matches!(error, UpdateError::CandidateExecution(_)),
+            "got {error:?}"
+        );
+    }
+
+    /// A present, executable candidate still spawns and reports its version.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn spawn_candidate_still_succeeds_for_a_valid_candidate() {
+        let dir = tempdir().unwrap();
+        let candidate = dir.path().join("candidate");
+        fs::write(&candidate, b"#!/bin/sh\nprintf 'eggsearch 0.3.9\\n'\n").unwrap();
+        set_executable(&candidate).unwrap();
+        let mut child = spawn_candidate(&candidate)
+            .await
+            .expect("a valid candidate must spawn");
+        let status = child.wait().await.expect("candidate exits");
+        assert!(status.success());
     }
 }
