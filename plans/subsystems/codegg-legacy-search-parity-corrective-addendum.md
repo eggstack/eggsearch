@@ -161,7 +161,10 @@ M002 credentialed parity   (consumer research may proceed)
 M003 parity qualification + CodeGG retirement handoff
                   |
                   v
-M004 eggsearch 0.4.0 publication + release evidence
+M004 eggsearch 0.4.0 publication + release evidence (blocked: attest defect)
+                  |
+                  v
+M005 eggsearch 0.4.1 corrective publication + release evidence
                   |
                   v
 CodeGG legacy-backend retirement workstream
@@ -244,27 +247,44 @@ ids via `provider_status`, delete its own external-search clients, and remove
 
 ### M004 — eggsearch 0.4.0 publication and downstream release handoff
 
-Status: ready.
+Status: blocked — corrective pass required.
 
 Plan:
 
 - `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`
 
-This milestone owns the one remaining operational boundary rather than
-expanding M003 after conditional closure. It prepares the 0.4.0 metadata,
-qualifies the exact release-preparation SHA, publishes the crate, tags exactly
-that qualified SHA, verifies the seven-target binary workflow, attestations,
-checksums and immutable 16-asset GitHub Release, runs external install/update
-smoke, and records the evidence needed to close M003 and unblock CodeGG.
+Closure:
 
-Repository-hardening M008 is a satisfied hard prerequisite, not substitute
-release evidence: its green qualification predates the 0.4.0 version-bump
-candidate. M004 therefore requires a fresh `mode=qualify` run against the
-exact release-preparation SHA before `cargo publish --locked`.
+- `plans/closure/codegg-legacy-search-parity/004-status.md`
 
-The release also supplies repository-hardening M002's pending first-tagged-
-release provenance evidence. M007's scheduled-security evidence and M006's
-chromiumoxide blocker are unrelated and do not gate 0.4.0 publication.
+M004 executed the full publication sequence to its §12 stop point:
+release-prep `81a2e49`, green local gates, green `mode=qualify` run
+`37063695085`, published crates.io `0.4.0`, tag `v0.4.0` at `81a2e49`. The
+tag-triggered release run `37065679022` then failed deterministically in the
+release assembler at the pinned `actions/attest` v3 step
+(`predicate-type must be provided`): the workflow never supplies the
+predicate the pinned v3 generic-attestation action requires, and automatic
+provenance mode only exists in v4. The step postdates `v0.3.9` and is skipped
+by qualification, so no prior run ever exercised it. Per the immutability
+rule the tag and crate stand; `v0.4.0` remains crate+tag only with no binary
+release. The identical surface ships complete in M005 as `v0.4.1`.
+
+### M005 — eggsearch 0.4.1 corrective publication and downstream release handoff
+
+Status: ready.
+
+Plan:
+
+- `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`
+
+This milestone owns the one-file release-workflow repair (attestation step:
+SLSA provenance with the pinned action, plus the documented permission set)
+plus version metadata, then repeats the full qualify → publish → tag →
+release → smoke sequence for `0.4.1`. It changes no provider, tool, schema,
+routing, or disposition semantics. On its immutable 16-asset release it
+closes M004's blocker, clears M003's publication condition, supplies
+repository-hardening M002's first-release provenance evidence, and unblocks
+CodeGG parity adoption at `>=0.4.1`.
 
 ## 7. Verification strategy
 
@@ -320,11 +340,17 @@ This corrective workstream is closed when:
 - release provenance, asset, and external installer/update evidence are recorded;
 - M003's publication condition is cleared and the CodeGG parity-adoption milestone is explicitly unblocked.
 
+Per the M004 closure record, `v0.4.0` completed as crate+tag only (release
+run `37065679022` failed at the pinned v3 attest step), so the immutable
+binary publication satisfying the last two bullets is delivered as `v0.4.1`
+by M005 carrying the identical parity surface.
+
 ## 10. Milestone status
 
 | Milestone | Status | Implementation plan | Blocker |
 |---|---|---|---|
 | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
 | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/002-status.md` at `5233315` |
-| M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | single closure condition is publication of tagged release v0.4.0; repository-hardening M008 is closed, so publication may proceed; closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75` |
-| M004 eggsearch 0.4.0 publication + downstream release handoff | ready | `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md` | dependencies satisfied; prepare and qualify the exact 0.4.0 release candidate, publish crate/tag/release, capture provenance/install evidence, then close M003 and unblock CodeGG |
+| M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | single closure condition is publication of an immutable release carrying the parity surface (registered as v0.4.0; completed as v0.4.1 by M005 after the M004 attest stop); closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75` |
+| M004 eggsearch 0.4.0 publication + downstream release handoff | blocked (corrective pass required) | `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md` | crate 0.4.0 + tag `v0.4.0` at `81a2e49` published; binary release failed at the pinned v3 attest step (run `37065679022`); closure `plans/closure/codegg-legacy-search-parity/004-status.md`; corrective M005 registered |
+| M005 eggsearch 0.4.1 corrective publication + downstream release handoff | ready | `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md` | dependencies satisfied; repair the attest step, qualify the exact 0.4.1 candidate, publish crate/tag/release, capture provenance/install evidence, then close M004/M003 and unblock CodeGG |

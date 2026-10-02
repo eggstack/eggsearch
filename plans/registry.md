@@ -31,7 +31,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
 | Search capability and provider evidence | closed | `plans/subsystems/search-capability-roadmap.md` | M001-M005 closed | None. Pre-migration baseline `e645a3fe` (`eggsearch` 0.3.7). |
-| CodeGG legacy search parity corrective | active (release publication ready) | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001-M002 closed; M003 conditionally closed; M004 ready | M004 owns publication of v0.4.0 and the exact-candidate/provenance/install evidence that clears M003's sole remaining condition. Repository-hardening M008 is closed at `44f38ab`; no code blocker remains. |
+| CodeGG legacy search parity corrective | active (M004 blocked, M005 corrective ready) | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001-M002 closed; M003 conditionally closed; M004 blocked (crate 0.4.0 + tag `v0.4.0` at `81a2e49` published, binary release failed at the pinned v3 attest step, run `37065679022`); M005 ready | M005 owns the 0.4.1 attest repair and the exact-candidate/provenance/install evidence that clears M003's publication condition. No code blocker remains. |
 | Binary distribution, install/update, deployment | closed | `plans/subsystems/binary-distribution-deployment-roadmap.md` | M001-M006 closed | None. First binary release `v0.3.9` at `0cbbeee7`; qualify `34653366561`, release `34655458760`. |
 | Maintenance, consolidation, CodeGG quality | closed | `plans/subsystems/maintenance-codegg-quality-roadmap.md` | M001-M005 closed | None. Baseline `4a713ff8`. |
 | HTTP transport consolidation | closed | `plans/subsystems/transport-consolidation-roadmap.md` | M001-M003 closed | None. `eggfetch-core 0.2.0` at `bac6f49f`; qualify `35692096012`. |
@@ -47,8 +47,9 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 |---|---|---|---|---|
 | CodeGG legacy search parity corrective | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | Closed at `e9103b4`; closure `plans/closure/codegg-legacy-search-parity/001-status.md`. Added Wikipedia, arXiv, PubMed, HN Algolia, and GitHub repository discovery plus the additive `structured_api` provider kind; inventory 37 -> 42. |
 | CodeGG legacy search parity corrective | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | Closed at `5233315`; closure `plans/closure/codegg-legacy-search-parity/002-status.md`. Added opt-in `serpapi` and `kagi` (current v1, terms gate passed); inventory 42 -> 44. |
-| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Conditionally closed at `8e5ec75`; closure `plans/closure/codegg-legacy-search-parity/003-status.md`. Single closure condition remains publication of tagged release v0.4.0; repository-hardening M008 is closed, so publication may proceed. |
-| CodeGG legacy search parity corrective | M004 eggsearch 0.4.0 publication + downstream release handoff | ready | `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md` | Dependencies satisfied. Prepare/version the exact 0.4.0 candidate, rerun release qualification on that SHA, publish crates.io -> exact tag -> seven-target immutable GitHub Release, capture attestation/install evidence, close M003, and unblock CodeGG parity adoption. |
+| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Conditionally closed at `8e5ec75`; closure `plans/closure/codegg-legacy-search-parity/003-status.md`. Publication condition still open after M004's attest stop; M005 delivers the immutable 0.4.1 release carrying the identical surface. |
+| CodeGG legacy search parity corrective | M004 eggsearch 0.4.0 publication + downstream release handoff | blocked (corrective pass required) | `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md` | Release-prep `81a2e49`, qualify run `37063695085` green, crate 0.4.0 published, tag `v0.4.0` at `81a2e49`; release run `37065679022` failed at the pinned v3 attest step. Closure `plans/closure/codegg-legacy-search-parity/004-status.md`. `v0.4.0` stays crate+tag only; corrective M005 registered. |
+| CodeGG legacy search parity corrective | M005 eggsearch 0.4.1 corrective publication + downstream release handoff | ready | `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md` | Dependencies satisfied. Repair the attest step, rerun release qualification on the exact 0.4.1 SHA, publish crates.io -> exact tag -> seven-target immutable GitHub Release, capture attestation/install evidence, close M004/M003, and unblock CodeGG parity adoption at `>=0.4.1`. |
 | Tool-surface consolidation | M001 contract and disclosure model | closed | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | Closed at `4b7e725`; closure `plans/closure/mcp-tool-surface-consolidation/001-status.md`. |
 | Tool-surface consolidation | M002 agent-facing schema slimming | closed | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | Closed at `b1e6ea7`; closure `plans/closure/mcp-tool-surface-consolidation/002-status.md`. |
 | Tool-surface consolidation | M003 MCP 2026 protocol and error contract | closed | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | Closed at `c102ac6`; closure `plans/closure/mcp-tool-surface-consolidation/003-status.md`. |
@@ -97,17 +98,25 @@ under the owning subsystem roadmap instead.
 
 ## Blocked work
 
-CodeGG legacy search parity M003 has no remaining code dependency and is
-conditionally closed at `8e5ec75` on one operational condition: publication of
-tagged release **v0.4.0**. That publication is now registered as dependency-ready
-M004 in
-`plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`.
-M004 must qualify the exact version-bumped release candidate rather than reuse
-M008's earlier 0.3.9 qualification, then publish crates.io -> exact tag ->
-seven-target immutable GitHub Release and capture provenance/install evidence.
-All provider work is complete: `google_news` is the only deliberate retirement.
-Successful M004 closure clears M003 and authorizes the downstream CodeGG harness
-to pin 0.4.0 and begin its registered legacy-backend retirement sequence.
+CodeGG legacy search parity M003 remains conditionally closed at `8e5ec75`
+with its publication condition still open. M004 executed the publication
+sequence to its stop point: release-prep `81a2e49`, green local gates, green
+`mode=qualify` run `37063695085`, published crates.io `0.4.0`, tag `v0.4.0` at
+`81a2e49`. The tag-triggered release run `37065679022` went green across
+preflight and all seven targets but failed deterministically in the release
+assembler at the pinned `actions/attest` v3 step
+(`predicate-type must be provided`); no `v0.4.0` GitHub Release exists, so no
+binary, provenance, or install evidence was produced and no gate was weakened
+to pretend otherwise. `v0.4.0` permanently remains crate+tag only. The
+corrective release is registered as dependency-ready M005 in
+`plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`,
+which repairs the attest step and publishes immutable `v0.4.1` carrying the
+identical parity surface. M004 is therefore `blocked` (corrective pass
+required) rather than closed; M003's condition transfers to the 0.4.1
+immutable release. All provider work is complete: `google_news` is the only
+deliberate retirement. Successful M005 closure clears M003/M004 and authorizes
+the downstream CodeGG harness to pin `>=0.4.1` and begin its registered
+legacy-backend retirement sequence.
 
 Tool-surface M001-M007 are closed; no tool-surface blocker remains.
 
@@ -132,7 +141,7 @@ release that makes HTTP discovery / reqwest optional without regressing
 | Dependency evidence hardening | closed | `plans/closure/dependency-evidence-hardening/010-status.md`; M010 corrective evidence in `010-status.md`, prior terminal evidence in `009-status.md` |
 | MCP tool-surface consolidation | closed | `plans/closure/mcp-tool-surface-consolidation/007-status.md`; M001-M006 evidence in `001-status.md` through `006-status.md` |
 | Repository hardening | active; M008 closed, M007 conditional, M002 conditional, M006 blocked | M008 closed at `44f38ab` (`008-status.md`); M007 remains conditional evidence control point. Historical closure records `001-status.md` through `008-status.md`. |
-| CodeGG legacy search parity | active; M001/M002 closed, M003 conditional, M004 ready for v0.4.0 publication | `plans/closure/codegg-legacy-search-parity/003-status.md`; M004 plan `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003) |
+| CodeGG legacy search parity | active; M001/M002 closed, M003 conditional, M004 blocked, M005 ready | `plans/closure/codegg-legacy-search-parity/004-status.md`; M005 plan `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`; M004 plan `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`; prior control point `plans/closure/codegg-legacy-search-parity/003-status.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003), `81a2e49` (M004 release-prep) |
 
 ## Closure rule
 
