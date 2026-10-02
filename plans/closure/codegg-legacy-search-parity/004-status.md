@@ -234,3 +234,15 @@ registered corrective owner.
 Recommendation: **corrective pass required**. M004 must not be marked closed
 on crate+tag alone; closure of the publication boundary belongs to M005's
 completed immutable release.
+
+## 8. Reconciliation note (M005, 2026-10-02)
+
+M005 delivered the immutable `v0.4.1` release carrying the identical parity
+surface (fix-prep `32769d6`, qualify run `37070932877` green, crates.io
+0.4.1, tag `v0.4.1` at `32769d6`, release run `37072825644` green
+including attest + in-workflow verification, 16-asset release published,
+external smoke green; full evidence in
+`plans/closure/codegg-legacy-search-parity/005-status.md`). The publication
+boundary this record left open is therefore satisfied, and M004 is reconciled
+to **closed**. This note appends the disposition without rewriting the
+blocked-at-attest-stop account above; `v0.4.0` remains crate+tag only.

@@ -454,3 +454,13 @@ Recommendation: **conditionally closed**. The repository-side work M003 owns is
 complete and verified on candidate `8e5ec75`, and the only thing standing
 between this milestone and full closure is the publication of a tagged release —
 which is a maintainer release action, not a gap in this workstream.
+
+## Reconciliation note (M005, 2026-10-02)
+
+The single publication condition is cleared: M005 published the immutable
+`v0.4.1` release carrying the frozen parity surface (tag `v0.4.1` at
+`32769d6`, release run `37072825644` green, 16 assets, provenance verified;
+full evidence in
+`plans/closure/codegg-legacy-search-parity/005-status.md`). M003 is
+reconciled to **closed**. This note appends the disposition without
+rewriting the conditionally-closed account above.

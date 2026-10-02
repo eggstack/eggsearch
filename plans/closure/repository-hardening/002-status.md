@@ -44,3 +44,19 @@ That first tagged-release verification is the single named operational
 condition for full closure. Checksums remain required and continue serving
 download integrity; attestations make build provenance verifiable and do not
 claim vulnerability freedom.
+
+## First-release evidence note (M005, 2026-10-02)
+
+The named condition is satisfied by `eggsearch v0.4.1` (tag `v0.4.1` at
+`32769d6`, release run `37072825644` green): SLSA build-provenance
+attestation generated for all 16 release subjects and verified
+(`gh attestation verify` exit 0 on sampled Linux/Windows executables and
+installer, binding repository `eggstack/eggsearch`, workflow
+`release-binaries.yml@refs/tags/v0.4.1`, commit `32769d6`); the published
+release is immutable (16 assets, published 2026-10-02T22:49:33Z); full
+evidence in `plans/closure/codegg-legacy-search-parity/005-status.md` §2.
+The formal status flip stays with a hardening-owned reconciliation commit:
+the CI-enforced planning gates pin this workstream's M002 rows to
+`conditionally`, so this milestone remains `conditionally closed` with its
+condition met and evidence cited. This note appends the evidence without
+rewriting the implementation record above.
