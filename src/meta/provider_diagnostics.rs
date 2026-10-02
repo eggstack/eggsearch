@@ -511,6 +511,17 @@ pub enum ProviderRoutingError {
     UnknownProvider(String),
     /// An explicitly requested provider is disabled.
     DisabledProvider(String),
+    /// An explicitly requested provider is enabled and configured, but the
+    /// environment variable holding its required credential is unset or empty.
+    MissingCredential {
+        /// The requested provider id.
+        id: String,
+        /// The credential environment variable the operator must populate.
+        env: String,
+    },
+    /// An explicitly requested provider is enabled and configured, but this
+    /// build has no search engine for it, so it can never be queried.
+    NotBuilt(String),
     /// No default providers are available.
     NoDefaultProviders(String),
 }
@@ -520,7 +531,29 @@ impl std::fmt::Display for ProviderRoutingError {
         match self {
             Self::UnknownProvider(id) => write!(f, "unknown provider id: {id}"),
             Self::DisabledProvider(id) => write!(f, "provider is disabled: {id}"),
+            Self::MissingCredential { id, env } => write!(
+                f,
+                "provider {id} is enabled but its required credential is not set; populate the {env} environment variable"
+            ),
+            Self::NotBuilt(id) => write!(
+                f,
+                "provider {id} is enabled and configured but has no engine in this build, so it cannot be queried"
+            ),
             Self::NoDefaultProviders(msg) => write!(f, "no default providers: {msg}"),
+        }
+    }
+}
+
+impl ProviderRoutingError {
+    /// Stable skip code describing why an explicitly requested provider could
+    /// not be routed, for typed downstream handling.
+    pub fn skip_code(&self) -> ProviderSkipCode {
+        match self {
+            Self::UnknownProvider(_) => ProviderSkipCode::UnknownProvider,
+            Self::DisabledProvider(_) => ProviderSkipCode::DisabledByUser,
+            Self::MissingCredential { .. } => ProviderSkipCode::MissingApiKey,
+            Self::NotBuilt(_) => ProviderSkipCode::NotBuilt,
+            Self::NoDefaultProviders(_) => ProviderSkipCode::Unknown,
         }
     }
 }
@@ -698,31 +731,72 @@ fn resolve_explicit_providers(
         }
     }
 
-    // Validate: unknown providers are always errors for explicit lists
+    // Validate every requested id against three distinct failure classes, so an
+    // explicit request can never be silently narrowed to a different provider
+    // set than the caller asked for:
+    //
+    //   1. not a known provider id at all;
+    //   2. known, but the operator has not enabled it (or it needs a
+    //      credential that is configured-but-unset);
+    //   3. known and enabled, but this build has no engine for it.
+    //
+    // In strict mode each class is a hard, typed error. In non-strict mode each
+    // class is recorded as a typed skip so the decision still explains itself.
+    let mut skipped: Vec<ProviderSkipReason> = Vec::new();
+    let mut selected: Vec<String> = Vec::new();
     for id in &deduped {
-        if !adapter_set.contains(id.as_str()) {
-            // Check if it's a known but disabled provider
-            let is_known = KNOWN_PROVIDER_IDS.contains(&id.as_str())
-                || config.search.providers.contains_key(id)
-                || config.search.api.contains_key(id);
-            if is_known && !config.provider_is_available(id) {
+        let rejection = if adapter_set.contains(id.as_str()) {
+            None
+        } else if !KNOWN_PROVIDER_IDS.contains(&id.as_str())
+            && !config.search.providers.contains_key(id)
+            && !config.search.api.contains_key(id)
+        {
+            Some(ProviderRoutingError::UnknownProvider(id.clone()))
+        } else if let Some(env) = config.api_provider_credential_missing(id) {
+            Some(ProviderRoutingError::MissingCredential {
+                id: id.clone(),
+                env: env.to_string(),
+            })
+        } else if !config.provider_is_available(id) {
+            Some(ProviderRoutingError::DisabledProvider(id.clone()))
+        } else {
+            // Enabled and configured, yet no engine exists for this id in this
+            // build. Selecting it anyway would report success with nothing
+            // queried, so it must be surfaced rather than dropped.
+            Some(ProviderRoutingError::NotBuilt(id.clone()))
+        };
+
+        match rejection {
+            None => selected.push(id.clone()),
+            Some(err) => {
                 if strict {
-                    return Err(ProviderRoutingError::DisabledProvider(id.clone()));
+                    return Err(err);
                 }
-            } else if !is_known && strict {
-                return Err(ProviderRoutingError::UnknownProvider(id.clone()));
+                skipped.push(ProviderSkipReason {
+                    provider_id: id.clone(),
+                    reason_code: err.skip_code().as_str().to_string(),
+                    reason: err.to_string(),
+                    failure_class: None,
+                    cooldown_until: None,
+                    skip_code: Some(err.skip_code()),
+                });
             }
         }
     }
 
+    let partial = !skipped.is_empty() && !selected.is_empty();
     Ok(ProviderRoutingDecision {
         requested_profile: None,
-        requested_providers: deduped.clone(),
-        selected_providers: deduped,
-        skipped_providers: vec![],
+        requested_providers: deduped,
+        selected_providers: selected,
+        skipped_providers: skipped,
         degraded: false,
-        partial: false,
-        reason: Some("using explicitly requested providers".to_string()),
+        partial,
+        reason: Some(if partial {
+            "using explicitly requested providers; some were skipped as unroutable".to_string()
+        } else {
+            "using explicitly requested providers".to_string()
+        }),
     })
 }
 

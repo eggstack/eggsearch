@@ -4365,3 +4365,65 @@ fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
         String::from_utf8_lossy(&output.stderr).trim()
     );
 }
+
+/// Plan 003 §5, journey 5: the CodeGG legacy `github` hint maps to the
+/// `github_repositories` provider, which must be selectable explicitly through
+/// `repo_search` and must be the only provider queried.
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_github_repositories_explicit_discovery() {
+    let engines = vec![
+        MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Other",
+                "https://other.example/a",
+                "mock_a",
+            )],
+        ),
+        MockEngine::success(
+            "github_repositories",
+            vec![MockResult::new(
+                "tokio-rs/axum",
+                "https://github.com/tokio-rs/axum",
+                "github_repositories",
+            )],
+        ),
+    ];
+    let mut cfg = AppConfig::default();
+    cfg.search.timeout_ms = 2_000;
+    cfg.search
+        .providers
+        .insert("github_repositories".to_string(), true);
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.search.default_providers = vec!["mock_a".to_string()];
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+
+    let args = RepoSearchArgs {
+        query: "rust web framework".to_string(),
+        providers: vec!["github_repositories".to_string()],
+        ..Default::default()
+    };
+    let v = run_repo_search(state, args)
+        .await
+        .expect("explicit github_repositories discovery succeeds");
+
+    assert_eq!(
+        v["providers_queried"],
+        serde_json::json!(["github_repositories"]),
+        "explicit repository discovery must not widen to other providers"
+    );
+    assert_eq!(v["providers_failed"], serde_json::json!([]));
+    let groups = v["groups"].as_array().expect("groups is array");
+    let cards: Vec<&serde_json::Value> = groups
+        .iter()
+        .filter_map(|g| g["results"].as_array())
+        .flatten()
+        .collect();
+    assert!(
+        cards.iter().any(|c| c["url"]
+            .as_str()
+            .is_some_and(|u| u.contains("tokio-rs/axum"))),
+        "repository discovery must return the repository: {cards:?}"
+    );
+}

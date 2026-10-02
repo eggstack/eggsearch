@@ -245,7 +245,7 @@ pub async fn run_web_search(
         && !effective_providers.is_empty()
         && resp.results.is_empty()
     {
-        return Err(ToolError::internal(format!(
+        return Err(ToolError::upstream_failed(format!(
             "all providers failed: {}",
             providers_failed
                 .iter()

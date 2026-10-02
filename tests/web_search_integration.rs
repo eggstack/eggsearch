@@ -475,6 +475,33 @@ async fn web_search_provider_override_queries_only_requested_providers() {
 
 #[cfg(feature = "mock")]
 #[tokio::test]
+async fn web_search_provider_override_with_unbuildable_known_id_errors() {
+    // A known provider id that config reports as available but that has no
+    // engine in the adapter (here: `local_workspace`, which is served by
+    // repo_map/local tools, not by a search engine). Routing must not claim
+    // it was selected while the adapter silently queries nothing.
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search
+        .providers
+        .insert("local_workspace".to_string(), true);
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["local_workspace"], "rust"))
+        .await
+        .expect_err("expected an explicit unbuildable provider to be reported");
+    let msg = err.to_string();
+    assert!(msg.contains("local_workspace"), "got: {msg}");
+    assert!(
+        msg.contains("no engine") || msg.contains("not built"),
+        "error should say the provider has no runnable engine, got: {msg}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
 async fn web_search_provider_override_with_unknown_id_errors() {
     let engines = vec![MockEngine::success(
         "mock_a",

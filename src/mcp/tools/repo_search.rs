@@ -265,15 +265,10 @@ pub async fn run_repo_search(
             true,
         )
         .map_err(|e| match e {
-            crate::meta::provider_diagnostics::ProviderRoutingError::UnknownProvider(id) => {
-                ToolError::Validation(format!("unknown provider id: {id}"))
-            }
-            crate::meta::provider_diagnostics::ProviderRoutingError::DisabledProvider(id) => {
-                ToolError::Validation(format!("provider is disabled: {id}"))
-            }
             crate::meta::provider_diagnostics::ProviderRoutingError::NoDefaultProviders(msg) => {
                 ToolError::internal(format!("no default providers: {msg}"))
             }
+            other => ToolError::Validation(other.to_string()),
         })?
     };
 

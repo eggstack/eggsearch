@@ -2594,3 +2594,591 @@ fn provider_status_credentialed_providers_report_configured_once_a_key_resolves(
     }
     std::env::remove_var(env);
 }
+
+// ---------------------------------------------------------------------------
+// Plan 003 §3 — explicit-provider failure semantics.
+//
+// An explicit `providers` list must never be silently converted into
+// automatic/default routing, and every rejection class must be individually
+// typed and actionable. These tests drive the real tool surface.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn explicit_disabled_provider_is_rejected_not_routed_to_defaults() {
+    // `wikipedia` is a known keyless provider that `test_cfg` never enables, so
+    // requesting it explicitly must be rejected as disabled rather than
+    // silently searching `mock_a` instead.
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["wikipedia"], "rust"))
+        .await
+        .expect_err("a disabled explicit provider must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("wikipedia") && msg.contains("disabled"),
+        "error must name the provider and its state, got: {msg}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn explicit_missing_credential_names_the_environment_variable() {
+    // `serpapi` is a required-credential API provider. Enabling it without
+    // resolving its credential must be reported as a missing credential naming
+    // the environment variable, not as a disabled provider: the repair is to
+    // set the variable, not to flip a `[search.providers]` boolean.
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search.api.insert(
+        "serpapi".to_string(),
+        eggsearch::core::config::ApiProviderConfig {
+            enabled: true,
+            api_key_env: Some("EGGSEARCH_TEST_SERPAPI_MISSING_KEY".to_string()),
+            base_url: None,
+        },
+    );
+    std::env::remove_var("EGGSEARCH_TEST_SERPAPI_MISSING_KEY");
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["serpapi"], "rust"))
+        .await
+        .expect_err("a missing required credential must be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("EGGSEARCH_TEST_SERPAPI_MISSING_KEY"),
+        "error must name the missing credential env var, got: {msg}"
+    );
+    assert!(
+        !msg.contains("is disabled"),
+        "a missing credential must not be mislabeled as disabled, got: {msg}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn explicit_known_but_unbuildable_provider_is_rejected() {
+    // `local_workspace` is a known id that config can report as available, yet
+    // it is served by local tools rather than by a search engine. Selecting it
+    // explicitly must not return a successful response claiming it was queried.
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let mut cfg = test_cfg();
+    cfg.search
+        .providers
+        .insert("local_workspace".to_string(), true);
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["local_workspace"], "rust"))
+        .await
+        .expect_err("an unbuildable explicit provider must be rejected");
+    let msg = err.to_string();
+    assert!(msg.contains("local_workspace"), "got: {msg}");
+    assert!(
+        msg.contains("no engine"),
+        "error must explain there is no runnable engine, got: {msg}"
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn explicit_unroutable_provider_never_narrows_to_other_providers() {
+    // A mixed list where one provider is unroutable must fail outright rather
+    // than silently searching the remainder: the caller asked for both.
+    let engines = vec![MockEngine::success(
+        "mock_a",
+        vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["mock_a", "wikipedia"], "rust"))
+        .await
+        .expect_err("a mixed list with an unroutable member must fail");
+    assert!(err.to_string().contains("wikipedia"), "got: {err}");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn explicit_provider_failure_surfaces_upstream_failed_not_internal() {
+    // When every explicitly selected provider is queried and fails, the tool
+    // must report an upstream failure with the stable `upstream_failed` code.
+    // `internal_error` is reserved for server faults per docs/tool-matrix.md.
+    let engines = vec![MockEngine::failure("mock_a", MockFailure::Timeout)];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let err = run_web_search(state, args_for(&["mock_a"], "rust"))
+        .await
+        .expect_err("all-fail must be an error");
+    let msg = err.to_string();
+    assert!(msg.contains("all providers failed"), "got: {msg}");
+    assert_eq!(
+        err.error_payload()["code"],
+        serde_json::json!("upstream_failed"),
+        "all-provider failure must carry the stable upstream_failed code, not internal_error"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Plan 003 §3 — explicit-provider rejection classification.
+//
+// The routing decision must classify every unroutable explicit provider into
+// exactly one of four typed outcomes, and in non-strict mode must record a
+// typed skip rather than silently narrowing the caller's provider set.
+// ---------------------------------------------------------------------------
+
+use eggsearch::core::provider::ProviderSkipCode;
+use eggsearch::meta::provider_diagnostics::{resolve_provider_routing, ProviderRoutingError};
+use eggsearch::meta::ProviderHealthRegistry;
+
+fn adapter_ids(ids: &[&str]) -> Vec<String> {
+    ids.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn enabled_but_unbuildable_is_rejected_as_not_built() {
+    // A known id that config reports as available, but for which the adapter
+    // built no engine. Selecting it must never be reported as selected.
+    let mut cfg = AppConfig::default();
+    cfg.search
+        .providers
+        .insert("local_workspace".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+
+    let err = resolve_provider_routing(
+        &["local_workspace".to_string()],
+        None,
+        &adapter_ids(&["duckduckgo"]),
+        &cfg,
+        &health,
+        true,
+    )
+    .expect_err("must not report an unbuildable provider as selected");
+
+    assert!(matches!(&err, ProviderRoutingError::NotBuilt(id) if id == "local_workspace"));
+    assert_eq!(err.skip_code(), ProviderSkipCode::NotBuilt);
+    assert!(err.to_string().contains("no engine"), "got: {err}");
+}
+
+#[test]
+fn enabled_api_provider_without_credential_is_a_missing_credential() {
+    const ENV: &str = "EGGSEARCH_ROUTING_TEST_MISSING_KEY";
+    std::env::remove_var(ENV);
+    let mut cfg = AppConfig::default();
+    cfg.search.api.insert(
+        "serpapi".to_string(),
+        eggsearch::core::config::ApiProviderConfig {
+            enabled: true,
+            api_key_env: Some(ENV.to_string()),
+            base_url: None,
+        },
+    );
+    let health = ProviderHealthRegistry::new();
+
+    let err = resolve_provider_routing(
+        &["serpapi".to_string()],
+        None,
+        &adapter_ids(&["duckduckgo"]),
+        &cfg,
+        &health,
+        true,
+    )
+    .expect_err("must reject a provider whose credential is unset");
+
+    match &err {
+        ProviderRoutingError::MissingCredential { id, env } => {
+            assert_eq!(id, "serpapi");
+            assert_eq!(env, ENV);
+        }
+        other => panic!("expected MissingCredential, got {other:?}"),
+    }
+    assert_eq!(err.skip_code(), ProviderSkipCode::MissingApiKey);
+    assert!(err.to_string().contains(ENV), "got: {err}");
+}
+
+#[test]
+fn known_but_unenabled_is_still_reported_as_disabled() {
+    let cfg = AppConfig::default();
+    let health = ProviderHealthRegistry::new();
+
+    let err = resolve_provider_routing(
+        &["wikipedia".to_string()],
+        None,
+        &adapter_ids(&["duckduckgo"]),
+        &cfg,
+        &health,
+        true,
+    )
+    .expect_err("must reject an unenabled provider");
+
+    assert!(matches!(&err, ProviderRoutingError::DisabledProvider(id) if id == "wikipedia"));
+    assert_eq!(err.skip_code(), ProviderSkipCode::DisabledByUser);
+}
+
+#[test]
+fn unknown_provider_still_reports_unknown() {
+    let cfg = AppConfig::default();
+    let health = ProviderHealthRegistry::new();
+
+    let err = resolve_provider_routing(
+        &["not_a_provider".to_string()],
+        None,
+        &adapter_ids(&["duckduckgo"]),
+        &cfg,
+        &health,
+        true,
+    )
+    .expect_err("must reject an unknown provider");
+
+    assert!(matches!(&err, ProviderRoutingError::UnknownProvider(id) if id == "not_a_provider"));
+    assert_eq!(err.skip_code(), ProviderSkipCode::UnknownProvider);
+}
+
+#[test]
+fn non_strict_mode_records_typed_skips_instead_of_silent_omission() {
+    let mut cfg = AppConfig::default();
+    cfg.search
+        .providers
+        .insert("local_workspace".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+
+    let decision = resolve_provider_routing(
+        &["duckduckgo".to_string(), "wikipedia".to_string()],
+        None,
+        &adapter_ids(&["duckduckgo"]),
+        &cfg,
+        &health,
+        false,
+    )
+    .expect("non-strict mode must not fail");
+
+    assert_eq!(decision.selected_providers, vec!["duckduckgo"]);
+    assert_eq!(decision.skipped_providers.len(), 1);
+    assert!(decision.partial);
+    let skipped = &decision.skipped_providers[0];
+    assert_eq!(skipped.provider_id, "wikipedia");
+    assert_eq!(
+        skipped.skip_code,
+        Some(ProviderSkipCode::DisabledByUser),
+        "skips must be typed"
+    );
+}
+
+#[test]
+fn fully_routable_request_selects_exactly_what_was_requested() {
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("duckduckgo".to_string(), true);
+    cfg.search.providers.insert("mojeek".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+
+    let decision = resolve_provider_routing(
+        &["mojeek".to_string(), "duckduckgo".to_string()],
+        None,
+        &adapter_ids(&["duckduckgo", "mojeek"]),
+        &cfg,
+        &health,
+        true,
+    )
+    .expect("a fully routable list must succeed");
+
+    assert_eq!(
+        decision.selected_providers,
+        vec!["mojeek", "duckduckgo"],
+        "explicit selection must preserve the caller's order and add nothing"
+    );
+    assert!(decision.skipped_providers.is_empty());
+    assert!(!decision.degraded);
+    assert!(!decision.partial);
+}
+
+// ---------------------------------------------------------------------------
+// Plan 003 §5 — qualification journeys through the real MCP tool surface.
+//
+// Journeys 6 and 7 drive the *real* SerpApi and Kagi engines (not the mock
+// harness) with a fake operator credential and a local HTTP fixture server, so
+// credential resolution, routing, dispatch, parsing, and the tool response are
+// all exercised end to end.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+fn qualification_client() -> std::sync::Arc<eggfetch_core::Client> {
+    std::sync::Arc::new(
+        eggsearch::meta::engines::build_http_client(None).expect("shared client builds"),
+    )
+}
+
+#[cfg(feature = "mock")]
+const QUAL_SERPAPI_BODY: &str = r#"{
+  "search_metadata": {"id": "65f0", "status": "Success"},
+  "organic_results": [
+    {
+      "position": 1,
+      "title": "Axum - GitHub",
+      "link": "https://github.com/tokio-rs/axum",
+      "snippet": "Web framework built on Tokio."
+    }
+  ],
+  "related_searches": [{"query": "axum middleware"}]
+}"#;
+
+#[cfg(feature = "mock")]
+const QUAL_KAGI_BODY: &str = r#"{
+  "meta": {"node": "kagi-1", "ms": 180, "trace": "t"},
+  "data": {
+    "search": [
+      {
+        "url": "https://kagi.com/blog/small-web",
+        "title": "The small web",
+        "snippet": "An independent index.",
+        "time": "2024-11-29T03:54:26Z"
+      }
+    ],
+    "news": [{"url": "https://news.example/story", "title": "News", "snippet": "s"}]
+  }
+}"#;
+
+#[cfg(feature = "mock")]
+fn credentialed_qual_state(
+    id: &str,
+    env: &str,
+    key: &str,
+    base_url: String,
+    engine: std::sync::Arc<dyn eggsearch::meta::engines::SearchEngine>,
+) -> Arc<ServerState> {
+    std::env::set_var(env, key);
+    let mut cfg = AppConfig::default();
+    cfg.search.timeout_ms = 2_000;
+    cfg.search.api.insert(
+        id.to_string(),
+        eggsearch::core::config::ApiProviderConfig {
+            enabled: true,
+            api_key_env: Some(env.to_string()),
+            base_url: Some(base_url),
+        },
+    );
+    let adapter = MetadataSearchAdapter::from_engines(vec![engine], Duration::from_secs(5));
+    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_serpapi_explicit_search_with_configured_credential() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("engine", "google");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(QUAL_SERPAPI_BODY);
+    });
+    let engine: Arc<dyn eggsearch::meta::engines::SearchEngine> =
+        Arc::new(eggsearch::meta::engines::SerpapiEngine {
+            client: qualification_client(),
+            api_key: "serpapi-qual-key".to_string(),
+            base_url: Some(format!("{}/search", server.url(""))),
+        });
+    const ENV: &str = "EGGSEARCH_QUAL_SERPAPI_KEY";
+    let state = credentialed_qual_state(
+        "serpapi",
+        ENV,
+        "serpapi-qual-key",
+        format!("{}/search", server.url("")),
+        engine,
+    );
+
+    let v = run_web_search(state, args_for(&["serpapi"], "rust axum"))
+        .await
+        .expect("explicit serpapi search succeeds");
+    mock.assert_hits(1);
+
+    assert_eq!(v["providers_queried"], serde_json::json!(["serpapi"]));
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1, "only organic_results become cards");
+    assert!(
+        results[0]["url"]
+            .as_str()
+            .is_some_and(|u| u.contains("tokio-rs/axum")),
+        "the direct link must be used, not the google redirect: {:?}",
+        results[0]
+    );
+    // Explicit selection must not silently widen to other providers.
+    assert_eq!(v["providers_failed"], serde_json::json!([]));
+    std::env::remove_var(ENV);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_kagi_explicit_search_with_configured_credential() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/search")
+            .header("authorization", "Bearer kagi-qual-key");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(QUAL_KAGI_BODY);
+    });
+    let engine: Arc<dyn eggsearch::meta::engines::SearchEngine> =
+        Arc::new(eggsearch::meta::engines::KagiEngine {
+            client: qualification_client(),
+            api_key: "kagi-qual-key".to_string(),
+            base_url: Some(server.url("")),
+        });
+    const ENV: &str = "EGGSEARCH_QUAL_KAGI_KEY";
+    let state = credentialed_qual_state("kagi", ENV, "kagi-qual-key", server.url(""), engine);
+
+    let v = run_web_search(state, args_for(&["kagi"], "small web"))
+        .await
+        .expect("explicit kagi search succeeds");
+    mock.assert_hits(1);
+
+    assert_eq!(v["providers_queried"], serde_json::json!(["kagi"]));
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(
+        results.len(),
+        1,
+        "only data.search becomes cards; data.news must not leak in"
+    );
+    assert!(results[0]["url"]
+        .as_str()
+        .is_some_and(|u| u.contains("kagi.com/blog/small-web")));
+    assert_eq!(v["providers_failed"], serde_json::json!([]));
+    std::env::remove_var(ENV);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_news_intent_uses_a_supported_news_provider() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    // A news-intent request must reach the provider's news vertical, not the
+    // general web vertical.
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/res/v1/news/search");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(
+                r#"{
+                "type": "news",
+                "news": {
+                    "results": [
+                        {"title": "Axum release", "url": "https://news.example/axum",
+                         "description": "A release.", "age": "2026-01-02T00:00:00Z"}
+                    ]
+                }
+            }"#,
+            );
+    });
+    let engine: Arc<dyn eggsearch::meta::engines::SearchEngine> =
+        Arc::new(eggsearch::meta::engines::BraveApiEngine {
+            client: qualification_client(),
+            api_key: "brave-qual-key".to_string(),
+            base_url: Some(format!("{}/res/v1/web/search", server.url(""))),
+        });
+    const ENV: &str = "EGGSEARCH_QUAL_BRAVE_KEY";
+    std::env::set_var(ENV, "brave-qual-key");
+    let mut cfg = AppConfig::default();
+    cfg.search.timeout_ms = 2_000;
+    cfg.search.api.insert(
+        "brave_api".to_string(),
+        eggsearch::core::config::ApiProviderConfig {
+            enabled: true,
+            api_key_env: Some(ENV.to_string()),
+            base_url: Some(format!("{}/res/v1/web/search", server.url(""))),
+        },
+    );
+    let adapter = MetadataSearchAdapter::from_engines(vec![engine], Duration::from_secs(5));
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+
+    let mut args = args_for(&["brave_api"], "axum release");
+    args.intent = Some(eggsearch::core::query::SearchIntent::News);
+    let v = run_web_search(state, args)
+        .await
+        .expect("news search succeeds");
+    mock.assert();
+
+    assert_eq!(v["providers_queried"], serde_json::json!(["brave_api"]));
+    let results = v["results"].as_array().expect("results array");
+    assert!(!results.is_empty(), "news intent must return results");
+    assert_eq!(v["providers_failed"], serde_json::json!([]));
+    std::env::remove_var(ENV);
+}
+
+/// Plan 003 §5, journeys 1-4: each CodeGG legacy source hint that M001
+/// preserved must be selectable explicitly through the MCP tool surface, must
+/// be the only provider queried, and must return its own source cards. The
+/// engines are the local mock harness registered under the real provider id, so
+/// the journey proves routing/selection/response shape without network.
+#[cfg(feature = "mock")]
+async fn source_provider_journey(id: &'static str) {
+    let engines = vec![
+        MockEngine::success(
+            "mock_a",
+            vec![MockResult::new(
+                "Other",
+                "https://other.example/a",
+                "mock_a",
+            )],
+        ),
+        MockEngine::success(
+            id,
+            vec![MockResult::new(
+                format!("{id} hit"),
+                format!("https://{id}.example/result"),
+                id,
+            )],
+        ),
+    ];
+    let mut cfg = test_cfg();
+    cfg.search.providers.insert(id.to_string(), true);
+    cfg.search.default_providers = vec!["mock_a".to_string()];
+    let state = state_with_engines(cfg, engines, Duration::from_secs(5));
+
+    let v = run_web_search(state, args_for(&[id], "legacy codegg hint"))
+        .await
+        .expect("explicit source-provider search succeeds");
+
+    assert_eq!(
+        v["providers_queried"],
+        serde_json::json!([id]),
+        "explicit source selection must not widen to other enabled providers"
+    );
+    assert_eq!(v["providers_failed"], serde_json::json!([]));
+    let results = v["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1, "only the selected provider contributes");
+    assert!(
+        results[0]["url"].as_str().is_some_and(|u| u.contains(id)),
+        "result must come from the selected provider: {:?}",
+        results[0]
+    );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_wikipedia_explicit_search() {
+    source_provider_journey("wikipedia").await;
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_arxiv_explicit_scholarly_search() {
+    source_provider_journey("arxiv").await;
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_pubmed_explicit_scholarly_search() {
+    source_provider_journey("pubmed").await;
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn journey_hn_algolia_explicit_search() {
+    source_provider_journey("hn_algolia").await;
+}

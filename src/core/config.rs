@@ -995,6 +995,28 @@ impl AppConfig {
         out
     }
 
+    /// Returns true when an API provider is enabled and names a credential
+    /// environment variable, but that variable is absent or empty.
+    ///
+    /// This is the "operator asked for this provider and supplied a broken or
+    /// unset credential" case, which must be reported as a missing credential
+    /// rather than as a disabled provider: the repair is to set the named
+    /// environment variable, not to flip a `[search.providers]` boolean.
+    pub fn api_provider_credential_missing(&self, id: &str) -> Option<&str> {
+        if !API_PROVIDER_IDS.contains(&id) {
+            return None;
+        }
+        let cfg = self.search.api.get(id)?;
+        if !cfg.enabled {
+            return None;
+        }
+        let env = cfg.api_key_env.as_deref().filter(|e| !e.is_empty())?;
+        match std::env::var(env) {
+            Ok(value) if !value.is_empty() => None,
+            _ => Some(env),
+        }
+    }
+
     /// Returns true when a provider can be routed to a built engine.
     pub fn provider_is_available(&self, id: &str) -> bool {
         if API_PROVIDER_IDS.contains(&id) {
