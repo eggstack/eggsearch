@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use std::ffi::CString;
 use std::fs::File;
 use std::io::Read;

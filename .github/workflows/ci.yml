@@ -39,3 +39,14 @@ jobs:
           BRAVE_API_KEY: ""
           SEMANTIC_SCHOLAR_API_KEY: ""
           NVD_API_KEY: ""
+  windows-portability:
+    name: windows portability (x86_64-pc-windows-msvc all-features check)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable snapshot 2026-09-28
+        with:
+          toolchain: "1.89"
+          targets: x86_64-pc-windows-msvc
+      - name: Check all features on Windows target
+        run: cargo check --locked --all-features --target x86_64-pc-windows-msvc

@@ -213,3 +213,4 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 | Job | Duration | Feature Combos |
 |-----|----------|----------------|
 | `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + hygiene + packaging-check |
+| `windows-portability` | ~4min | `cargo check --locked --all-features --target x86_64-pc-windows-msvc` on `windows-latest` with pinned Rust 1.89; routine PR/main sentinel so Windows cfg breakage cannot hide behind Linux-green CI |

@@ -728,6 +728,10 @@ fn set_executable(path: &Path) -> Result<(), UpdateError> {
         permissions.set_mode(0o755);
         fs::set_permissions(path, permissions).map_err(UpdateError::Filesystem)?;
     }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
     Ok(())
 }
 

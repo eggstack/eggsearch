@@ -2212,3 +2212,76 @@ fn kagi_engine_never_requests_billed_extras() {
         "the search workflow must be pinned explicitly"
     );
 }
+
+#[test]
+fn windows_startup_portability_stays_total() {
+    let startup = read_source("src/startup.rs");
+    let production = strip_test_code(&startup);
+    assert!(
+        production.contains("process_start_token(std::process::id())"),
+        "PID-record creation must go through the total process-token seam"
+    );
+    for owned in [
+        "#[cfg(target_os = \"linux\")]\nfn process_start_token",
+        "#[cfg(target_os = \"macos\")]\nfn process_start_token",
+        "#[cfg(not(any(target_os = \"linux\", target_os = \"macos\")))]\nfn process_start_token",
+    ] {
+        assert!(
+            production.contains(owned),
+            "startup must define every process-token owner explicitly: {owned}"
+        );
+    }
+    assert!(
+        production.contains("None") && production.contains("fn process_start_token(_pid: u32)"),
+        "unsupported targets must return an explicit unsupported token"
+    );
+    for branch in [
+        "#[cfg(target_os = \"linux\")]\n    {\n        let current = match fs::canonicalize(format!(\"/proc/{}/exe\"",
+        "#[cfg(target_os = \"macos\")]\n    {",
+        "#[cfg(not(any(target_os = \"linux\", target_os = \"macos\")))]\n    {",
+    ] {
+        assert!(
+            production.contains(branch),
+            "process ownership must keep explicit per-OS branches: {branch}"
+        );
+    }
+    assert!(
+        production.contains("!record.start_token.is_empty()"),
+        "empty tokens must never authorize process ownership"
+    );
+    for branch in [
+        "#[cfg(windows)]",
+        "#[cfg(target_os = \"macos\")]",
+        "#[cfg(target_os = \"linux\")]",
+        "#[cfg(all(unix, not(target_os = \"macos\"), not(target_os = \"linux\")))]",
+        "#[cfg(not(any(unix, windows)))]",
+    ] {
+        assert!(
+            production.contains(branch),
+            "platform_info must keep mutually exclusive cfg branches: {branch}"
+        );
+    }
+    assert!(
+        production.contains("#[cfg(not(any(unix, windows)))]"),
+        "platform_info must keep the Windows-exclusive fallback"
+    );
+    let platform_start = production
+        .find("pub fn platform_info()")
+        .expect("platform_info present");
+    let platform_section =
+        &production[platform_start..(platform_start + 2000).min(production.len())];
+    assert!(
+        !platform_section.contains("#[cfg(not(unix))]"),
+        "platform_info must not compile a generic non-Unix fallback alongside the Windows branch"
+    );
+    let safe_open = strip_test_code(&read_source("src/meta/safe_open.rs"));
+    assert!(
+        safe_open.contains("#[cfg(unix)]\nuse std::ffi::CString;"),
+        "Unix-only FFI imports must stay cfg-gated"
+    );
+    let update = strip_test_code(&read_source("src/update.rs"));
+    assert!(
+        update.contains("#[cfg(not(unix))]") && update.contains("let _ = path;"),
+        "non-Unix executable-permission helper must stay explicit"
+    );
+}

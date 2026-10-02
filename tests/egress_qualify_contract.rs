@@ -179,6 +179,10 @@ fn egress_workflow_triggers_cover_route_seam() {
         "src/meta/adapter/builders.rs",
         "src/meta/adapter/mod.rs",
         "src/mcp/state.rs",
+        "src/startup.rs",
+        "src/process.rs",
+        "src/update.rs",
+        "src/meta/safe_open.rs",
         "tests/egress_routing.rs",
         "tests/static_guards.rs",
         "tests/egress_qualify_contract.rs",
@@ -187,6 +191,7 @@ fn egress_workflow_triggers_cover_route_seam() {
         "packaging/release-targets.txt",
         "packaging/check-egress-qualify-contract.sh",
         ".github/workflows/egress-feature-qualify.yml",
+        ".github/workflows/ci.yml",
     ];
     let mut uncovered = Vec::new();
     for path in required {

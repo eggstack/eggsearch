@@ -319,7 +319,7 @@ pub fn platform_info() -> PlatformInfo {
             windows_scm_available: false,
         };
     }
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         PlatformInfo {
             os: HostOs::OtherUnix,
@@ -1055,10 +1055,18 @@ fn stop_owned_process(path: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
         let _ = record;
-        Err(io::Error::new(
+        return Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "cron process control is unavailable on Windows",
-        ))
+        ));
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = record;
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "cron process control is unavailable on this platform",
+        ));
     }
 }
 
@@ -1145,6 +1153,11 @@ fn process_start_token(pid: u32) -> Option<String> {
 #[cfg(target_os = "macos")]
 fn process_start_token(pid: u32) -> Option<String> {
     process_ps_field(pid, "lstart")
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn process_start_token(_pid: u32) -> Option<String> {
+    None
 }
 
 #[cfg(target_os = "macos")]
@@ -1393,6 +1406,113 @@ mod tests {
             select_method(StartupMethod::Systemd, linux).unwrap(),
             StartupMethod::Systemd
         );
+    }
+
+    #[test]
+    fn platform_info_matches_compile_target() {
+        let info = platform_info();
+        #[cfg(windows)]
+        {
+            assert_eq!(info.os, HostOs::Windows);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(info.os, HostOs::Macos);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(info.os, HostOs::Linux);
+        }
+        #[cfg(all(unix, not(target_os = "macos"), not(target_os = "linux")))]
+        {
+            assert_eq!(info.os, HostOs::OtherUnix);
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            assert_eq!(info.os, HostOs::OtherUnix);
+        }
+    }
+
+    #[test]
+    fn pid_record_empty_token_never_matches() {
+        let executable =
+            std::env::current_exe().unwrap_or_else(|_| PathBuf::from("eggsearch-test"));
+        let record = PidRecord {
+            pid: std::process::id(),
+            executable,
+            start_token: String::new(),
+        };
+        assert!(!process_matches(&record));
+    }
+
+    #[test]
+    fn pid_record_mismatched_token_never_matches() {
+        let executable =
+            std::env::current_exe().unwrap_or_else(|_| PathBuf::from("eggsearch-test"));
+        let record = PidRecord {
+            pid: std::process::id(),
+            executable,
+            start_token: "eggsearch-mismatched-start-token".to_string(),
+        };
+        assert!(!process_matches(&record));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_process_token_is_non_empty_and_round_trips() {
+        let pid = std::process::id();
+        let token = process_start_token(pid);
+        assert!(token.as_deref().is_some_and(|value| !value.is_empty()));
+        assert!(process_start_token(u32::MAX).is_none());
+        let executable =
+            std::env::current_exe().unwrap_or_else(|_| PathBuf::from("eggsearch-test"));
+        let contents = process_record_contents(&executable);
+        let mut lines = contents.lines();
+        assert_eq!(
+            lines.next().unwrap_or_default().parse::<u32>().unwrap(),
+            pid
+        );
+        assert_eq!(PathBuf::from(lines.next().unwrap_or_default()), executable);
+        assert!(!lines.next().unwrap_or_default().is_empty());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_process_token_preserves_match_semantics() {
+        let pid = std::process::id();
+        let token = process_start_token(pid);
+        assert!(token.as_deref().is_some_and(|value| !value.is_empty()));
+        assert!(process_start_token(u32::MAX).is_none());
+        let executable =
+            std::env::current_exe().unwrap_or_else(|_| PathBuf::from("eggsearch-test"));
+        let matching = PidRecord {
+            pid,
+            executable: executable.clone(),
+            start_token: token.unwrap_or_default(),
+        };
+        assert!(!matching.start_token.is_empty());
+        let mismatched = PidRecord {
+            pid,
+            executable,
+            start_token: "eggsearch-mismatched-start-token".to_string(),
+        };
+        assert!(!process_matches(&mismatched));
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[test]
+    fn unsupported_process_token_is_explicitly_none() {
+        assert!(process_start_token(std::process::id()).is_none());
+        assert!(process_start_token(u32::MAX).is_none());
+        let executable = PathBuf::from("eggsearch-test");
+        let contents = process_record_contents(&executable);
+        let mut lines = contents.lines();
+        assert_eq!(
+            lines.next().unwrap_or_default().parse::<u32>().unwrap(),
+            std::process::id()
+        );
+        assert_eq!(PathBuf::from(lines.next().unwrap_or_default()), executable);
+        assert_eq!(lines.next().unwrap_or_default(), "");
     }
 
     #[test]
