@@ -499,7 +499,10 @@ eggsearch --version          # must print: eggsearch 0.4.0
 
 `provider_status` is the authoritative inventory check. It reports all 44 known
 provider ids with `enabled` / `configured` / `routable` and a typed `skip_code`.
-The seven providers this migration depends on must be present:
+The full migration-relevant inventory below must be present. It includes the
+seven newly added parity providers (`wikipedia`, `arxiv`, `pubmed`,
+`hn_algolia`, `github_repositories`, `serpapi`, `kagi`) alongside the retained
+providers this migration also depends on:
 
 | Id | Expect `requires_api_key` | Expect `routable` when |
 |----|--------------------------|-----------------------|
