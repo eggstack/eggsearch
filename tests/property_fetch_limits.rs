@@ -5,6 +5,19 @@ fn https_url_strategy() -> impl Strategy<Value = String> {
     "https://[a-z][a-z0-9]{2,}\\.(com|org|net|dev|io)/[a-zA-Z0-9/_.-]{0,50}"
 }
 
+/// A host that is genuinely public.
+///
+/// The TLD is drawn from a public list on purpose. `validate_url`
+/// deliberately rejects private and reserved names (`.lan`, `.local`,
+/// `.internal`, `.corp`, `.private`, `.home`, `.home.arpa`, `.invalid`,
+/// `.test`, `.localhost`) as an SSRF guard, so a strategy that accepted any
+/// `[a-z]{2,}` TLD could generate a name the product is *required* to block
+/// and then assert that it is public. Restricting the TLD keeps the property
+/// under test honest: public hosts must not be reported as private.
+fn public_host_strategy() -> impl Strategy<Value = String> {
+    "[a-z][a-z0-9]{2,}\\.(com|org|net|dev|io|info|co|app|xyz|me|sh)"
+}
+
 proptest! {
     #[test]
     fn validate_url_rejects_empty(s in "\\s*") {
@@ -122,7 +135,7 @@ proptest! {
     }
 
     #[test]
-    fn validate_url_accepts_valid_public_http(host in "[a-z][a-z0-9.-]+\\.[a-z]{2,}") {
+    fn validate_url_accepts_valid_public_http(host in public_host_strategy()) {
         let limits = FetchLimits::default();
         let url = format!("http://{host}/");
         let result = validate_url(&url, &limits);
