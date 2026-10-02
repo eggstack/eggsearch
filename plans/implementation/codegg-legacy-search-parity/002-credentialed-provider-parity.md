@@ -1,10 +1,12 @@
 # Plan 002 — Credentialed Provider Parity
 
-Status: active
+Status: closed
 
 Hard dependency satisfied: M001 closed at
 `e9103b4c50743037552dd0ad94eee003c7ea3d48`; see
 `plans/closure/codegg-legacy-search-parity/001-status.md`.
+
+Implementation commit: `523331509936d72c9d3eb327e602b444048d6372`
 
 Closure record: `plans/closure/codegg-legacy-search-parity/002-status.md`
 

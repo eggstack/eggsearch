@@ -57,8 +57,8 @@ The legacy CodeGG stack still contains provider behavior not represented by eggs
 | `pubmed` | absent | added in M001 (`pubmed`, keyless + optional key) |
 | `hn_algolia` | absent | added in M001 (`hn_algolia`, keyless) |
 | `github` repository discovery | code/issues/releases exist, repository discovery absent | added in M001 (`github_repositories`, keyless + optional token) |
-| `serpapi` | absent | add opt-in API-key provider |
-| `kagi` | absent; CodeGG uses obsolete v0 endpoint | add opt-in current-v1 provider with terms guardrails |
+| `serpapi` | absent | added in M002 (`serpapi`, opt-in API-key) |
+| `kagi` | absent; CodeGG uses obsolete v0 endpoint | added in M002 (`kagi`, opt-in API-key on current v1, terms guardrails) |
 | `google_news` RSS | absent; no current documented Google News search/RSS API contract found | do not add; preserve news capability through supported news engines and make CodeGG retire the exact source hint explicitly |
 
 Current authoritative upstream interfaces reviewed for planning include:
@@ -115,6 +115,8 @@ For PubMed, do not copy CodeGG's `example.invalid` contact identity. Use a truth
 
 If implementation-time terms review shows that a generic local MCP integration cannot comply, stop Kagi implementation and record a non-migration disposition rather than preserving the obsolete CodeGG endpoint.
 
+**Outcome (M002):** the terms review passed, so Kagi was implemented rather than dispositioned out. The Kagi API Terms permit using returned Results in your own applications and services, explicitly including forwarding them to an AI model, and integrating them that way is not a prohibited transfer. The two binding constraints were enforced and tested: neither engine caches or persists provider results, and quota responses are terminal provider-scoped failures with no retry amplification.
+
 ### 4.3 Google News RSS
 
 Do not add a `google_news` provider solely to preserve CodeGG's undocumented RSS endpoint.
@@ -125,8 +127,8 @@ The CodeGG handoff must state that historical `provider = "google_news"` is reti
 
 ## 5. Provider model/schema impact
 
-The inventory is 42 provider IDs after M001 (was 37 at baseline). It reaches
-44 only if both remaining providers are accepted:
+The inventory is 44 provider IDs after M002 (was 37 at baseline, 42 after
+M001). Both remaining providers were accepted:
 
 - + `wikipedia`
 - + `arxiv`
@@ -184,19 +186,29 @@ closed evidence, which was the only hard dependency M002 had.
 
 ### M002 — Credentialed provider parity
 
-Status: ready. The M001 hard dependency (frozen provider-model interfaces:
-provider kinds, optional/required credential inventory, descriptor and engine
-builder seams) is closed at `e9103b4`. No new blocker remains.
+Status: closed at `523331509936d72c9d3eb327e602b444048d6372`.
 
 Plan:
 
 - `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md`
 
-Adds and qualifies `serpapi` and current-v1 `kagi` as explicit opt-in providers.
+Closure:
+
+- `plans/closure/codegg-legacy-search-parity/002-status.md`
+
+Adds and qualifies `serpapi` and current-v1 `kagi` as explicit opt-in
+credentialed providers. Contracts and terms were revalidated against current
+provider documentation before any production code, and the narrow deviations
+(SerpApi freshness left unclaimed because `tbs` value syntax is undocumented;
+Kagi v1 `POST` + `Bearer` rather than the legacy `GET` + `Bot` example) are
+recorded in the plan and the closure record. The Kagi terms gate passed with
+two enforced constraints: no results persistence and no rate-limit
+circumvention.
 
 ### M003 — Compatibility qualification and downstream handoff
 
-Status: blocked on M001 + M002.
+Status: unblocked by M002's closure; now blocked only on the operational
+dependency of a qualifying tagged release.
 
 Plan:
 
@@ -261,5 +273,5 @@ This corrective workstream is closed when:
 | Milestone | Status | Implementation plan | Blocker |
 |---|---|---|---|
 | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
-| M002 credentialed provider parity | ready | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; M001 provider-model interface closed at `e9103b4` |
-| M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | M002 plus a qualifying tagged release (operational, downstream CodeGG) |
+| M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/002-status.md` at `5233315` |
+| M003 CodeGG retirement handoff + qualification | blocked | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | code dependency cleared (M001+M002 closed); remaining blocker is the operational qualifying tagged release for downstream CodeGG |
