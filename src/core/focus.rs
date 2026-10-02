@@ -1,6 +1,6 @@
 //! Deterministic query-focused chunk selection for `web_fetch`.
 //!
-//! Ranks the already-extracted [`FetchDocument`](crate::core::document::FetchDocument)
+//! Ranks the already-extracted [`FetchDocument`]
 //! chunks against a caller focus query using dependency-free lexical
 //! scoring. No embeddings, no model calls, no extra URL traversal.
 
