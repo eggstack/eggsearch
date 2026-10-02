@@ -22,6 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in credentialed general-search providers `serpapi` and `kagi`, both
+  behind the existing `MetadataSearchAdapter` and outside `default_providers`.
+  `serpapi` implements the current documented Google Search API contract with
+  `engine=google` pinned explicitly, safe-search (`safe`), language (`hl`), and
+  region (`gl`) mapped natively, and no extra SERP vertical, experimental mode,
+  or guessed `tbs` value ever requested; the result budget is enforced by
+  bounded local truncation because the engine documents no result-count
+  parameter, and the query-parameter credential is attached only after the
+  endpoint is accepted so it can never appear in an error string. `kagi`
+  implements the current Search API v1 contract (`POST /api/v1/search`,
+  `Authorization: Bearer`, `workflow: "search"`, only `data.search` parsed) with
+  safe-search, freshness/date-range, region, domain filters, and result
+  timestamps mapped natively; billed `extract`, account personalization, and the
+  legacy v0 endpoint are never used, and quota responses are terminal
+  provider-scoped failures with no retry. Kagi's API terms are compatible with a
+  local, user-operated integration using the operator's own key, and that
+  compatibility is enforced by not caching results and never amplifying a rate
+  limit.
 - Keyless source-specific search providers `wikipedia`, `arxiv`, `pubmed`,
   `hn_algolia`, and `github_repositories`, all behind the existing
   `MetadataSearchAdapter` and outside `default_providers` (provider inventory

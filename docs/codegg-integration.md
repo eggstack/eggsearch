@@ -391,8 +391,8 @@ and the eggsearch inventory is whatever `provider_status` reports.
 | `pubmed` | `pubmed` | Retained as a keyless provider with an optional NCBI key (this milestone) |
 | `hn_algolia` | `hn_algolia` | Retained as a keyless provider (this milestone) |
 | `github` repository discovery | `github_repositories` | Retained as a keyless provider with an optional `GITHUB_TOKEN` (this milestone); distinct from `github_code`, `github_issues`, and `github_releases` |
-| `serpapi` | none | Not implemented; opt-in credentialed parity is a later milestone. Do not pass this id — eggsearch rejects unknown provider ids instead of substituting another source |
-| `kagi` | none | Not implemented; the legacy id referred to a superseded endpoint. Do not pass this id |
+| `serpapi` | `serpapi` | Migrated to the current SerpApi Google Search contract (opt-in credentialed provider, this milestone) |
+| `kagi` | `kagi` | Migrated to the current Kagi Search API v1 contract (opt-in credentialed provider, this milestone); the legacy v0 endpoint is not used |
 | `google_news` (RSS) | none | **Retired with no replacement provider** (see below) |
 
 Rules for the retiring harness:
@@ -409,6 +409,31 @@ Rules for the retiring harness:
   gates routing.
 - arXiv results are subject to a shared minimum-interval request gate; repeated
   arXiv calls in one process are spaced out rather than issued concurrently.
+- `serpapi` and `kagi` are opt-in credentialed providers. They are enabled only
+  through `[search.api.<id>]` with an `api_key_env`; `[search.providers].<id>`
+  does not enable an API-key provider and neither id ever joins
+  `default_providers`. Select them per request with `providers: ["serpapi"]` or
+  `providers: ["kagi"]`. A missing or empty key produces a provider-scoped
+  `missing_api_key` skip for that provider only, and a quota response produces
+  a provider-scoped rate-limited failure with health cooldown — never a global
+  search failure.
+- Constraint truth for the two migrated providers differs from the legacy
+  contract and is documented in `docs/provider-setup.md`:
+  - `serpapi` natively enforces safe-search, language (`hl`), and region (`gl`).
+    It does not enforce freshness (upstream `tbs` value syntax is undocumented),
+    domain filters, news, or result timestamps, so those stay local
+    approximation; news must go to a native-news provider.
+  - `kagi` natively enforces safe-search, freshness/date-range
+    (`filters.after`/`filters.before`), region (`filters.region`), domain
+    filters (inline lens), and result timestamps. It has no language field, and
+    eggsearch only reads the `data.search` collection, so a news workflow is
+    not used.
+- Kagi is billed separately from a Kagi subscription and its API terms bind the
+  integrating operator: results may be used in your own applications (including
+  forwarding them to an AI model), must not be stored, indexed, or resold as a
+  feed, and rate limits must not be circumvented. eggsearch's Kagi path keeps
+  the operator's own key, caches no results, and treats quota responses as
+  terminal for that attempt.
 
 ### `google_news` is retired, not remapped
 

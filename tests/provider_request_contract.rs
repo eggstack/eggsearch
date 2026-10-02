@@ -1186,3 +1186,456 @@ async fn github_repositories_failures_stay_bounded_and_provider_scoped() {
     assert!(err.to_string().contains("too large"), "got: {err}");
     oversized.assert();
 }
+
+/// Wire-level capture for the credentialed general-search providers.
+///
+/// The engines put the SerpAPI credential in a query parameter and the Kagi
+/// credential in an `Authorization` header, so the request contract has to be
+/// asserted from the recorded request rather than from engine state.
+#[derive(Clone, Debug, Default)]
+struct CapturedWire {
+    method: String,
+    path: String,
+    query: Vec<(String, String)>,
+    headers: Vec<(String, String)>,
+    body: String,
+}
+
+impl CapturedWire {
+    fn param(&self, key: &str) -> Option<&str> {
+        self.query
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
+
+    fn header(&self, key: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
+    }
+
+    fn json(&self) -> serde_json::Value {
+        serde_json::from_str(&self.body).expect("captured body is JSON")
+    }
+}
+
+fn capture(req: &httpmock::prelude::HttpMockRequest) -> CapturedWire {
+    CapturedWire {
+        method: req.method.clone(),
+        path: req.path.clone(),
+        query: req.query_params.clone().unwrap_or_default(),
+        headers: req.headers.clone().unwrap_or_default(),
+        body: req
+            .body
+            .as_ref()
+            .map(|body| String::from_utf8_lossy(body).into_owned())
+            .unwrap_or_default(),
+    }
+}
+
+static SERPAPI_WIRE: Mutex<Option<CapturedWire>> = Mutex::new(None);
+static KAGI_WIRE: Mutex<Option<CapturedWire>> = Mutex::new(None);
+
+fn record_serpapi(req: &httpmock::prelude::HttpMockRequest) -> bool {
+    *SERPAPI_WIRE.lock().unwrap() = Some(capture(req));
+    true
+}
+
+fn record_kagi(req: &httpmock::prelude::HttpMockRequest) -> bool {
+    *KAGI_WIRE.lock().unwrap() = Some(capture(req));
+    true
+}
+
+fn take_serpapi_wire() -> CapturedWire {
+    SERPAPI_WIRE
+        .lock()
+        .unwrap()
+        .take()
+        .expect("serpapi request was recorded")
+}
+
+fn take_kagi_wire() -> CapturedWire {
+    KAGI_WIRE
+        .lock()
+        .unwrap()
+        .take()
+        .expect("kagi request was recorded")
+}
+
+const SERPAPI_KEY: &str = "serpapi-test-key-value";
+const KAGI_KEY: &str = "kagi-test-key-value";
+
+const SERPAPI_BODY: &str = r#"{
+  "search_metadata": {"id": "65f0", "status": "Success"},
+  "search_information": {"total_results": 99000},
+  "organic_results": [
+    {
+      "position": 1,
+      "title": "Axum  -  GitHub",
+      "link": "https://github.com/tokio-rs/axum",
+      "redirect_link": "https://www.google.com/url?sa=t&url=https://github.com/tokio-rs/axum",
+      "snippet": "Web framework  built on Tokio and  Hyper.",
+      "source": "GitHub"
+    },
+    {
+      "position": 2,
+      "title": "docs.rs  -  axum",
+      "link": "https://docs.rs/axum/latest/axum/",
+      "snippet": "Documentation for axum."
+    },
+    {
+      "position": 3,
+      "title": "Ecosystem",
+      "link": "https://example.com/ecosystem",
+      "snippet": "Third result."
+    }
+  ],
+  "related_searches": [{"query": "axum middleware"}]
+}"#;
+
+const KAGI_BODY: &str = r#"{
+  "meta": {"node": "kagi-1", "ms": 180, "trace": "trace-1"},
+  "data": {
+    "search": [
+      {
+        "url": "https://kagi.com/blog/small-web",
+        "title": "The small web",
+        "snippet": "An  independent  index.",
+        "time": "2024-11-29T03:54:26Z"
+      },
+      {
+        "url": "https://example.org/second",
+        "title": "Second",
+        "snippet": "Second result."
+      }
+    ],
+    "news": [{"url": "https://news.example/story", "title": "News", "snippet": "s"}],
+    "code": [{"url": "https://github.com/example/repo", "title": "repo", "snippet": "c"}],
+    "interesting_finds": [{"url": "https://finds.example/x", "title": "f"}]
+  }
+}"#;
+
+fn constrained_request(max_results: usize) -> EngineSearchRequest {
+    let mut request = EngineSearchRequest::simple("rust axum", max_results, Duration::from_secs(5));
+    request.safe_search = Some(eggsearch::core::query::SafeSearch::Strict);
+    request.language = Some("en-US".to_string());
+    request.region = Some("US".to_string());
+    request
+}
+
+#[tokio::test]
+async fn serpapi_wire_contract_pins_google_and_asks_for_no_extras() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let endpoint = format!("{}/search", server.url(""));
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("engine", "google")
+            .query_param("api_key", SERPAPI_KEY)
+            .matches(record_serpapi);
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(SERPAPI_BODY);
+    });
+    let results = eggsearch::meta::engines::serpapi::search(
+        &source_provider_client(),
+        SERPAPI_KEY,
+        Some(&endpoint),
+        &constrained_request(2),
+    )
+    .await
+    .expect("serpapi search succeeds");
+    mock.assert();
+
+    let wire = take_serpapi_wire();
+    assert_eq!(wire.method, "GET");
+    assert_eq!(wire.path, "/search");
+    assert_eq!(wire.param("q"), Some("rust axum"));
+    assert_eq!(wire.param("safe"), Some("active"));
+    assert_eq!(wire.param("hl"), Some("en-us"));
+    assert_eq!(wire.param("gl"), Some("us"));
+    assert_eq!(wire.param("api_key"), Some(SERPAPI_KEY));
+    for forbidden in [
+        "tbm",
+        "async",
+        "no_cache",
+        "zero_trace",
+        "json_restrictor",
+        "num",
+        "tbs",
+    ] {
+        assert!(
+            wire.param(forbidden).is_none(),
+            "{forbidden} must never be requested; eggsearch buys no extra vertical, mode, or guess"
+        );
+    }
+
+    assert_eq!(results.len(), 2, "the local result budget is enforced");
+    assert_eq!(results[0].url, "https://github.com/tokio-rs/axum");
+    assert_eq!(results[0].title, "Axum - GitHub");
+    assert_eq!(
+        results[0].snippet.as_deref(),
+        Some("Web framework built on Tokio and Hyper.")
+    );
+    assert!(
+        results.iter().all(|r| r.published_at.is_none()),
+        "organic results carry no documented timestamp"
+    );
+}
+
+#[tokio::test]
+async fn serpapi_quota_auth_and_oversized_responses_stay_provider_scoped() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let endpoint = format!("{}/search", server.url(""));
+    let quota = server.mock(|when, then| {
+        when.method(GET).path("/search");
+        then.status(429)
+            .header("content-type", "application/json")
+            .body(r#"{"error":"Your account is out of credits."}"#);
+    });
+    let err = eggsearch::meta::engines::serpapi::search(
+        &source_provider_client(),
+        SERPAPI_KEY,
+        Some(&endpoint),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("a quota response must surface as a provider-scoped error");
+    assert!(err.to_string().contains("serpapi"), "got: {err}");
+    assert!(
+        err.to_string().contains("429"),
+        "the rate-limited status must be preserved for cooldown handling: {err}"
+    );
+    assert!(
+        !err.to_string().contains(SERPAPI_KEY),
+        "the credential must never reach diagnostics: {err}"
+    );
+    quota.assert_hits(1);
+
+    let auth_server = MockServer::start();
+    let auth_endpoint = format!("{}/search", auth_server.url(""));
+    let auth = auth_server.mock(|when, then| {
+        when.method(GET).path("/search");
+        then.status(401)
+            .header("content-type", "application/json")
+            .body(r#"{"error":"Invalid API key."}"#);
+    });
+    let err = eggsearch::meta::engines::serpapi::search(
+        &source_provider_client(),
+        SERPAPI_KEY,
+        Some(&auth_endpoint),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("an invalid credential must fail the provider, not the search");
+    assert!(err.to_string().contains("401"), "got: {err}");
+    assert!(!err.to_string().contains(SERPAPI_KEY), "got: {err}");
+    auth.assert();
+
+    let big_server = MockServer::start();
+    let big_endpoint = format!("{}/search", big_server.url(""));
+    let oversized = big_server.mock(|when, then| {
+        when.method(GET).path("/search");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(oversized_source_body());
+    });
+    let err = eggsearch::meta::engines::serpapi::search(
+        &source_provider_client(),
+        SERPAPI_KEY,
+        Some(&big_endpoint),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("oversized bodies must be rejected");
+    assert!(err.to_string().contains("too large"), "got: {err}");
+    oversized.assert();
+
+    let err = eggsearch::meta::engines::serpapi::search(
+        &source_provider_client(),
+        SERPAPI_KEY,
+        Some("not-a-url"),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("an invalid endpoint is a provider-scoped failure");
+    assert!(
+        !err.to_string().contains(SERPAPI_KEY),
+        "even request-build failures must not echo the credential: {err}"
+    );
+}
+
+#[tokio::test]
+async fn kagi_wire_contract_uses_post_v1_bearer_and_the_search_workflow() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(POST)
+            .path("/search")
+            .header("authorization", format!("Bearer {KAGI_KEY}"))
+            .matches(record_kagi);
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(KAGI_BODY);
+    });
+    let mut request = constrained_request(2);
+    request.freshness = eggsearch::core::query::Freshness::Month;
+    request.include_domains = vec!["docs.rs".to_string()];
+    request.date_range = Some(eggsearch::core::query::SearchDateRange::new(
+        "2026-01-01",
+        "2026-01-31",
+    ));
+    let results = eggsearch::meta::engines::kagi::search(
+        &source_provider_client(),
+        KAGI_KEY,
+        Some(&server.url("")),
+        &request,
+    )
+    .await
+    .expect("kagi search succeeds");
+    mock.assert();
+
+    let wire = take_kagi_wire();
+    assert_eq!(wire.method, "POST", "v1 is a JSON POST endpoint");
+    assert_eq!(wire.path, "/search");
+    assert_eq!(
+        wire.header("authorization"),
+        Some(format!("Bearer {KAGI_KEY}").as_str())
+    );
+    let body = wire.json();
+    assert_eq!(body["query"], "rust axum");
+    assert_eq!(body["workflow"], "search");
+    assert_eq!(body["limit"], 2);
+    assert_eq!(body["safe_search"], true);
+    assert_eq!(body["filters"]["region"], "US");
+    assert_eq!(body["filters"]["after"], "2026-01-01");
+    assert_eq!(body["filters"]["before"], "2026-01-31");
+    assert_eq!(body["lens"]["sites_included"][0], "docs.rs");
+    for forbidden in ["extract", "personalizations", "format", "page", "timeout"] {
+        assert!(
+            body.get(forbidden).is_none(),
+            "{forbidden} must never be sent to kagi"
+        );
+    }
+
+    assert_eq!(results.len(), 2);
+    assert!(
+        results.iter().all(|r| !r.url.contains("news.example")
+            && !r.url.contains("github.com")
+            && !r.url.contains("finds.example")),
+        "non-search result collections must not become source cards"
+    );
+    assert_eq!(results[0].url, "https://kagi.com/blog/small-web");
+    assert_eq!(results[0].snippet.as_deref(), Some("An independent index."));
+    assert_eq!(
+        results[0].published_at.as_deref(),
+        Some("2024-11-29T03:54:26+00:00")
+    );
+    assert!(results[1].published_at.is_none());
+}
+
+#[tokio::test]
+async fn kagi_quota_is_terminal_and_never_retried() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let quota = server.mock(|when, then| {
+        when.method(POST).path("/search");
+        then.status(429)
+            .header("content-type", "application/json")
+            .body(r#"{"meta":{},"data":null,"error":[{"code":"rate_limit","message":"Too many requests"}]}"#);
+    });
+    let err = eggsearch::meta::engines::kagi::search(
+        &source_provider_client(),
+        KAGI_KEY,
+        Some(&server.url("")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("a quota response must fail the provider");
+    assert!(err.to_string().contains("kagi"), "got: {err}");
+    assert!(err.to_string().contains("429"), "got: {err}");
+    assert!(
+        !err.to_string().contains(KAGI_KEY),
+        "the credential must never reach diagnostics: {err}"
+    );
+    // Kagi's terms forbid circumventing rate limits: one attempt only.
+    quota.assert_hits(1);
+}
+
+#[tokio::test]
+async fn kagi_malformed_error_and_oversized_responses_stay_bounded() {
+    use httpmock::prelude::*;
+
+    let malformed_server = MockServer::start();
+    let malformed = malformed_server.mock(|when, then| {
+        when.method(POST).path("/search");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"data": {"search": [ }"#);
+    });
+    let err = eggsearch::meta::engines::kagi::search(
+        &source_provider_client(),
+        KAGI_KEY,
+        Some(&malformed_server.url("")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("malformed payloads must fail the provider");
+    assert!(err.to_string().contains("parse failed"), "got: {err}");
+    assert!(!err.to_string().contains(KAGI_KEY), "got: {err}");
+    malformed.assert();
+
+    let error_server = MockServer::start();
+    let error_envelope = error_server.mock(|when, then| {
+        when.method(POST).path("/search");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"meta":{},"data":null,"error":[{"code":"search.invalid_query","message":"empty query","url":"https://help.kagi.com/api/errors"}]}"#);
+    });
+    let results = eggsearch::meta::engines::kagi::search(
+        &source_provider_client(),
+        KAGI_KEY,
+        Some(&error_server.url("")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect("an error envelope must not fabricate source cards");
+    assert!(results.is_empty());
+    error_envelope.assert();
+
+    let big_server = MockServer::start();
+    let oversized = big_server.mock(|when, then| {
+        when.method(POST).path("/search");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(oversized_source_body());
+    });
+    let err = eggsearch::meta::engines::kagi::search(
+        &source_provider_client(),
+        KAGI_KEY,
+        Some(&big_server.url("")),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("oversized bodies must be rejected");
+    assert!(err.to_string().contains("too large"), "got: {err}");
+    oversized.assert();
+
+    let err = eggsearch::meta::engines::kagi::search(
+        &source_provider_client(),
+        KAGI_KEY,
+        Some("not-a-url"),
+        &source_provider_request("rust", 3),
+    )
+    .await
+    .expect_err("an invalid endpoint is a provider-scoped failure");
+    assert!(
+        !err.to_string().contains(KAGI_KEY),
+        "even request-build failures must not echo the credential: {err}"
+    );
+}

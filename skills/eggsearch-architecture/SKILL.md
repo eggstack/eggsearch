@@ -21,7 +21,7 @@ Single library + binary crate (not a workspace). All source under `src/`. The cr
 - `update.rs` — crates.io-authoritative self-update, candidate verification, and replacement orchestration
 - `startup.rs` — canonical persistent runtime, manager detection/rendering, croncheck, restart, and lifecycle state
 - `core/` — pure domain types, config model, error types, identity, sanitization, warnings, source cards, evidence roles, workflow coverage, conflict, retrieval status
-- `meta/` — MetadataSearchAdapter (`adapter/` modules) + 41 vendored engine structs plus the local workspace backend covering 42 registered provider IDs (`local_workspace` has no engine), forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
+- `meta/` — MetadataSearchAdapter (`adapter/` modules) + 43 vendored engine structs plus the local workspace backend covering 44 registered provider IDs (`local_workspace` has no engine), forge adapter, inventory cache, structured symbol parser (`local_symbols.rs`), shared probe service (`probe.rs`), workflow substrate (`workflow.rs`, `FetchCandidateBuilder`)
 - `fetch/` — HTTP fetch client, HTML rendering, PDF extraction, span selection, SSRF protection, two-tier raw/derived cache, optional egress proxy-chain dialer, and optional anonymous or request-scoped persistent browser execution
 - `mcp/` — MCP server over stdio and loopback Streamable HTTP (rmcp), canonical tool contract (`tool_contract.rs` with purpose/use-when/not-for, domain/disclosure, keywords/aliases, related/next, `discovery_text()`, `is_known_tool()`), 10 tool definitions (`tools/` per-tool modules), deterministic result projection (`projection.rs`, `ResponseDetail` compact/standard/diagnostic), server state, policy
 - `integrations/` — safe render/apply/verify adapters for CodeGG, Zed, Codex, Claude Code, Cursor, VS Code, and OpenCode
@@ -52,7 +52,7 @@ Single library + binary crate (not a workspace). All source under `src/`. The cr
 
 `ProviderKind` enum: `HtmlScrape`, `JsonApi`, `StructuredApi`, `ApiKey`, `Local` (`StructuredApi` was added additively for arXiv's Atom feed; no existing wire value changed).
 
-42 registered providers (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`) across 4 search profiles:
+44 registered providers (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`) across 4 search profiles:
 - `generic` — DuckDuckGo, Brave (HTML), Startpage, Yahoo, Mojeek, SearXNG
 - `coding` — adds GitHub/GitLab/Gitea code/issues/releases, Sourcegraph
 - `security` — adds OSV, GitHub Advisory, NVD, CISA KEV, RustSec

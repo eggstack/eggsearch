@@ -24,7 +24,7 @@ terms consistently and MUST NOT redefine them locally. Amendments follow
 
 | Term | Definition |
 |---|---|
-| Provider | A named upstream source identified by an entry in `KNOWN_PROVIDER_IDS` (42 IDs). |
+| Provider | A named upstream source identified by an entry in `KNOWN_PROVIDER_IDS` (44 IDs). |
 | Engine | A vendored `SearchEngine::search(&EngineSearchRequest)` implementation serving one or more providers. `local_workspace` has no engine; it is served by the local backend. |
 | Native enforcement | The provider API itself constrains results (see `000-long-term-specification.md` §5). |
 | Local approximation | Eggsearch constrains results after retrieval because the provider cannot. |

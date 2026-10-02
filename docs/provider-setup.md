@@ -1,6 +1,6 @@
 # Provider Setup
 
-eggsearch supports 42 search providers across ten categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, reference/discussion sources, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
+eggsearch supports 44 search providers across ten categories: web search (HTML scrapers), API-key providers, keyless-optional developer index, aggregators, code search hosts, security advisory databases, package registries, scholarly search, reference/discussion sources, and special-purpose providers. Providers can be enabled individually in config and selected per-request or via `default_providers`.
 
 ## Provider Categories at a Glance
 
@@ -11,7 +11,7 @@ eggsearch supports 42 search providers across ten categories: web search (HTML s
 | **Keyless source-specific** | Wikipedia, arXiv, Hacker News (Algolia) | none |
 | **Keyless-optional specialist** | Firecrawl Developer Index, PubMed, GitHub Repositories | none (optional key/contact raises limits) |
 | **Optional configured endpoint** | SearXNG, self-hosted forge base URL | operator configuration |
-| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Exa, Tavily, Semantic Scholar, GitHub Advisory | opt-in credential |
+| **Optional credentialed** | GitHub/GitLab/Gitea code search, Sourcegraph, Brave API, Exa, Tavily, SerpApi, Kagi, Semantic Scholar, GitHub Advisory | opt-in credential |
 | **Optional local** | local workspace | configured local root |
 
 All credentialed providers are disabled or non-routable unless explicitly configured. Missing optional credentials produce provider-scoped skip telemetry and never make the server globally unhealthy. The Firecrawl Developer Index, PubMed, and GitHub Repositories providers route keyless when enabled; a missing optional key never produces `missing_api_key`.
@@ -247,6 +247,55 @@ Native capabilities: `safe_search` (`Off -> false`, `Moderate|Strict -> true`; `
 Excerpts: `chunks_per_source` 1-3 is derived from `web_search` `excerpt_count` (1 when no excerpts requested, otherwise the demanded count clamped 1-3); result `content` is split on `[...]` into source chunks, the first chunk becomes the card snippet, and up to the demanded count become bounded `ProviderSnippet` excerpts. Unrequested chunks are discarded before card construction. Excerpt count/char caps and sanitization apply through the common pipeline.
 
 eggsearch uses Tavily only for search metadata/chunks with `search_depth=basic`. Generated answers (`include_answer=false`), raw page content (`include_raw_content=false`), images (`include_images=false`), and automatic parameter rewriting (`auto_parameters=false`) are always disabled; `web_fetch` remains the fetch owner. Missing/invalid credentials and quota/rate failures are provider-scoped and never make the server unhealthy.
+
+### SerpApi Google Search
+
+- ID: `serpapi`
+- Google web results through `GET https://serpapi.com/search` (auth `api_key` query parameter)
+- Enabled by default: **no**; opt-in complement to the HTML/SERP sources
+- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["serpapi"]`
+- Enable and configure in `[search.api.serpapi]`:
+
+```toml
+[search.api.serpapi]
+enabled = true
+api_key_env = "SERPAPI_API_KEY"
+```
+
+The environment variable `SERPAPI_API_KEY` must be set at runtime. `base_url` remains overridable through the same section for tests/proxies and must be the full endpoint URL; the production default is `https://serpapi.com/search`.
+
+Native capabilities: `safe_search` (`Off -> safe=off`, `Moderate|Strict -> safe=active`; Google exposes a two-state filter, so the three-state model is approximate), `language` (`hl`, e.g. `en`, `en-US` -> `en-us`; unrepresentable values omitted), and `region` (`gl`, 2-letter country code lowercased; unrepresentable values omitted). Everything else is **not** claimed:
+
+- `freshness` — the current engine page documents `tbs` only generically ("advanced search parameters ... dates") without value syntax, so eggsearch does not send it rather than guess; freshness and exact date ranges stay locally approximated.
+- `domain_filters` — the Google engine exposes no site-restriction parameter; filtering stays local.
+- `news` — news would require the separately billed `tbm=nws` vertical, which eggsearch never requests. Use a native-news provider instead.
+- `result_timestamps` — `organic_results` entries carry no documented per-result date, so `published_at` is never synthesized.
+
+Request discipline: `engine=google` is always sent explicitly so a future upstream default change cannot silently change which engine backs this id. No other SerpApi feature is used: no `tbm` verticals, no `async`/`no_cache`/`zero_trace`/`json_restrictor`, and no generated answers. The engine exposes no documented result-count parameter, so the result budget is enforced by bounded local truncation of `organic_results`. Missing/invalid credentials and quota/rate failures are provider-scoped (a `429` becomes a rate-limited failure with cooldown) and never make the server unhealthy.
+
+Credential handling: SerpApi authenticates with a query parameter, so eggsearch attaches `api_key` only after the transport has accepted the endpoint, and never echoes it in errors, evidence, or provenance. Keep the key out of shared configuration files; the terms require treating it as a secret.
+
+### Kagi Search
+
+- ID: `kagi`
+- Premium web results through `POST https://kagi.com/api/v1/search` (auth `Authorization: Bearer <KAGI_API_KEY>`)
+- Enabled by default: **no**; opt-in complement to the HTML/SERP sources
+- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["kagi"]`
+- Enable and configure in `[search.api.kagi]`:
+
+```toml
+[search.api.kagi]
+enabled = true
+api_key_env = "KAGI_API_KEY"
+```
+
+The environment variable `KAGI_API_KEY` must be set at runtime. API usage is billed separately from any Kagi subscription on a pay-as-you-go basis (`https://kagi.com/api/pricing`), so a Kagi account with a payment method and API billing enabled is an operator responsibility. `base_url` remains overridable through the same section for tests/proxies and is the v1 base (`https://kagi.com/api/v1`); the engine appends `/search`.
+
+Native capabilities: `safe_search` (`Off -> false`, `Moderate|Strict -> true`; Kagi exposes a single boolean, so the three-state model is approximate), `freshness` (exact `YYYY-MM-DD` ranges map to `filters.after`/`filters.before`; relative `day|week|month|year` map to a UTC cutoff of 1/7/30/365 days ago, and an exact range always wins), `region` (`filters.region`, ISO 3166-1 alpha-2 uppercased; unrepresentable values omitted), `domain_filters` (the documented inline lens `lens.sites_included`/`lens.sites_excluded`, which restrict rather than boost), and `result_timestamps` (`data.search[].time` preserved when it parses, feeding freshness reranking). Language is not claimed — Kagi exposes region but no language field. `news` is not claimed — the news workflow is a separate result collection eggsearch never requests.
+
+Request discipline: every request pins `workflow: "search"` and only `data.search[]` is read. Other collections Kagi may return in the same payload (`data.news`, `data.code`, `data.interesting_finds`, `data.related_search`, `data.infobox`, ...) are ignored rather than coerced into source cards. Billed extras (`extract`) and account personalization (`personalizations`) are never sent.
+
+Terms compliance: the Kagi API Terms permit using returned Results in your own applications and services, including sending them to an AI model to answer your users' queries, and integrating them that way is not a prohibited transfer. eggsearch honors the two constraints that bind this integration: results are not cached, stored, or indexed by the engine (the only persistence is a user-requested evidence bundle artifact), and rate limits are never circumvented — a quota response is terminal for that attempt, is reported as a provider-scoped rate-limited failure, and starts a health cooldown. The historical v0 endpoint is never called. Missing/invalid credentials and quota failures are provider-scoped and never make the server unhealthy.
 
 ### GitHub Code Search
 

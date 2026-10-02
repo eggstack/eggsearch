@@ -2107,3 +2107,108 @@ fn planning_status_consistency_no_closed_range_shorthand() {
         }
     }
 }
+
+/// Production code of an engine module: everything before its trailing
+/// `#[cfg(test)]` block.
+///
+/// The generic comment/string strippers in this file blank the remainder of a
+/// line when a string literal contains `//` (every URL in these engines), which
+/// unbalances braces and defeats module stripping. Engine modules keep their
+/// tests last, so cutting at the first line-initial `#[cfg(test)]` is exact and
+/// keeps string literals intact for token assertions.
+fn engine_production_source(path: &str) -> String {
+    let source = read_source(path);
+    let cut = source.find("\n#[cfg(test)]").unwrap_or(source.len());
+    source[..cut].to_string()
+}
+
+#[test]
+fn kagi_engine_never_targets_the_legacy_v0_endpoint() {
+    let production = engine_production_source("src/meta/engines/kagi.rs");
+    assert!(
+        production.contains("https://kagi.com/api/v1"),
+        "the engine must pin the current v1 base URL"
+    );
+    for legacy in [
+        "kagi.com/api/search",
+        "kagi.com/api/v0",
+        "api/v0",
+        "kagi.com/api?",
+    ] {
+        assert!(
+            !production.contains(legacy),
+            "legacy Kagi endpoint fragment must not exist in the engine: {legacy}"
+        );
+    }
+    assert!(
+        production.contains("format!(\"{}/search\""),
+        "the v1 request path must be the documented /search suffix of the pinned base URL"
+    );
+    for file in [
+        "docs/provider-setup.md",
+        "docs/config.md",
+        "docs/codegg-integration.md",
+    ] {
+        let text = read_source(file);
+        assert!(
+            !text.contains("kagi.com/api/search"),
+            "{file} must never document the legacy Kagi v0 endpoint"
+        );
+    }
+}
+
+#[test]
+fn serpapi_engine_never_buys_extra_verticals_or_modes() {
+    let production = engine_production_source("src/meta/engines/serpapi.rs");
+    for forbidden in [
+        "\"tbm\"",
+        "\"async\"",
+        "\"no_cache\"",
+        "\"zero_trace\"",
+        "\"json_restrictor\"",
+        "\"num\"",
+        "\"tbs\"",
+    ] {
+        assert!(
+            !production.contains(forbidden),
+            "serpapi must not request extra verticals, experimental modes, or guessed parameters: {forbidden}"
+        );
+    }
+    assert!(
+        production.contains("read_bounded_body"),
+        "provider bodies must stay bounded"
+    );
+    assert!(
+        production.contains("(\"engine\".to_string(), \"google\".to_string())"),
+        "the Google engine must be pinned explicitly rather than left to an upstream default"
+    );
+    assert!(
+        production.contains("api_key"),
+        "the documented SerpAPI credential parameter must still be sent"
+    );
+}
+
+#[test]
+fn kagi_engine_never_requests_billed_extras() {
+    let production = engine_production_source("src/meta/engines/kagi.rs");
+    for forbidden in [
+        "\"extract\"",
+        "\"personalizations\"",
+        "\"format\"",
+        "\"api_key\"",
+    ] {
+        assert!(
+            !production.contains(forbidden),
+            "kagi requests must stay minimal and credential-free: {forbidden}"
+        );
+    }
+    assert!(production.contains("read_bounded_body"));
+    assert!(
+        production.contains("Bearer {api_key}"),
+        "the documented v1 bearer scheme must be used"
+    );
+    assert!(
+        production.contains("workflow: \"search\"") || production.contains("workflow: \"search\","),
+        "the search workflow must be pinned explicitly"
+    );
+}

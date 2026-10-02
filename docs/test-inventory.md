@@ -18,7 +18,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
 | `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds |
 | `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds |
-| `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior |
+| `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling |
@@ -38,7 +38,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `browser_profiles` | `browser` | Browser profile management |
 | `browser_transport` | `browser` | Browser transport orchestration |
 | `browser_live_smoke` | `browser` (+ `live-smoke`, ignored) | Live browser smoke (opt-in only) |
-| `static_guards` | None | Ownership, layout, crate-wide unsafe, repo-wide process/shell, planning consistency, workflow wiring, forge policy/transport, dependency/workflow, and policy guards (fail-closed) |
+| `static_guards` | None | Ownership, layout, crate-wide unsafe, repo-wide process/shell, planning consistency, workflow wiring, forge policy/transport, dependency/workflow, policy guards, and credentialed-provider endpoint/parameter guards (Kagi v1-only, SerpApi no-extra-verticals/no-billed-extras) (fail-closed) |
 
 Placement authority is the table in `architecture/testing.md`.
 
@@ -68,14 +68,14 @@ Placement authority is the table in `architecture/testing.md`.
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
-| `dispatch_fault_injection` | `mock` | 32 | Provider failure, timeout, hang, health transitions, concurrency, panic |
+| `dispatch_fault_injection` | `mock` | 33 | Provider failure, timeout, hang, health transitions, concurrency, panic, credentialed quota isolation (rate-limited class, cooldown threshold, auth vs quota classes) |
 | `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
-| `provider_request_contract` | `mock` | 31 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, provider-scoped failures, and oversized-body rejection |
+| `provider_request_contract` | `mock` | 36 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, credentialed-provider wire contracts (SerpApi pinned engine/no extra verticals/query-parameter credential; Kagi v1 POST + bearer + search-only collection, terminal quota), provider-scoped failures, credential redaction in every error path, and oversized-body rejection |
 | `extract_fetch_contract` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |
 | `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
-| `provider_capability_contract` | None | 17 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl), HTML-scraper none, domain-filter exclusivity, keyless source-provider inventory/keyless/default-exclusion/timestamp/freshness claims, `structured_api` exclusivity, keyless engine-builder reachability, AGENTS.md prose agreement |
-| `provider_workstream_regression` | `mock` | 7 | Provider inventory (42 IDs), capability descriptors, constraint enforcement matrix, keyless vs optional-credential posture, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |
+| `provider_capability_contract` | None | 22 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl/serpapi/kagi), HTML-scraper none, domain-filter exclusivity, keyless source-provider inventory/keyless/default-exclusion/timestamp/freshness claims, credentialed-provider required-key posture/opt-in exclusion/engine-builder reachability with typed missing-key skips, `structured_api` exclusivity, AGENTS.md prose agreement |
+| `provider_workstream_regression` | `mock` | 7 | Provider inventory (44 IDs), capability descriptors, constraint enforcement matrix, keyless vs optional-credential posture, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |
 | `egress_routing` | None (proxy composition under `egress`) | 35 | Egress config validation (incl. IPv6 literals), credential redaction, custom-dialer SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, handshake cancellation/deadline, HTTPS TLS/SNI through CONNECT, gzip/Brotli decode with decoded-body limits, authenticated HTTP/SOCKS with credential non-forwarding, malformed-proxy fail-closed, routed redirects |
 
 ## Forge Adapter Tests (`tests/forge_adapter.rs`)

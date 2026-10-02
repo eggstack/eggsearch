@@ -1,6 +1,12 @@
 # Plan 002 — Credentialed Provider Parity
 
-Status: blocked
+Status: active
+
+Hard dependency satisfied: M001 closed at
+`e9103b4c50743037552dd0ad94eee003c7ea3d48`; see
+`plans/closure/codegg-legacy-search-parity/001-status.md`.
+
+Closure record: `plans/closure/codegg-legacy-search-parity/002-status.md`
 
 Source roadmap:
 
@@ -73,6 +79,96 @@ Do not use CodeGG source as API authority.
 If an upstream provider materially changes pricing, authentication, permitted
 use, or response contract between planning and implementation, record the
 change and adapt the plan narrowly before coding.
+
+### 3.1 Revalidation outcome (reviewed 2026-10-02)
+
+Sources reviewed: `https://serpapi.com/search-api`,
+`https://serpapi.com/pricing`, `https://help.kagi.com/kagi/api/search.html`,
+`https://help.kagi.com/kagi/api/quick-start.html`,
+`https://kagi.com/api/docs` and its published OpenAPI bundle, and
+`https://kagi.com/privacy/api` (Kagi API Terms, effective 2026-09-22). CodeGG
+source was not used as API authority.
+
+**Kagi v1 request contract (narrow adaptation to §6).** The current v1 search
+endpoint is `POST https://kagi.com/api/v1/search` with a JSON body
+(`query` required; optional `workflow`, `limit`, `page`, `safe_search`,
+`filters.region`, `filters.after`, `filters.before`, `lens`, `lens_id`,
+`timeout`, `format`, `extract`, `personalizations`) and
+`Authorization: Bearer <key>`. The `GET .../api/v1/search?q=` example with an
+`Authorization: Bot <key>` header still shown on the help page is the legacy
+v0 style; the v1 OpenAPI spec, the v1 quick start, the generated official
+clients, and Kagi's own hosted MCP server all use `Bearer`. Implementation uses
+`POST` + `Bearer` and never calls the v0 endpoint.
+
+**Kagi response contract.** Results for the `search` workflow arrive in
+`data.search[]` with `url`, `title`, `snippet`, and `time`. The same response
+may also carry non-search collections (`data.news`, `data.code`,
+`data.interesting_finds`, `data.related_search`, `data.infobox`, ...).
+Implementation always requests `workflow: "search"`, parses only
+`data.search`, and ignores every other collection rather than coercing it into
+source cards. `extract` (extra billed page extraction) and `personalizations`
+are never sent. Errors are `4xx`/`5xx` with a JSON `error[]` envelope; the
+status alone is classified, matching existing engine behavior.
+
+**Kagi terms gate: pass, with two binding implementation constraints.** The
+API Terms grant a non-exclusive, non-transferable license to call the API and
+use returned Results "in your own applications and services, including sending
+Results to an AI model to answer your users' queries", and state that
+integrating Results this way "is not a prohibited transfer". A local,
+user-operated MCP server using the operator's own key is not resale,
+sublicensing, proxying, a bulk feed, or a substitute for direct API access, so
+the intended integration is compatible. The Terms bind the implementation in
+two ways that must be evidenced at closure: (1) no persistent store, cache, or
+derivative index of Results beyond the transient caching needed to operate the
+search, and (2) no circumventing of rate limits, quotas, or access controls,
+including no retry amplification. `eggfetch-core` is built without
+`logical-retry`, so a quota response yields exactly one request attempt and a
+provider-scoped `RateLimited` outcome with health cooldown.
+
+**Kagi billing.** API usage is metered and billed separately from any Kagi
+subscription (pay-as-you-go, `https://kagi.com/api/pricing`); an account and
+payment method are required. Operator responsibility for a valid, funded Kagi
+API key is documented, and the terms explicitly require keeping the key
+secret, which matches eggsearch's env-indirection contract.
+
+**SerpAPI request contract.** `GET https://serpapi.com/search` with
+`engine=google` sent explicitly, `q` for the query, `api_key` as a documented
+query parameter, `safe=active|off`, `hl` for language, `gl` for country, and
+`start` for offset. No `num`-style result-count parameter is documented for
+this engine, so the result budget is enforced by bounded local truncation of
+`organic_results`.
+
+**SerpAPI freshness boundary (narrow adaptation to §5).** The current engine
+page documents `tbs` only generically ("advanced search parameters ... dates")
+and does not document its value syntax; per-engine pages for other engines
+document their own date parameters separately. Sending an unverified `tbs`
+value would be a guess, so eggsearch does not send it and does not advertise
+native freshness for `serpapi`; freshness and explicit date ranges stay local
+approximation.
+
+**SerpAPI credential handling.** Because the credential is a query parameter by
+upstream contract, the engine accepts the base URL from the transport first and
+adds `api_key` (and every other parameter) through the parameter builder, so no
+error path can embed the credential in a message: the only URL-carrying
+transport error is raised while parsing the base URL, before the key exists.
+
+**SerpAPI error contract.** SerpAPI publishes no status-code reference page;
+documented failures use a `{"error": "..."}` JSON envelope (visible in the
+published Search Archive API examples). Implementation classifies by HTTP
+status (`429` -> provider-scoped rate-limited outcome, other non-2xx ->
+provider-scoped failure) and does not parse or echo error bodies, so no
+undocumented string matching and no credential-adjacent body text reaches
+diagnostics.
+
+**Configuration contract correction (narrow adaptation to §5/§6).** The
+snippets in this plan also set `[search.providers] serpapi = true`. In this
+codebase that boolean is inert for API-key providers: `effective_provider_ids`
+excludes every `API_PROVIDER_IDS` member from the `[search.providers]` map, and
+routing is controlled solely by `[search.api.<id>]`. Documentation will show
+only the contract that actually works, matching `brave_api`/`exa`/`tavily`.
+
+**Inventory.** Both providers are accepted, so the post-M002 inventory is 44
+registered provider IDs.
 
 ## 4. Invariants
 

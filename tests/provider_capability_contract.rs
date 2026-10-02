@@ -12,8 +12,8 @@ fn descriptor(id: &str) -> eggsearch::core::provider::ProviderDescriptor {
 fn provider_inventory_count_is_stable() {
     assert_eq!(
         KNOWN_PROVIDER_IDS.len(),
-        42,
-        "KNOWN_PROVIDER_IDS must hold 42 registered provider IDs"
+        44,
+        "KNOWN_PROVIDER_IDS must hold 44 registered provider IDs"
     );
 }
 
@@ -92,7 +92,178 @@ fn firecrawl_developer_capability_contract() {
 }
 
 #[test]
-fn domain_filters_are_native_only_for_exa_and_tavily() {
+fn serpapi_native_enforcement_matches_documented_contract() {
+    let caps = descriptor("serpapi").capabilities;
+    assert!(caps.supports_safe_search);
+    assert!(caps.supports_language);
+    assert!(caps.supports_region);
+    assert!(
+        !caps.supports_freshness,
+        "tbs value syntax is undocumented upstream, so freshness is not natively enforced"
+    );
+    assert!(
+        !caps.supports_domain_filters,
+        "the Google engine exposes no site-restriction parameter"
+    );
+    assert!(
+        !caps.supports_news,
+        "news would require the separately billed `tbm=nws` vertical, which eggsearch never requests"
+    );
+    assert!(
+        !caps.supports_result_timestamps,
+        "organic results carry no documented per-result timestamp"
+    );
+}
+
+#[test]
+fn kagi_native_enforcement_matches_documented_contract() {
+    let caps = descriptor("kagi").capabilities;
+    assert!(caps.supports_safe_search);
+    assert!(caps.supports_freshness);
+    assert!(caps.supports_region);
+    assert!(
+        caps.supports_domain_filters,
+        "kagi maps include/exclude domains onto the documented inline lens"
+    );
+    assert!(caps.supports_result_timestamps);
+    assert!(
+        !caps.supports_language,
+        "kagi exposes region but no language field"
+    );
+    assert!(
+        !caps.supports_news,
+        "the news workflow is a separate result collection eggsearch never requests"
+    );
+}
+
+#[test]
+fn credentialed_providers_require_operator_credentials() {
+    for id in ["serpapi", "kagi"] {
+        assert!(
+            eggsearch::core::provider::is_api_provider(id),
+            "{id} is a required-credential API provider"
+        );
+        assert_eq!(
+            eggsearch::core::provider::credential_requirement(id),
+            eggsearch::core::provider::CredentialRequirement::Required
+        );
+        let desc = descriptor(id);
+        assert!(desc.requires_api_key, "{id} must declare a required key");
+        assert_eq!(desc.kind, eggsearch::core::provider::ProviderKind::ApiKey);
+        assert!(
+            !eggsearch::core::provider::is_optional_api_provider(id),
+            "{id} must not be keyless"
+        );
+    }
+}
+
+#[test]
+fn credentialed_providers_stay_out_of_default_fan_out() {
+    use eggsearch::core::config::{ApiProviderConfig, AppConfig};
+
+    let env = "EGGSEARCH_TEST_M002_API_KEY";
+    std::env::set_var(env, "test-key-value");
+    for id in ["serpapi", "kagi"] {
+        let mut cfg = AppConfig::default();
+        assert!(
+            !cfg.search.default_providers.iter().any(|p| p == id),
+            "{id} must never appear in default_providers"
+        );
+        assert!(
+            !cfg.effective_provider_ids().iter().any(|p| p == id),
+            "{id} must not be routable without explicit opt-in"
+        );
+        assert!(
+            !cfg.provider_is_available(id),
+            "{id} must be unavailable without [search.api.{id}]"
+        );
+        cfg.search.api.insert(
+            id.to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+        assert!(cfg.provider_is_available(id));
+        assert!(cfg.effective_provider_ids().iter().any(|p| p == id));
+        assert!(
+            !cfg.resolve_providers(&[])
+                .expect("defaults")
+                .contains(&id.to_string()),
+            "{id} must stay out of default fan-out even once configured"
+        );
+        assert_eq!(
+            cfg.resolve_providers(&[id.to_string()]).expect("explicit"),
+            vec![id.to_string()],
+            "{id} must be reachable through explicit provider selection"
+        );
+    }
+    std::env::remove_var(env);
+}
+
+#[test]
+fn credentialed_providers_build_only_with_a_resolvable_key() {
+    use eggsearch::core::config::ApiProviderConfig;
+    use eggsearch::meta::adapter::build_default_engines;
+
+    let api = std::collections::BTreeMap::from([
+        (
+            "serpapi".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_M002_SERPAPI".to_string()),
+                base_url: None,
+            },
+        ),
+        (
+            "kagi".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some("EGGSEARCH_TEST_M002_KAGI".to_string()),
+                base_url: None,
+            },
+        ),
+    ]);
+    let requested: Vec<String> = ["serpapi", "kagi"]
+        .iter()
+        .map(|id| (*id).to_string())
+        .collect();
+    let (engines, skipped) =
+        build_default_engines(&requested, None, None, &api).expect("engines build");
+    for id in ["serpapi", "kagi"] {
+        assert!(
+            !engines.iter().any(|e| e.name() == id),
+            "{id} must not be constructed without a resolvable credential"
+        );
+        let skip = skipped
+            .iter()
+            .find(|s| s.id == id)
+            .unwrap_or_else(|| panic!("{id} must be reported as skipped"));
+        assert!(
+            skip.reason.contains("missing_api_key"),
+            "{id} must report a typed missing-key skip, got: {}",
+            skip.reason
+        );
+    }
+
+    std::env::set_var("EGGSEARCH_TEST_M002_SERPAPI", "serp-key");
+    std::env::set_var("EGGSEARCH_TEST_M002_KAGI", "kagi-key");
+    let (engines, skipped) =
+        build_default_engines(&requested, None, None, &api).expect("engines build");
+    for id in ["serpapi", "kagi"] {
+        assert!(
+            engines.iter().any(|e| e.name() == id),
+            "{id} must be constructed once its credential resolves"
+        );
+        assert!(!skipped.iter().any(|s| s.id == id));
+    }
+    std::env::remove_var("EGGSEARCH_TEST_M002_SERPAPI");
+    std::env::remove_var("EGGSEARCH_TEST_M002_KAGI");
+}
+
+#[test]
+fn domain_filters_are_native_only_for_exa_kagi_and_tavily() {
     let mut native = Vec::new();
     for id in KNOWN_PROVIDER_IDS {
         let caps = descriptor(id).capabilities;
@@ -101,7 +272,7 @@ fn domain_filters_are_native_only_for_exa_and_tavily() {
         }
     }
     native.sort_unstable();
-    assert_eq!(native, vec!["exa", "tavily"]);
+    assert_eq!(native, vec!["exa", "kagi", "tavily"]);
 }
 
 #[test]
@@ -297,10 +468,12 @@ fn documented_capability_prose_matches_descriptors() {
     let agents = fs::read_to_string("AGENTS.md").expect("read AGENTS.md");
     for claim in [
         "supports_domain_filters",
-        "currently `exa`, `tavily`",
+        "currently `exa`, `kagi`, `tavily`",
         "`brave_api` natively enforces safe-search",
         "`exa` natively enforces freshness/date-range, domain filters",
         "`tavily` natively enforces safe-search, freshness/date-range",
+        "`serpapi` natively enforces safe-search, language, region",
+        "`kagi` natively enforces safe-search, freshness/date-range, region, domain filters",
     ] {
         assert!(
             agents.contains(claim),

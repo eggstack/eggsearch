@@ -36,7 +36,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs) |
 | `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
-| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry |
+| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |
@@ -45,7 +45,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls |
 | `batch_fetch_retrieval` | Mixed focused/unfocused batch, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
 | `provider_request_contract` | `EngineSearchRequest` fidelity, date/domain validation, wire compression behavior |
-| `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering) |
+| `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
 | `provider_workstream_regression` | Provider inventory, capability descriptors, URL dedup with stable IDs |
 | `structured_local_code_intelligence` | Structured parsing, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `mcp_tool_contract`, `mcp_schema_slimming`, `mcp_2026_protocol`, `mcp_projection` | Registry parity, schema size budgets, structured error contract, response-detail projection |

@@ -705,3 +705,95 @@ async fn panic_then_success_repeated_cycle() {
         );
     }
 }
+
+/// A credentialed provider answering with a quota response must degrade only
+/// itself: the search still returns other providers' results, only the quota
+/// provider is reported failed, and its health enters a rate-limited cooldown.
+#[tokio::test]
+async fn credentialed_quota_failure_is_provider_scoped_and_cools_down() {
+    let adapter = make_adapter(
+        vec![
+            MockEngine::failure("serpapi", MockFailure::HttpStatus(429)),
+            MockEngine::failure("kagi", MockFailure::HttpStatus(429)),
+            MockEngine::failure("brave_api", MockFailure::HttpStatus(401)),
+            MockEngine::success(
+                "duckduckgo",
+                vec![MockResult::new(
+                    "Kept result",
+                    "https://kept.example/page",
+                    "duckduckgo",
+                )],
+            ),
+        ],
+        10,
+    );
+    let health = adapter.health();
+    let req = make_request("test");
+    let resp = adapter.web_search(&req, 5, 5).await;
+
+    assert_eq!(
+        resp.results.len(),
+        1,
+        "one healthy provider must still answer the search"
+    );
+    assert_eq!(resp.results[0].url, "https://kept.example/page");
+    let failed: Vec<(&str, &str)> = resp
+        .providers_failed
+        .iter()
+        .map(|f| (f.id.as_str(), f.error_class.as_str()))
+        .collect();
+    assert_eq!(failed.len(), 3, "got failures: {failed:?}");
+    for (id, class) in [
+        ("serpapi", "rate_limited"),
+        ("kagi", "rate_limited"),
+        ("brave_api", "http_status"),
+    ] {
+        assert!(
+            failed.contains(&(id, class)),
+            "{id} must be reported failed as {class}: {failed:?}"
+        );
+        assert!(
+            !resp
+                .providers_failed
+                .iter()
+                .any(|f| f.id == id && f.message.contains("key")),
+            "{id} failure detail must not leak credential material"
+        );
+    }
+    assert!(!failed.iter().any(|(id, _)| *id == "duckduckgo"));
+
+    for id in ["serpapi", "kagi"] {
+        let snap = health.snapshot(id, true, true);
+        assert_eq!(
+            snap.recent_failure_class.as_deref(),
+            Some("rate_limited"),
+            "{id} must record a rate-limited failure class"
+        );
+        assert!(
+            snap.cooldown_until.is_none(),
+            "{id} must not cool down after a single quota response"
+        );
+    }
+    // Repeated quota responses cross the cooldown threshold, and the cooldown
+    // reason must stay the rate-limit one rather than a generic failure.
+    for _ in 0..2 {
+        let _ = adapter.web_search(&req, 5, 5).await;
+    }
+    for id in ["serpapi", "kagi"] {
+        let snap = health.snapshot(id, true, true);
+        assert!(
+            snap.cooldown_until.is_some(),
+            "{id} must enter cooldown after repeated quota responses"
+        );
+        assert_eq!(snap.cooldown_reason.as_deref(), Some("rate limited"));
+        assert!(health.is_in_cooldown(id), "{id} must report cooldown");
+    }
+    let auth = health.snapshot("brave_api", true, true);
+    assert_eq!(
+        auth.recent_failure_class.as_deref(),
+        Some("http_status"),
+        "an authentication failure is not a rate limit and must be classed separately"
+    );
+    let healthy = health.snapshot("duckduckgo", true, true);
+    assert_eq!(healthy.consecutive_failures, 0);
+}

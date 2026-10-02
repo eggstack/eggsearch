@@ -84,7 +84,7 @@ discover -> rank -> select -> bounded fetch -> deterministic evidence handoff
 
 ## 5. Provider model
 
-- 42 known provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`),
+- 44 known provider IDs (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`),
   covering HTML scrape, JSON API, structured non-JSON API, API-key, advisory,
   registry, scholarly, and source-specific sources. `local_workspace` is served
   by the local backend, not an engine.
@@ -99,11 +99,13 @@ discover -> rank -> select -> bounded fetch -> deterministic evidence handoff
   result timestamps; `tavily` natively enforces safe-search, freshness/
   date-range, language, region, domain filters, news. Domain filters are
   natively enforced only by providers advertising `supports_domain_filters`
-  (currently `exa`, `tavily`); all other domain filtering is local
+  (currently `exa`, `kagi`, `tavily`); all other domain filtering is local
   approximation. Freshness is natively enforced by `hn_algolia`
-  (`numericFilters=created_at_i…`) in addition to the three above; every other
-  provider, including the keyless source-specific ones, leaves freshness to
-  local approximation.
+  (`numericFilters=created_at_i…`) and `kagi` (`filters.after`/`filters.before`)
+  in addition to the three above; every other provider, including `serpapi`
+  (undocumented `tbs` value syntax) and the keyless source-specific ones, leaves
+  freshness to local approximation. `serpapi` additionally enforces
+  safe-search, language, and region natively.
 - Tests MUST pass keyless: missing credentials are provider-scoped skips,
   never global failures. Tests MUST NOT require network.
 

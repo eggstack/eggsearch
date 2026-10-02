@@ -18,7 +18,7 @@ fn adapter_with(engines: Vec<MockEngine>) -> MetadataSearchAdapter {
 
 #[test]
 fn closure_provider_inventory_matches_reality() {
-    assert_eq!(KNOWN_PROVIDER_IDS.len(), 42);
+    assert_eq!(KNOWN_PROVIDER_IDS.len(), 44);
     for id in ["brave_api", "exa", "tavily"] {
         assert!(KNOWN_PROVIDER_IDS.contains(&id), "missing {id}");
         assert!(API_PROVIDER_IDS.contains(&id), "{id} must be credentialed");

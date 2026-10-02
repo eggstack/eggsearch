@@ -57,11 +57,11 @@ pub fn build_default_engines_with_egress(
         CrossRefEngine, DuckDuckGoEngine, ExaEngine, FirecrawlDeveloperEngine, GiteaCodeEngine,
         GiteaIssuesEngine, GiteaReleasesEngine, GithubAdvisoryEngine, GithubCodeEngine,
         GithubIssuesEngine, GithubReleasesEngine, GithubRepositoriesEngine, GitlabCodeEngine,
-        GitlabIssuesEngine, GitlabReleasesEngine, GoPkgRegistryEngine, HnAlgoliaEngine,
+        GitlabIssuesEngine, GitlabReleasesEngine, GoPkgRegistryEngine, HnAlgoliaEngine, KagiEngine,
         MavenCentralRegistryEngine, MojeekEngine, NpmRegistryEngine, NugetRegistryEngine,
         NvdEngine, OpenAlexEngine, OsvEngine, PackagistRegistryEngine, PubmedEngine,
         PypiRegistryEngine, RubygemsRegistryEngine, RustSecEngine, SearxngEngine,
-        SemanticScholarEngine, SourcegraphCodeEngine, StartpageEngine, TavilyEngine,
+        SemanticScholarEngine, SerpapiEngine, SourcegraphCodeEngine, StartpageEngine, TavilyEngine,
         WikipediaEngine, YahooEngine,
     };
 
@@ -311,6 +311,20 @@ pub fn build_default_engines_with_egress(
             }
             "tavily" => {
                 engines.push(Arc::new(TavilyEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "serpapi" => {
+                engines.push(Arc::new(SerpapiEngine {
+                    client: client.clone(),
+                    api_key,
+                    base_url: api_cfg.base_url.clone(),
+                }));
+            }
+            "kagi" => {
+                engines.push(Arc::new(KagiEngine {
                     client: client.clone(),
                     api_key,
                     base_url: api_cfg.base_url.clone(),

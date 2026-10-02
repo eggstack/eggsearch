@@ -37,7 +37,7 @@ roots = []
 
 ## Provider Requirements
 
-All 42 built-in providers:
+All 44 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
@@ -50,6 +50,8 @@ All 42 built-in providers:
 | `brave_api` | api_key | `BRAVE_API_KEY` | |
 | `exa` | api_key | `EXA_API_KEY` | Exa semantic search (native freshness/domain filters, highlights on excerpt demand) |
 | `tavily` | api_key | `TAVILY_API_KEY` | Tavily search (native safe-search/freshness/language/region/domain/news, chunks on excerpt demand) |
+| `serpapi` | api_key | `SERPAPI_API_KEY` | SerpApi Google search (native safe-search/language/region; `base_url` is the full endpoint URL) |
+| `kagi` | api_key | `KAGI_API_KEY` | Kagi Search API v1 (native safe-search/freshness/region/domain/timestamps; billed separately from a Kagi subscription) |
 | `github_code` | api_key | `GITHUB_TOKEN` | |
 | `github_issues` | api_key | `GITHUB_TOKEN` | |
 | `github_releases` | api_key | `GITHUB_TOKEN` | |

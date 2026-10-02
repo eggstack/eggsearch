@@ -27,6 +27,7 @@ pub mod gitlab_issues;
 pub mod gitlab_releases;
 pub mod go_pkg;
 pub mod hn_algolia;
+pub mod kagi;
 pub mod kev;
 pub mod maven_central;
 pub mod models;
@@ -45,6 +46,7 @@ pub mod rubygems;
 pub mod rustsec;
 pub mod searxng;
 pub mod semantic_scholar;
+pub mod serpapi;
 pub mod sourcegraph;
 pub mod startpage;
 pub mod tavily;
@@ -289,6 +291,22 @@ pub struct ExaEngine {
 }
 
 pub struct TavilyEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+/// SerpAPI Google Search engine. The credential is a query parameter by
+/// upstream contract, so it is attached only after the endpoint is accepted.
+pub struct SerpapiEngine {
+    pub client: Arc<Client>,
+    pub api_key: String,
+    pub base_url: Option<String>,
+}
+
+/// Kagi Search API v1 engine. Kagi's API terms forbid circumventing rate
+/// limits, so quota responses are terminal provider-scoped failures.
+pub struct KagiEngine {
     pub client: Arc<Client>,
     pub api_key: String,
     pub base_url: Option<String>,
@@ -1025,6 +1043,48 @@ impl SearchEngine for TavilyEngine {
     ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
         Box::pin(async move {
             tavily::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                request,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for SerpapiEngine {
+    fn name(&self) -> &'static str {
+        "serpapi"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            serpapi::search(
+                &self.client,
+                &self.api_key,
+                self.base_url.as_deref(),
+                request,
+            )
+            .await
+        })
+    }
+}
+
+impl SearchEngine for KagiEngine {
+    fn name(&self) -> &'static str {
+        "kagi"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        Box::pin(async move {
+            kagi::search(
                 &self.client,
                 &self.api_key,
                 self.base_url.as_deref(),

@@ -1,11 +1,11 @@
 # Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (47 files: 41 engine implementations plus 6 support modules)
+**Location:** `src/meta/engines/` (49 files: 43 engine implementations plus 6 support modules)
 **Purpose:** One self-contained implementation per upstream provider. Engines are internal to the
 metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive
 `crate::core::SourceCard` values. MCP tools call the adapter, never engines directly.
 
-The 41 engines plus the local workspace backend cover the 42 registered provider IDs
+The 43 engines plus the local workspace backend cover the 44 registered provider IDs
 (`KNOWN_PROVIDER_IDS` in `src/core/provider.rs`); `local_workspace` is served by the local
 workspace backend (`src/meta/local_backend.rs`), not an engine file.
 
@@ -21,9 +21,9 @@ workspace backend (`src/meta/local_backend.rs`), not an engine file.
 | `normalizer.rs` | URL canonicalization: fragment strip, tracking-param strip, query-param sort, locale-prefix strip, index-file strip, trailing-slash trim, scheme/host lowercase |
 | `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `NetworkError`, `Unsupported` |
 | `kev.rs` | Shared `KevClient`: fetches and caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
-| `<provider>.rs` × 41 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
+| `<provider>.rs` × 43 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
 
-Verify the count with `ls src/meta/engines | wc -l` (47, including `mod.rs`, `request.rs`,
+Verify the count with `ls src/meta/engines | wc -l` (49, including `mod.rs`, `request.rs`,
 `models.rs`, `normalizer.rs`, `error.rs`, `kev.rs`).
 
 ---
@@ -279,7 +279,10 @@ Every enabled provider ID resolves to exactly one outcome: a constructed engine 
 `unknown_provider`, …). Skips surface as provider-scoped warnings — never global failures — and
 feed `provider_status` skip codes. Firecrawl Developer, PubMed, and GitHub Repositories are
 keyless-optional: enabling the provider routes keyless, and a missing or empty optional key falls
-back keyless with a startup warning rather than `missing_api_key`. Direct env vars cover Semantic
+back keyless with a startup warning rather than `missing_api_key`. `serpapi` and `kagi` are
+required-credential providers: they are built only when the operator enables `[search.api.<id>]`
+and the referenced environment variable resolves, and they are never enabled by
+`[search.providers].<id>` (that map is excluded from `API_PROVIDER_IDS` members). Direct env vars cover Semantic
 Scholar, Sourcegraph, NVD, and the optional `NCBI_API_EMAIL` contact identity; everything in
 `api_providers` resolves through its `api_key_env`.
 
@@ -287,35 +290,37 @@ Scholar, Sourcegraph, NVD, and the optional `NCBI_API_EMAIL` contact identity; e
 
 ## Native Enforcement Matrix
 
-Only four providers natively enforce generic-search constraints (`brave_api`, `exa`, `tavily`,
-`hn_algolia`). Everything else either ignores
+Six providers natively enforce generic-search constraints (`brave_api`, `exa`, `tavily`,
+`serpapi`, `kagi`, `hn_algolia`). Everything else either ignores
 the constraint upstream (local approximation applies downstream) or is a specialist whose native
 surface is its own API shape. Source of truth: `ProviderCapabilities` in `src/core/provider.rs`,
 pinned by `tests/provider_capability_contract.rs`; operator prose in `docs/provider-setup.md`.
 
-| Constraint | `brave_api` | `exa` | `tavily` |
-|------------|-------------|-------|----------|
-| Safe-search | native | — | native (`Strict` collapses to `true`, therefore approximate) |
-| Freshness / date-range | native (relative `pd\|pw\|pm\|py` and exact ranges) | native (`startPublishedDate` / `endPublishedDate` as UTC day boundaries) | native (exact ranges to `start_date`/`end_date`; relative to `time_range`) |
-| Language | native (`search_lang`) | — | native (BCP-47 normalized, `filter_by_language=true`) |
-| Region | native (`country`, 2-letter codes) | — | native (country names; general topic only, omitted for news) |
-| Domain filters | local approximation | native (`includeDomains` / `excludeDomains`) | native (`include_domains` / `exclude_domains`, `include_domains_mode=filter`) |
-| News | native (dedicated `/res/v1/news/search` on news intent) | — | native (`topic=news` on news intent) |
-| Result timestamps | native (`age` when parseable) | native (`publishedDate` when parseable) | — (no per-result dates; freshness is request-side only) |
+| Constraint | `brave_api` | `exa` | `tavily` | `serpapi` | `kagi` |
+|------------|-------------|-------|----------|-----------|--------|
+| Safe-search | native | — | native (`Strict` collapses to `true`, therefore approximate) | native (`safe=active\|off`; two-state, therefore approximate) | native (`safe_search` boolean; three-state model, therefore approximate) |
+| Freshness / date-range | native (relative `pd\|pw\|pm\|py` and exact ranges) | native (`startPublishedDate` / `endPublishedDate` as UTC day boundaries) | native (exact ranges to `start_date`/`end_date`; relative to `time_range`) | — (`tbs` value syntax undocumented upstream; local approximation) | native (exact ranges to `filters.after`/`filters.before`; relative windows to a UTC cutoff) |
+| Language | native (`search_lang`) | — | native (BCP-47 normalized, `filter_by_language=true`) | native (`hl`, e.g. `en`, `en-us`) | — (no language field; region only) |
+| Region | native (`country`, 2-letter codes) | — | native (country names; general topic only, omitted for news) | native (`gl`, 2-letter code) | native (`filters.region`, ISO 3166-1 alpha-2) |
+| Domain filters | local approximation | native (`includeDomains` / `excludeDomains`) | native (`include_domains` / `exclude_domains`, `include_domains_mode=filter`) | — (no site-restriction parameter) | native (inline lens `sites_included` / `sites_excluded`) |
+| News | native (dedicated `/res/v1/news/search` on news intent) | — | native (`topic=news` on news intent) | — (would need the separately billed `tbm=nws` vertical) | — (news workflow is a separate collection eggsearch never requests) |
+| Result timestamps | native (`age` when parseable) | native (`publishedDate` when parseable) | — (no per-result dates; freshness is request-side only) | — (`organic_results` carry no documented date) | native (`data.search[].time` when parseable) |
 
 Rules that follow from the matrix:
 
 - Domain filters are natively enforced only by providers advertising `supports_domain_filters`
-  (currently `exa` and `tavily`); all other domain filtering is local approximation.
+  (currently `exa`, `kagi`, and `tavily`); all other domain filtering is local approximation.
 - `supports_freshness` is provider-side (the upstream request carries the constraint);
   `supports_result_timestamps` is client-side (timestamps feed bounded freshness reranking after
   retrieval). GitHub/GitLab/Gitea issues and releases use the client-side model only.
 - The five HTML scrapers (`duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`) and `searxng`
   claim no native capabilities at all; every constraint on those paths is local approximation.
-- Freshness is natively enforced by exactly four providers: `brave_api`, `exa`, `tavily`, and
-  `hn_algolia` (via `numericFilters=created_at_i…`). `wikipedia`, `arxiv`, `pubmed`, and
-  `github_repositories` deliberately do not claim it — none of them has a documented freshness
-  parameter mapped in this milestone, so the capability stays local approximation.
+- Freshness is natively enforced by exactly five providers: `brave_api`, `exa`, `tavily`,
+  `hn_algolia` (via `numericFilters=created_at_i…`), and `kagi` (via `filters.after` /
+  `filters.before`). `serpapi` deliberately does not claim it: the current engine page documents
+  `tbs` only generically and without value syntax, so sending it would be a guess. `wikipedia`,
+  `arxiv`, `pubmed`, and `github_repositories` also do not claim it — none of them has a
+  documented freshness parameter mapped, so the capability stays local approximation.
 - `arxiv` is the only provider whose `ProviderKind` is `structured_api`; every other provider keeps
   its pre-existing kind, so no existing `provider_status.kind` wire value changed.
 - `never invent tool-like or provider names in docs`: the inventory test derives tool names from

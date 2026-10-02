@@ -277,9 +277,11 @@ async fn provider_status_with_mixed_enabled_disabled() {
     assert!(ids.contains(&"pubmed"));
     assert!(ids.contains(&"hn_algolia"));
     assert!(ids.contains(&"github_repositories"));
+    assert!(ids.contains(&"serpapi"));
+    assert!(ids.contains(&"kagi"));
     // All known providers should be listed, even though only mock_a and
     // mock_b are loaded in the adapter.
-    assert_eq!(ids.len(), 42);
+    assert_eq!(ids.len(), 44);
 }
 
 #[cfg(feature = "mock")]
@@ -2502,4 +2504,93 @@ fn keyless_source_providers_are_skipped_when_disabled() {
         let (engines, _) = state.adapter.select_engines(&[id.to_string()]);
         assert!(engines.is_empty(), "{id} must not dispatch while disabled");
     }
+}
+
+#[test]
+fn provider_status_credentialed_providers_are_opt_in_and_unconfigured_by_default() {
+    let state = state_with_default();
+    let v = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let arr = v["providers"].as_array().expect("providers is array");
+    for id in ["serpapi", "kagi"] {
+        let provider = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("{id} must appear in provider_status"));
+        assert_eq!(provider["kind"], "api_key", "{id} is a credentialed API");
+        assert_eq!(provider["requires_api_key"], true);
+        assert_eq!(
+            provider["enabled"], false,
+            "{id} must stay opt-in; a credentialed provider is never enabled by default"
+        );
+        assert_eq!(
+            provider["configured"], false,
+            "{id} has no [search.api] entry in the default config"
+        );
+        assert_eq!(
+            provider["default"], false,
+            "{id} must never be a default provider"
+        );
+        assert_eq!(provider["routable"], false);
+        assert!(
+            provider["skip_code"].is_string(),
+            "{id} must carry a typed skip code"
+        );
+        assert!(provider["skip_reason"].is_string());
+    }
+}
+
+#[test]
+fn provider_status_credentialed_providers_report_configured_once_a_key_resolves() {
+    use eggsearch::core::config::ApiProviderConfig;
+
+    let env = "EGGSEARCH_TEST_M002_STATUS_KEY";
+    std::env::set_var(env, "status-key-value");
+    for (id, freshness, domain_filters) in [("serpapi", false, false), ("kagi", true, true)] {
+        let mut cfg = AppConfig::default();
+        cfg.search.api.insert(
+            id.to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+        let state = Arc::new(ServerState::build(cfg).expect("configured state builds"));
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
+        let arr = v["providers"].as_array().expect("providers is array");
+        let provider = arr
+            .iter()
+            .find(|p| p["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("{id} provider entry"));
+        assert_eq!(provider["configured"], true, "{id} has a resolvable key");
+        assert_eq!(provider["enabled"], true);
+        assert_eq!(provider["routable"], true);
+        assert_eq!(provider["skip_code"], serde_json::Value::Null);
+        assert!(provider["capabilities"]["supports_safe_search"]
+            .as_bool()
+            .is_some());
+        assert_eq!(
+            provider["capabilities"]["supports_freshness"], freshness,
+            "{id} freshness claim must match the documented request mapping"
+        );
+        assert_eq!(
+            provider["capabilities"]["supports_domain_filters"], domain_filters,
+            "{id} domain-filter claim must match the documented request mapping"
+        );
+    }
+    std::env::remove_var(env);
 }

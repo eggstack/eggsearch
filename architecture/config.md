@@ -165,19 +165,21 @@ being silently ignored.
 
 ### Provider Kinds
 
-- **Built-in providers** (`providers` map, `KNOWN_PROVIDER_IDS`, 42
+- **Built-in providers** (`providers` map, `KNOWN_PROVIDER_IDS`, 44
   ids): keyless HTML/JSON engines plus `searxng` and
   `local_workspace`, toggled by boolean flags.
-- **Required-key API providers** (`api` map, `API_PROVIDER_IDS`, 15
+- **Required-key API providers** (`api` map, `API_PROVIDER_IDS`, 17
   ids: `brave_api`, `github_code`, `github_issues`, `github_releases`,
   `gitlab_code`, `gitlab_issues`, `gitlab_releases`, `gitea_code`,
   `gitea_issues`, `gitea_releases`, `github_advisory`,
-  `semantic_scholar`, `sourcegraph`, `exa`, `tavily`): each entry sets
+  `semantic_scholar`, `sourcegraph`, `exa`, `tavily`, `serpapi`,
+  `kagi`): each entry sets
   `enabled`, `api_key_env` (env var name, never the secret), and
   optional `base_url`. `api_provider_is_configured()` requires
   enabled + known + non-empty `api_key_env` + present non-empty env value.
 - **Keyless-optional providers** (`OPTIONAL_API_PROVIDER_IDS`:
-  `firecrawl_developer` only): `optional_api_key()` returns `Some(key)`
+  `firecrawl_developer`, `pubmed`, `github_repositories`):
+  `optional_api_key()` returns `Some(key)`
   only when the `api` entry is enabled with a resolvable non-empty
   value; every other state falls back keyless.
   `optional_api_key_misconfigured()` flags enabled-but-unusable entries
