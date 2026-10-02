@@ -31,7 +31,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Subsystem | Status | Roadmap | Current milestone | Dependencies or blockers |
 |---|---|---|---|---|
 | Search capability and provider evidence | closed | `plans/subsystems/search-capability-roadmap.md` | M001-M005 closed | None. Pre-migration baseline `e645a3fe` (`eggsearch` 0.3.7). |
-| CodeGG legacy search parity corrective | active (conditional closure pending release) | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001 closed; M002 closed; M003 conditionally closed (release only) | M001 `e9103b4`, M002 `5233315`, M003 conditionally closed at `8e5ec75` (closures `001-status.md`, `002-status.md`, `003-status.md`); inventory 44, all planned providers accepted, and all 16 legacy CodeGG hints mapped or explicitly retired. M003's code dependency is cleared; its only open condition is publication of tagged release v0.4.0. `make check` and `make release-check` both pass, which was not true during M001 or M002. |
+| CodeGG legacy search parity corrective | active (conditional closure pending release) | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001 closed; M002 closed; M003 conditionally closed (release only) | M003's sole closure condition remains publication of tagged release v0.4.0, but publication is currently gated on repository-hardening M008 because `main` fails both Windows release targets. Do not publish around the red matrix. |
 | Binary distribution, install/update, deployment | closed | `plans/subsystems/binary-distribution-deployment-roadmap.md` | M001-M006 closed | None. First binary release `v0.3.9` at `0cbbeee7`; qualify `34653366561`, release `34655458760`. |
 | Maintenance, consolidation, CodeGG quality | closed | `plans/subsystems/maintenance-codegg-quality-roadmap.md` | M001-M005 closed | None. Baseline `4a713ff8`. |
 | HTTP transport consolidation | closed | `plans/subsystems/transport-consolidation-roadmap.md` | M001-M003 closed | None. `eggfetch-core 0.2.0` at `bac6f49f`; qualify `35692096012`. |
@@ -39,7 +39,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Optional outbound routing (egress) | closed | `plans/subsystems/optional-outbound-routing-roadmap.md` | M001-M004 closed | None. Terminal baseline `6414a72`; hardened qualify `35810222447`. No egress-enabled binary published. Outcome B remains the runtime baseline. |
 | MCP tool-surface consolidation | closed | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M007 closed | M001-M007 closed. Current control points `plans/closure/mcp-tool-surface-consolidation/001-status.md` through `007-status.md`. |
 | Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
-| Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M007 conditionally closed; M001 conditionally closed via M007; M002 conditional; M006 blocked | M007 corrects M001 scheduled-workflow evidence and M004 repository-wide process/unsafe ratchet. M002 remains conditional on first tagged release; M006 remains externally blocked on chromiumoxide. |
+| Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M008 corrective ready; M007 conditional; M002 conditional; M006 blocked | M008 fixes the current Windows startup compile regression and is a hard gate for the next tagged release. M007/M001 still await scheduled security evidence; M002 awaits first tagged-release provenance; M006 remains externally blocked on chromiumoxide. |
 
 ## Dependency-ready implementation plans
 
@@ -47,7 +47,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 |---|---|---|---|---|
 | CodeGG legacy search parity corrective | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | Closed at `e9103b4`; closure `plans/closure/codegg-legacy-search-parity/001-status.md`. Added Wikipedia, arXiv, PubMed, HN Algolia, and GitHub repository discovery plus the additive `structured_api` provider kind; inventory 37 -> 42. |
 | CodeGG legacy search parity corrective | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | Closed at `5233315`; closure `plans/closure/codegg-legacy-search-parity/002-status.md`. Added opt-in `serpapi` and `kagi` (current v1, terms gate passed); inventory 42 -> 44. |
-| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Conditionally closed at `8e5ec75`; closure `plans/closure/codegg-legacy-search-parity/003-status.md`. Frozen disposition matrix, downstream retirement contract (min version 0.4.0), and ten qualification journeys through the real tool surface. Qualification fixed three explicit-provider routing defects and three gate-blocking defects (docs-check lint, updater `ETXTBSY` flake, contradictory proptest). Single open condition: publication of tagged release v0.4.0. |
+| CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Conditionally closed at `8e5ec75`; closure `plans/closure/codegg-legacy-search-parity/003-status.md`. Single closure condition remains publication of tagged release v0.4.0; that publication is operationally blocked until repository-hardening M008 restores green Windows/release qualification. |
 | Tool-surface consolidation | M001 contract and disclosure model | closed | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | Closed at `4b7e725`; closure `plans/closure/mcp-tool-surface-consolidation/001-status.md`. |
 | Tool-surface consolidation | M002 agent-facing schema slimming | closed | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | Closed at `b1e6ea7`; closure `plans/closure/mcp-tool-surface-consolidation/002-status.md`. |
 | Tool-surface consolidation | M003 MCP 2026 protocol and error contract | closed | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | Closed at `c102ac6`; closure `plans/closure/mcp-tool-surface-consolidation/003-status.md`. |
@@ -72,6 +72,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Repository hardening | M005 forge safety maintenance decomposition | closed | `plans/implementation/repository-hardening/005-forge-safety-maintenance-decomposition.md` | M004 hard dependency cleared; closure `plans/closure/repository-hardening/005-status.md`. |
 | Repository hardening | M006 chromiumoxide zero-reqwest closure | blocked | `plans/implementation/repository-hardening/006-chromiumoxide-zero-reqwest-closure.md` | M003 is closed; remaining blocker is an upstream chromiumoxide release allowing launch-only build without reqwest. |
 | Repository hardening | M007 corrective closure evidence + process ratchet | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` | No hard dependency. Conditionally closed with one operational condition: first successful dependency-security workflow run with event `schedule`. Closure `plans/closure/repository-hardening/007-status.md`. |
+| Repository hardening | M008 Windows startup + cross-target release portability | ready | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` | No hard dependency. Current `main` fails both Windows release-target compile jobs in run `36979619135`; M008 must close before the next tagged release/v0.4.0 handoff. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
@@ -109,9 +110,7 @@ Tool-surface M001-M007 are closed; no tool-surface blocker remains.
 
 Dependency evidence M001-M010 are closed; no dependency-evidence blocker remains.
 
-Repository hardening M007 is conditionally closed and is the current corrective control
-point for M001's missing scheduled-workflow evidence and M004's incomplete
-repository-wide process/unsafe ratchet. M001 is conditionally closed via M007 pending the first scheduled run. M002 remains conditionally closed on
+Repository hardening M008 is ready and is the current implementation corrective control point for the Windows startup/release portability regression. M007 remains the corrective evidence control point for M001's missing scheduled-workflow evidence and M004's repository-wide process/unsafe ratchet. M001 is conditionally closed via M007 pending the first scheduled run. M002 remains conditionally closed on
 first-release operational evidence. M003 and M005 remain closed. M004 is closed through M007. M006's M003
 dependency is satisfied; it remains blocked only on an upstream chromiumoxide
 release that makes HTTP discovery / reqwest optional without regressing
@@ -129,8 +128,8 @@ release that makes HTTP discovery / reqwest optional without regressing
 | Optional outbound routing | closed | `plans/closure/optional-outbound-routing/001-status.md`; archived phases 25-28 |
 | Dependency evidence hardening | closed | `plans/closure/dependency-evidence-hardening/010-status.md`; M010 corrective evidence in `010-status.md`, prior terminal evidence in `009-status.md` |
 | MCP tool-surface consolidation | closed | `plans/closure/mcp-tool-surface-consolidation/007-status.md`; M001-M006 evidence in `001-status.md` through `006-status.md` |
-| Repository hardening | active; M007 conditionally closed, M001 conditionally closed via M007, M002 conditional, M006 blocked | Historical closure records `001-status.md` through `006-status.md`; current corrective control point `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` plus `plans/closure/repository-hardening/007-status.md` |
-| CodeGG legacy search parity | active; M001 and M002 closed, M003 conditionally closed pending the tagged release | `plans/closure/codegg-legacy-search-parity/003-status.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003) |
+| Repository hardening | active; M008 ready, M007 conditional, M002 conditional, M006 blocked | M008 is current implementation handoff; M007 remains conditional evidence control point. Historical closure records `001-status.md` through `007-status.md`. |
+| CodeGG legacy search parity | active; M001/M002 closed, M003 conditional pending v0.4.0; publication gated on repository-hardening M008 | `plans/closure/codegg-legacy-search-parity/003-status.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003) |
 
 ## Closure rule
 

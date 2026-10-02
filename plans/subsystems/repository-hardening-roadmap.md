@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
+Status: active; M008 corrective ready, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -242,6 +242,7 @@ Current milestone state after M007 corrective implementation: M001 is conditiona
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
 | M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
 | M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
+| M008 Windows startup/release portability corrective | ready | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 
@@ -326,6 +327,19 @@ whose GitHub Actions event is `schedule`.
 Implementation plan:
 `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md`.
 
+### M008 — Windows startup and cross-target release portability corrective
+
+Primary class: invariant + infrastructure corrective.
+
+Fix the Windows compile regression in startup PID-record token handling, clean
+the directly exposed cfg warnings, add a routine Windows compile sentinel, and
+requalify the exact candidate across all seven release targets. M008 is a hard
+release gate for the next tagged release, including the intended v0.4.0 CodeGG
+parity handoff.
+
+Implementation plan:
+`plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md`.
+
 ## 9. Cross-cutting requirements
 
 ### Compatibility
@@ -371,7 +385,7 @@ reqwest. M004 records process timeout/output-cap/process-group tests. M005
 records forge SSRF/redirect/read-budget parity.
 
 Release-facing changes require the repository's qualification workflow before
-a publication candidate is accepted. Since this work does not publish a new
+a publication candidate is accepted. M008 additionally requires ordinary Windows compilation plus exact-candidate seven-target egress and release-binary qualification before the next tagged release. Since this work does not publish a new
 version, M002's code and repository setting are implemented while its first
 release's generated/verified attestation and immutable behavior remain an
 operational closure condition.

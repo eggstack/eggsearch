@@ -237,7 +237,7 @@ fixture server. The frozen matrix has no `capability`-class stand-in: the only
 retirement is `google_news`, and news is reached through `intent: "news"` on
 `brave_api` or `tavily`, the only two providers advertising native news.
 
-Downstream CodeGG retirement remains blocked until the v0.4.0 tag exists. The
+Downstream CodeGG retirement remains blocked until the v0.4.0 tag exists. Publication of that tag is currently gated on repository-hardening M008 because current `main` fails both Windows release-target compile jobs; do not publish around a red supported-target matrix. This does not add a second CodeGG M003 closure condition: M003 remains conditional on publication, while M008 is a prerequisite for performing that publication safely. The
 retiring harness may then pin `>=0.4.0`, verify the eleven migration-relevant
 ids via `provider_status`, delete its own external-search clients, and remove
 `backend="builtin"` and `fallback_to_builtin`.
@@ -300,4 +300,4 @@ This corrective workstream is closed when:
 |---|---|---|---|
 | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
 | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/002-status.md` at `5233315` |
-| M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | code dependency cleared; single open condition is publication of tagged release v0.4.0; closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75` |
+| M003 CodeGG retirement handoff + qualification | conditionally closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | single closure condition is publication of tagged release v0.4.0; publication currently gated on repository-hardening M008 Windows/release portability closure; closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75` |
