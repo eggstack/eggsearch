@@ -13,17 +13,19 @@ eggsearch version: see `Cargo.toml` for the live release number.
 2. [MCP Server Startup and Configuration](#mcp-server-startup-and-configuration)
 3. [Configuration Examples](#configuration-examples)
 4. [Legacy External-Search Provider Migration](#legacy-external-search-provider-migration)
+   1. [`google_news` is retired, not remapped](#google_news-is-retired-not-remapped)
+   2. [Downstream Retirement Contract](#downstream-retirement-contract)
 5. [Tool Selection Policy](#tool-selection-policy)
 6. [Progressive disclosure integration](#progressive-disclosure-integration)
 7. [Required Task Workflows](#required-task-workflows)
-7. [Trust Boundary Rules](#trust-boundary-rules)
-8. [Warning and Error Handling](#warning-and-error-handling)
-9. [Evidence Bundle Handoff](#evidence-bundle-handoff)
-10. [Performance and Response-Size Controls](#performance-and-response-size-controls)
-11. [Agent UI/UX Guidance](#agent-uiux-guidance)
-12. [Failure and Degradation Policy](#failure-and-degradation-policy)
-13. [Versioning and Compatibility](#versioning-and-compatibility)
-14. [Readiness Checklist](#readiness-checklist)
+8. [Trust Boundary Rules](#trust-boundary-rules)
+9. [Warning and Error Handling](#warning-and-error-handling)
+10. [Evidence Bundle Handoff](#evidence-bundle-handoff)
+11. [Performance and Response-Size Controls](#performance-and-response-size-controls)
+12. [Agent UI/UX Guidance](#agent-uiux-guidance)
+13. [Failure and Degradation Policy](#failure-and-degradation-policy)
+14. [Versioning and Compatibility](#versioning-and-compatibility)
+15. [Readiness Checklist](#readiness-checklist)
 
 ---
 
@@ -374,26 +376,48 @@ base_url = "https://gitlab.com"     # or self-hosted instance
 ## Legacy External-Search Provider Migration
 
 A harness retiring its own external-search stack maps legacy provider ids to
-eggsearch provider ids one to one. The "legacy id" column lists ids that
-existed only in the retired in-tree stack; it is not an eggsearch inventory,
-and the eggsearch inventory is whatever `provider_status` reports.
+eggsearch provider ids. The "legacy id" column lists ids that existed only in
+the retired in-tree stack; it is not an eggsearch inventory, and the eggsearch
+inventory is whatever `provider_status` reports.
 
-| Legacy source id | eggsearch provider id | Disposition |
-|------------------|----------------------|-------------|
-| `duckduckgo` | `duckduckgo` | Unchanged |
-| `mojeek` | `mojeek` | Unchanged (still opt-in) |
-| `openalex` | `openalex` | Unchanged |
-| `brave` | `brave` / `brave_api` | Unchanged; prefer `brave_api` when a key is configured |
-| `exa` | `exa` | Unchanged |
-| `tavily` | `tavily` | Unchanged |
-| `wikipedia` | `wikipedia` | Retained as a keyless provider (this milestone) |
-| `arxiv` | `arxiv` | Retained as a keyless provider (this milestone) |
-| `pubmed` | `pubmed` | Retained as a keyless provider with an optional NCBI key (this milestone) |
-| `hn_algolia` | `hn_algolia` | Retained as a keyless provider (this milestone) |
-| `github` repository discovery | `github_repositories` | Retained as a keyless provider with an optional `GITHUB_TOKEN` (this milestone); distinct from `github_code`, `github_issues`, and `github_releases` |
-| `serpapi` | `serpapi` | Migrated to the current SerpApi Google Search contract (opt-in credentialed provider, this milestone) |
-| `kagi` | `kagi` | Migrated to the current Kagi Search API v1 contract (opt-in credentialed provider, this milestone); the legacy v0 endpoint is not used |
-| `google_news` (RSS) | none | **Retired with no replacement provider** (see below) |
+This matrix is **frozen**: it is derived from implemented provider ids, not from
+planning intent, and every row is pinned by `tests/docs_provider_inventory.rs`
+and `tests/provider_capability_contract.rs`.
+
+Disposition classes, which are not interchangeable:
+
+| Class | Meaning |
+|-------|---------|
+| `routing` | Not a provider. A selection mode, not an upstream source. |
+| `exact` | Same upstream source, same id. Results are interchangeable. |
+| `renamed` | Same upstream source, different id. Only the spelling changed. |
+| `equivalent` | Same provider, but a **current** contract replaces a deprecated one. Constraint coverage is not identical; read the notes. |
+| `capability` | The capability survives, but no single provider stands behind the old id. The caller must choose a source. |
+| `retired` | Deliberately removed with no replacement. The harness must delete or reject the hint. |
+
+| Legacy source id | eggsearch provider id | Class | Disposition |
+|------------------|----------------------|-------|-------------|
+| `auto` | *(no `providers` array)* | `routing` | Send no `providers` field at all. An empty array is also treated as "no explicit selection", but omitting the field is the canonical form. |
+| `duckduckgo` | `duckduckgo` | `exact` | Unchanged |
+| `mojeek` | `mojeek` | `exact` | Unchanged (still opt-in) |
+| `openalex` | `openalex` | `exact` | Unchanged |
+| `brave` | `brave` | `exact` | Unchanged: the keyless HTML-scrape engine. |
+| `brave_api` | `brave_api` | `exact` | Unchanged: API-key semantics. Prefer it when a key is configured. |
+| `exa` | `exa` | `exact` | Unchanged; opt-in credentialed |
+| `tavily` | `tavily` | `exact` | Unchanged; opt-in credentialed |
+| `wikipedia` | `wikipedia` | `exact` | Retained as a keyless provider |
+| `arxiv` | `arxiv` | `exact` | Retained as a keyless provider |
+| `pubmed` | `pubmed` | `exact` | Retained as a keyless provider with an optional NCBI key |
+| `hn_algolia` | `hn_algolia` | `exact` | Retained as a keyless provider |
+| `github` repository discovery | `github_repositories` | `renamed` | Same upstream GitHub repository search, renamed to avoid collision with the code/issues/releases engines. Distinct from `github_code`, `github_issues`, and `github_releases`. |
+| `serpapi` | `serpapi` | `exact` | Current SerpApi Google Search contract; opt-in credentialed |
+| `kagi` | `kagi` | `equivalent` | **Not contract-identical.** eggsearch uses the current Search API **v1** (`POST /api/v1/search`, `Authorization: Bearer`, `workflow: "search"`). The legacy v0 endpoint is deprecated and is never used. Only `data.search` is read, so a news workflow is unavailable here, and there is no language field. See the constraint notes below. |
+| `google_news` (RSS) | none | `retired` | **Retired with no replacement provider** (see below). The news *capability* survives as `capability` via `intent: "news"`. |
+
+There is **no** `capability`-class row whose provider is an interchangeable
+substitute for the retired id. `google_news` is the only non-exact retirement,
+and it has no stand-in provider: news is reached by declaring an intent and, if
+source control matters, naming a provider that natively advertises news support.
 
 Rules for the retiring harness:
 
@@ -452,6 +476,105 @@ eggsearch will import, so no provider id stands behind it.
   `unknown_provider`; silently swapping in another news engine is forbidden
   because the caller asked for a specific source and would receive different
   evidence than requested.
+
+### Downstream Retirement Contract
+
+This section is the handoff artifact for the workstream that deletes a retiring
+harness's in-tree external-search backend. It is written to be actionable
+without reading eggsearch's source.
+
+#### Minimum qualifying version
+
+The parity surface described above — the five keyless source providers, the two
+credentialed providers, the explicit-provider failure semantics, and the frozen
+ten-tool schema — first ships in **`eggsearch` 0.4.0**.
+
+Pin `>=0.4.0`. Do not pin an unqualified moving branch: the provider set,
+capability descriptors, and tool schema are stable within the minor line but a
+branch head can move underneath a retirement. Confirm what you actually have:
+
+```bash
+eggsearch --version          # must print: eggsearch 0.4.0
+```
+
+`provider_status` is the authoritative inventory check. It reports all 44 known
+provider ids with `enabled` / `configured` / `routable` and a typed `skip_code`.
+The seven providers this migration depends on must be present:
+
+| Id | Expect `requires_api_key` | Expect `routable` when |
+|----|--------------------------|-----------------------|
+| `duckduckgo`, `mojeek`, `openalex`, `brave` | `false` | enabled in `[search.providers]` (defaults) |
+| `wikipedia`, `arxiv`, `hn_algolia` | `false` | enabled in `[search.providers]` (not default) |
+| `pubmed` | `false` | enabled in `[search.providers]` (not default) |
+| `github_repositories` | `false` | enabled in `[search.providers]` (not default) |
+| `brave_api`, `exa`, `tavily` | `true` | `[search.api.<id>]` enabled and credential resolves |
+| `serpapi`, `kagi` | `true` | `[search.api.<id>]` enabled and credential resolves |
+
+A `routable: false` provider is a configuration problem to fix, never a reason
+to substitute a different provider for an explicit request.
+
+#### Explicit-provider failure behavior
+
+When `providers` is non-empty, eggsearch treats it as a hard contract. It never
+silently converts an explicit request into automatic routing. Each requested id
+resolves to exactly one of these outcomes, and every outcome is a
+tool-level `isError` result carrying a stable `code` of `provider_unavailable`:
+
+| Condition | Result | Typed skip code |
+|-----------|--------|-----------------|
+| Not a known provider id | Error naming the id | `unknown_provider` |
+| Known, but not enabled / not configured | Error naming the id | `disabled_by_user` |
+| Known and enabled, credential unset or empty | Error **naming the environment variable to populate** | `missing_api_key` |
+| Known, enabled, configured, but no engine in this build | Error naming the id | `not_built` |
+
+Consequences a harness must accept:
+
+- A mixed list containing one unroutable id **fails the whole request**. eggsearch
+  does not narrow to the routable remainder, because the caller asked for both.
+- An empty `providers` array, or an absent field, means automatic routing. That
+  is the only path that may fall back.
+- When explicitly selected providers are queried and all of them fail, the error
+  carries the stable code `upstream_failed` and preserves each provider's
+  reason. This is an upstream fault, not a server fault; `internal_error` is
+  reserved for the latter.
+- Advisory provider health and cooldown never remove an explicitly requested
+  provider. If you need a provider excluded during an incident, take it out of
+  the `providers` array yourself.
+
+#### Retiring-harness checklist
+
+Once `>=0.4.0` is pinned and the providers above report `routable`, the
+downstream workstream may:
+
+1. **Delete its own external-search HTTP clients**, including the deprecated
+   Kagi v0 client and the Google News RSS parser. eggsearch owns outbound HTTP;
+   the harness keeps no provider endpoint knowledge.
+2. **Remove `backend="builtin"` and `fallback_to_builtin`** from its search
+   call sites. eggsearch is the backend, so there is nothing to fall back *to*.
+   A request that fails now fails loudly with a typed reason instead of silently
+   degrading to a second implementation.
+3. **Delete the `google_news` hint** and its conditional branches, and replace
+   them with `intent: "news"` plus an explicit `providers` array when source
+   control is required.
+4. **Keep its native wrappers as the model-facing API.** The ten eggsearch MCP
+   tools are the transport contract, not the vocabulary the model should speak.
+   eggsearch deliberately keeps `providers` and `timeout_ms` accepted-but-hidden
+   from the advertised schema: a harness should translate its own intents into
+   the canonical `goal` / `profile` / `workflow` / `sources` fields, and reserve
+   `providers` for cases where a human explicitly asked for a named source.
+5. **Expect no CodeGG-specific fields.** The MCP request and response schema
+   contains no harness-specific escape hatch, and none may be added. If your
+   retirement needs one, that is a defect in this contract, not a feature gap.
+
+#### What this contract does not change
+
+- The stable surface is still exactly ten tools. Migration adds providers, not
+  tools, and adds no request or response field.
+- The evolution policy is still additive-only, with `docs/tool-matrix.md` as the
+  schema budget.
+- No eggsearch provider id is deprecated by this migration. `brave` (keyless
+  HTML scrape) and `brave_api` (API key) remain distinct and both remain
+  supported.
 
 ---
 

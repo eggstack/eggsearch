@@ -16,10 +16,10 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | Suite | Feature Gate | Focus |
 |-------|-------------|-------|
 | `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
-| `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds |
+| `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection |
 | `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds |
-| `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting |
-| `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end |
+| `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
+| `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling |
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |

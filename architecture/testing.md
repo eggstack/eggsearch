@@ -9,7 +9,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 
 ## Suite count and layout
 
-`tests/*.rs` holds 76 suites (mid-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
+`tests/*.rs` holds 78 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
 
 | Location | Purpose |
 |----------|---------|
@@ -36,7 +36,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs) |
 | `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
-| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting |
+| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, CodeGG parity qualification journeys |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |

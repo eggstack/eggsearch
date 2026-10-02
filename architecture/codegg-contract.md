@@ -337,4 +337,91 @@ when the root, remotes, or commit change.
 
 ---
 
+## 12. Downstream Retirement Contract
+
+**Qualifying version: `eggsearch` >= 0.4.0.** The provider-parity surface
+described here and in `docs/codegg-integration.md` first ships in 0.4.0. Pin
+the minor line, not a moving branch, and confirm with `eggsearch --version`
+(prints `eggsearch 0.4.0`).
+
+This is the upstream half of a two-part handoff. eggsearch does not edit the
+consumer; it fixes the contract the consumer's separate retirement workstream
+may rely on. A harness must not begin deleting its in-tree search backend until
+`provider_status` reports the required ids as `routable` on the pinned version.
+
+### 12.1 Provider migration and disposition matrix
+
+Frozen and derived from implemented ids. The full table with per-provider
+constraint notes lives in
+`docs/codegg-integration.md` § Legacy External-Search Provider Migration; the
+disposition classes are what this contract fixes:
+
+| Class | Legacy hint -> eggsearch id | Meaning for the harness |
+|-------|-----------------------------|--------------------------|
+| `routing` | `auto` -> *(omit `providers`)* | Not a provider. Automatic routing is expressed by sending no `providers` field. |
+| `exact` | `duckduckgo`, `mojeek`, `openalex`, `brave`, `brave_api`, `exa`, `tavily`, `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, `serpapi` | Same upstream source, same id. Interchangeable results. |
+| `renamed` | `github` (repository discovery) -> `github_repositories` | Same upstream source; renamed to avoid collision with `github_code` / `github_issues` / `github_releases`. |
+| `equivalent` | `kagi` -> `kagi` | Same provider, but the **current** v1 contract (`POST /api/v1/search`, `Authorization: Bearer`, `workflow: "search"`, `data.search` only) replaces the deprecated v0 endpoint. Constraint coverage differs: no language field, no news workflow. Do not assume v0 field parity. |
+| `retired` | `google_news` (RSS) -> none | No provider stands behind it. Delete the hint. The news *capability* is preserved as `capability` via `intent: "news"`, optionally with an explicit provider from `brave_api` / `tavily`, the only ids advertising native news support. |
+
+No row claims an unrelated general provider is an exact replacement for a
+removed source. `google_news` is the only non-exact retirement and it has no
+stand-in provider id.
+
+### 12.2 Explicit-provider failure semantics
+
+A non-empty `providers` array is a hard contract. eggsearch never converts an
+explicit request into automatic routing, and never narrows it to the routable
+remainder. Each requested id resolves to exactly one typed outcome, surfaced as
+a tool-level `isError` with stable code `provider_unavailable`:
+
+| Condition | `ProviderSkipCode` | Harness action |
+|-----------|--------------------|----------------|
+| Unknown id | `unknown_provider` | Fix the caller. Do not substitute a provider. |
+| Known, not enabled or not configured | `disabled_by_user` | Enable it in config. |
+| Known and enabled, credential unset or empty | `missing_api_key` | Populate the environment variable **named in the error message**. |
+| Known, enabled, configured, no engine in this build | `not_built` | Report as unsupported; do not substitute. |
+
+The missing-credential case names the exact environment variable, so the
+`ProviderSkipCode` vocabulary and the message text agree. When all explicitly
+selected providers are queried and all fail, the error carries `upstream_failed`
+and preserves each provider's reason; `internal_error` is reserved for genuine
+server faults. Advisory health and cooldown never drop an explicitly requested
+provider, and a capability a provider cannot serve is recorded as a
+capability-skip attempt in the retrieval ledger rather than a silent omission.
+
+### 12.3 Stable ten-tool statement
+
+This contract is unchanged by provider parity. The surface remains exactly ten
+tools (§1) plus the CLI. Migration adds provider ids and capability
+descriptors; it adds no tool, no request field, and no response field, and it
+does not relax the additive-only policy in §8. `docs/tool-matrix.md` remains
+the schema budget, and the `tools/list` fingerprint in §7 remains the harness's
+cache key.
+
+CodeGG native wrappers remain the normal model-facing API. `providers` and
+`timeout_ms` are accepted but hidden from the advertised schema: a harness maps
+its own intents onto the canonical `goal` / `profile` / `workflow` / `sources`
+fields, and uses `providers` only where a human explicitly asked for a named
+source.
+
+### 12.4 Retirement prerequisites
+
+A consumer may, on the pinned >= 0.4.0 version and after verifying
+`provider_status`:
+
+- delete its own external-search HTTP clients, including the deprecated Kagi v0
+  client and the Google News RSS parser;
+- remove `backend="builtin"` and `fallback_to_builtin` from its search call
+  sites, so failures surface loudly with a typed reason instead of degrading to
+  a second implementation;
+- delete the `google_news` hint and its branches;
+- keep its native wrappers as the model-facing API.
+
+No consumer-specific field may be added to the MCP request or response schema
+to support retirement. If that appears necessary, it is a defect in this
+contract rather than a feature gap.
+
+---
+
 **Back to:** [overview.md](overview.md)

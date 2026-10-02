@@ -55,6 +55,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First binary-enabled release hardening: non-publishing seven-target
   qualification, exact release asset validation, installer contract tests, and
   release-tree preflight diagnostics.
+- **CodeGG external-search parity contract, frozen for 0.4.0.** The provider
+  inventory is 44 and every legacy CodeGG external-search hint now has either an
+  exact eggsearch mapping or an explicit non-migration disposition.
+  `docs/codegg-integration.md` and `architecture/codegg-contract.md` carry a
+  *Downstream Retirement Contract* that a retiring harness can act on without
+  reading eggsearch source: the migration matrix with its disposition classes
+  (`routing` / `exact` / `renamed` / `equivalent` / `capability` / `retired`),
+  the minimum qualifying version, the `provider_status` expectations, the
+  explicit-provider failure semantics, and the prerequisites for removing
+  `backend="builtin"` and `fallback_to_builtin`. CodeGG native wrappers remain
+  the model-facing API; the stable surface is still exactly ten MCP tools, and
+  no harness-specific field is added to the request or response schema.
+  - `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, and `github_repositories`
+    preserve the corresponding legacy sources; the legacy `github` repository
+    hint maps to the renamed `github_repositories` id.
+  - `serpapi` and `kagi` are preserved. Kagi is an **equivalent**, not an
+    exact, mapping: eggsearch uses the current Search API v1 contract and the
+    deprecated v0 endpoint is never used, so v0 field parity must not be
+    assumed.
+  - `google_news` is **retired with no replacement provider**. No current
+    documented Google News search/RSS contract exists that eggsearch will
+    import, so no provider id stands behind the hint and silent remapping to an
+    unrelated news engine is forbidden. The news capability is preserved by
+    `intent: "news"` on the providers that truthfully advertise native news
+    support (`brave_api`, `tavily`), with an explicit `providers` array when
+    source control is required.
 
 ### Fixed
 
@@ -68,6 +94,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Intent/freshness reranking carries the documented `(score, title, url)`
   tiebreak explicitly, and non-finite scores rank last instead of collapsing
   into ties, keeping ranking order deterministic.
+- An explicitly requested provider is never silently dropped. A provider that
+  is known, enabled, and configured but has no engine in this build is now
+  rejected with a typed `not_built` error instead of returning a successful
+  response that claimed the provider had been queried while querying nothing.
+  A required-credential provider whose environment variable is unset or empty
+  is now reported as `missing_api_key` **naming the variable to populate**,
+  rather than as a disabled provider whose suggested repair (a
+  `[search.providers]` boolean) has no effect for API-key providers. The
+  non-strict routing path now records a typed skip with `partial` set instead of
+  accepting unroutable ids in silence.
+- An all-selected-providers-failed search now reports the stable
+  `upstream_failed` code instead of `internal_error`, which
+  `docs/tool-matrix.md` reserves for genuine server faults.
 
 ## [0.3.9] - 2026-09-11
 
