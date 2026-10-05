@@ -60,9 +60,30 @@ expected 16 files (seven binaries, seven checksums, two installers), prints
 expected versus observed names with missing/unexpected diffs, re-verifies
 every checksum, and requires the Unix binaries to be executable.
 `packaging/check-contract.sh` runs the full keep-in-sync gate locally (see
-below). `packaging/check-egress-qualify-contract.sh` plus
+below). It also fails closed on two crate-wide invariants that are not about
+release targets: `packaging/check-workflow-pins.py` requires every non-local
+`uses:` in `.github/workflows/*.yml` to be pinned to a full 40-hex commit SHA,
+and `packaging/check-planning-consistency.py` rejects closed-range shorthand
+in planning status tables. `packaging/check-egress-qualify-contract.sh` plus
 `tests/egress_qualify_contract.rs` guard the separate non-publishing egress
 feature qualification across the same seven targets.
+
+Dependency policy is a sibling gate, not part of the release tree:
+`packaging/check-dependency-policy.sh` runs `check-dependency-policy.py` and
+`check-http-dependency-shape.py`, installs pinned `cargo-deny 0.20.2` on
+demand, and runs `cargo deny check` against the root `deny.toml`. It is a
+`make check` step and is replayed weekly by
+`.github/workflows/dependency-security.yml`.
+
+## Publication state
+
+The first binary release was `v0.3.9` at `0cbbeee7`. `v0.4.0` is crate and
+tag only — it never received a GitHub Release and is never revisited.
+`v0.4.1` is the current version in `Cargo.toml` and is published as an
+immutable 16-asset release (seven binaries, seven checksums, two installers)
+carrying a SLSA provenance attestation; a published release is never
+overwritten. Treat `plans/registry.md` and `CHANGELOG.md` as the authority for
+which milestone is open next.
 
 ## Release workflow
 
@@ -213,9 +234,11 @@ resolution, and `docs/installation.md` must move together. `make
 packaging-check` runs `packaging/check-contract.sh`, which fails closed when
 any of these drift: row shape or count, workflow target/asset order versus
 `release-targets.txt` (ARMv7 handled as the dedicated QEMU job), unique
-per-target artifact names, merged exact asset validation presence, installer
+per-target artifact names, merged exact asset validation presence, a
+`packaging/` path referenced by the workflow that does not exist, installer
 and Rust pair equality, docs coverage of all seven pairs, `.exe` suffix
 discipline, Cargo-fallback and `Get-FileHash` marker presence, no-`sudo`
-installer discipline, bash guard behavior, and the egress qualification
-contract. Change targets, inputs, workflow, matrix, installers, updater, or
+installer discipline, bash guard behavior, the egress qualification
+contract, workflow action-SHA pinning, and planning-status consistency.
+Change targets, inputs, workflow, matrix, installers, updater, or
 install docs in the same change or the gate fails.

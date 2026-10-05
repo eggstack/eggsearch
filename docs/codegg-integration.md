@@ -489,12 +489,14 @@ The parity surface described above — the five keyless source providers, the tw
 credentialed providers, the explicit-provider failure semantics, and the frozen
 ten-tool schema — first ships in **`eggsearch` 0.4.0**.
 
-Pin `>=0.4.0`. Do not pin an unqualified moving branch: the provider set,
+Pin `>=0.4.1`. Do not pin an unqualified moving branch: the provider set,
 capability descriptors, and tool schema are stable within the minor line but a
-branch head can move underneath a retirement. Confirm what you actually have:
+branch head can move underneath a retirement. `v0.4.0` is crate + tag only; the
+first binary release carrying this surface is `0.4.1`. Confirm what you
+actually have:
 
 ```bash
-eggsearch --version          # must print: eggsearch 0.4.0
+eggsearch --version          # must print: eggsearch 0.4.1
 ```
 
 `provider_status` is the authoritative inventory check. It reports all 44 known

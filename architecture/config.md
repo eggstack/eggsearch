@@ -39,8 +39,13 @@ falls back to `default_config_path()` otherwise, then delegates to
 ## Section / Field Map
 
 Root type `AppConfig` holds four sections: `search`, `fetch`,
-`local`, `egress`. Every section deserializes with `#[serde(default)]`
-so partial files inherit production defaults.
+`local`, `egress`. Each section field on `AppConfig` carries
+`#[serde(default)]`, so an omitted table inherits production defaults.
+Within a section, only fields with their own `#[serde(default = ...)]`
+are optional: every `[fetch]`, `[local]`, and `[egress]` field is
+defaulted, but `[search]` still requires `mode`, `default_max_results`,
+`max_results_cap`, `max_query_chars`, `timeout_ms`, and
+`default_providers` to be present whenever a `[search]` table exists.
 
 ### `[search]` — `SearchSection`
 
@@ -52,7 +57,7 @@ so partial files inherit production defaults.
 | `max_query_chars` | `usize` | `512` | Maximum accepted query length |
 | `timeout_ms` | `u64` | `8000` | Per-request search timeout |
 | `default_providers` | `Vec<String>` | `["duckduckgo", "startpage", "yahoo"]` | Providers queried when the caller names none |
-| `providers` | `BTreeMap<String, bool>` | 8 entries (see below) | Per-provider enable/disable flags |
+| `providers` | `BTreeMap<String, bool>` | 13 entries (see below) | Per-provider enable/disable flags |
 | `searxng` | `SearxngConfig` | disabled | Self-hosted SearXNG upstream (`enabled`, `base_url`) |
 | `api` | `BTreeMap<String, ApiProviderConfig>` | empty | API-key providers (`enabled`, `api_key_env`, `base_url`) |
 | `live` | `LiveConfig` | empty | Reserved NO-OPs (`user_agent`, `respect_robots_txt`); setting them logs a startup warning only |
@@ -64,7 +69,9 @@ so partial files inherit production defaults.
 
 Default `providers` map: `duckduckgo = true`, `brave = true`,
 `startpage = true`, `yahoo = true`, `mojeek = false`,
-`searxng = false`, `osv = true`, `firecrawl_developer = false`.
+`searxng = false`, `osv = true`, `firecrawl_developer = false`,
+`wikipedia = false`, `arxiv = false`, `pubmed = false`,
+`hn_algolia = false`, `github_repositories = false`.
 
 `Mode::parse` accepts only `"off"` and `"live"`. Former aliases
 (`"ask"`, `"local"`, `"local_only"`, `"localonly"`) are rejected.
@@ -176,7 +183,9 @@ being silently ignored.
   `kagi`): each entry sets
   `enabled`, `api_key_env` (env var name, never the secret), and
   optional `base_url`. `api_provider_is_configured()` requires
-  enabled + known + non-empty `api_key_env` + present non-empty env value.
+  enabled + listed in `API_PROVIDER_IDS` + non-empty `api_key_env` +
+  present non-empty env value, so an optional-key id is never gated
+  by it.
 - **Keyless-optional providers** (`OPTIONAL_API_PROVIDER_IDS`:
   `firecrawl_developer`, `pubmed`, `github_repositories`):
   `optional_api_key()` returns `Some(key)`

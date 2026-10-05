@@ -67,10 +67,10 @@ Partial failure is soft throughout: `ProviderFailure { id, error_class, message 
 | `workflow.rs` | `PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet` |
 | `fetch_ranking.rs`, `suggested_fetches.rs`, `research_suggested_fetches.rs`, `security_suggested_fetches.rs` | Deterministic fetch-candidate pipeline + domain builders |
 | `security_search.rs` | `security_search` orchestration (lanes + advisories + KEV) |
-| `forge_adapter.rs`, `package_resolver.rs` | Tree retrieval + registry resolution |
+| `forge_adapter/`, `package_resolver.rs` | Tree retrieval + registry resolution |
 | `probe.rs`, `provider_diagnostics.rs`, `recipe_catalog.rs` | Liveness, health/telemetry, recipes |
 | `response.rs` | `WebSearchResponse`, `ProviderFailure` |
-| `engines/`, `local_*.rs`, `local/` | Vendored providers; local backend (see [engines.md](engines.md), [local-workspace.md](local-workspace.md)) |
+| `engines/`, `local_*.rs` + the `local/` facade (`mod.rs` only, re-exporting the `local_*.rs` modules) | Vendored providers; local backend (see [engines.md](engines.md), [local-workspace.md](local-workspace.md)) |
 
 ---
 
@@ -197,7 +197,7 @@ Health is advisory, never authoritative: `ProviderHealthRegistry` records succes
 ### Adjacent modules (pointers, not owned here)
 
 - `repo_mapper.rs` + `forge_adapter.rs` serve `repo_map` (tree listing, important-file/dir classification, map suggested fetches) — structure discovery, not search dispatch.
-- `dependency_parse/` (cargo, npm, go, python, ruby, composer, maven, dotnet, containers, github_actions) normalizes lock/manifest files into `DependencyFinding` records for security-adjacent flows.
+- `dependency_parse/` (17 ecosystem parsers: cargo, composer, containers, dotnet, github_actions, go, gradle, maven, npm, nuget, pnpm, pnpm_v9, python, python_locks, ruby, yarn, yarn_berry) normalizes lock/manifest files into `DependencyFinding` records for security-adjacent flows.
 - `mock.rs` (feature-gated `mock`) provides the test-only engine harness required for integration/corpus suites; plain `cargo test` misses those suites.
 - `evidence_bundle.rs::build_evidence_bundle()` is pure bundle-construction logic shared by `build_evidence_bundle` and CLI — covered in [evidence-workflow.md](evidence-workflow.md).
 

@@ -1,6 +1,6 @@
 # Fetch Deep Dive
 
-**Location:** `src/fetch/` (10 top-level files + `browser/` + `render/`, 8 files each)
+**Location:** `src/fetch/` (11 top-level files + `browser/` + `render/`, 8 files each)
 **Purpose:** Bounded single-URL HTTP(S) fetch with SSRF enforcement, two-tier
 cache, origin control, content detection, structural rendering, and sanitized
 output. Independent of `meta`; consumed by `web_fetch`, `batch_fetch`,
@@ -471,22 +471,30 @@ on `WebFetchResponse` and per-item `batch_fetch` payloads.
 
 ## 11. Errors (`types.rs`) and Safety Invariants
 
-`FetchError` (30 variants) with a payload-free `FetchErrorKind` mirror and
-`error_code()` strings for MCP mapping: URL/SSRF (`InvalidUrl`,
+`FetchError` (32 variants) with a payload-free `FetchErrorKind` mirror and
+`error_code()` strings for MCP mapping: URL/SSRF (5: `InvalidUrl`,
 `UnsupportedScheme`, `PrivateNetworkBlocked`, `UrlTooLong`,
-`EmbeddedCredentialsBlocked`), redirects (`RedirectLimitExceeded`,
-`RedirectTargetBlocked`, `InvalidRedirectLocation`), transport (`Timeout`,
+`EmbeddedCredentialsBlocked`), redirects (3: `RedirectLimitExceeded`,
+`RedirectTargetBlocked`, `InvalidRedirectLocation`), transport (6: `Timeout`,
 `HttpStatus`, `NetworkError`, `ContentTooLarge`, `UnsupportedContentType`,
-`ExtractError`), PDF (9 variants), browser (8 variants), and `Unknown`.
+`ExtractError`), PDF (9 variants), browser (8 variants), and `Unknown` —
+5 + 3 + 6 + 9 + 8 + 1 = 32.
 
 Invariants that hold across the subsystem:
 
 - SSRF first: validation blocks localhost/private IPs and credentials before
   any socket, on the initial URL and every redirect, browser navigation,
   subresource, and final URL.
-- Bounded I/O: streaming bodies cap at `max_bytes` with UTF-8-safe truncation;
-  forge reads use `read_bounded_body()`, git work uses `run_bounded_command()`
-  with process-group kill.
+- Bounded I/O: streamed bodies cap at `max_bytes` with UTF-8-safe truncation
+  (`append_bounded`); git work uses `run_bounded_command()` with process-group
+  kill. The crate's other outbound bodies stay bounded outside this module —
+  engine responses through `read_bounded_body()`, forge responses through
+  `read_with_budget()` under `ForgeReadBudget`; no bare `.text()` / `.bytes()`
+  / `.json()`.
+- No direct reqwest: every outbound HTTP request is an `eggfetch_core::Client`
+  built here, so eggfetch keeps owning pooling, TLS/SNI, decompression,
+  redirects, and deadlines. Enforced by the
+  `no_direct_reqwest_in_production_source` static guard.
 - All untrusted text passes `sanitize_field()`; stable IDs stay content-derived
   FNV-1a (`fetch_id`, `doc_id`); `CacheScope::Profile` uses opaque IDs; invalid
   explicit browser paths are `ExplicitPathInvalid` with no fallback.

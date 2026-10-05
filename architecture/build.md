@@ -13,11 +13,13 @@ Single library + binary crate, not a workspace. Stable contract is MCP tools (10
 |------|-------|--------|
 | Edition | 2021 | `Cargo.toml` |
 | `rust-version` / MSRV | 1.89 | `Cargo.toml` |
-| CI toolchain | `dtolnay/rust-toolchain@stable` with `toolchain: "1.89"` + `rustfmt, clippy` | `.github/workflows/ci.yml` |
+| CI toolchain | `dtolnay/rust-toolchain@6bed0761…` (40-hex SHA pin) with `toolchain: "1.89"` + `components: rustfmt, clippy` | `.github/workflows/ci.yml` |
 | Egress qualification MSRV | `cargo +1.89.0 check --locked --all-features` | `.github/workflows/egress-feature-qualify.yml` |
 | Release profile | `lto = "thin"`, `codegen-units = 1`, `strip = true` | `Cargo.toml [profile.release]` |
 
-CI blanks all credential env vars (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `BRAVE_API_KEY`, and others empty), so missing credentials are provider-scoped skips, never global failures. Tests must pass keyless and must not require network.
+Package metadata in `Cargo.toml [package]`: version `0.4.1`, edition `2021`, `rust-version = "1.89"`, license `MIT`, authors `eggstack`, repository `https://github.com/eggstack/eggsearch`, homepage `https://docs.rs/eggsearch`, readme `./README.md`, and one `[[bin]]` named `eggsearch` at `src/main.rs` alongside the library.
+
+CI blanks all credential env vars (`GITHUB_TOKEN`, `GH_TOKEN`, `GITLAB_TOKEN`, `CODEBERG_TOKEN`, `GITEA_TOKEN`, `FORGEJO_TOKEN`, `SOURCEGRAPH_API_KEY`, `BRAVE_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, `NVD_API_KEY`), so missing credentials are provider-scoped skips, never global failures. Tests must pass keyless and must not require network.
 
 Docs.rs: `all-features = true`, targets `x86_64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`. Docs gate: `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps`.
 
@@ -67,7 +69,7 @@ Forbidden (selective split, must stay off):
 
 Consequences:
 
-- No direct `reqwest` dependency in `Cargo.toml` and no `reqwest::` usage in production `src/` (guard `no_direct_reqwest_in_production_source`). rmcp owns its Streamable HTTP client reqwest transitively only.
+- No direct `reqwest` dependency in `Cargo.toml` and no `reqwest::` usage in production `src/` (guard `no_direct_reqwest_in_production_source`). The resolved graph contains no `reqwest` path from `rmcp`; the only remaining `reqwest` edge is `chromiumoxide` under the `browser` feature.
 - Retry authority belongs to `OriginController` alone; eggfetch `logical-retry` stays disabled so retry policy is not split across two owners.
 - Engines use automatic gzip/Brotli decompression; no `.decompress(false)` workaround remains after eggfetch-core 0.2.0 (guard `html_scrape_engines_use_automatic_decompression`).
 - HTML scrape and JSON API engines pair an explicit `engine_timeout()` total deadline with `read_bounded_body()` streaming byte caps.
@@ -75,7 +77,12 @@ Consequences:
 
 ### rmcp features required for integrate --apply
 
-`rmcp 3.2.0` enables `server`, `client`, `transport-io`, `transport-child-process`, `transport-streamable-http-server`, `transport-streamable-http-client-reqwest`, `macros`. The client, child-process, and Streamable HTTP client features are required: `integrate --apply` verifies the registered server over a real client connection. Do not trim them.
+`rmcp 3.2.0` enables exactly `server`, `client`, `transport-io`, `transport-child-process`, `transport-streamable-http-server`, and `macros` (`Cargo.toml`). There is no Streamable HTTP **client** feature, and none is needed: `integrate --apply` verifies the registered server over two independent paths.
+
+- Stdio: a real rmcp client session over `rmcp::transport::TokioChildProcess` with `ServiceExt` (`src/integrations/common.rs`). This is what requires the `client` and `transport-child-process` features — do not trim them.
+- Loopback HTTP: a hand-rolled MCP verifier in `src/integrations/http_verification.rs` built on `eggfetch_core::Client` — bounded 64 KiB body, 5 s total deadline, redirects disabled, session limit 256, protocol `2025-06-18`, driven through `/healthz` then initialize / notifications-initialized / `tools/list` / session delete.
+
+`src/mcp/http.rs` is the server side, built on `rmcp::transport::streamable_http_server`, which is why `transport-streamable-http-server` is enabled.
 
 ### Direct Tokio features stay explicitly qualified
 
@@ -83,9 +90,9 @@ Consequences:
 tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 ```
 
-Guard `tokio_feature_policy_stays_explicit` forbids `"full"` and pins exactly the ten features above. Each feature traces to production API use. `tokio-util 0.7` carries the cancellation tokens shared with the rmcp HTTP transport. `axum 0.8` uses `default-features = false` plus `http1` and `tokio` only.
+Guard `tokio_feature_policy_stays_explicit` forbids `"full"` and pins exactly the ten features above. Each feature traces to production API use. `tokio-util 0.7` carries the `CancellationToken` shared with the loopback Streamable HTTP server transport. `axum 0.8` uses `default-features = false` plus `http1` and `tokio` only.
 
-Supporting deps: `http 1` (shared header/status types), `scraper 0.20` + `ego-tree 0.6.2` (HTML), `pulldown-cmark 0.12`, `regex 1`, `url 2` with `serde`, `urlencoding 2`, `clap 4` with `derive`, `anyhow 1`, `serde`/`serde_json 1`, `schemars 1`, `thiserror 1`, `tracing 0.1` + `tracing-subscriber 0.3` (`env-filter`, `fmt`), `chrono 0.4` (`std`, `clock`, `serde`), `xxhash-rust 0.8` (`xxh3`), `libc 0.2`, `lru 0.18`, `futures 0.3`, `semver 1`, `self-replace 1`, `sha2 0.10`, `tempfile 3`, `toml 0.8`, `dirs 5`, `quick-xml 0.38` (`default-features = false`, no optional features; streaming csproj/POM parsing over `&str`, no encoding/serde/async surface). Windows-only: `windows-service 0.8.1` under `cfg(windows)`. Criterion bench harness: `[[bench]] name = "perf", harness = false`.
+Supporting deps: `http 1` (shared header/status types), `scraper 0.20` + `ego-tree 0.6.2` (HTML), `pulldown-cmark 0.12`, `regex 1`, `url 2` with `serde`, `urlencoding 2`, `clap 4` with `derive`, `anyhow 1`, `serde`/`serde_json 1`, `schemars 1`, `thiserror 1`, `tracing 0.1` + `tracing-subscriber 0.3` (`env-filter`, `fmt`), `chrono 0.4` (`std`, `clock`, `serde`), `xxhash-rust 0.8` (`xxh3`), `libc 0.2`, `lru 0.18`, `futures 0.3`, `semver 1`, `self-replace 1`, `sha2 0.10`, `tempfile 3`, `toml 0.8`, `dirs 5`, `quick-xml 0.41` (`default-features = false`, no optional features; streaming csproj/POM parsing over `&str`, no encoding/serde/async surface). Windows-only: `windows-service 0.8.1` under `cfg(windows)`. Criterion bench harness: `[[bench]] name = "perf", harness = false`.
 
 ### Package include and test-only deps
 
@@ -99,6 +106,14 @@ Fetch timeout overrides reuse the shared transport: `FetchClient::with_timeout_m
 
 Performance hot paths use shared immutable inventory and derived-cache ownership and score/select candidates once; deterministic tie ordering is preserved when changing selectors.
 
+### Dependency policy and action-pin gates
+
+`make check` includes a dependency-policy step that the build itself does not otherwise cover. `packaging/check-dependency-policy.sh` runs, in order: `packaging/check-dependency-policy.py`, `packaging/check-http-dependency-shape.py`, a pinned `cargo install cargo-deny --version 0.20.2 --locked` (install-on-demand when `cargo deny --version` is not already exactly `cargo-deny 0.20.2`), then `cargo deny check`.
+
+`deny.toml` at the repository root is the cargo-deny policy: `all-features` graph, advisories version 2 with `unmaintained = "all"` and `yanked = "deny"` plus three time-boxed, dated RUSTSEC ignores (async-std via test-only `httpmock`, fxhash via `scraper`, ttf-parser via optional `lopdf` PDF support, each marked for review by 2026-11-27), a 0.8-confidence license allowlist of 15 identifiers, `bans.multiple-versions = "warn"` with wildcards allowed, and unknown registry/git both denied with the crates.io index as the only allowed registry.
+
+`.github/workflows/dependency-security.yml` runs the same script on a weekly `0 9 * * 1` cron plus `workflow_dispatch`, with `contents: read` only. Separately, `packaging/check-workflow-pins.py` runs inside `make packaging-check` and fails closed unless every non-local `uses:` in `.github/workflows/*.yml` is pinned to a full 40-hex commit SHA.
+
 ---
 
 ## Makefile target catalog
@@ -106,7 +121,7 @@ Performance hot paths use shared immutable inventory and derived-cache ownership
 `make check` is the canonical gate, and `make ci` aliases it:
 
 ```bash
-make check  # fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
+make check  # fmt + clippy + no-default check + all-features tests + hygiene + dependency-policy + packaging-check
 ```
 
 | Step | Command | Gate |
@@ -116,11 +131,12 @@ make check  # fmt + clippy + no-default check + all-features tests + hygiene + p
 | `feature-check` | `cargo check --locked --no-default-features` | Compile-only; minimal build stays healthy |
 | `test` | `cargo test --locked --all-features` | Full suite, keyless, network-free |
 | `hygiene` | `./packaging/check-repo-hygiene.sh` | Rejects tracked transcripts, ANSI dumps at root, build outputs, oversized root blobs, editor temp files |
+| `dependency-policy` | `./packaging/check-dependency-policy.sh` | Policy scripts plus pinned `cargo deny check` against `deny.toml` |
 | `packaging-check` | `./packaging/check-contract.sh` | Exact target/asset declarations and installer guards |
 
-`.github/workflows/ci.yml` runs a single `ci` job on `ubuntu-latest` for `push`/`pull_request` to `main`: checkout, install toolchain 1.89 with `rustfmt, clippy`, then `make ci` with credential env vars blanked. Concurrency cancels in-progress runs on the same ref.
+`.github/workflows/ci.yml` declares two jobs on `push`/`pull_request` to `main`, both with `contents: read` and SHA-pinned actions: `ci` on `ubuntu-latest` (checkout, toolchain 1.89 with `rustfmt, clippy`, then `make ci` with credential env vars blanked) and `windows-portability` on `windows-latest` (`cargo check --locked --all-features --target x86_64-pc-windows-msvc` at pinned Rust 1.89) so Windows `cfg` breakage cannot hide behind Linux-green CI. Concurrency cancels in-progress runs on the same ref.
 
-`make hygiene`, `make packaging-check`, and `make bench-check` are also runnable individually. Fuzz smoke (`make fuzz-smoke`) runs three targets at 60s each: `validate_url`, `sanitize_pipeline`, `bounded_response_reader` under `fuzz/`.
+`make hygiene`, `make dependency-policy`, `make packaging-check`, and `make bench-check` are also runnable individually. Fuzz smoke (`make fuzz-smoke`) runs four targets at 60s each: `validate_url`, `sanitize_pipeline`, `bounded_response_reader`, and `dependency_parse` under `fuzz/`.
 
 ---
 
@@ -147,7 +163,7 @@ Live and forge smokes are explicit opt-in only and never part of `check`:
 | `live-smoke` | `cargo test --features live-smoke --test corpus_runner -- --ignored` | Live network corpus |
 | `native-forge-smoke-github/gitlab/codeberg/gitea/all` | `cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored [filter]` | Per-host live forge diagnostics; maintainer-only, not release evidence |
 
-The egress qualification workflow (`.github/workflows/egress-feature-qualify.yml`) triggers on egress-route seams, `Cargo.toml`/`Cargo.lock`, release targets, and its own definition. It verifies the 7-target matrix equals `packaging/release-targets.txt` in exact set terms, runs `check-egress-qualify-contract.sh`, compile-checks `--features egress` per target (Linux x86_64/aarch64/armv7, macOS x86_64/aarch64, Windows x86_64/aarch64), and re-checks `--all-features` on MSRV 1.89. No egress-enabled binary is published.
+The egress qualification workflow (`.github/workflows/egress-feature-qualify.yml`) triggers on the egress-route construction seams (`src/fetch/egress.rs`, `src/meta/engines/mod.rs`, `src/meta/adapter/{mod,builders}.rs`, `src/mcp/state.rs`, `src/core/config.rs`, `src/startup.rs`, `src/process.rs`, `src/update.rs`, `src/meta/safe_open.rs`), the egress suites and `tests/static_guards.rs`, `Cargo.toml`/`Cargo.lock`, `packaging/release-targets.txt`, `packaging/check-egress-qualify-contract.sh`, and both `egress-feature-qualify.yml` and `ci.yml`. It verifies the 7-target matrix equals `packaging/release-targets.txt` in exact set terms, runs `check-egress-qualify-contract.sh`, compile-checks `--features egress` per target (Linux x86_64/aarch64/armv7, macOS x86_64/aarch64, Windows x86_64/aarch64), and re-checks `--all-features` on MSRV 1.89. No egress-enabled binary is published.
 
 ---
 

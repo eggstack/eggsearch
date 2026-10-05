@@ -72,8 +72,9 @@ disabled, manual per-hop SSRF re-validation, approved resolved-address
 snapshots pinned via `resolved_addresses()`, truncation preserved), updater
 client in `src/update.rs` (redirects enabled, downgrade denied), and
 single-request health probes near `startup.rs`/`integrations/common.rs`.
-`OriginController` remains the only retry/circuit authority. rmcp transitively
-owns only its Streamable HTTP client transport. Never add eggsearch-local
+`OriginController` remains the only retry/circuit authority. rmcp pulls in
+no HTTP client transport; the `integrate --apply` HTTP verification client is
+hand-rolled on eggfetch. Never add eggsearch-local
 reqwest clients or compatibility facades. All engines, including the HTML scrape
 engines (`brave` HTML, `duckduckgo`, `mojeek`, `searxng`, `startpage`, `yahoo`),
 use automatic gzip/Brotli decompression via `eggfetch-core` 0.2.0 (the former

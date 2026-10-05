@@ -2,7 +2,7 @@
 
 **eggsearch** is a lightweight MCP (Model Context Protocol) metasearch server for AI agents. It queries upstream search providers, deduplicates results with reciprocal rank fusion, returns compact source cards, and fetches HTTP(S) URLs on demand. MCP transport is client-owned stdio or explicit loopback-only Streamable HTTP.
 
-Single library + binary crate (not a workspace). All application source under `src/`. Version `0.3.9`, edition 2021, MSRV 1.89. Release packaging lives under `packaging/`; source/runtime qualification remains Unix-focused while the release workflow explicitly qualifies Windows targets.
+Single library + binary crate (not a workspace). All application source under `src/`. Version `0.4.1`, edition 2021, MSRV 1.89. Release packaging lives under `packaging/`; source/runtime qualification remains Unix-focused while the release workflow explicitly qualifies Windows targets.
 
 This document is the bird's-eye view: what each module is for, how they connect, and where to go for depth. Each component links to a dedicated deep dive in this directory. Use it as the entry point when focusing review on one discrete aspect of the codebase.
 
@@ -75,17 +75,17 @@ fetch ↗
 | Component | Location | One-line Responsibility | Deep Dive |
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
-| Metasearch adapter | `src/meta/` (34 top-level files plus `adapter/`, `dispatch/`, `dependency_parse/`, `engines/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
-| Vendored search engines | `src/meta/engines/` (49 files: 43 per-provider files + 6 support modules) | 43 engine structs covering 43 of 44 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, structured API, API key, advisory, registry, scholarly, source-specific | [engines.md](engines.md) |
+| Metasearch adapter | `src/meta/` (33 top-level files plus `adapter/`, `dependency_parse/`, `dispatch/`, `engines/`, `forge_adapter/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
+| Vendored search engines | `src/meta/engines/` (49 files: 43 per-provider + 6 support modules) | 43 engine structs covering 43 of 44 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, structured API, API key, advisory, registry, scholarly, source-specific | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (11 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
-| Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#browser-rendering-fetchbrowser) |
-| HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#html-rendering-fetchrender) |
-| MCP server & tools | `src/mcp/` (8 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
+| Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#9-browser-rendering-browser-8-files-feature-browser) |
+| HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#6-render-subsystem-render-8-files) |
+| MCP server & tools | `src/mcp/` (7 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
 | CLI commands | `src/commands/` (binary-only, `mod` + 9 modules) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
-| Agent/IDE integrations | `src/integrations/` (9 files, 7 clients) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
+| Agent/IDE integrations | `src/integrations/` (10 files, 7 clients) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
 | Self-update & platform | `src/update.rs`, `src/platform.rs` | Binary-first self-update with checksum verification; 7 release targets and host resolution | [packaging.md](packaging.md) |
-| Testing infrastructure | `tests/` (76 test suites), `fuzz/` (22 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
+| Testing infrastructure | `tests/` (78 test suites), `fuzz/` (23 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
 | Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
 
@@ -131,7 +131,7 @@ Wraps all search behind `MetadataSearchAdapter`; callers never touch engines dir
 - `adapter/` (`web`/`repo`/`research`/`security`/`advisory` paths plus `execution`, `normalization`, `builders`, `status`) builds dispatch jobs and converts results to `SourceCard`
 - `grouping.rs` plus domain groupers deduplicate via reciprocal rank fusion (RRF)
 - Evidence postprocessing assigns roles, computes coverage, detects conflicts, records retrieval attempts
-- Forge adapter (Gitea/Forgejo APIs), package resolver, local workspace backend + inventory cache
+- Forge adapter (GitHub/GitLab/Gitea APIs), dependency parsers (19 files: `mod` + `status` + one per ecosystem), package resolver, local workspace backend + inventory cache
 
 ### engines — vendored providers ([engines.md](engines.md))
 
@@ -356,7 +356,7 @@ enabled = false
 roots = []
 ```
 
-See [core.md](core.md) for the full type model and `docs/config.md` for operator reference.
+See [config.md](config.md) for the full type model and `docs/config.md` for operator reference.
 
 ---
 

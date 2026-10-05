@@ -1,6 +1,6 @@
 # Hardening
 
-**Location:** `src/fetch/limits.rs`, `src/fetch/client.rs`, `src/fetch/origin.rs`, `src/core/sanitize.rs`, `src/core/identity.rs`, `src/core/retrieval_status.rs`, `src/meta/safe_open.rs`, `src/core/local.rs`, `src/meta/engines/mod.rs`, `src/meta/local_inventory_cache.rs`
+**Location:** `src/fetch/limits.rs`, `src/fetch/client.rs`, `src/fetch/origin.rs`, `src/core/sanitize.rs`, `src/core/identity.rs`, `src/core/retrieval_status.rs`, `src/meta/safe_open.rs`, `src/core/local.rs`, `src/meta/engines/mod.rs`, `src/meta/local_inventory_cache.rs`, `tests/static_guards.rs`
 **Purpose:** Every untrusted input is validated first, bounded always, sanitized by tier, identified deterministically, and failed softly. Property tests, adversarial corpora, fault injection, and fuzz targets pin the invariants.
 
 ---
@@ -110,7 +110,7 @@ Field order is insignificant by design (one `write_str` per field under the enti
 
 Every search-engine adapter funnels HTTP bodies through `read_bounded_body()` with a per-engine `MAX_BODY_BYTES`: 2 MiB for the standard engines (DuckDuckGo, Brave, Mojeek, Yahoo, Startpage, Exa, Tavily, SearxNG, Crossref, OpenAlex, Semantic Scholar, Sourcegraph, GitHub/GitLab/Gitea code, issues, and releases, GitHub advisories, OSV, Firecrawl developer), 5 MiB for NVD and RustSec feeds, and 100 MiB for the KEV catalog bulk download with an explicit oversize error naming the limit. The `Content-Length` precheck rejects oversized responses before the first byte streams; the chunk loop aborts the moment the cap is crossed. The KEV path additionally pre-sizes its buffer at `min(MAX_BODY_BYTES, 64 KiB)` so a hostile length header cannot force a giant allocation.
 
-Forge adapters (`forge_adapter`, code-host fetch) enforce entry, depth, byte, pagination, and concurrency budgets behind a shared semaphore (`MAX_CONCURRENT_FORGE_REQUESTS`): nested repository maps preserve entries only within depth bounds, refs with slashes and 40-hex SHAs encode without ambiguity, Gitea without a base URL reports a structured configuration failure instead of guessing, and `commit_sha` always comes from `resolved_ref`, never the entry object SHA.
+Forge adapters (`forge_adapter`, code-host fetch) enforce entry, depth, byte, pagination, and concurrency budgets behind a shared semaphore (`MAX_CONCURRENT_FORGE_REQUESTS`): nested repository maps preserve entries only within depth bounds, refs with slashes and 40-hex SHAs encode without ambiguity, Gitea without a base URL reports a structured configuration failure instead of guessing, and `commit_sha` always comes from the resolved ref (`resolved_ref_name`), never the entry object SHA.
 
 ## Process, cache, and transport bounds
 
@@ -146,7 +146,7 @@ Permits are `OwnedSemaphorePermit`s scoped to the fetch; success resets the fail
 ## Property, adversarial, and fault-injection strategy
 
 - **Property (`tests/property_*.rs`, 17 suites):** invariant assertions over arbitrary input — determinism, idempotency (`strip_control_chars`, `canonicalize_url`), bound respect, UTF-8 safety, offset validity, merge commutativity/associativity (`TrustMarkers`), root containment, ledger validity, dependency-parse dispatch determinism and per-file budgets, and never-panic renderers. Each file names its module under test so the invariant stays beside the code it pins.
-- **Adversarial (`tests/corpus/adversarial/`, 9 files, ~270 cases):** hand-built edge corpora. `adversarial_corpus.rs` asserts structural validity; behavioral suites assert handling.
+- **Adversarial (`tests/corpus/adversarial/`, 9 files, 271+ cases):** hand-built edge corpora. `adversarial_corpus.rs` asserts structural validity; behavioral suites assert handling.
 - **Fault injection (`tests/dispatch_fault_injection.rs`):** provider success/partial/total failure, timeouts, hangs, concurrency saturation, panic containment, health and cooldown transitions, deterministic ordering, exact partial-result telemetry. Requires the `mock` feature.
 - **Probe conformance (`tests/provider_probe_conformance.rs`):** the shared probe service under the same failure taxonomy plus explicit-request-after-degraded semantics and descriptor source-of-truth for native versus local domain filtering.
 
@@ -168,9 +168,15 @@ Promote real incidents into the cheapest layer that captures them: pure-function
 
 ---
 
+## Static guard inventory
+
+`tests/static_guards.rs` is the fail-closed policy layer. Two guards pin the unsafe posture: `crate_roots_deny_unsafe_code` requires `#![deny(unsafe_code)]` at every crate root (`src/lib.rs`, `src/main.rs`) and on `src/process.rs`, and `unsafe_allow_inventory_is_explicit_and_minimal` pins the complete allow list to three files — `src/process.rs` (session creation, `kill`, `geteuid`/`getuid`), `src/meta/safe_open.rs` (`openat2`/`openat`/`fstat`/`File::from_raw_fd`), and `src/fetch/browser/profiles.rs` (`flock`). Any new `unsafe` or `#[allow(unsafe_code)]` outside that inventory fails the suite.
+
+The remaining guards cover: `no_direct_reqwest_in_production_source`; `captured_production_processes_use_the_bounded_runner` with `process_session_setup_has_one_owner` and `git_runner_drains_stdout_before_stderr_concurrently`; `no_unbounded_forge_body_reads`, `no_unbounded_git_output`, `all_forge_response_paths_bounded`, and the shared forge policy/transport/budget guards; `shell_wrappers_rejected_in_production`; `eggfetch_feature_budget_stays_bounded` and `egress_feature_budget_stays_bounded`; `tokio_feature_policy_stays_explicit`; `egress_route_stays_out_of_dynamic_fetch`, `..._browser_paths`, and `..._loopback_paths`; `fetch_timeout_paths_use_effective_limits_for_request_and_validation` and `timeout_overrides_retain_the_shared_fetch_client`; `html_scrape_engines_use_automatic_decompression`; `stable_tool_registration_count_and_names` with `modular_tool_and_adapter_layout`; `orchestration_module_size_ratchet`; `planning_status_consistency_no_closed_range_shorthand` and `dependency_security_workflow_is_scheduled_and_dispatchable`; `windows_startup_portability_stays_total`; the provider-scoped advisory outcome guards; and the Kagi/SerpApi credentialed-provider endpoint and billing guards.
+
 ## Property test index
 
-16 `proptest` suites pin the pure-function invariants. Representative properties per file:
+17 `proptest` suites pin the pure-function invariants. Representative properties per file:
 
 | Suite | Module under test | Key properties |
 |-------|-------------------|----------------|
@@ -254,7 +260,10 @@ Related reading:
 # Dependency parser failure invariant
 
 Recognized structured TOML and JSON dependency documents retain an explicit
-parse status. Invalid syntax is `Malformed`; valid syntax with an unsupported
-root shape is `Unsupported`; a valid supported empty document is `Complete`
+parse status. `ParseStatus` (`src/core/security_applicability.rs`) has four
+variants: invalid syntax is `Malformed` (also the default), a recognized file
+parsed past some section is `Partial`, valid syntax with an unsupported root
+shape is `Unsupported`, and a valid supported empty document is `Complete`
 with no findings. An empty finding list alone is never proof of successful
-parsing.
+parsing. `tests/dependency_fixtures.rs` and
+`property_dependency_parse` pin the taxonomy.

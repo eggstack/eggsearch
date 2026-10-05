@@ -1,23 +1,25 @@
 # Agent and IDE integrations
 
-**Location:** `src/integrations/` (9 files), `src/commands/integrate.rs`
+**Location:** `src/integrations/` (10 files), `src/commands/integrate.rs`
 
 `src/integrations/` owns the client adapter layer behind `eggsearch integrate`.
 It is separate from `mcp/` and `startup.rs`: MCP owns the server protocol,
 startup owns the persistent process, and integrations own client registration.
 The CLI wiring in `src/commands/integrate.rs` is a thin dispatcher over
 `integrations::run()` and `integrations::summaries()`; all rendering, mutation,
-and verification policy lives in `src/integrations/common.rs` with one small
+and verification policy lives in `src/integrations/common.rs` (plus the
+private `http_verification.rs` for the HTTP transport) with one small
 per-client module each.
 
 ## File inventory
 
-`src/integrations/` contains exactly 9 files for 7 clients:
+`src/integrations/` contains exactly 10 files for 7 clients:
 
 | File | Role |
 |------|------|
-| `mod.rs` | Module declarations plus re-exports of `render`, `run`, `summaries`, `Client`, `Transport` |
-| `common.rs` | Shared policy: client/transport enums, render dispatch, apply dispatch, atomic JSON edits, executable resolution, availability probes, protocol verification |
+| `mod.rs` | Module declarations plus re-exports of `render`, `run`, `summaries`, `Client`, `Transport`, `IntegrationReport`, `IntegrationSummary` |
+| `common.rs` | Shared policy: client/transport enums, render dispatch, apply dispatch, atomic JSON edits, executable resolution, availability probes, stdio protocol verification |
+| `http_verification.rs` | Private module: hand-rolled Streamable HTTP verification client for `--transport http` |
 | `codegg.rs` | CodeGG JSON entry (`search.backend`, optional remote `mcp.eggsearch`) |
 | `zed.rs` | Zed JSON entry (stdio command/args or remote URL) |
 | `codex.rs` | Codex native `mcp add` / `mcp remove` argv |
@@ -28,7 +30,8 @@ per-client module each.
 
 No client logic lives outside these files except the `IntegrateCommand`
 dispatch in `src/commands/integrate.rs`. `mod.rs` carries
-`#![allow(missing_docs)]`; the public surface is the `Client`, `Transport`,
+`#![allow(missing_docs)]`; `common` and `http_verification` are private
+modules, so the public surface is the `Client`, `Transport`,
 `IntegrationReport`, and `IntegrationSummary` types plus `run`, `render`,
 and `summaries`.
 
@@ -146,7 +149,8 @@ Direct JSON edits go through `update_json_file()`. The sequence is fixed:
    preserved; the update is a no-op without a backup when the tree is already
    identical after formatting.
 4. On change with a pre-existing file, copy the original to a timestamped
-   backup `<path>.bak.<YYYYMMDDTHHMMSSZ>` and print `backup: <path>`.
+   backup `<path>.bak.<YYYYMMDDTHHMMSSZ>` and report `backup: <path>` on
+   stderr.
 5. Serialize pretty JSON plus trailing newline, write to a same-directory
    `NamedTempFile`, `sync_all`, preserve the original permission bits, and
    atomically persist over the destination.
@@ -160,25 +164,27 @@ through `serde_json`. Stdio shapes are re-validated after merge
 ## Argv boundaries
 
 Native commands are executed as argv arrays through `run_command()`, never
-through a shell. The `--` separator before the eggsearch executable in Codex
-and Claude stdio argv keeps the executable path out of the client's option
-parsing even when it starts with `-` or contains spaces. `shell_join()` is
-display-only for the human-readable report. `apply_native()` for Codex and
-Claude first probes `<cli> mcp get eggsearch`; when an entry already exists
-it runs the matching `remove` argv before `add`, so re-apply is idempotent.
-VS Code apply runs the single `code --add-mcp` argv directly.
+through a shell, and under `process::run_bounded_command()` with a 30-second
+timeout and 64 KiB stdout/stderr caps. The `--` separator before the
+eggsearch executable in Codex and Claude stdio argv keeps the executable path
+out of the client's option parsing even when it starts with `-` or contains
+spaces. `shell_join()` is display-only for the human-readable report.
+`apply_native()` for Codex and Claude first probes `<cli> mcp get eggsearch`;
+when an entry already exists it runs the matching `remove` argv before `add`,
+so re-apply is idempotent. VS Code apply runs the single `code --add-mcp`
+argv directly.
 
 ## Executable resolution
 
 `resolve_executable()` prefers `--executable PATH` verbatim (empty values
 rejected) and otherwise uses `std::env::current_exe()`. A current executable
-with any `target`, `debug`, or `deps` path component is classified ephemeral:
-render substitutes the bare `eggsearch` name on `PATH`, and stdio `--apply`
-without an explicit `--executable` aborts with `install eggsearch or pass
---executable /path/to/eggsearch before using --apply`. HTTP transports are
-exempt because they register a URL, not a binary. Never register
-`target/debug` binaries: require an installed executable or an explicit
-`--executable` pointing at one.
+is classified ephemeral when its path contains an adjacent `target` +
+(`debug` or `deps`) component pair: render substitutes the bare `eggsearch`
+name on `PATH`, and stdio `--apply` without an explicit `--executable` aborts
+with `install eggsearch or pass --executable /path/to/eggsearch before using
+--apply`. HTTP transports are exempt because they register a URL, not a
+binary. Never register `target/debug` binaries: require an installed
+executable or an explicit `--executable` pointing at one.
 
 Availability probes check `PATH` for an executable file (executable bit on
 Unix): `codegg`, `zed`, `codex`, `claude`, `cursor` or `cursor-agent`,
@@ -189,14 +195,31 @@ Unix): `codegg`, `zed`, `codex`, `claude`, `cursor` or `cursor-agent`,
 Every successful `--apply` ends with `verify()`, and verification failure
 fails the command after registration. Stdio verification spawns
 `<executable> mcp stdio` over `rmcp::transport::TokioChildProcess`, runs MCP
-initialize plus `tools/list`, and cancels the child. HTTP verification first
-GETs `/healthz` with a 5-second bounded client and a 64 KiB body cap, checks
-the `eggsearch`/`ready` identity, then runs initialize plus `tools/list` over
-`StreamableHttpClientTransport` against the loopback endpoint.
+initialize plus `tools/list`, and cancels the child.
 
-`check_tools()` requires `web_search` and `web_fetch`; any other absence is a
-stderr warning listing the missing recommended tools (`batch_fetch`,
-`repo_search`, `repo_fetch`, `repo_map`, `security_search`,
+HTTP verification does **not** use rmcp's Streamable HTTP client transport.
+`http_verification.rs` is a hand-rolled Streamable HTTP verification client
+built on `eggfetch-core`, and it drives the whole session itself:
+
+1. `GET /healthz` with a 5-second bounded client (redirects disabled, 64 KiB
+   body cap), requiring `service: eggsearch` and `status: ready`.
+2. `POST initialize` with protocol version `2025-06-18`, requiring the
+   response to echo that version and capturing the `Mcp-Session-Id` header
+   (bounded to 256 bytes).
+3. `POST notifications/initialized`, then `POST tools/list`, both carrying
+   the session header.
+4. `DELETE` on the endpoint with `Mcp-Session-Id` and `MCP-Protocol-Version`
+   to close the created session.
+
+Responses are accepted as `application/json` or `text/event-stream`, where a
+SSE body is reduced to its first `data:` event. Every body is read through a
+streaming byte cap, so oversized or `Content-Length`-less payloads fail
+closed before they are fully buffered. Missing required tools are a hard
+error here; the recommended-tool warning is stdio-only.
+
+`check_tools()` (the stdio verifier) requires `web_search` and `web_fetch`;
+any other absence is a stderr warning listing the missing recommended tools
+(`batch_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`,
 `research_search`, `build_evidence_bundle`, `provider_status`). The success
 message is `registered and verified minimum MCP tool set`.
 

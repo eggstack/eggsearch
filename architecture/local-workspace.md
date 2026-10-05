@@ -83,12 +83,13 @@ shared `WorkspaceInventory`. `build_inventory()` prefers the git fast path
 — `git ls-files` via `run_bounded_command()` — and falls back to the native
 walker for non-git roots, timeouts, or cap breaches.
 
-`run_bounded_command()` enforces a 5s timeout, 16MB stdout cap
-(`GIT_STDOUT_CAP`), 64KB stderr cap (`GIT_STDERR_CAP`), concurrent
-drainage, and process-group kill (`ProcessTerminationController`, now owned by
-`src/process.rs` and reused by startup and integration probes);
-`CommandTermination` is `Exited`, `TimedOut`, `StdoutLimitExceeded`,
-`StderrLimitExceeded`, `SpawnFailed`, or `Signaled`.
+`run_bounded_command()` — a thin `local_inventory_cache` wrapper over
+`src/process.rs` — enforces the 5s `GIT_OP_TIMEOUT` (from
+`local_inventory.rs`), 16MB stdout cap (`GIT_STDOUT_CAP`), 64KB stderr cap
+(`GIT_STDERR_CAP`), concurrent drainage, and process-group kill
+(`ProcessTerminationController`, now owned by `src/process.rs` and reused by
+startup and integration probes); `CommandTermination` is `Exited`, `TimedOut`,
+`StdoutLimitExceeded`, `StderrLimitExceeded`, `SpawnFailed`, or `Signaled`.
 
 Freshness uses two clocks: `FRESHNESS_PROBE_INTERVAL` (30s status-hash
 probe via `probe_needs_rebuild()`) and `INVENTORY_REBUILD_TTL` (300s full
@@ -96,6 +97,12 @@ rebuild via `needs_rebuild()`). Warm searches share the cached inventory
 through `Arc` ownership. `validate_entry()` rejects deleted files (mtime
 mismatch), oversized files, and disallowed symlinks; `score_inventory_entry()`
 ranks candidates with filename-aware adjustments.
+
+`local_inventory_cache.rs` is the one file here above the ordinary 1,600-line
+/ 80 KB ceiling: it carries a ratchet in `maintenance.md` (1,800 lines /
+60,000 bytes), currently ~1,695 lines / 53 KB. Its next slice is cache ownership
+moving under `local/`; bounded process mechanics already moved to
+`src/process.rs`.
 
 ---
 
@@ -105,9 +112,11 @@ Identity resolution reads `.git/config` directly (no subprocess) and
 normalizes remotes with `normalize_remote_url()` into `NormalizedRepoId`
 (HTTPS, SSH, SCP, and git forms; `parse_url_form()` / `parse_scp_form()`),
 enumerated by `read_remotes_from_config()`. `resolve_git_dir()` locates the
-git directory and `read_head_commit()` reports branch, HEAD SHA, and dirty
-state. The inventory therefore knows which worktree each root belongs to
-without shelling out for identity on every search.
+git directory, and three narrow readers report worktree state:
+`read_head_branch()`, `read_head_commit()` (HEAD SHA, handling detached HEAD,
+packed-refs, and gitfile worktrees), and `detect_dirty_state()`. The inventory
+therefore knows which worktree each root belongs to without shelling out for
+identity on every search.
 
 ---
 
@@ -187,7 +196,8 @@ ordered by `TestHintConfidence` (`Syntax` > `Path` > `NameReference` >
 `LocalStructure { packages, language_distribution, modules, entrypoints,
 top_symbols, test_relationships, build_configs, truncated }`:
 manifest-derived `packages` (`manifest_ecosystem()` recognizes
-`Cargo.toml`, `package.json`, Python manifests, `go.mod`, JVM, `Gemfile`),
+`Cargo.toml`, `package.json`, Python manifests, `go.mod`, JVM, `Gemfile` /
+`*.gemspec`, `composer.json`, `mix.exs`),
 `language_distribution`, top-level `modules`, entrypoint candidates
 (`src/main.rs`, `src/lib.rs`, `main.py`, `index.ts`, `main.go`, …),
 capped `top_symbols`, heuristic `test_relationships`, CI/Dockerfile/Makefile
@@ -199,9 +209,12 @@ the `[local]` budgets; the scan never executes workspace code.
 ## Cache Identity and Local Gating
 
 `fetch::cache::CacheScope` is `Anonymous` or `Profile(ProfileId)`, where
-`ProfileId::opaque(id)` derives an opaque, non-reversible profile key —
-callers pass the opaque id, never a display name (`web_fetch` builds
-`CacheScope::Profile(ProfileId::opaque(id.clone()))`). `build_raw_cache_key()`
+`ProfileId::opaque(id)` is an identity constructor that *labels* an id the
+caller has already made opaque — it performs no hashing or derivation. The
+opaque property is a caller contract: callers pass the opaque ID, never a
+display name (`web_fetch` builds
+`CacheScope::Profile(ProfileId::opaque(id.clone()))`, and browser profile IDs
+are already `prof_<16-hex>`). `build_raw_cache_key()`
 scopes raw fetch entries so profiles never share cached bodies.
 
 Local results enter mixed-provider flows only through the `include_local`

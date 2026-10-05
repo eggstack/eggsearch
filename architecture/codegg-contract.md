@@ -57,8 +57,10 @@ host catalog indexing without returning full input schemas.
 ignore `next_actions` entries whose `tool` fails this check, and
 `sanitize_next_actions()` drops unknown tools and empty reason codes,
 clamps priority to 1–5, and truncates to `MAX_NEXT_ACTIONS`
-preserving order. Unknown or malicious names never widen execution
-authority.
+preserving order. The server applies the same ten names through a
+second gate, `core::workflow::STABLE_TOOL_NAMES` / `is_stable_tool`;
+the two lists are identical and either is sufficient. Unknown or
+malicious names never widen execution authority.
 
 ---
 
@@ -80,7 +82,7 @@ regression and cross-tool dedup).
 | Evidence bundle | `bundle_` | goal + source ids + fetch ids |
 | Locator | `loc_` | host + owner + repo + ref + path |
 | Document | `doc_` | url + title + kind |
-| Document chunk | `chunk_` | chunk-scoped derivation |
+| Document chunk | `chunk_` | doc id + chunk index + heading path |
 | Conflict | `conflict_` | source ids + field |
 | Query fingerprint | `fp_` | non-recoverable query hash |
 
@@ -107,9 +109,10 @@ not instruction-trusted — comments can be adversarial), or `unknown`
 stripping + length bounding) is always on; `[search].sanitize_output`
 and `[fetch].sanitize_output` (both default `true`) gate Tier 2
 framing and Tier 3 marker scans. When `injection_hits > 0`, content
-is framed with `<<<EXTERNAL_UNTRUSTED>>>` delimiters and must still
-be treated with caution — flag for review, require a full fetch
-before final use of snippet-only sources.
+is framed between `<<<EXTERNAL_UNTRUSTED field=… id=…>>>` and
+`<<<END>>>` delimiters and must still be treated with caution — flag
+for review, require a full fetch before final use of snippet-only
+sources.
 
 ---
 
@@ -339,10 +342,13 @@ when the root, remotes, or commit change.
 
 ## 12. Downstream Retirement Contract
 
-**Qualifying version: `eggsearch` >= 0.4.0.** The provider-parity surface
-described here and in `docs/codegg-integration.md` first ships in 0.4.0. Pin
-the minor line, not a moving branch, and confirm with `eggsearch --version`
-(prints `eggsearch 0.4.0`).
+**Qualifying version: `eggsearch` >= 0.4.1.** The provider-parity surface
+described here and in `docs/codegg-integration.md` is the `0.4.0` parity
+contract, but `v0.4.0` is crate+tag only: the release workflow blocked
+binary publication of 0.4.0, so the binaries that actually ship this
+surface are published as `0.4.1` (`CHANGELOG.md` 0.4.1). Pin the minor
+line, not a moving branch, and confirm with `eggsearch --version`
+(prints `eggsearch 0.4.1`).
 
 This is the upstream half of a two-part handoff. eggsearch does not edit the
 consumer; it fixes the contract the consumer's separate retirement workstream
@@ -383,12 +389,18 @@ a tool-level `isError` with stable code `provider_unavailable`:
 | Known, enabled, configured, no engine in this build | `not_built` | Report as unsupported; do not substitute. |
 
 The missing-credential case names the exact environment variable, so the
-`ProviderSkipCode` vocabulary and the message text agree. When all explicitly
-selected providers are queried and all fail, the error carries `upstream_failed`
-and preserves each provider's reason; `internal_error` is reserved for genuine
-server faults. Advisory health and cooldown never drop an explicitly requested
-provider, and a capability a provider cannot serve is recorded as a
-capability-skip attempt in the retrieval ledger rather than a silent omission.
+`ProviderSkipCode` vocabulary and the message text agree. The four rows above
+are the outcomes reachable for an explicitly requested provider;
+`ProviderSkipCode` itself is wider (14 snake-case variants, including
+`missing_searxng_config`, `invalid_base_url`, `missing_local_backend`,
+`credential_env_missing`, and `cooldown_active`), so harnesses must match on
+`as_str()` and treat unknown values as opaque rather than assume the table is
+exhaustive. When all explicitly selected providers are queried and all fail,
+the error carries `upstream_failed` and preserves each provider's reason;
+`internal_error` is reserved for genuine server faults. Advisory health and
+cooldown never drop an explicitly requested provider, and a capability a
+provider cannot serve is recorded as a capability-skip attempt in the
+retrieval ledger rather than a silent omission.
 
 ### 12.3 Stable ten-tool statement
 
@@ -407,7 +419,7 @@ source.
 
 ### 12.4 Retirement prerequisites
 
-A consumer may, on the pinned >= 0.4.0 version and after verifying
+A consumer may, on the pinned >= 0.4.1 version and after verifying
 `provider_status`:
 
 - delete its own external-search HTTP clients, including the deprecated Kagi v0

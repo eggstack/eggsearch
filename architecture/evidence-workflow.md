@@ -310,10 +310,11 @@ unfetched sources, apply fetch caps and the char budget, compute
 trust/provider summaries and deterministic gaps, and derive
 `compute_bundle_id(goal, source_ids, fetch_ids)`.
 
-Identity is preserved end to end via `src/core/identity.rs` FNV-1a
-ids: `compute_source_id` (provider + url + title + kind),
-`compute_fetch_id` (url/locator + line range + text prefix),
-`compute_bundle_id` (goal + source ids + fetch ids). The tool accepts
+Identity is preserved end to end: `src/core/identity.rs` FNV-1a ids
+supply `compute_source_id` (provider + url + title + kind) and
+`compute_fetch_id` (url/locator + line range + text prefix), and
+`compute_bundle_id` (goal + source ids + fetch ids) lives alongside
+the bundle type in `src/core/evidence_bundle.rs`. The tool accepts
 `response_detail` but projection is a passthrough for
 `build_evidence_bundle`: canonical content is identical in all modes.
 

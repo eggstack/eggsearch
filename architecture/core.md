@@ -2,7 +2,7 @@
 
 **Location:** `src/core/` (38 files)
 **Role:** Pure domain model. Foundation of the dependency flow `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`.
-**Invariant:** No HTTP, no engines, no MCP. Only `serde`, `schemars`, `thiserror`, `regex` beyond std. Every type derives `Serialize`/`Deserialize` + `JsonSchema` where it crosses a tool boundary.
+**Invariant:** No HTTP, no engines, no MCP. Beyond std: `serde`, `serde_json`, `schemars`, `thiserror`, `regex`, plus `toml` / `dirs` / `url` / `tracing` for the config type model. Every type derives `Serialize`/`Deserialize` + `JsonSchema` where it crosses a tool boundary.
 
 ---
 
@@ -28,7 +28,7 @@ Root type is `AppConfig` with four sections:
 
 | Section | Type | Notes |
 |---------|------|-------|
-| `search` | `SearchSection` | `mode` (`Mode::Live` / `Mode::Off`, parsed by `Mode::parse`), `default_max_results`, `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers` map, `searxng: SearxngConfig`, `api: BTreeMap<String, ApiProviderConfig>`, profile/browser subsections |
+| `search` | `SearchSection` | `mode` (`Mode::Live` / `Mode::Off`, parsed by `Mode::parse`), `default_max_results`, `max_results_cap`, `max_query_chars`, `timeout_ms`, `default_providers`, `providers` map, `searxng: SearxngConfig`, `api: BTreeMap<String, ApiProviderConfig>`, `live: LiveConfig`, `sanitize_output`, `profiles` map, `exact_error: ExactErrorConfig`, `multiquery_concurrency`, `multiquery_provider_concurrency` |
 | `fetch` | `FetchSection` | `enabled`, `timeout_ms`, `max_bytes`, `max_chars_default`, `max_chars_cap`, `redirect_limit`, `allow_private_network`, `allow_localhost`, `include_links_default`, `user_agent`, plus `FetchCacheSection` / `FetchBrowserSection` |
 | `local` | `LocalConfig` (in `local.rs`) | `enabled`, roots, ignore rules; backend availability gates `local_workspace` routing |
 | `egress` | `EgressSection` (`EgressHopConfig`) | Opt-in listener-free proxy-chain route for provider upstreams only |
@@ -43,7 +43,7 @@ Validation lives next to each request type and returns `CoreError::InvalidQuery`
 
 - `query.rs` — `WebSearchRequest::validate(max_query_chars)`: non-empty after trim, char-count cap, `max_results > 0`, `timeout_ms > 0`, `SearchDateRange` start `<=` end with strict `YYYY-MM-DD` parsing, `date_range` mutually exclusive with non-`Any` `Freshness`, `include_domains`/`exclude_domains` each `<= MAX_DOMAIN_FILTERS` (32) with `normalize_domain` + `domain_matches_filter` / `hostname_from_url` checks, `validate_language` (`MAX_LANGUAGE_LEN` 32) / `validate_region` (`MAX_REGION_LEN` 32), hostname/label length caps (`MAX_HOSTNAME_LEN` 253, `MAX_LABEL_LEN` 63). `resolve_max_results` applies default/cap; result is `MaxResultsResolution`.
 - `repo_search.rs` — `RepoSearchRequest` (`RepoSearchMode`, `SearchProfile`, repo locator/package fields, `include_local`): planner-level checks for owner/repo/path/language/symbol coherence; telemetry via `RepoSearchTelemetry`, `ProviderSelectionTelemetry`, `RepoSearchSubqueryTelemetry`.
-- `repo_fetch.rs` — `RepoFetchRequest` with `RepoLocator` / `RepoLocatorKind`: line-range clamping via `apply_line_range`; URL builders `github_browser_url`, `github_permalink_url`, `github_raw_url`, `gitlab_browser_url`, `gitlab_raw_url` (+ Codeberg/Gitea variants). `commit_sha` resolution comes from `resolved_ref`, not the entry SHA.
+- `repo_fetch.rs` — `RepoFetchRequest` with `RepoLocator` / `RepoLocatorKind`: line-range clamping via `apply_line_range`; URL builders `github_browser_url`, `github_permalink_url`, `github_raw_url`, `gitlab_browser_url`, `gitlab_raw_url` (+ Codeberg/Gitea variants). `commit_sha` resolution comes from `resolved_ref_name`, not the entry SHA.
 - `repo_map.rs` — `RepoMapRequest` (owner/repo/ref/path, `RepoMapMode`): path scoping; response `RepoMapResponse` with `RepoMapEntry` / `RepoMapEntryKind`, `RepoImportantFile` / `ImportantFileKind`, `RepoImportantDirectory` / `ImportantDirKind` via `classify_important_file` / `classify_important_directory`, plus `RepoPathSummary`, `RepoMapSuggestedFetch`, package/language/module/entrypoint/test-relationship summaries.
 - `security.rs` / `security_applicability.rs` — `SecuritySearchRequest`: `SecurityIdentifiers` (`SecurityIdentifier`, `SecurityIdentifierKind`), `classify_query_kind`, `build_identifier_list`; `AdvisoryRange` + `DependencyFinding` (`DependencyRelation`, `DependencySource`) feed `ApplicabilityAssessment` (`ApplicabilityStatus`, `ApplicabilityConfidence`).
 - `research.rs` — `ResearchSearchRequest` (`ResearchDomain`, `ResearchDepth`, `ResearchWorkflow`, `ResearchWorkflowContext`, `ResearchDimension`): depth-bounded subquery fan-out (`ResearchSubquery`), grouped response (`ResearchResultGroup`, `ResearchResultGroupKind`, `ResearchSuggestedFetch`, `ResearchTelemetry`).
@@ -68,6 +68,7 @@ Grouped by responsibility; `mod.rs` declares modules and re-exports the public s
 | `quality.rs` | `ResultQuality`, `ResultConfidence`, `RelevanceEstimate`, `AuthorityEstimate`, `FreshnessEstimate`, `EvidenceStrength`, `QualityReason`, `GroupQualitySummary`, `SearchUncertaintySummary` / `UncertaintyReason`, `compute_card_quality`, `compute_card_quality_with_now`, `compute_group_quality` |
 | `warning.rs` | `AgentWarning`, `WarningCode`, `WarningSeverity`, `WarningAccumulator`, `convert_warnings`, `convert_fetch_warnings`, `search_warning_to_agent_warning` |
 | `error.rs` | `CoreError` (`InvalidUrl`, `InvalidQuery`, `Config`, `Provider`), `CoreResult<T>` |
+| `config.rs` | `AppConfig` (`search` / `fetch` / `local` / `egress`), `Mode`, `SearchSection`, `FetchSection`, `FetchCacheSection`, `FetchBrowserSection`, `PersistentBrowserProfilesConfig`, `EgressSection` / `EgressHopConfig`, `LiveConfig`, `SearxngConfig`, `ApiProviderConfig`, `ProfileConfig`, `default_config_path`, `optional_api_key` / `optional_api_key_misconfigured`, `load` / `save`, `validate`, `resolve_providers`, `resolve_profile_providers` (see §2) |
 
 **Identity and sanitization**
 
@@ -154,7 +155,7 @@ Grouped by responsibility; `mod.rs` declares modules and re-exports the public s
 
 `sanitize.rs` exposes four primitives; callers compose them according to the `sanitize_output` flag (production default `true`, tests default `false`):
 
-1. **Strip** — `strip_control_chars` removes NUL/CR, ASCII control ranges, bidi controls (U+200E-200F, U+202A-202E, U+2066-2069), zero-width chars (U+200B-200D, U+FEFF), and U+2028-2029 separators; preserves LF/TAB. Returns the cleaned string plus removal count.
+1. **Strip** — `strip_control_chars` removes NUL/CR, ASCII control ranges, bidi controls (U+200E-200F, U+202A-202E, U+2066-2069), zero-width chars (U+200B-200D, U+FEFF), and U+2028-2029 separators; NUL, CR, and U+2028/U+2029 are replaced by a space rather than dropped, and LF/TAB are preserved. Returns the cleaned string plus removal count.
 2. **Bound** — `bound_text` clamps to `max_chars` (`TITLE_MAX_CHARS` 200, `SNIPPET_MAX_CHARS` 500, excerpt caps in `source_card.rs`) with word-safe `truncate_at_word` where applicable; truncation appends `…` and sets the truncated flag.
 3. **Frame** — `frame` wraps output in `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` … `<<<END>>>` delimiters when `sanitize_output` is on (Tier 2).
 4. **Scan** — `scan_injection_markers` reports `MarkerHit` entries (`ignore_previous`, `disregard_all`, `system_colon`, `assistant_colon`, `im_start`, `im_end`, `chatml_tag` families) without mutating input (Tier 3).
@@ -165,11 +166,11 @@ Grouped by responsibility; `mod.rs` declares modules and re-exports the public s
 
 ## 7. Provider model
 
-`ProviderKind`: `HtmlScrape`, `JsonApi`, `ApiKey`, `Local`.
+`ProviderKind`: `HtmlScrape`, `JsonApi`, `StructuredApi`, `ApiKey`, `Local`.
 
 `ProviderCapabilities` carries 24 flags: `supports_safe_search`, `supports_freshness`, `supports_language`, `supports_region`, `supports_domain_filters`, `supports_news`, `supports_code_search`, `supports_repo_filter`, `supports_org_filter`, `supports_path_filter`, `supports_language_filter`, `supports_symbol_hint`, `supports_issue_search`, `supports_release_search`, `supports_result_timestamps`, `supports_security_search`, `supports_package_metadata`, `supports_advisory_lookup_by_id`, `supports_advisory_lookup_by_package`, `supports_exploit_kev_status`, `supports_scholarly_search`, `supports_doi_lookup`, `supports_repo_indexing`, `supports_structured_changelog`.
 
-`KNOWN_PROVIDER_IDS` holds 44 ids (6 generic HTML/JSON, `brave_api`, 9 forge code/issues/releases, 5 advisory, `local_workspace`, 8 registries, 5 scholarly, `sourcegraph`, `firecrawl_developer`, `exa`, `tavily`, the credentialed `serpapi` and `kagi`, plus the keyless source-specific `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, `github_repositories`). `API_PROVIDER_IDS` requires `api_key_env`; `OPTIONAL_API_PROVIDER_IDS` (`firecrawl_developer`, `pubmed`, `github_repositories`) stays routable keyless.
+`KNOWN_PROVIDER_IDS` holds 44 ids (6 generic HTML/JSON, `brave_api`, 9 forge code/issues/releases, 5 advisory, `local_workspace`, 8 registries, 3 scholarly, `sourcegraph`, `firecrawl_developer`, `exa`, `tavily`, the credentialed `serpapi` and `kagi`, plus the keyless source-specific `wikipedia`, `arxiv`, `pubmed`, `hn_algolia`, `github_repositories`). `API_PROVIDER_IDS` (17 ids) requires `api_key_env`; `OPTIONAL_API_PROVIDER_IDS` (`firecrawl_developer`, `pubmed`, `github_repositories`) stays routable keyless.
 
 `ProviderKind::StructuredApi` was added additively for structured non-JSON contracts (the arXiv Atom feed). No existing serialized variant was renamed or removed, so existing `provider_status.kind` consumers keep working; harnesses should treat unknown `kind` strings as opaque categories. `CredentialRequirement` (`None` / `Optional` / `Required`) and `provider_configured_state` drive `ProviderDescriptor` (built by `built_in_provider_descriptor`) and skip reporting (`ProviderSkipCode`, `provider_skip_code`, `CapabilityOption`). Native enforcement matrix: `brave_api` natively enforces safe-search, freshness/date-range, language, region, news; `exa` freshness/date-range, domain filters, timestamps; `tavily` safe-search, freshness/date-range, language, region, domain filters, news; `serpapi` safe-search, language, region; `kagi` safe-search, freshness/date-range, region, domain filters, timestamps; `hn_algolia` freshness/date-range. Domain filters are natively enforced only by `exa`/`kagi`/`tavily`; everything else is local approximation recorded in capability telemetry rather than silently dropped.
 

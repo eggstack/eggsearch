@@ -147,12 +147,16 @@ The spawn path is double-guarded:
    `wait_for_health()` verifies readiness.
 
 The persistent process holds a `PidFileGuard` over `mcp-serve.pid`.
-The record stores PID, canonical executable, and the Linux `/proc`
-start-time token. `process_matches()` requires all three to agree:
-same resolved executable **and** same start token, so a stale file
-can never SIGTERM an unrelated or recycled PID. `restart_cron` and
-cron `uninstall` stop only through `stop_owned_process()`; systemd,
-launchd, and Windows restarts delegate to their managers instead.
+The record stores PID, canonical executable, and a per-platform start-time
+token: `/proc/<pid>/stat` start time on Linux, `ps -o lstart=` on macOS.
+`process_matches()` requires a non-empty token, a matching executable, **and**
+a matching token. On Linux the executable check canonicalizes
+`/proc/<pid>/exe` against the recorded path; on macOS it compares the
+`ps -o comm=` file name, which is weaker, so the token is what prevents a
+recycled PID from being mistaken for the owner. Together they mean a stale
+file can never SIGTERM an unrelated process. `restart_cron` and cron
+`uninstall` stop only through `stop_owned_process()`; systemd, launchd, and
+Windows restarts delegate to their managers instead.
 
 ## Identity-safe restart and service state
 

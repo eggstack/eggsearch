@@ -22,6 +22,7 @@ All tool names in this document are derived from `src/mcp/server.rs` (`#[tool(na
 | `tools/mod.rs` | Per-behavior modules with stable `tools::X` re-export paths (`run_*` + `*Args`) |
 | `tools/common.rs` | `ToolError` taxonomy, `ToolErrorCode`, `RepairHint`, `map_tool_result()` single conversion seam, shared parse/selection helpers |
 | `tools/canonical.rs` | Canonical `goal`/`sources`/`include` selectors with legacy `workflow`/`profile`/`mode`/`include_*` translators and repairable conflict errors |
+| `tools/evidence_bundle.rs` | `build_evidence_bundle` args and the pure-local bundle builder; no `ServerState`, no adapter |
 
 ---
 
@@ -121,7 +122,7 @@ Registration lives in `server.rs`; behavior lives in `tools/`; semantics live in
 | `repo_map` | Repository layout discovery without file contents | `owner`, `repo`, `ref`, `path`, security-policy toggles | `forge_adapter::fetch_tree` for supported hosts, `repo_mapper::build_fallback_response` otherwise; local backend when workspace-scoped |
 | `security_search` | Vulnerability/advisory retrieval with applicability context | `query`, `identifiers` (CVE/GHSA/OSV), `package`, `ecosystem`, `goal`, `include` (`kev`, `exploit_context`, `defensive_guidance`, `vendor_advisories`) | `MetadataSearchAdapter` security path (advisory engines + KEV client) |
 | `research_search` | Multi-source evidence discovery with grouped bundles, no synthesis | `query`, `depth` (`quick`/`standard`/`deep`), `domain`, `goal`, `include` (`counterpoints`, `primary_sources`, `recent_discussion`, `security_considerations`) | `MetadataSearchAdapter::research_search` |
-| `build_evidence_bundle` | Deterministic packaging of already-selected evidence for handoff | `goal`, `sources`, `fetches`, `response_detail` (accepted, identity-preserving) | Pure local: `meta::evidence_bundle::build_evidence_bundle`; no adapter, no fetch, no network |
+| `build_evidence_bundle` | Deterministic packaging of already-selected evidence for handoff | `goal`, `sources`, `fetches`, `include_unfetched_sources`, `max_sources` (default 50, cap 200), `max_fetched_items` (default 20, cap 100), `max_total_chars` (default 100000, cap 500000), `response_detail` (accepted, identity-preserving) | Pure local: `meta::evidence_bundle::build_evidence_bundle`; no adapter, no fetch, no network |
 
 All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`).
 
@@ -141,11 +142,11 @@ All search/fetch tools except diagnostic-only `provider_status` accept optional 
 
 **`repo_map`** — orientation before search: repository tree without file contents. `owner`/`repo` plus optional `ref`/`path`. Supported forge hosts go through `forge_adapter::fetch_tree` under a bounded endpoint policy with timeout fallback; anything else (or timeout) returns `repo_mapper::build_fallback_response` with explicit `mode_reason` telemetry. Workspace-scoped requests use the local backend under the local-only policy path. Never a substitute for search or fetch.
 
-**`security_search`** — advisory retrieval with applicability context. `query` plus optional `identifiers` (CVE/GHSA/OSV), `package`/`ecosystem` scoping, `goal` (defaults to `security_review`), and `include` toggles for KEV, exploit context, defensive guidance, and vendor advisories. Runs the adapter security path over advisory engines (OSV, GitHub Advisory, NVD, CISA KEV via `kev_client`, RustSec). Returns normalized vulnerability metadata (severity, affected versions, fixes) grouped with applicability context. `goal` uses the same vocabulary as `repo_search` via `parse_security_goal`.
+**`security_search`** — advisory retrieval with applicability context. `query` plus optional `identifiers` (CVE/GHSA/OSV), `package`/`ecosystem` scoping, `goal` (defaults to `security_review`), and `include` toggles for KEV, exploit context, defensive guidance, and vendor advisories. Runs the adapter security path over advisory engines (OSV, GitHub Advisory, NVD, CISA KEV via `kev_client`, RustSec). Returns normalized vulnerability metadata (severity, affected versions, fixes) grouped with applicability context. `goal` resolves through `parse_security_goal`, which accepts `REPO_GOAL_VALUES` plus the native `WorkflowKind` vocabulary.
 
 **`research_search`** — grouped multi-source evidence for complex architectural/comparative questions. `query` plus `depth` (`quick`/`standard`/`deep`), `domain`, `goal` (mapped through `parse_research_goal` onto `ResearchWorkflow`), and `include` toggles. Runs `MetadataSearchAdapter::research_search` with the research planner (claims/gaps/conflicts, depth control, semantic roles). Returns evidence grouped by quality and class with subqueries, source-quality, and workflow-context metadata. Does not synthesize answers and does not fetch pages.
 
-**`build_evidence_bundle`** — pure local packaging of already-selected `sources` and `fetches` into a portable `EvidenceBundle` with trust summary and gaps. Synchronous (`run_build_evidence_bundle` takes only `EvidenceBundleArgs`, no `ServerState`). No adapter, no fetch, no network, no summarization. `response_detail` is accepted but identity-preserving: all three modes return the identical canonical bundle.
+**`build_evidence_bundle`** — pure local packaging of already-selected `sources` and `fetches` into a portable `EvidenceBundle` with trust summary and gaps. Synchronous (`run_build_evidence_bundle` takes only `EvidenceBundleArgs`, no `ServerState`). No adapter, no fetch, no network, no summarization. `include_unfetched_sources` (default true) and the three `MAX_*_CAP` bounds reject over-cap values as repairable `budget_invalid` errors, and an empty `sources` + `fetches` pair is rejected outright. `response_detail` is accepted but identity-preserving: all three modes return the identical canonical bundle.
 
 ---
 
@@ -185,7 +186,9 @@ Ordinary agent schemas stay slim. The canonical vocabulary is:
 
 - `goal`: `understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change` (see `REPO_GOAL_VALUES`).
 - `sources` (`repo_search`): `code`, `docs`, `registry`, `issues`, `pull_requests`, `releases`, `examples`, `changelog`, `migration_guides`, `security` (see `REPO_SOURCE_VALUES`).
-- `include` (`research_search`): `counterpoints`, `primary_sources`, `recent_discussion`, `security_considerations`; (`security_search`): `kev`, `exploit_context`, `defensive_guidance`, `vendor_advisories`.
+- `include` (`research_search`): `counterpoints`, `primary_sources`, `recent_discussion`, `security_considerations` (see `RESEARCH_INCLUDE_VALUES`); (`security_search`): `kev`, `exploit_context`, `defensive_guidance`, `vendor_advisories` (see `SECURITY_INCLUDE_VALUES`).
+
+`REPO_GOAL_VALUES` is the shared floor, not the whole accepted set: `parse_security_goal` and `parse_research_goal` each try the tool's native workflow vocabulary (`WorkflowKind::parse` / `ResearchWorkflow::parse`) before falling back to the shared list, so a native id such as `security_review` is accepted on both specialist tools.
 
 `canonical.rs` resolves these into typed planner inputs: `resolve_repo_semantics()` (goal → `WorkflowKind` + implied `SearchProfile`/`RepoSearchMode`, with `debug` implying `ExactError`), `resolve_repo_sources()` (tokens → `include_*` booleans), `resolve_research_workflow()` / `resolve_research_includes()`, `resolve_security_workflow()` / `resolve_security_includes()`.
 
@@ -231,10 +234,10 @@ Output schemas (`output_schema.rs`) are permissive stable envelopes (`type: obje
 | `repo_search` | `results`, `warnings`, `structured_warnings`, `next_actions`, `retrieval_summary` |
 | `research_search` | `results`, `warnings`, `structured_warnings`, `next_actions` |
 | `security_search` | `results`, `warnings`, `structured_warnings`, `next_actions` |
-| `web_fetch` | `url`, `final_url`, `status`, `fetched`, `truncated` (required), `text`, `warnings`, `structured_warnings` |
+| `web_fetch` | `url`, `final_url`, `status`, `fetched`, `truncated` (all five required), `text`, `warnings`, `structured_warnings` |
 | `web_search` | `query`, `results` (required), `providers_queried`, `warnings`, `structured_warnings`, `next_actions` |
 
-Tool behavior modules carry unit coverage in-file plus the shared `tools/tests.rs` (bundle validation, locator edge cases); protocol-level conformance lives in the behavioral suites (`mcp_tools`, `mcp_2026_protocol`, `mcp_projection`, `mcp_http`).
+Tool behavior modules carry unit coverage in-file plus the shared `tools/tests.rs` (bundle caps, budget accounting, host/locator validation, warning and trust-marker payload shape); protocol-level conformance lives in the behavioral suites (`mcp_tools`, `mcp_tool_contract`, `mcp_schema_slimming`, `mcp_2026_protocol`, `mcp_projection`, `mcp_http`).
 
 ---
 
@@ -294,6 +297,8 @@ The surface described here is pinned by behavioral suites, not prose:
 - `tests/docs_tool_names.rs` derives the documented tool inventory from `src/mcp/server.rs` — prose inventing a tool-like name fails the gate.
 - `tool_contract.rs` unit tests pin alphabetical order, uniqueness, exactly 10 entries, and the 300-byte description budget.
 - `output_schema.rs` unit tests pin one schema per stable tool, object type, and the 1200-byte budget.
+- `tests/mcp_tool_contract.rs` pins registry/registration agreement, the deterministic order, the annotation hints, the global-rules-only instruction text, related/next-tool validity, and the content-based fingerprint.
+- `tests/mcp_schema_slimming.rs` pins the advertised property counts, the hidden advanced fields (`providers`, `timeout_ms`, `profile`, `mode`, `workflow`, `include_*`), the canonical `goal`/`sources`/`include` surface, and that the legacy fields still deserialize.
 - `tests/mcp_projection.rs` pins `compact < standard < diagnostic` and the identity/trust/conflict preservation rules on fixtures.
 - `tests/mcp_http.rs` covers legacy initialize/tools-list/call plus modern discover/list/call, structured success, repairable errors, decode failures, and deterministic-list fixtures over the HTTP transport.
 - `tests/mcp_2026_protocol.rs` pins native `structuredContent` + advertised `outputSchema` + representative-payload conformance.

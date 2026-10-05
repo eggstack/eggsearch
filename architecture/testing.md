@@ -50,7 +50,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `structured_local_code_intelligence` | Structured parsing, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `mcp_tool_contract`, `mcp_schema_slimming`, `mcp_2026_protocol`, `mcp_projection` | Registry parity, schema size budgets, structured error contract, response-detail projection |
 | `fetch_safety` | URL validation and SSRF prevention at the fetch boundary |
-| `forge_adapter` | Forge endpoint validation, redirect policy, URL construction from `resolved_ref` |
+| `forge_adapter` | Forge endpoint validation, redirect policy, URL construction from the resolved ref (`resolved_ref_name`) |
 | `local_workspace_integration`, `inventory_freshness`, `retrieval_attempt_ledger`, `evidence_bundle_handoff`, `evidence_integration` | Workspace, inventory lifecycle, ledger validation, bundle pipeline |
 | `config_validation`, `docs_config_snippets` | Config rules and doc snippet validity |
 | `exa`, `tavily`, `firecrawl_developer` | Provider-specific adapter behavior |
@@ -61,6 +61,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `codegg_evidence_contract`, `native_security_attempts` | CodeGG evidence handoff shape; native advisory attempt preservation |
 | `native_forge_smoke` | Maintainer-only native forge diagnostics (`live-smoke`-gated, ignored by default; never release evidence) |
 | `egress_routing`, `egress_qualify_contract` | Egress route behavior and egress qualification CI contract |
+| `dependency_fixtures` | Realistic minimized lockfile fixtures per ecosystem and version (`tests/fixtures/dependency_evidence/`) |
 | `bounded_command` | Bounded git command execution (caps, timeout, termination) |
 
 ### Where new tests go
@@ -131,7 +132,7 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored
 
 ## Property tests
 
-16 `proptest` suites cover pure functions only and run without network access:
+17 `proptest` suites cover pure functions only and run without network access:
 
 | Suite | Focus |
 |-------|-------|
@@ -183,7 +184,7 @@ cargo test --locked --all-features --test docs_config_snippets --test docs_provi
 
 ## Fuzz harnesses
 
-23 `cargo-fuzz` + `libfuzzer` targets are registered as `[[bin]]` entries in `fuzz/Cargo.toml` (the source of truth), covering URL validation, redirect chains, content-type classification, HTML and byte-level extraction, mixed-UTF-8 handling, PDF extraction, the sanitize pipeline and its stages, chunk boundaries, document chunking, the production bounded chunk-append path, workflow parsing and resolution, absence classification, conflict detection, retrieval bookkeeping, and typed dependency-evidence parsing. Fuzz-only dependencies never enter the runtime graph.
+23 `cargo-fuzz` + `libfuzzer` targets are registered as `[[bin]]` entries in `fuzz/Cargo.toml` (the source of truth), covering URL validation, redirect chains, content-type classification, HTML and byte-level extraction, mixed-UTF-8 handling, PDF extraction, the sanitize pipeline and its stages, chunk boundaries, document chunking, the production bounded chunk-append path, workflow parsing and resolution, research role mapping, absence classification, conflict detection, retrieval bookkeeping, identity canonicalization, and typed dependency-evidence parsing. Fuzz-only dependencies never enter the runtime graph.
 
 Smoke-run the four key targets with:
 
@@ -248,12 +249,13 @@ cargo test --locked --features browser --test browser_transport
 
 ## Hygiene and packaging contract
 
-`make hygiene` runs the deterministic `packaging/check-repo-hygiene.sh`: no forbidden transcript or log artifacts, no ANSI escapes in unexpected root text artifacts, no tracked build outputs (`target/`, `node_modules/`), no oversized unexpected root blobs over 100 KiB (allowlist: `Cargo.lock`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `LICENSE`), and no tracked editor or temp files. `make packaging-check` runs `packaging/check-contract.sh`, which keeps `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, the egress qualification matrix, installers, the updater, and the install docs synchronized. Installer behavior itself is exercised by `packaging/test-install.sh` (Unix) and `packaging/test-install.ps1` (Windows), not by `cargo test`.
+`make hygiene` runs the deterministic `packaging/check-repo-hygiene.sh`: no forbidden transcript or log artifacts, no ANSI escapes in unexpected root text artifacts, no tracked build outputs (`target/`, `node_modules/`), no oversized unexpected root blobs over 100 KiB (allowlist: `Cargo.lock`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `LICENSE`), and no tracked editor or temp files. `make dependency-policy` runs the two dependency-policy Python scripts plus a pinned `cargo deny check` against the root `deny.toml`. `make packaging-check` runs `packaging/check-contract.sh`, which keeps `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, the egress qualification matrix, installers, the updater, and the install docs synchronized, and additionally fails closed on movable (non-40-hex-SHA) action pins and on planning-status inconsistencies. Installer behavior itself is exercised by `packaging/test-install.sh` (Unix, always) and `packaging/test-install.ps1` (Windows, only when `pwsh` is available), not by `cargo test`.
 
-`tests/static_guards.rs` enforces module ownership fail-closed (MCP tools call the `MetadataSearchAdapter`, never engines directly; new tools live in dedicated modules under `src/mcp/tools/` and register in `src/mcp/server.rs`), bounded production process capture with one session owner, shared forge policy/budget ownership, and dependency/workflow policy entry points. `tests/schema_identity_registry.rs` pins schema and deterministic-ID fixtures so contract drift fails loudly. The HTTP integration-verifier unit tests cover bounded JSON/SSE parsing, the initialize/initialized/tools-list/delete lifecycle, and failure cases.
+`tests/static_guards.rs` is the fail-closed crate-wide policy suite. It enforces module ownership (MCP tools call the `MetadataSearchAdapter`, never engines directly; new tools live in dedicated modules under `src/mcp/tools/` and register in `src/mcp/server.rs`; the stable tool count and names are pinned), bounded production process capture with exactly one session owner, shared forge policy/budget ownership, every forge response path going through a bounded reader with no unbounded body reads or unbounded git output, shell wrappers rejected in production `src/`, the crate-wide unsafe policy (`crate_roots_deny_unsafe_code` plus `unsafe_allow_inventory_is_explicit_and_minimal`), the eggfetch and egress feature budgets, the exact Tokio feature policy, egress route separation from dynamic fetch, browser, and loopback paths, fetch-timeout effective-limit enforcement, Windows startup portability, planning-status consistency, and the module-size ratchet. The `http` crate dependency shape is checked separately by `packaging/check-http-dependency-shape.py` under `make dependency-policy`. `tests/schema_identity_registry.rs` pins schema and deterministic-ID fixtures so contract drift fails loudly. The HTTP integration-verifier unit tests in `src/integrations/http_verification.rs` cover bounded JSON/SSE parsing, the initialize/initialized/tools-list/delete lifecycle, and failure cases.
 
 ```bash
 make hygiene
+make dependency-policy
 make packaging-check
 cargo test --locked --all-features --test static_guards
 cargo test --locked --all-features --test schema_identity_registry
@@ -264,7 +266,7 @@ cargo test --locked --all-features --test schema_identity_registry
 `make check` is the canonical gate:
 
 ```bash
-make check  # fmt + clippy + no-default check + all-features tests + hygiene + packaging-check
+make check  # fmt + clippy + no-default check + all-features tests + hygiene + dependency-policy + packaging-check
 ```
 
 Target breakdown from the `Makefile`:
@@ -276,6 +278,7 @@ Target breakdown from the `Makefile`:
 | `feature-check` | `cargo check --locked --no-default-features` (compile-only) |
 | `test` | `cargo test --locked --all-features` |
 | `hygiene` | `./packaging/check-repo-hygiene.sh` |
+| `dependency-policy` | `./packaging/check-dependency-policy.sh` (policy scripts plus pinned `cargo deny check` against `deny.toml`) |
 | `packaging-check` | `./packaging/check-contract.sh` |
 
 Release adds documentation, build, and publish gates:
@@ -285,6 +288,8 @@ make release-check  # check + docs + release build + publish dry-run
 ```
 
 which runs `release-candidate-check`, `docs-check` (`RUSTDOCFLAGS="-D warnings" cargo doc`), `release-build`, and `publish-check` (`cargo publish --dry-run`). MSRV is pinned by `rust-version = "1.89"` in `Cargo.toml`; edition 2021.
+
+CI runs two jobs from `.github/workflows/ci.yml`: `ci` on `ubuntu-latest` invoking `make ci` (an alias of `make check`) with every credential env var blanked, and `windows-portability` on `windows-latest` running `cargo check --locked --all-features --target x86_64-pc-windows-msvc` at the pinned Rust 1.89 so Windows `cfg` breakage cannot hide behind Linux-green CI. `.github/workflows/dependency-security.yml` adds a weekly `cargo deny` policy run, and `.github/workflows/egress-feature-qualify.yml` is a path-filtered, non-publishing per-target `--features egress` compile-check.
 
 Individual suites:
 

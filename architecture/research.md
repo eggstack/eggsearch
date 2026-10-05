@@ -123,9 +123,10 @@ Dimension builders and their literal names:
 - `api_evaluation_dimensions` — 6 (`Official API Documentation`, `Examples
   & Tutorials`, `Source Implementation`, `Issues & Known Pitfalls`, `Version
   & Release Notes`, `Security & Compatibility`).
-- `library_comparison_dimensions(query, compare_targets)` — per-target docs
-  subqueries plus `Benchmarks`, `Maintenance & Release Cadence`, `Security
-  Advisories`, `Migration & Interoperability`, and a bounded (max 3)
+- `library_comparison_dimensions(query, compare_targets)` — an
+  `Official Docs per Target` dimension plus `Benchmarks`,
+  `Maintenance & Release Cadence`, `Security Advisories`,
+  `Migration & Interoperability`, and a bounded (max 3)
   `Per-Target Deep Dives` dimension when more than one target is given.
 - `migration_planning_dimensions` — 5 (`Migration Guides`, `Changelogs &
   Breaking Changes`, `Breaking-Change Issues`, `Before/After Examples`,
@@ -224,14 +225,16 @@ in exactly one group and empty groups are omitted.
   `NoPrimarySources`, `NoRecentSources`, `NoCounterpoints`,
   `NoImplementationEvidence`, `NoBenchmarks`, `NoSecurityDiscussion`,
   `NoMigrationDocs`, `ProviderCoverageLimited`) are workflow- and
-  flag-conditional. Evidence gaps (`detect_evidence_gaps()` → bounded by
-  `MAX_GAPS`, `ResearchEvidenceGapKind`, 8 variants: `NoPrimarySource`,
+  flag-conditional, and live in `src/meta/research_workflow.rs`.
+  Evidence gaps (`detect_evidence_gaps()` → bounded by
+  `MAX_GAPS = 9`, `ResearchEvidenceGapKind`, 8 variants: `NoPrimarySource`,
   `NoRecentSource`, `NoBenchmarkSource`, `NoSecuritySource`,
   `NoMigrationChangelog`, `OnlySecondarySources`,
   `ConflictingEvidenceUnresolved`, `VersionContextMissing`) each carry
   `AgentNextAction` follow-ups. Do not mix the two vocabularies.
 
-`compute_coverage()` folds groups into `ResearchCoverage`
+`compute_coverage()` (also `src/meta/research_workflow.rs`) folds groups
+into `ResearchCoverage`
 (`primary_sources_found`, `official_docs_found`,
 `implementation_sources_found`, `benchmark_sources_found`,
 `security_sources_found`, `counterpoints_found`, `recent_sources_found`).

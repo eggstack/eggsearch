@@ -149,7 +149,7 @@ in `engines/mod.rs`, and cloned into each engine struct. Consequences:
 IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilities quoted are the
 `ProviderCapabilities` flags in `src/core/provider.rs`; do not invent others.
 
-### Generic web (9) plus Firecrawl Developer Index specialist
+### Generic web (11) plus Firecrawl Developer Index specialist
 
 | Provider ID | Engine | Transport / Credential |
 |-------------|--------|------------------------|
@@ -162,6 +162,8 @@ IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilit
 | `brave_api` | `BraveApiEngine` | JSON API, `BRAVE_API_KEY`; native safe-search, freshness/date-range, language, region, news, result timestamps |
 | `exa` | `ExaEngine` | JSON API (`POST /search`), `EXA_API_KEY`; native freshness/date-range, domain filters, result timestamps; highlights fetched only on excerpt demand |
 | `tavily` | `TavilyEngine` | JSON API (`POST https://api.tavily.com/search`, `Authorization: Bearer`), `TAVILY_API_KEY`; native safe-search, freshness/date-range, language, region, domain filters, news; `chunks_per_source` 1–3 from excerpt demand; always `include_answer=false`, `include_raw_content=false`, `include_images=false`, `auto_parameters=false` |
+| `serpapi` | `SerpapiEngine` | Google SERP through SerpApi (`q`, `safe`, `hl`, `gl`; `tbs` deliberately left unmapped), required key via `[search.api.serpapi]`; native safe-search, language, region; claims no freshness, domain-filter, news, or result-timestamp support |
+| `kagi` | `KagiEngine` | JSON API, required key via `[search.api.kagi]`; native safe-search (`safe_search`), freshness/date-range (`filters.after` / `filters.before`), region, domain filters (`sites_included` / `sites_excluded`), result timestamps (`data.search[].time`) |
 | `firecrawl_developer` | `FirecrawlDeveloperEngine` | Keyless-optional `JsonApi` specialist for `POST /v2/search/developer` (never the generic `/v2/search` SERP). `[search.providers].firecrawl_developer = true` routes keyless; optional `[search.api.firecrawl_developer]` attaches `Authorization: Bearer` for higher limits. `k` clamped 1–20, passages default 2 max 3, `types` restricted only for Docs/Issues intents, `repos` from `RepoScope`. Never claims `supports_code_search`. |
 
 ### Forge code / issues / releases (9) plus Sourcegraph
@@ -224,7 +226,7 @@ these upstreams.
 | `arxiv` | `ArxivEngine` | keyless, shared `arxiv::RequestGate` | Atom feed parsed with `quick_xml`; scholarly search plus result timestamps; see [arXiv Pacing Gate](#arxiv-pacing-gate) |
 | `pubmed` | `PubmedEngine` | optional `NCBI_API_KEY`, optional `NCBI_API_EMAIL` contact identity | `esearch` + one bounded `esummary` batch; scholarly search plus result timestamps |
 
-### Source-specific keyless (5)
+### Source-specific keyless (5 — the two scholarly ones, `arxiv` and `pubmed`, are inventoried above)
 
 Explicit-source providers, disabled by default and never members of `default_providers`.
 
@@ -290,8 +292,9 @@ Scholar, Sourcegraph, NVD, and the optional `NCBI_API_EMAIL` contact identity; e
 
 ## Native Enforcement Matrix
 
-Six providers natively enforce generic-search constraints (`brave_api`, `exa`, `tavily`,
-`serpapi`, `kagi`, `hn_algolia`). Everything else either ignores
+Six providers declare at least one natively enforced generic-search constraint (`brave_api`,
+`exa`, `tavily`, `serpapi`, `kagi`, `hn_algolia`). The table below covers the five generic-search
+services it has columns for; everything else either ignores
 the constraint upstream (local approximation applies downstream) or is a specialist whose native
 surface is its own API shape. Source of truth: `ProviderCapabilities` in `src/core/provider.rs`,
 pinned by `tests/provider_capability_contract.rs`; operator prose in `docs/provider-setup.md`.
@@ -317,7 +320,11 @@ Rules that follow from the matrix:
   claim no native capabilities at all; every constraint on those paths is local approximation.
 - Freshness is natively enforced by exactly five providers: `brave_api`, `exa`, `tavily`,
   `hn_algolia` (via `numericFilters=created_at_i…`), and `kagi` (via `filters.after` /
-  `filters.before`). `serpapi` deliberately does not claim it: the current engine page documents
+  `filters.before`). `nvd` also declares `supports_freshness: true` in
+  `src/core/provider.rs` (asserted in `src/meta/engines/nvd.rs`), but it is an advisory
+  service whose engine maps only `keywordSearch` onto the upstream request, so the declared
+  flag is not yet backed by a wired date parameter. `serpapi`
+  deliberately does not claim it: the current engine page documents
   `tbs` only generically and without value syntax, so sending it would be a guess. `wikipedia`,
   `arxiv`, `pubmed`, and `github_repositories` also do not claim it — none of them has a
   documented freshness parameter mapped, so the capability stays local approximation.
