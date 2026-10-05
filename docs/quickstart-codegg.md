@@ -39,12 +39,25 @@ The binary is written to `target/release/eggsearch`.
 
 eggsearch reads `$XDG_CONFIG_HOME/eggsearch/config.toml`. On macOS this is typically `~/.config/eggsearch/config.toml`. The file is optional; eggsearch works with sensible defaults when it is absent.
 
+If you do create one, note that every field of the `[search]` table is
+required once you include that table — a partial `[search]` block is rejected.
+[Configuration](config.md) is the full reference.
+
 A minimal config:
 
 ```toml
 [search]
 mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["duckduckgo", "startpage", "yahoo"]
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
 
 [fetch]
 enabled = true
@@ -55,7 +68,15 @@ For coding work with GitHub integration:
 ```toml
 [search]
 mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["duckduckgo", "brave"]
+
+[search.providers]
+duckduckgo = true
+brave = true
 
 [search.api.github_code]
 enabled = true

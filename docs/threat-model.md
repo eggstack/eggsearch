@@ -314,7 +314,7 @@ For integration with codegg and similar coding-agent harnesses, the following ho
 ## See Also
 
 - [Safety and Fetch Behavior](safety.md) -- detailed fetch boundaries, blocked address ranges, sanitization defaults
-- [Architecture Overview](architecture/overview.md) -- module map, data flows
-- [MCP Response Contract](architecture/codegg-contract.md) -- trust model, warnings, deterministic IDs
+- [Architecture Overview](../architecture/overview.md) -- module map, data flows
+- [MCP Response Contract](../architecture/codegg-contract.md) -- trust model, warnings, deterministic IDs
 - [Tool Matrix](tool-matrix.md) -- compact tool reference with trust semantics
 - [Agent Workflows](agent-workflows.md) -- recommended tool call sequences

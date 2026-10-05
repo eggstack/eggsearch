@@ -582,11 +582,21 @@ Local results appear in `repo_search` and are fetched via `repo_fetch` with `hos
 
 ### Default Providers
 
-The `default_providers` list controls which providers are queried when a tool call does not specify explicit providers:
+The `default_providers` list controls which providers are queried when a tool call does not specify explicit providers. Every field of the `[search]` table is required once that table is present, and `mode = "live"` additionally requires at least one enabled provider:
 
 ```toml
 [search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
 default_providers = ["duckduckgo", "startpage", "yahoo"]
+
+[search.providers]
+duckduckgo = true
+startpage = true
+yahoo = true
 ```
 
 When a default provider is unavailable (cooldown, misconfigured API key, disabled), it is skipped with a warning. The search still runs with the remaining providers.

@@ -2,193 +2,163 @@
 
 [![Crates.io](https://img.shields.io/crates/v/eggsearch.svg)](https://crates.io/crates/eggsearch)
 [![docs.rs](https://docs.rs/eggsearch/badge.svg)](https://docs.rs/eggsearch)
-[![License](https://img.shields.io/crates/l/eggsearch.svg)](https://github.com/eggstack/eggsearch#license)
+[![License](https://img.shields.io/crates/l/eggsearch.svg)](LICENSE)
 [![Downloads](https://img.shields.io/crates/d/eggsearch.svg)](https://crates.io/crates/eggsearch)
 
-Lightweight MCP (Model Context Protocol) search and fetch server for AI agents. Combines live web metasearch, repo-oriented search, bounded fetch, and deterministic evidence bundling over stdio or explicit loopback-only Streamable HTTP.
+A lightweight MCP (Model Context Protocol) search and fetch server for AI agents:
+live web metasearch with RRF dedup, bounded fetch, and deterministic evidence
+bundling, over client-owned stdio or explicit loopback-only Streamable HTTP.
 
-**No API keys are required for the default installation.** eggsearch ships with keyless web, fetch, advisory, registry, and scholarly paths. Credentialed forge and search adapters are optional enhancements.
+**No API keys are required for the default installation.** The default install is
+keyless across web, fetch, advisory, package-registry, and scholarly paths.
+Credentialed providers are opt-in.
 
 ## Install
-
-Install the published binary from the GitHub Release:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
 ```
 
-The reviewed installer downloads the host-matched executable, verifies its
-SHA-256 checksum, and checks its version before installation. Pin an exact
-published version with `--version`:
-
-```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.4.1
-```
-
-On Windows PowerShell:
-
 ```powershell
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
 ```
 
-For a source installation, or when the host has no published binary target:
+Pin a version, or install from source with `cargo install eggsearch --locked`. The
+installer verifies a SHA-256 checksum and the version, and never elevates — see
+[Installation](docs/installation.md) for targets and fallback rules.
+
+## Quickstart
 
 ```bash
-cargo install eggsearch --locked
+eggsearch doctor          # look for "healthy": true
+eggsearch providers       # per-provider enabled / configured / routable
 ```
-
-The installer never elevates. It uses `/usr/local/bin` or
-`%ProgramFiles%\\Eggsearch` only when already privileged, and otherwise uses
-`$HOME/.local/bin` or `%LOCALAPPDATA%\\Eggsearch`. Unsupported targets and a
-confirmed missing release asset fall back to an exact Cargo install; download,
-checksum, and version failures stop without falling back. See
-[Installation](docs/installation.md) for the target matrix and verification
-rules.
-
-After installation, check for a newer stable release or update the currently
-running binary:
 
 ```bash
-eggsearch update --check
-eggsearch update
+$ eggsearch search "rust tokio" --max-results 1
+# Results for 'rust tokio' (1 items, 1 failed)
+
+1. <<<EXTERNAL_UNTRUSTED field=title id=src_9778070202700542>>>
+Tokio - An asynchronous Rust runtime
+<<<END>>>
+   https://tokio.rs/
+   [duckduckgo]
+   <<<EXTERNAL_UNTRUSTED field=snippet id=src_9778070202700542>>> Tokio is a library for
+   writing fast, reliable, and easy network applications with Rust. … <<<END>>>
+
+Failed providers:
+  - yahoo: engine 'yahoo' returned status 500 (http_status)
 ```
-
-The updater uses crates.io for version discovery, verifies the exact release
-checksum and candidate version, and uses an isolated exact-version Cargo build
-only when the host is unsupported or the exact asset returns HTTP 404. It never
-downgrades or elevates itself. See [Update](docs/update.md) for the policy.
-
-For an explicitly managed persistent loopback service, register the installed
-binary yourself:
 
 ```bash
-eggsearch startup instructions
-eggsearch startup install
-eggsearch startup status
-eggsearch restart
+$ eggsearch fetch "https://example.com" --metadata-only
+# Fetch: https://example.com
+
+Final URL: https://example.com/
+Title: <<<EXTERNAL_UNTRUSTED field=title id=https://example.com/>>>
+Example Domain
+<<<END>>>
+Status: 200
+Content-Type: text/html; charset=utf-8
+Fetched: true
+Truncated: false
 ```
 
-PowerShell service mode downloads the script and invokes it with `-Service`
-from an elevated prompt:
+Every card carries a content-derived stable ID and an `<<<EXTERNAL_UNTRUSTED>>>`
+frame: treat fetched text as data, never instructions. Results merge across
+providers, so one provider failing is reported as a warning rather than failing
+the query. One URL per `web_fetch`, `batch_fetch` for explicit fan-out, `--json`
+for machine output.
 
-```powershell
-$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Service
-```
-
-The CLI owns manager detection and rendering; it never elevates automatically. See
-[Managed service](docs/service.md).
-
-## Add to an MCP client
-
-Print a client-specific registration or apply it after reviewing the target:
+Register with a client — rendering is read-only, `--apply` is opt-in:
 
 ```bash
 eggsearch integrate list
-eggsearch integrate codegg --transport stdio --apply
-eggsearch integrate codex --transport stdio --apply
 eggsearch integrate claude --transport stdio --apply
 ```
 
-The default is client-owned stdio. Use `--transport http` only after the
-loopback service is running. `--apply` is always opt-in; JSON edits are
-atomic and backed up, native clients are changed through their own CLI, and
-Zed/JSONC settings remain print-only when safe preservation is unavailable.
-See [MCP integrations](docs/integrations.md).
-
-## Run
-
-For a client-owned local process, use stdio:
+Or run the server yourself, as a client-owned child process:
 
 ```bash
 eggsearch mcp stdio
 ```
 
-For a persistent foreground endpoint, use Streamable HTTP:
+or a persistent loopback endpoint:
 
 ```bash
-eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
+$ eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp &
+$ curl -s http://127.0.0.1:11320/healthz
+{"service":"eggsearch","status":"ready","version":"0.4.1","protocol":"streamable-http"}
 ```
 
-Persistent mode accepts loopback binds only, serves MCP at `/mcp`, and exposes
-`GET /healthz` for local readiness checks. The ordinary installer does not
-start or register a service unless explicit `--service` is supplied. See
-[Deployment](docs/deployment.md) for the transport choice and safety boundaries.
+`mcp serve` accepts loopback binds only and registers no service on its own — see
+[Deployment](docs/deployment.md) and [Managed service](docs/service.md).
 
-## MCP Tools
+## MCP tools
 
 | Tool | Purpose |
 |------|---------|
-| `web_search` | Live metasearch over configured providers (opt-in bounded excerpts, result timestamps) |
-| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL (deterministic focus reads, cache controls) |
-| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators (per-item focus, cache controls, aggregate budget + telemetry) |
-| `provider_status` | Diagnostic provider/capability report with workflow recipes and optional bounded live probe |
-| `repo_search` | Structured repository evidence discovery with grouped bundles |
-| `repo_fetch` | Fetch a specific repo file span or symbol |
-| `repo_map` | Bounded repository structure discovery (packages, modules, symbols, tests, build) |
-| `security_search` | Vulnerability and advisory retrieval |
+| `web_search` | Live metasearch over configured providers |
+| `web_fetch` | Bounded extraction of one HTTP(S) URL |
+| `batch_fetch` | Bounded batch fetch over URLs or repo locators |
+| `provider_status` | Diagnostic provider config, health, and recipes |
+| `repo_search` | Structured repository evidence discovery |
+| `repo_fetch` | Repository file fetch by locator, line range, or symbol |
+| `repo_map` | Bounded repository structure discovery |
+| `security_search` | Vulnerability and advisory search |
 | `research_search` | Multi-source evidence discovery |
 | `build_evidence_bundle` | Deterministic, non-summarizing evidence packaging |
 
-Search tools return machine-readable `next_actions` hints. Success uses native MCP `structuredContent` with a text fallback; per-tool `outputSchema` (compact stable envelopes) is advertised and `tools/list` is deterministically ordered with a content fingerprint for caching. Semantic failures are repairable `isError` tool errors with stable codes and bounded repair hints; only uninterpretable shapes become `invalid_params`. All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`); `compact` keeps cards, stable IDs, trust markers, failure/absence state, and `next_actions` while omitting full routing/telemetry/document detail (~37% web / ~49% fetch savings in representative fixtures). See [tool-matrix.md](docs/tool-matrix.md) for full tool reference.
-
-Start with the task-appropriate search primitive (`web_search` for general research, `repo_search` for codebases, `security_search` for advisories, `research_search` for complex comparisons). `provider_status` is diagnostic for hosts and troubleshooting, not a normal first research step. Specialist tools (`security_search`, `research_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed. The canonical disclosure model lives in `src/mcp/tool_contract.rs` (purpose, use-when/not-for, domain, disclosure, keywords, aliases, related/next, `discovery_text()`). Keep the immediate palette small and hydrate specialists on demand: compact discovery (3–5 matches, no full schemas) → hydrate 1–few definitions → call → follow sanitized `next_actions` without another discovery round trip. Cache `tools/list` by content fingerprint plus server version. See [codegg-integration.md](docs/codegg-integration.md#progressive-disclosure-integration) for the CodeGG handoff.
-
-Ordinary agent schemas use canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) with `sources`/`include` selectors; advanced `providers`/`timeout_ms`/`profile`/`mode`/`workflow`/`include_*` fields remain accepted for backward compatibility but are hidden from `tools/list`.
+Start with the tool that matches the task: `web_search` for research, `repo_search`
+for codebases, `security_search` for advisories, `research_search` for comparisons.
+`provider_status` is for hosts and troubleshooting, not a first research step.
+Responses carry machine-readable `next_actions` — keep the working set small and
+hydrate specialists on demand. See [Tool matrix](docs/tool-matrix.md) and
+[Agent workflows](docs/agent-workflows.md).
 
 ## Safety
 
-- Web and remote results are `external_untrusted`
-- `sanitize_output` defaults to `true`
-- Fetch is bounded and explicit — no crawling, no autonomous browser execution by default, one URL per `web_fetch` call (use `batch_fetch` for explicit multi-target fan-out; optional `browser` feature renders JavaScript-heavy pages through bounded headless Chrome)
-- Fetch targets validated against blocked address ranges (private networks, loopback, link-local, multicast, reserved, documentation)
-- Provider errors are bounded before exposure
+- Fetched content is `external_untrusted`: data, not instructions. `sanitize_output` defaults to `true`, with injection markers reported as `injection_hits`.
+- Fetch is bounded and explicit: one URL per `web_fetch`, no autonomous crawling, SSRF checks against blocked address ranges.
+- Optional `pdf` and `browser` features add PDF extraction and bounded headless Chrome. The `egress` proxy route is provider-upstream only and is excluded from prebuilt binaries.
 
-See [safety.md](docs/safety.md) and [threat-model.md](docs/threat-model.md) for full details.
-
-## Build From Source
-
-```bash
-cargo build --release
-```
-
-The binary is written to `target/release/eggsearch`.
-
-An optional listener-free HTTP/SOCKS proxy-chain route for provider
-upstreams is available only as a source-build opt-in (`cargo build
---features egress`); prebuilt and default binaries exclude it. See
-[Optional Features](docs/features.md#outbound-proxy-chain-routing).
-
-## Development
-
-```bash
-make check
-```
-
-Runs formatting, clippy, feature compilation, the deterministic test suite, repository hygiene, and packaging contract checks. Native forge smoke tests exercise the adapter path directly with configured API tokens — these are **maintainer-only** diagnostics, not user-facing. See [release.md](docs/release.md) for the full release process. Performance characterization uses the Criterion `perf` bench and is intentionally not a CI threshold.
-
-```bash
-make eval-tool-surface
-```
-
-Runs the deterministic 43-fixture tool-selection corpus with context byte budgets and per-category accuracy. See [corpus README](tests/fixtures/tool_surface/README.md).
+See [Safety](docs/safety.md) and [Threat model](docs/threat-model.md).
 
 ## Documentation
 
-- [Configuration](docs/config.md) — config file reference, profiles, defaults
-- [Provider Setup](docs/provider-setup.md) — all 44 providers, skip codes, health
-- [Optional Features](docs/features.md) — PDF extraction, browser rendering, browser profiles
-- [Tool Matrix](docs/tool-matrix.md) — compact tool reference with trust semantics
-- [Agent Workflows](docs/agent-workflows.md) — recommended tool call sequences, evidence roles
-- [Safety and Fetch Behavior](docs/safety.md) — fetch boundaries, blocked ranges, sanitization
-- [Threat Model](docs/threat-model.md) — trust boundaries, prompt injection, escape hatches
-- [Architecture Overview](architecture/overview.md) — component index with deep dives
-- [MCP Response Contract](architecture/codegg-contract.md) — trust model, warnings, deterministic IDs
-- [Release Process](docs/release.md) — preparation, verification, publication
-- [Installation](docs/installation.md) — binary targets, installers, checksums, and fallback rules
-- [Deployment](docs/deployment.md) — stdio versus persistent loopback Streamable HTTP
-- [MCP integrations](docs/integrations.md) — CodeGG, Zed, Codex, Claude Code, VS Code, Cursor, and OpenCode
-- [Managed service](docs/service.md) — systemd, launchd, Windows SCM, cron, status, restart
-- [Update](docs/update.md) — binary-first self-update, verification, and fallback rules
+**Using it** — [Quickstart](docs/quickstart-codegg.md) ·
+[Configuration](docs/config.md) ·
+[Tool matrix](docs/tool-matrix.md) ·
+[Agent workflows](docs/agent-workflows.md) ·
+[Provider setup](docs/provider-setup.md) ·
+[Optional features](docs/features.md)
+
+**Operating it** — [Installation](docs/installation.md) ·
+[Deployment](docs/deployment.md) ·
+[MCP integrations](docs/integrations.md) ·
+[Managed service](docs/service.md) ·
+[Update](docs/update.md) ·
+[Dependency security](docs/dependency-security.md) ·
+[Release process](docs/release.md) ·
+[Release checklist](docs/release-checklist.md)
+
+**Building it** — [Architecture overview](architecture/overview.md) ·
+[MCP response contract](architecture/codegg-contract.md) ·
+[CodeGG harness integration](docs/codegg-integration.md) ·
+[Test inventory](docs/test-inventory.md)
+
+## Build
+
+```bash
+cargo build --release        # target/release/eggsearch
+make check                   # fmt, clippy, tests, hygiene, dependency policy, packaging
+```
+
+The routine gate is network-free. Optional features: `--features pdf`,
+`--features browser`, `--features egress`.
+
+Native forge smoke tests call provider APIs directly with operator tokens. They
+are **maintainer-only** diagnostics, not user-facing or release evidence.
 
 ## License
 
