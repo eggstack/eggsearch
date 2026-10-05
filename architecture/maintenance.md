@@ -53,9 +53,18 @@ Count changes only when the tool-matrix, docs contract tests (`tests/docs_tool_n
 ### New engines and providers
 
 - Engines implement `SearchEngine::search(&EngineSearchRequest)` with defaulted advisory methods. Unsupported capabilities stay explicit so dispatch emits capability-skip attempts instead of silent omissions.
-- Providers declare the 24-flag `ProviderCapabilities`, add the ID to `KNOWN_PROVIDER_IDS`, document native-vs-local enforcement in `docs/provider-setup.md`, and extend `tests/provider_capability_contract.rs`.
-- Native enforcement today: `brave_api` natively enforces safe-search, freshness/date-range, language, region, news; `exa` natively enforces freshness/date-range, domain filters, result timestamps; `tavily` natively enforces safe-search, freshness/date-range, language, region, domain filters, news.
-- Domain filters are natively enforced only by providers advertising `supports_domain_filters` (currently `exa`, `tavily`); all other domain filtering is local approximation.
+- Providers declare the 24-flag `ProviderCapabilities`, add the ID to `KNOWN_PROVIDER_IDS` (44 registered IDs), document native-vs-local enforcement in `docs/provider-setup.md`, and extend `tests/provider_capability_contract.rs`.
+- Native enforcement today, from the capability descriptors in `src/core/provider.rs`:
+  - `brave_api` — safe-search, freshness/date-range, language, region, news, result timestamps
+  - `exa` — freshness/date-range, domain filters, result timestamps
+  - `tavily` — safe-search, freshness/date-range, language, region, domain filters, news
+  - `serpapi` — safe-search, language, region
+  - `kagi` — safe-search, freshness/date-range, region, domain filters, result timestamps
+  - `hn_algolia` — freshness (`numericFilters=created_at_i…`)
+  - `nvd` — declares freshness but is an advisory service that maps only `keywordSearch` upstream
+  - Result timestamps only: `openalex`, `wikipedia`, `arxiv`, `pubmed`, `github_repositories`, and the forge issue/release engines
+- Domain filters are natively enforced only by providers advertising `supports_domain_filters` — `exa`, `kagi`, `tavily` (guard: `domain_filters_are_native_only_for_exa_kagi_and_tavily`). All other domain filtering is local approximation.
+- `serpapi` deliberately does not claim freshness (its `tbs` value syntax is undocumented upstream), and the keyless source-specific providers `wikipedia`, `arxiv`, `pubmed`, and `github_repositories` deliberately do not claim it. `arxiv` is the only `ProviderKind::StructuredApi` provider (additive variant; no existing wire value changed).
 - Advisory outcomes stay provider-scoped and error-visible: no silent `if let Ok` around `lookup_advisory`/`query_advisories_by_package`; aggregate and scoped lookups surface `provider_id`, `CapabilityUnavailable`, `InterruptedByDeadline`, and `SkippedCapabilityUnavailable` rather than `Err(_) => continue`.
 - Postprocess calls in `repo_search`, `research_search`, and `security_search` pass the workflow model (`workflow_model.as_ref()`), never `None`.
 
@@ -141,7 +150,9 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 Kept in sync by discipline (not guards) plus `make packaging-check`:
 
 - Packaging set: `packaging/release-targets.txt` + `packaging/release-inputs.txt` + release workflow + egress qualification matrix (`packaging/check-egress-qualify-contract.sh`, `tests/egress_qualify_contract.rs`, exact set equality with the provider-route construction seam) + installers + updater + install docs. Edit one, check them all.
-- Test-inventory set: `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding or renaming suites. The SKILL table is representative (76 suites exist); `architecture/testing.md` is the placement authority and `docs/test-inventory.md` carries per-suite counts.
+- Test-inventory set: `docs/test-inventory.md` + `architecture/testing.md` + `skills/eggsearch-dev/SKILL.md` when adding or renaming suites. The SKILL table is representative (78 suites exist); `architecture/testing.md` is the placement authority and `docs/test-inventory.md` carries per-suite counts.
+- Planning set: `plans/registry.md` + `plans/subsystems/` roadmap + `plans/closure/` record + the `architecture/` section that states the status + `AGENTS.md` when the summary changes. See the Plans registry section below and `skills/eggsearch-planning/SKILL.md`. This is the set that drifts most often: a status sentence in `AGENTS.md` outlives the milestone it described.
+- Documentation set: `README.md` + `docs/` + `skills/`. Code-derived inventories (`tests/docs_tool_names.rs`, `tests/docs_provider_inventory.rs`, `tests/provider_capability_contract.rs`) catch wrong names and wrong capability claims, but nothing catches a stale version pin or an outdated milestone sentence — read those by hand.
 - `CHANGELOG.md` entries are append-only history — never rewrite published entries.
 
 Hygiene script (`packaging/check-repo-hygiene.sh`, part of `make check`) rejects tracked transcripts, ANSI dumps at the repo root, tracked build outputs, oversized unexpected root blobs, and editor temp files. Test/corpus fixtures under `tests/` and `docs/` are legitimate and never matched.
@@ -172,14 +183,17 @@ Unit tests for private functions live at the bottom of the source file. Preserve
 
 ## Plans registry
 
-`plans/` follows the registry convention (`plans/registry.md`, process in `plans/003-planning-process.md`). Check the registry for the active workstream before planning.
+`plans/` follows the registry convention (`plans/registry.md`, process in `plans/003-planning-process.md`, operational checklist in `skills/eggsearch-planning/SKILL.md`). Check the registry for the active workstream before planning.
 
 - Canonical `000`–`003` (specification, terminology, roadmap, process) stay stable.
-- Roadmaps live in `plans/subsystems/`; handoffs in `plans/implementation/<subsystem>/NNN-*.md`; evidence gates in `plans/closure/<subsystem>/NNN-status.md`; history in `plans/archive/`; control surface in `plans/registry.md`.
-- Status vocabulary: `proposed`, `ready`, `active`, `blocked`, `closing`, `closed`, `conditionally closed`, `superseded`, `archived`.
+- ADRs live in `plans/adrs/`; roadmaps in `plans/subsystems/`; handoffs in `plans/implementation/<subsystem>/NNN-*.md`; evidence gates in `plans/closure/<subsystem>/NNN-status.md`; history in `plans/archive/`; control surface in `plans/registry.md`.
+- Status vocabulary: `proposed`, `ready`, `active`, `blocked`, `closing`, `closed`, `conditionally closed`, `superseded`, `archived`. `conditionally closed` names its outstanding condition explicitly and is not a softer `closed`.
+- Current state: every subsystem roadmap is closed except **repository security, supply-chain, and maintenance hardening**, which is `active` (M001 conditionally closed via M007, M002 conditionally closed, M006 blocked on an upstream chromiumoxide release, M007 conditionally closed pending a scheduled `dependency-security` run). Tool-surface M001–M007 are closed; treat that surface as maintenance, not an open milestone.
 - **Do not create unregistered work.** Closed workstreams (phases now under `plans/archive/phase-*.md`) are historical evidence — do not reopen or extend them; register new milestones under the owning subsystem roadmap.
 - **Corrective work is a new plan** referencing the original milestone and closure record, never a silent amendment to an archived plan.
 - Registry, roadmap status, and closure record for a milestone update in the same closure commit. Qualification is SHA-specific; re-qualify a different eventual release candidate before publication.
+- A green CI run or a commit message is not closure evidence. Record blocked and unrun verification too.
+- Planning-status prose is guard-enforced: `planning_status_consistency_no_closed_range_shorthand` requires repository-hardening documents to state M001/M002/M007 conditionally and M006 blocked, and rejects a `M001-M005 closed` range shorthand.
 - Edit `skills/` only; never edit the `.opencode/skills/` or `.agents/skills/` mirror symlinks directly.
 
 ---
@@ -207,7 +221,7 @@ make docs-check
 make bench-check
 ```
 
-`make check` is fmt + clippy + no-default-features compile check + all-features tests + hygiene + packaging contract. Routine work stays network-free; live probes and native-forge smokes run only on explicit opt-in targets.
+`make check` is fmt + clippy + no-default-features compile check + all-features tests + hygiene + dependency policy + packaging contract. Routine work stays network-free; live probes and native-forge smokes run only on explicit opt-in targets.
 Start at `src/lib.rs` and `architecture/overview.md`; operator docs live in `docs/`.
 
 ---

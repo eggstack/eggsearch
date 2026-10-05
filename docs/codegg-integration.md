@@ -548,7 +548,7 @@ Consequences a harness must accept:
 
 #### Retiring-harness checklist
 
-Once `>=0.4.0` is pinned and the providers above report `routable`, the
+Once `>=0.4.1` is pinned and the providers above report `routable`, the
 downstream workstream may:
 
 1. **Delete its own external-search HTTP clients**, including the deprecated

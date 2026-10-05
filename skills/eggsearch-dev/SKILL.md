@@ -123,6 +123,26 @@ eggsearch integrate opencode --transport stdio --apply --executable /usr/local/b
 - Adversarial corpus in `tests/corpus/adversarial/`
 - Always run `cargo clippy --all-targets --all-features -- -D warnings` after adding
 
+## Keeping Docs And Plans In Sync
+
+Code-derived inventories guard the facts, but the prose around them drifts on its
+own. Move these in the same change as the code:
+
+| Change | Must also update |
+|--------|------------------|
+| New/renamed test suite | `docs/test-inventory.md`, `architecture/testing.md`, the test table above |
+| New provider or engine | `KNOWN_PROVIDER_IDS`, `docs/provider-setup.md` (native-vs-local enforcement), `tests/provider_capability_contract.rs` |
+| New or changed MCP tool | `src/mcp/server.rs`, `docs/tool-matrix.md`, `docs/codegg-integration.md`; the count stays at 10 unless the matrix and `tests/docs_tool_names.rs` move too |
+| Release target, installer, or version fact | `packaging/release-targets.txt` + `release-inputs.txt` + release workflow + installers + updater + `docs/release.md` + `docs/installation.md` + `README.md` |
+| Milestone status | `plans/registry.md`, the owning `plans/subsystems/` roadmap, a `plans/closure/` record, and the `architecture/` section that states it — see the `eggsearch-planning` skill |
+
+Never invent a tool-like or provider name in prose. `tests/docs_tool_names.rs`
+and `tests/docs_provider_inventory.rs` derive the real names from
+`src/mcp/server.rs` and `KNOWN_PROVIDER_IDS`; a hand-written name that is not in
+those lists is a defect, not a documentation nicety. When `AGENTS.md` needs a
+rule, prefer a pointer to the owning `architecture/` section over restating it —
+duplicated rules are what go stale.
+
 ## Common Pitfalls
 
 - **Forgetting `--features mock`** — integration/corpus tests won't compile

@@ -12,6 +12,15 @@ the published release contains the exact 16-asset contract. Unix installer and
 updater checks passed locally, and native Windows PowerShell latest/pinned
 installer plus `update --check` smoke passed in run `34660182644`.
 
+`v0.4.1` is the current published release and the first binary release carrying
+the frozen CodeGG parity surface; `v0.4.0` is crate + tag only, with no
+published binaries. It completed the same sequence on fix-prep commit
+`32769d6` with a green `mode=qualify` run, a tag-triggered release run that
+included artifact attestations and in-workflow `gh attestation verify`, and an
+immutable 16-asset release with SLSA provenance. Corrections after a crates.io
+publication always require a new version, a new changelog entry, and full
+re-qualification; see `plans/closure/codegg-legacy-search-parity/005-status.md`.
+
 ## Preparation
 
 1. Ensure intended changes are on `main`.

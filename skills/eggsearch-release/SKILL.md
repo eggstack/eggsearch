@@ -44,8 +44,25 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tagged `Release binaries` workflow assembles a draft GitHub Release after
+The tagged `Release binaries` workflow assembles a **draft** GitHub Release after
 all target jobs and checksums pass; publish that draft manually after review.
+
+Before publishing the draft, confirm:
+
+- The release contains exactly 16 assets (7 executables + 7 adjacent `.sha256`
+  files + the reviewed `install.sh` and `install.ps1`).
+- Artifact attestations were generated and the in-workflow
+  `gh attestation verify` step passed. Re-verify independently after download:
+  `gh attestation verify <asset-path> --repo eggstack/eggsearch`.
+- The workflow refuses to overwrite an already published release, and never
+  publishes the crate.
+
+Once crates.io accepts a version it is immutable. A correction requires a new
+version bump, a new changelog entry, and a full re-qualification — `v0.4.0`
+stayed crate + tag only, and `v0.4.1` is the first binary release carrying the
+frozen parity surface. Record the qualification run, release run, asset count,
+and provenance evidence in the owning `plans/closure/` record; a green CI badge
+is not closure evidence.
 
 ## CI Pipeline
 
@@ -152,16 +169,18 @@ make native-forge-smoke-all
 
 | Target | Command | Purpose |
 |--------|---------|---------|
-| `check` | `fmt + clippy + feature-check + test + hygiene + packaging-check` | Local CI gate |
+| `check` | `fmt + clippy + feature-check + test + hygiene + dependency-policy + packaging-check` | Local CI gate |
 | `ci` | `check` | Alias for `check` |
 | `release-check` | `check + release-candidate-check + docs-check + release-build + publish-check` | Pre-release gate |
 | `release-candidate-check` | `./packaging/release-validate.sh candidate` | Release tree/version/syntax gate |
 | `docs-check` | `RUSTDOCFLAGS="-D warnings" cargo doc --locked --all-features --no-deps` | Docs check |
 | `release-build` | `cargo build --locked --release` | Release build |
 | `publish-check` | `cargo publish --dry-run --locked` | Pre-publish check |
+| `packaging-check` | `./packaging/check-contract.sh` | Release target/input/install contract drift |
 | `bench-check` | `cargo bench --locked --all-features --bench perf --no-run` | Compile-check benches without running |
+| `fuzz-smoke` | `cargo fuzz run` for `validate_url`, `sanitize_pipeline`, `bounded_response_reader`, `dependency_parse` | Quick fuzz runs for 4 targets |
 | `live-smoke` | `cargo test --features live-smoke --test corpus_runner -- --ignored` | Live network tests |
-| `fuzz-smoke` | Quick fuzz runs for 3 targets | Fuzz smoke test |
+| `eval-tool-surface` | `cargo test --locked --all-features --test tool_surface_evaluation -- --nocapture` | Deterministic 43-case tool-selection corpus |
 
 ## Pre-release Checklist
 

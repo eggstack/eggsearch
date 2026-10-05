@@ -22,7 +22,7 @@ SHA-256 checksum, and checks its version before installation. Pin an exact
 published version with `--version`:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.9
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.4.1
 ```
 
 On Windows PowerShell:

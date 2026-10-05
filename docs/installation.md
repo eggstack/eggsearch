@@ -2,7 +2,8 @@
 
 ## Install from the published binary release
 
-The published `v0.3.9` release is the first binary-enabled release. Install the
+The current published release is `v0.4.1`; `v0.3.9` was the first binary-enabled
+release and `v0.4.0` is crate + tag only, with no published binaries. Install the
 host-matched executable with the reviewed release installer:
 
 ```bash
@@ -18,11 +19,11 @@ irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 |
 Pin a published binary version when reproducibility matters:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.3.9
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.4.1
 ```
 
 ```powershell
-$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.3.9
+$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.4.1
 ```
 
 Each installer downloads a default-feature executable, verifies the adjacent

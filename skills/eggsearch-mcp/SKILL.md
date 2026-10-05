@@ -62,7 +62,7 @@ never route ordinary research through `provider_status` or reuse
 
 ## Tool Disclosure Hints
 
-Canonical source: `src/mcp/tool_contract.rs` (advisory only, never policy-enforcing). The M001 contract/disclosure model, M002 slimmed schemas, M003 2026 protocol/error contract, M004 `response_detail` projection, and M005 CodeGG progressive disclosure have all landed; `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs`, and `tool_surface_evaluation.rs` pin them in routine CI. Settle tool-selection disputes with `make eval-tool-surface` (opt-in multi-model comparison via `EGGSEARCH_EVAL_MODEL` + `-- --ignored`).
+Canonical source: `src/mcp/tool_contract.rs` (advisory only, never policy-enforcing). The M001 contract/disclosure model, M002 slimmed schemas, M003 2026 protocol/error contract, M004 `response_detail` projection, and M005 CodeGG progressive disclosure have all landed; `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs`, and `tool_surface_evaluation.rs` pin them in routine CI. M006 agentic evaluation and M007 maintenance decomposition/overlap ratchet are also closed, so tool-surface work is a maintenance concern, not an open milestone. Settle tool-selection disputes with `make eval-tool-surface` (opt-in multi-model comparison via `EGGSEARCH_EVAL_MODEL` + `-- --ignored`).
 
 - Core primitives, normally visible first: `web_search`, `web_fetch`, `repo_search`
 - Deferred specialists, used only when their domain semantics are needed: `batch_fetch`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
