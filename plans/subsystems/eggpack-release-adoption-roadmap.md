@@ -114,7 +114,7 @@ historical binary distribution M001-M006 [CLOSED]
 Eggpack Ecosystem M003a compatibility preflight [CLOSED]
                  |
                  v
-Eggpack Release Adoption M001 [READY]
+Eggpack Release Adoption M001 [CONDITIONALLY CLOSED]
                  |
                  +--> Eggpack Ecosystem M003b closure
                  |
@@ -137,9 +137,11 @@ Implementation plan:
 
 `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`
 
-Status: ready.
+Status: conditionally closed. Closure record: `plans/closure/eggpack-release-adoption/001-status.md`.
 
-Objective: replace hand-maintained producer build/stage authority with the generated Eggpack pipeline while preserving all listed invariants.
+Outcome: the cutover landed at `eabbf80` and hosted run `37531104901` staged eggsearch `v0.4.2` as draft `405157598` with the exact 19-asset inventory: all seven targets built, qualified, and consumer-validated (including the required ARMv7 runtime proof and Windows ARM64 on `windows-11-arm`), glibc 2.17 re-proven on all three GNU targets after the Zig 0.14.1 / cargo-zigbuild 0.23.3 bump, provenance moved to a separate read-only workflow with no OIDC in any generated job, `--clobber` replaced by fail-closed staging, and the legacy writer deleted so exactly one writer exists.
+
+Named condition: publishing the `v0.4.2` draft is a manual maintainer action that was not authorized. See the closure §12 for the ordered next steps.
 
 ## 8. Verification strategy
 
@@ -173,4 +175,4 @@ This subsystem closes when Eggsearch has one Eggpack-owned producer release auth
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 seven-target Eggpack producer cutover | ready | `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | — | No architecture blocker; exact candidate must re-prove glibc/ARMv7/provenance and complete safe writer cutover |
+| M001 seven-target Eggpack producer cutover | conditionally closed | `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | `plans/closure/eggpack-release-adoption/001-status.md` | Implementation `eabbf80`; hosted run `37531104901` staged `v0.4.2` as draft `405157598`, 19 assets, all seven targets green. Named condition: publication is manual. Open Medium: release build is not byte-reproducible across attempts, so a rerun refuses instead of reusing |
