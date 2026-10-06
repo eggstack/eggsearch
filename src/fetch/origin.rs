@@ -7,7 +7,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::{Mutex, Semaphore};
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 pub struct OriginKey {
     pub scheme: String,
     pub host: String,
@@ -238,11 +238,41 @@ impl OriginController {
         }
 
         if states.len() >= self.max_entries {
-            let oldest_key = states
-                .iter()
-                .min_by_key(|(_, s)| s.last_access_ms.load(Ordering::Relaxed))
-                .map(|(k, _)| k.clone());
-            if let Some(oldest) = oldest_key {
+            // Only evict an idle, healthy origin. Dropping a state that still
+            // holds semaphore permits silently raises that origin's concurrency
+            // ceiling, and dropping one with an open circuit silently clears its
+            // backoff.
+            let mut idle: Vec<(u64, OriginKey)> = Vec::new();
+            for (key, state) in states.iter() {
+                if state.semaphore.available_permits() < self.defaults.http_concurrency {
+                    continue;
+                }
+                let failures = state.failures.lock().await;
+                let circuit_open = failures
+                    .circuit_open_until
+                    .is_some_and(|until| Instant::now() < until);
+                drop(failures);
+                if circuit_open {
+                    continue;
+                }
+                idle.push((state.last_access_ms.load(Ordering::Relaxed), key.clone()));
+            }
+            // Deterministic victim: least recently used, ties broken by key so
+            // HashMap iteration order cannot leak into the result.
+            idle.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            // If every tracked origin is busy or backed off, evict the least
+            // recently used entry anyway so the table stays bounded.
+            let victim = idle
+                .first()
+                .cloned()
+                .or_else(|| {
+                    states
+                        .iter()
+                        .map(|(k, s)| (s.last_access_ms.load(Ordering::Relaxed), k.clone()))
+                        .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+                })
+                .map(|(_, key)| key);
+            if let Some(oldest) = victim {
                 states.remove(&oldest);
             }
         }
@@ -399,6 +429,74 @@ pub fn classify_request_failure(failure: &eggfetch_core::RequestFailure) -> Orig
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn eviction_does_not_reset_an_outstanding_permit() {
+        let controller = OriginController::new(OriginPolicy::default(), 2);
+        let a = OriginKey {
+            scheme: "https".into(),
+            host: "a.example".into(),
+            port: 443,
+        };
+        let b = OriginKey {
+            scheme: "https".into(),
+            host: "b.example".into(),
+            port: 443,
+        };
+        let c = OriginKey {
+            scheme: "https".into(),
+            host: "c.example".into(),
+            port: 443,
+        };
+
+        // Hold one of A's two permits so A is not eviction-eligible.
+        let held = controller
+            .acquire_bounded(&a, Duration::from_secs(1))
+            .await
+            .expect("acquire");
+        assert_eq!(controller.entry_count().await, 1);
+
+        // Touch B, then add C. Only one of {A, B} can be dropped; it must be B.
+        let _b_state = controller.get_or_create_state(&b).await;
+        let _c_state = controller.get_or_create_state(&c).await;
+
+        assert_eq!(controller.entry_count().await, 2, "table must stay bounded");
+        assert!(
+            controller.get_state(&a).await.is_some(),
+            "an origin with an outstanding permit must not be evicted"
+        );
+        drop(held);
+    }
+
+    #[tokio::test]
+    async fn eviction_victim_is_deterministic() {
+        let controller = OriginController::new(OriginPolicy::default(), 2);
+        for host in ["a.example", "b.example"] {
+            let key = OriginKey {
+                scheme: "https".into(),
+                host: host.into(),
+                port: 443,
+            };
+            controller.get_or_create_state(&key).await;
+        }
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "c.example".into(),
+            port: 443,
+        };
+        controller.get_or_create_state(&key).await;
+
+        // `a.example` was inserted first, so on equal `last_access_ms` it is the
+        // deterministic victim — HashMap iteration order must not decide.
+        assert!(controller
+            .get_state(&OriginKey {
+                scheme: "https".into(),
+                host: "a.example".into(),
+                port: 443,
+            })
+            .await
+            .is_none());
+    }
 
     #[test]
     fn origin_key_from_url() {

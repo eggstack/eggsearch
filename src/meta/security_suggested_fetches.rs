@@ -342,7 +342,9 @@ pub fn generate_security_suggested_fetches(
                 url: candidate.url,
                 reason,
                 group: group_kind,
-                priority: i.min(usize::from(u8::MAX)) as u8,
+                // 1-based, matching repo/research suggested fetches and the
+                // documented "1 = highest" contract in `FetchCandidate`.
+                priority: (i + 1).min(usize::from(u8::MAX)) as u8,
                 score: Some(candidate.score),
                 rank_reasons: candidate
                     .reasons

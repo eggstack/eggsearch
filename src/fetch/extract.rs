@@ -238,13 +238,13 @@ impl<'a> HtmlExtractor<'a> {
             .ok()
             .and_then(|sel| document.select(&sel).next())
             .and_then(|el| el.text().next())
-            .map(|s| s.trim().to_string());
+            .map(|s| bound_text(s.trim(), SNIPPET_MAX_CHARS).0);
 
         let description = Selector::parse(r#"meta[name="description"]"#)
             .ok()
             .and_then(|sel| document.select(&sel).next())
             .and_then(|el| el.value().attr("content"))
-            .map(|s| s.trim().to_string());
+            .map(|s| bound_text(s.trim(), SNIPPET_MAX_CHARS).0);
 
         let body_text = Selector::parse("body")
             .ok()
@@ -343,11 +343,16 @@ fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResu
 
     let mut total_seen: usize = 0;
     let mut links: Vec<ExtractedLink> = Vec::new();
+    // Set when an anchor is dropped *because* the link cap was reached, so the
+    // flag reports real truncation rather than counting anchors rejected for an
+    // unusable or over-long href.
+    let mut truncated = false;
 
     if let Some(sel) = selector {
         for el in document.select(&sel) {
             total_seen += 1;
             if links.len() >= MAX_LINKS {
+                truncated = true;
                 continue;
             }
             let href = match el.value().attr("href") {
@@ -388,7 +393,7 @@ fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResu
     LinkExtractionResult {
         links,
         total_seen,
-        truncated: total_seen > MAX_LINKS,
+        truncated,
     }
 }
 
@@ -792,6 +797,52 @@ mod tests {
         assert_eq!(result.links.len(), 1);
         assert_eq!(result.links[0].text.chars().count(), SNIPPET_MAX_CHARS);
         assert!(result.links[0].text.ends_with('…'));
+        // No anchor was dropped *because of the cap* — one was rejected for an
+        // over-long URL — so the flag must not claim truncation.
+        assert!(
+            !result.truncated,
+            "rejected hrefs must not be reported as cap truncation"
+        );
+    }
+
+    #[test]
+    fn extract_links_truncated_only_when_the_cap_drops_a_link() {
+        let mut html = String::from("<html><body>");
+        for i in 0..(MAX_LINKS + 5) {
+            html.push_str(&format!("<a href=\"/p{i}\">p{i}</a>"));
+        }
+        html.push_str("</body></html>");
+        let result = extract_links_from_html(html.as_bytes(), "https://example.com/");
+
+        assert_eq!(result.links.len(), MAX_LINKS);
+        assert!(
+            result.truncated,
+            "dropping links at the cap must set the flag"
+        );
+    }
+
+    #[test]
+    fn title_and_description_are_bounded() {
+        let long = "x".repeat(SNIPPET_MAX_CHARS + 500);
+        let html = format!(
+            "<html><head><title>{long}</title>\
+             <meta name=\"description\" content=\"{long}\"></head><body>hi</body></html>"
+        );
+        let (title, description, ..) =
+            extract_content(html.as_bytes(), "https://example.com/", 5000, true);
+
+        assert_eq!(title.unwrap().chars().count(), SNIPPET_MAX_CHARS);
+        assert_eq!(description.unwrap().chars().count(), SNIPPET_MAX_CHARS);
+    }
+
+    #[test]
+    fn whitespace_only_description_is_allowed_and_empty() {
+        // `content="   "` trims to `Some("")`, which the fuzz harness used to
+        // assert was impossible.
+        let html =
+            br#"<html><head><meta name="description" content="   "></head><body>hi</body></html>"#;
+        let (_, description, ..) = extract_content(html, "https://example.com/", 5000, true);
+        assert_eq!(description.as_deref(), Some(""));
     }
 
     #[test]

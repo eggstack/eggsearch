@@ -979,6 +979,54 @@ impl AppConfig {
         }
     }
 
+    /// Validate `[search.profiles.*]`.
+    ///
+    /// Profile lookup goes through `SearchProfile::as_str()`, so a key that is
+    /// not a canonical profile name can never be selected and would otherwise
+    /// stay dead forever. Provider IDs inside a profile go through the same
+    /// known/configured/api sets as `[search].default_providers`.
+    fn validate_search_profiles(&self) -> CoreResult<()> {
+        if self.search.profiles.is_empty() {
+            return Ok(());
+        }
+
+        let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
+        let configured: std::collections::BTreeSet<&str> =
+            self.search.providers.keys().map(|s| s.as_str()).collect();
+        let api_known: std::collections::BTreeSet<&str> =
+            self.search.api.keys().map(|s| s.as_str()).collect();
+
+        let canonical = ["generic", "coding", "security", "research"];
+        for (name, profile) in &self.search.profiles {
+            if !canonical.contains(&name.as_str()) {
+                return Err(CoreError::Config(format!(
+                    "unknown [search.profiles.{name}]: valid profile names are {}",
+                    canonical.join(", ")
+                )));
+            }
+            if profile.providers.is_empty() {
+                return Err(CoreError::Config(format!(
+                    "[search.profiles.{name}].providers must not be empty; remove the profile to use the default provider list"
+                )));
+            }
+            let unknown: Vec<&str> = profile
+                .providers
+                .iter()
+                .map(|s| s.as_str())
+                .filter(|id| {
+                    !known.contains(id) && !configured.contains(id) && !api_known.contains(id)
+                })
+                .collect();
+            if !unknown.is_empty() {
+                return Err(CoreError::Config(format!(
+                    "[search.profiles.{name}]: unknown provider id(s): {}",
+                    unknown.join(", ")
+                )));
+            }
+        }
+        Ok(())
+    }
+
     /// Returns provider IDs that are explicitly enabled (value = true) in the providers map.
     pub fn enabled_provider_ids(&self) -> Vec<String> {
         self.search
@@ -1093,6 +1141,7 @@ impl AppConfig {
     /// misconfiguration (e.g. `max_chars_cap < max_chars_default`)
     /// rather than silently degrading behavior.
     pub fn validate(&self) -> CoreResult<()> {
+        self.validate_search_profiles()?;
         if self.fetch.max_chars_cap < self.fetch.max_chars_default {
             return Err(CoreError::Config(format!(
                 "[fetch].max_chars_cap ({}) must be >= [fetch].max_chars_default ({})",
@@ -2553,6 +2602,58 @@ mod tests {
     fn default_profiles_map_is_empty() {
         let c = AppConfig::default();
         assert!(c.search.profiles.is_empty());
+    }
+
+    #[test]
+    fn validate_accepts_canonical_profile_names() {
+        let mut c = AppConfig::default();
+        c.search.profiles.insert(
+            "research".to_string(),
+            ProfileConfig {
+                providers: vec!["duckduckgo".to_string()],
+            },
+        );
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_profile_name() {
+        let mut c = AppConfig::default();
+        // Lookup goes through `SearchProfile::as_str()`, so a typo'd key can
+        // never be selected and would otherwise stay dead.
+        c.search.profiles.insert(
+            "reserach".to_string(),
+            ProfileConfig {
+                providers: vec!["duckduckgo".to_string()],
+            },
+        );
+        let err = c.validate().expect_err("typo'd profile must be rejected");
+        assert!(err.to_string().contains("reserach"), "{err}");
+    }
+
+    #[test]
+    fn validate_rejects_empty_profile_provider_list() {
+        let mut c = AppConfig::default();
+        c.search
+            .profiles
+            .insert("coding".to_string(), ProfileConfig { providers: vec![] });
+        let err = c
+            .validate()
+            .expect_err("empty provider list must be rejected");
+        assert!(err.to_string().contains("must not be empty"), "{err}");
+    }
+
+    #[test]
+    fn validate_rejects_unknown_provider_in_profile() {
+        let mut c = AppConfig::default();
+        c.search.profiles.insert(
+            "coding".to_string(),
+            ProfileConfig {
+                providers: vec!["not_a_provider".to_string()],
+            },
+        );
+        let err = c.validate().expect_err("unknown provider must be rejected");
+        assert!(err.to_string().contains("not_a_provider"), "{err}");
     }
 
     #[test]

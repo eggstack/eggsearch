@@ -1,6 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use eggsearch::core::sanitize::SNIPPET_MAX_CHARS;
 use eggsearch::fetch::extract::extract_content;
 
 fuzz_target!(|data: &[u8]| {
@@ -9,9 +10,12 @@ fuzz_target!(|data: &[u8]| {
     // Title and desc are Optional but always valid UTF-8 when present
     if let Some(ref t) = title {
         assert!(t.chars().all(|c| !c.is_control() || c == '\n'));
+        assert!(t.chars().count() <= SNIPPET_MAX_CHARS);
     }
+    // `content` may be whitespace-only, so an empty description is legal —
+    // assert the real bound rather than non-emptiness.
     if let Some(ref d) = desc {
-        assert!(!d.is_empty());
+        assert!(d.chars().count() <= SNIPPET_MAX_CHARS);
     }
     // Links must not exceed MAX_LINKS
     assert!(links.len() <= 100);

@@ -95,7 +95,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/forge_adapter/gitlab.rs` | 500 | 81,920 | GitLab execution and normalization |
 | `src/meta/forge_adapter/gitea.rs` | 550 | 81,920 | Gitea/Forgejo/Codeberg execution and normalization |
 | `src/meta/local_backend.rs` | 2,700 | 100,000 | Move backend logic under `local/` |
-| `src/meta/evidence_bundle.rs` | 2,150 | 81,920 | Owns packaging + gap analysis, never ranking |
+| `src/meta/evidence_bundle.rs` | 2,200 | 81,920 | Owns packaging + gap analysis, never ranking |
 | `src/meta/dependency_parse/mod.rs` | 800 | 81,920 | Dispatch + corpus tests |
 | `src/meta/dependency_parse/cargo.rs` | 400 | 81,920 | One ecosystem per file |
 | `src/meta/dependency_parse/npm.rs` | 400 | 81,920 | npm v1-v3/shrinkwrap |
@@ -121,8 +121,20 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/security_search.rs` | 2,300 | 88,000 | Security orchestration with native advisory + applicability pipeline |
 | `src/meta/suggested_fetches.rs` | 1,600 | 81,920 | Ordinary-file ceiling |
 | `src/meta/provider_diagnostics.rs` | 2,200 | 81,920 | Provider health + routing; capability-skip semantics locked by dispatch guards; explicit-provider rejection classification (`ProviderRoutingError` + `resolve_explicit_providers`) is the next slice to extract if this needs to grow again |
+| `src/meta/package_resolver.rs` | 1,700 | 60,000 | One resolver per ecosystem; next slice is moving the ten `resolve_*` implementations under a `package_resolver/` submodule |
 | `src/meta/research_workflow.rs` | 1,900 | 81,920 | Research multi-source orchestration; typed workflow preserved, do not flatten into generic workflow |
 | `src/meta/adapter/tests.rs` | 2,700 | 100,000 | Adapter behavioral fixtures only; production modules stay under ordinary ceilings |
+| `src/core/security.rs` | 3,000 | 115,000 | Identifier parsing/normalization plus the large inline test block; next slice is moving identifier + query-classification helpers into a `security/` submodule |
+| `src/core/config.rs` | 3,000 | 115,000 | Serde surface for every section plus inline tests; next slice is splitting the `[fetch]` section types out of the root `AppConfig` |
+| `src/core/provider.rs` | 2,800 | 115,000 | Capability/provider model; next slice is moving the capability matrix out of the provider type module |
+| `src/fetch/span.rs` | 2,750 | 81,920 | Range selection and chunking; next slice is splitting the selection math from the file-walk plumbing |
+| `src/fetch/client.rs` | 2,600 | 100,000 | Fetch/redirect/conditional paths plus inline tests; next slice is extracting the redirect loop shared by `fetch_internal` and `fetch_conditional` |
+| `src/core/retrieval_status.rs` | 2,300 | 95,000 | Attempt ledger and role mapping; next slice is extracting the summarization passes |
+| `src/fetch/pdf.rs` | 2,100 | 70,000 | Text/metadata/outline extraction; next slice is moving page-label and outline extraction to their own modules |
+| `src/startup.rs` | 1,800 | 62,000 | Startup sequence and subsystem wiring; next slice is splitting per-subsystem bootstrap helpers |
+| `src/fetch/cache.rs` | 1,750 | 57,000 | Raw + derived cache and LRU; next slice is separating the derived-key path from the raw entry store |
+| `src/core/identity.rs` | 1,750 | 60,000 | Canonicalization, FNV hasher, and stable IDs; next slice is moving URL canonicalization into its own module. **Canonicalization and ID semantics must not change when split** |
+| `src/core/repo_fetch.rs` | 1,650 | 60,000 | Repo locator types and fetch planning; next slice is separating the locator model from the fetch planning |
 
 ---
 

@@ -218,24 +218,29 @@ fn fetch_input_to_bundle(input: &EvidenceFetchInput) -> EvidenceBundleFetchedIte
 }
 
 /// Deduplicate sources by URL, keeping the richer metadata.
+///
+/// Keyed on the canonicalized URL so dedup agrees with `compute_source_id` and
+/// `link_fetches_to_sources` — otherwise two spellings of the same page would
+/// survive dedup while producing the same `source_id`.
 fn deduplicate_sources(sources: &mut Vec<EvidenceBundleSource>) {
     let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     let mut to_remove = Vec::new();
 
     for (i, source) in sources.iter().enumerate() {
         if let Some(url) = &source.url {
-            if let Some(&existing_idx) = seen.get(url) {
+            let key = crate::core::identity::canonicalize_url(url);
+            if let Some(&existing_idx) = seen.get(&key) {
                 // Keep the one with more metadata (more rank_reasons = richer)
                 let existing_len = sources[existing_idx].rank_reasons.len();
                 let current_len = source.rank_reasons.len();
                 if current_len > existing_len {
                     to_remove.push(existing_idx);
-                    seen.insert(url.clone(), i);
+                    seen.insert(key, i);
                 } else {
                     to_remove.push(i);
                 }
             } else {
-                seen.insert(url.clone(), i);
+                seen.insert(key, i);
             }
         }
     }
@@ -901,6 +906,34 @@ mod tests {
 
         let bundle = build_evidence_bundle(req);
         assert_eq!(bundle.sources.len(), 1);
+    }
+
+    #[test]
+    fn deduplication_uses_canonical_url_and_keeps_one_source_id() {
+        // These two spellings produce the same canonical URL and the same
+        // `source_id`; dedup keyed on the raw URL let both through.
+        let req = EvidenceBundleRequest {
+            goal: None,
+            sources: vec![
+                make_source("https://example.com/doc", "doc", "duckduckgo"),
+                make_source("https://www.example.com/doc/", "doc - www", "brave"),
+            ],
+            fetches: vec![],
+            include_unfetched_sources: None,
+            max_sources: None,
+            max_fetched_items: None,
+            max_total_chars: None,
+            warnings: vec![],
+            research_claims: None,
+            research_conflicts: None,
+        };
+
+        let bundle = build_evidence_bundle(req);
+        assert_eq!(
+            bundle.sources.len(),
+            1,
+            "canonical-equivalent URLs must collapse to one source"
+        );
     }
 
     #[test]

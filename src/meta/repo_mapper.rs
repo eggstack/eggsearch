@@ -864,7 +864,10 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
         }
         let dominant = lang_tally
             .into_iter()
-            .max_by_key(|(_, c)| *c)
+            // Explicit tie-break on language name: `max_by_key` would otherwise
+            // resolve ties by HashMap iteration order, which is randomized per
+            // process, so an equal split could report different runs.
+            .max_by(|(la, ca), (lb, cb)| ca.cmp(cb).then_with(|| lb.cmp(la)))
             .map(|(l, _)| l);
         modules.push(RepoModuleSummary {
             path: dir.clone(),

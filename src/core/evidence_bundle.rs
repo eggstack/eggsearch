@@ -482,14 +482,18 @@ pub fn compute_bundle_id(
     source_ids: &[String],
     fetch_ids: &[String],
 ) -> String {
-    use super::identity::{write_entity_prefix, write_str, FnvHasher};
+    use super::identity::{write_entity_prefix, write_str, write_usize, FnvHasher};
 
     let mut hasher = FnvHasher::new();
     write_entity_prefix(&mut hasher, "bundle");
     write_str(&mut hasher, goal.unwrap_or(""));
+    // Length-prefix each list: concatenating both without a count marker makes
+    // `(["a"], ["b"])` and `(["a","b"], [])` hash to the same bytes.
+    write_usize(&mut hasher, source_ids.len());
     for id in source_ids {
         write_str(&mut hasher, id);
     }
+    write_usize(&mut hasher, fetch_ids.len());
     for id in fetch_ids {
         write_str(&mut hasher, id);
     }
@@ -649,7 +653,15 @@ mod tests {
         let sources = vec!["src_aaa".to_string(), "src_bbb".to_string()];
         let fetches = vec!["fetch_ccc".to_string()];
         let id = compute_bundle_id(Some("debug error"), &sources, &fetches);
-        assert_eq!(id, "bundle_06e191277c02e672");
+        assert_eq!(id, "bundle_42fef3bd99658cbf");
+    }
+
+    #[test]
+    fn bundle_id_distinguishes_the_source_fetch_boundary() {
+        // Without a count marker between the two lists these hash identically.
+        let a = compute_bundle_id(None, &["a".to_string()], &["b".to_string()]);
+        let b = compute_bundle_id(None, &["a".to_string(), "b".to_string()], &[]);
+        assert_ne!(a, b, "bundle ID must not collide across the list boundary");
     }
 
     #[test]

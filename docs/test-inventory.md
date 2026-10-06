@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5636 | 23 |
-| `--features mock` | 5367 | 1 |
+| `--all-features` | 5665 | 23 |
+| `--features mock` | 5395 | 1 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -38,7 +38,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `browser_profiles` | `browser` | Browser profile management |
 | `browser_transport` | `browser` | Browser transport orchestration |
 | `browser_live_smoke` | `browser` (+ `live-smoke`, ignored) | Live browser smoke (opt-in only) |
-| `static_guards` | None | Ownership, layout, crate-wide unsafe, repo-wide process/shell, planning consistency, workflow wiring, forge policy/transport, dependency/workflow, policy guards, and credentialed-provider endpoint/parameter guards (Kagi v1-only, SerpApi no-extra-verticals/no-billed-extras) (fail-closed) |
+| `static_guards` | None | Ownership, layout, crate-wide unsafe, repo-wide process/shell, planning consistency, workflow wiring, forge policy/transport, dependency/workflow, policy guards, module-size ratchets (explicit ceilings plus an `src/**` sweep enforcing the ordinary 1600-line / 80 KB ceiling), and credentialed-provider endpoint/parameter guards (Kagi v1-only, SerpApi no-extra-verticals/no-billed-extras) (fail-closed) |
 
 Placement authority is the table in `architecture/testing.md`.
 

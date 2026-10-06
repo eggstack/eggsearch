@@ -397,6 +397,11 @@ impl MetadataSearchAdapter {
 
         // Engines still in the join_set when the deadline hit are
         // considered timed-out. They were cancelled by the JoinSet drop.
+        //
+        // `raw_failures` is drained from a JoinSet, so its order is task
+        // completion order. Emit in `queried_ids` order instead, matching the
+        // shared `provider_failures` helper the other three workflows use, so
+        // `providers_failed` and the warnings derived from it are deterministic.
         let mut providers_failed: Vec<ProviderFailure> = raw_failures
             .into_iter()
             .map(|(id, err)| ProviderFailure {
@@ -405,6 +410,17 @@ impl MetadataSearchAdapter {
                 message: err.to_string(),
             })
             .collect();
+        let provider_rank: std::collections::HashMap<&str, usize> = queried_ids
+            .iter()
+            .enumerate()
+            .map(|(rank, id)| (id.as_str(), rank))
+            .collect();
+        providers_failed.sort_by_key(|failure| {
+            provider_rank
+                .get(failure.id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX)
+        });
 
         for id in &queried_ids {
             if !accounted.contains(id.as_str()) {

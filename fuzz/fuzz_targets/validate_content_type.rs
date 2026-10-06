@@ -30,9 +30,11 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Exercise HTML extraction with a realistic base URL for link
-    // resolution (the second parameter of extract_content).
+    // resolution (the second parameter of extract_content). `include_links`
+    // must be true, otherwise the extractor short-circuits and the link
+    // assertions below compare 0 <= 0 and prove nothing.
     let (_, _, _, links, warnings, _text_truncated, links_seen, links_truncated) =
-        extract_content(data, BASE_URL, 10000, false);
+        extract_content(data, BASE_URL, 10000, true);
     assert!(
         links.len() <= links_seen,
         "extracted links cannot exceed the number of anchor elements seen"

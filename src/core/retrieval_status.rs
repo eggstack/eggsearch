@@ -1098,7 +1098,7 @@ pub fn map_provider_to_intended_roles(
         "issues" => {
             vec![EvidenceRole::IssueOrIncidentDiscussion]
         }
-        "releases" => {
+        "releases" | "changelog" => {
             vec![EvidenceRole::ReleaseNoteOrChangelog]
         }
         "docs" | "documentation" => {
@@ -2097,6 +2097,42 @@ mod tests {
         let policy_skipped = summary.policy_skipped_count.unwrap();
         let cap_skipped = summary.capability_skipped_count.unwrap();
         assert_eq!(attempted, completed + failed + policy_skipped + cap_skipped);
+    }
+
+    #[test]
+    fn changelog_label_maps_to_release_role_not_unknown() {
+        // `repo_planner` emits this label; it previously fell through to the
+        // provider fallback and resolved to UnknownOrWeakContext.
+        assert_eq!(
+            map_provider_to_intended_roles("duckduckgo", "changelog"),
+            vec![EvidenceRole::ReleaseNoteOrChangelog]
+        );
+        assert_eq!(
+            map_provider_to_intended_roles("duckduckgo", "releases"),
+            vec![EvidenceRole::ReleaseNoteOrChangelog]
+        );
+    }
+
+    #[test]
+    fn every_planner_label_maps_to_a_deliberate_role() {
+        // Guards against a future planner label silently falling through to
+        // the UnknownOrWeakContext fallback.
+        for label in [
+            "docs",
+            "registry",
+            "source",
+            "examples",
+            "issues",
+            "releases",
+            "changelog",
+            "exact_phrase",
+        ] {
+            let roles = map_provider_to_intended_roles("duckduckgo", label);
+            assert!(
+                !roles.contains(&EvidenceRole::UnknownOrWeakContext),
+                "planner label {label:?} must map to a deliberate evidence role, got {roles:?}"
+            );
+        }
     }
 
     #[test]

@@ -527,21 +527,36 @@ fn config_path(client: Client) -> Option<PathBuf> {
     }
 }
 
+/// True when a path looks like an ephemeral cargo build artifact, i.e. it has
+/// an adjacent `target` + (`debug` or `deps`) component pair.
+fn is_ephemeral_build_path(path: &Path) -> bool {
+    let components = path
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect::<Vec<_>>();
+    components
+        .windows(2)
+        .any(|pair| pair[0] == "target" && matches!(pair[1], "debug" | "deps"))
+}
+
 fn resolve_executable(override_executable: Option<&Path>) -> Result<(String, bool)> {
     if let Some(path) = override_executable {
         if path.as_os_str().is_empty() {
             bail!("--executable must not be empty");
         }
+        // Never register a `target/debug` binary, including by explicit
+        // override: a build artifact path is not stable once the checkout is
+        // cleaned or rebuilt.
+        if is_ephemeral_build_path(path) {
+            bail!(
+                "--executable points at an ephemeral build artifact ({}); pass an installed eggsearch path instead",
+                path.display()
+            );
+        }
         return Ok((path.display().to_string(), false));
     }
     let path = std::env::current_exe().context("failed to resolve the current executable")?;
-    let components = path
-        .components()
-        .filter_map(|component| component.as_os_str().to_str())
-        .collect::<Vec<_>>();
-    let ephemeral = components
-        .windows(2)
-        .any(|pair| pair[0] == "target" && matches!(pair[1], "debug" | "deps"));
+    let ephemeral = is_ephemeral_build_path(&path);
     if ephemeral {
         Ok(("eggsearch".to_string(), true))
     } else {
@@ -672,6 +687,51 @@ fn check_tools(tools: &[String]) -> Result<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn explicit_executable_rejects_target_debug_paths() {
+        // Never register an ephemeral build artifact, even by explicit override.
+        for path in [
+            "/repo/target/debug/eggsearch",
+            "/repo/target/deps/eggsearch-abc123",
+            "target/debug/eggsearch",
+        ] {
+            let err = resolve_executable(Some(Path::new(path)))
+                .expect_err("target/debug override must be rejected");
+            assert!(err.to_string().contains("ephemeral"), "{err}");
+        }
+    }
+
+    #[test]
+    fn explicit_executable_accepts_installed_paths() {
+        for path in [
+            "/opt/homebrew/bin/eggsearch",
+            "/usr/local/bin/eggsearch",
+            "/home/u/.cargo/bin/eggsearch",
+        ] {
+            let (resolved, ephemeral) =
+                resolve_executable(Some(Path::new(path))).expect("installed path");
+            assert_eq!(resolved, path);
+            assert!(!ephemeral);
+        }
+    }
+
+    #[test]
+    fn is_ephemeral_build_path_requires_adjacent_target_and_debug() {
+        assert!(is_ephemeral_build_path(Path::new(
+            "/repo/target/debug/eggsearch"
+        )));
+        assert!(!is_ephemeral_build_path(Path::new(
+            "/repo/target/release/eggsearch"
+        )));
+        // `target` and `debug` must be adjacent components, not just substrings.
+        assert!(!is_ephemeral_build_path(Path::new(
+            "/repo/debug/target/eggsearch"
+        )));
+        assert!(!is_ephemeral_build_path(Path::new(
+            "/opt/targeted/debugtools/eggsearch"
+        )));
+    }
 
     #[test]
     fn native_commands_use_argv_boundaries() {

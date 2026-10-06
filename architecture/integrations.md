@@ -176,15 +176,16 @@ argv directly.
 
 ## Executable resolution
 
-`resolve_executable()` prefers `--executable PATH` verbatim (empty values
-rejected) and otherwise uses `std::env::current_exe()`. A current executable
-is classified ephemeral when its path contains an adjacent `target` +
-(`debug` or `deps`) component pair: render substitutes the bare `eggsearch`
-name on `PATH`, and stdio `--apply` without an explicit `--executable` aborts
-with `install eggsearch or pass --executable /path/to/eggsearch before using
---apply`. HTTP transports are exempt because they register a URL, not a
-binary. Never register `target/debug` binaries: require an installed
-executable or an explicit `--executable` pointing at one.
+`resolve_executable()` takes `--executable PATH` when given (empty values
+rejected) and otherwise uses `std::env::current_exe()`. Both paths are checked
+against the same ephemeral-build test: a path with an adjacent `target` +
+(`debug` or `deps`) component pair is rejected on `--executable` and, for the
+`current_exe()` fallback, renders as the bare `eggsearch` name on `PATH` and
+aborts stdio `--apply` without an explicit `--executable` with `install
+eggsearch or pass --executable /path/to/eggsearch before using --apply`. HTTP
+transports are exempt because they register a URL, not a binary. Never register
+`target/debug` binaries: require an installed executable or an explicit
+`--executable` pointing at one.
 
 Availability probes check `PATH` for an executable file (executable bit on
 Unix): `codegg`, `zed`, `codex`, `claude`, `cursor` or `cursor-agent`,

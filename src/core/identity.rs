@@ -137,7 +137,7 @@ fn write_opt_u32(hasher: &mut FnvHasher, v: Option<u32>) {
 }
 
 /// Write a `usize` to the hasher.
-fn write_usize(hasher: &mut FnvHasher, v: usize) {
+pub fn write_usize(hasher: &mut FnvHasher, v: usize) {
     hasher.write(&(v as u64).to_le_bytes());
 }
 

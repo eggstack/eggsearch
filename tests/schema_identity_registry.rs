@@ -864,7 +864,7 @@ fn golden_bundle_id() {
     let sources = vec!["src_aaa".to_string(), "src_bbb".to_string()];
     let fetches = vec!["fetch_ccc".to_string()];
     let id = compute_bundle_id(Some("debug error"), &sources, &fetches);
-    assert_eq!(id, "bundle_06e191277c02e672");
+    assert_eq!(id, "bundle_42fef3bd99658cbf");
 }
 
 #[test]

@@ -597,15 +597,30 @@ pub struct AgentWarning {
     pub recommended_action: Option<String>,
 }
 
+/// Hard cap on an `AgentWarning.message`.
+///
+/// Warning messages frequently embed upstream error text (redirect targets,
+/// header values, absolute URLs), so the field is untrusted input. Strip
+/// control characters and bound the length before it reaches a response.
+pub const MAX_WARNING_MESSAGE_CHARS: usize = 500;
+
 impl AgentWarning {
     /// Build an `AgentWarning` with default severity and recommended
     /// action for the given code.
+    ///
+    /// The message is sanitized and bounded: it may carry upstream-supplied
+    /// text, so it must not reach the response unbounded or with control
+    /// characters intact.
     pub fn new(code: WarningCode, message: impl Into<String>) -> Self {
         let recommended_action = code.default_recommended_action().map(|s| s.to_string());
+        let (message, _) = crate::core::sanitize::bound_text(
+            &crate::core::sanitize::strip_control_chars(&message.into()).0,
+            MAX_WARNING_MESSAGE_CHARS,
+        );
         Self {
             severity: code.default_severity(),
             code,
-            message: message.into(),
+            message,
             provider_ids: Vec::new(),
             result_ids: Vec::new(),
             source_ids: Vec::new(),
@@ -1138,6 +1153,26 @@ mod tests {
         assert!(w.provider_ids.is_empty());
         assert!(w.result_ids.is_empty());
         assert!(w.source_ids.is_empty());
+    }
+
+    #[test]
+    fn agent_warning_message_is_sanitized_and_bounded() {
+        // Warning messages embed upstream error text (redirect targets, header
+        // values), so the field is untrusted input.
+        let hostile = format!(
+            "invalid redirect location: {}\u{1b}[31m\u{0}tail",
+            "https://evil.example/".repeat(500)
+        );
+        let w = AgentWarning::new(WarningCode::ProviderFailed, hostile);
+        assert!(
+            w.message.chars().count() <= MAX_WARNING_MESSAGE_CHARS,
+            "warning message must be bounded, got {} chars",
+            w.message.chars().count()
+        );
+        assert!(
+            !w.message.chars().any(|c| c.is_control()),
+            "warning message must not carry control characters"
+        );
     }
 
     #[test]

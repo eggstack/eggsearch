@@ -115,25 +115,48 @@ impl PackageEcosystem {
     }
 
     /// Registry API URL for package metadata.
+    ///
+    /// The package name is percent-encoded segment by segment, so a caller-supplied
+    /// name can never introduce a path, query, or fragment delimiter into the URL.
     pub fn registry_api_url(&self, package: &str) -> String {
+        let path = encode_package_path(package);
         match self {
-            Self::CratesIo => format!("https://crates.io/api/v1/crates/{package}"),
-            Self::Pypi => format!("https://pypi.org/pypi/{package}/json"),
-            Self::Npm => format!("https://registry.npmjs.org/{package}"),
-            Self::Go => format!("https://proxy.golang.org/{package}/@latest"),
+            Self::CratesIo => format!("https://crates.io/api/v1/crates/{path}"),
+            Self::Pypi => format!("https://pypi.org/pypi/{path}/json"),
+            Self::Npm => format!("https://registry.npmjs.org/{path}"),
+            Self::Go => format!("https://proxy.golang.org/{path}/@latest"),
             Self::Maven => {
-                let encoded = package.replace(' ', "+");
-                format!(
-                    "https://search.maven.org/solrsearch/select?q=g:\"{encoded}\"&rows=1&wt=json"
-                )
+                let encoded = urlencoding::encode(package);
+                format!("https://search.maven.org/solrsearch/select?q=g%3A%22{encoded}%22&rows=1&wt=json")
             }
-            Self::Nuget => format!("https://api.nuget.org/v3-flatcontainer/{package}/index.json"),
-            Self::Rubygems => format!("https://rubygems.org/api/v1/gems/{package}.json"),
-            Self::Packagist => format!("https://packagist.org/packages/{package}.json"),
-            Self::Oci => format!("https://hub.docker.com/v2/repositories/{package}/"),
-            Self::GithubActions => format!("https://api.github.com/repos/{package}"),
+            Self::Nuget => format!("https://api.nuget.org/v3-flatcontainer/{path}/index.json"),
+            Self::Rubygems => format!("https://rubygems.org/api/v1/gems/{path}.json"),
+            Self::Packagist => format!("https://packagist.org/packages/{path}.json"),
+            Self::Oci => format!("https://hub.docker.com/v2/repositories/{path}/"),
+            Self::GithubActions => format!("https://api.github.com/repos/{path}"),
         }
     }
+}
+
+/// Percent-encode a package name for use as a URL path, preserving `/` separators.
+///
+/// Each `/`-delimited segment is encoded independently so multi-segment names
+/// (`github.com/foo/bar`, `monolog/monolog`, `library/nginx`, `actions/checkout`)
+/// stay intact. Dot-only segments are re-encoded so they can never act as path
+/// traversal after a server-side decode.
+fn encode_package_path(package: &str) -> String {
+    package
+        .split('/')
+        .map(|segment| {
+            let encoded = urlencoding::encode(segment).into_owned();
+            if segment == "." || segment == ".." {
+                encoded.replace('.', "%2E")
+            } else {
+                encoded
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 impl std::fmt::Display for PackageEcosystem {
@@ -162,6 +185,15 @@ pub struct PackageCoordinate {
     pub version_requirement: Option<String>,
 }
 
+/// Characters that must never appear in a package name or namespace.
+///
+/// `/` and `:` are excluded on purpose: several ecosystems use them as
+/// meaningful separators (`github.com/foo/bar`, `monolog/monolog`). Everything
+/// listed here is either a URL delimiter or has no place in a registry
+/// identifier, so rejecting it keeps registry requests unambiguous.
+const FORBIDDEN_COORDINATE_CHARS: [char; 9] =
+    ['?', '#', '&', '"', '<', '>', '\\', '\u{0}', '\u{7f}'];
+
 impl PackageCoordinate {
     /// Validate the coordinate, returning an error if invalid.
     pub fn validate(&self) -> Result<(), String> {
@@ -171,9 +203,36 @@ impl PackageCoordinate {
         if self.name.contains(' ') {
             return Err("package name must not contain spaces".to_string());
         }
+        if let Some(c) = self
+            .name
+            .chars()
+            .find(|c| FORBIDDEN_COORDINATE_CHARS.contains(c) || c.is_control())
+        {
+            return Err(format!(
+                "package name must not contain URL delimiter or control character {c:?}"
+            ));
+        }
+        if has_dot_only_segment(&self.name) {
+            return Err(
+                "package name must not contain empty or dot-only path segments".to_string(),
+            );
+        }
         if let Some(ref ns) = self.namespace {
             if ns.contains("..") || ns.starts_with('/') || ns.ends_with('/') {
                 return Err("namespace must not contain path traversal".to_string());
+            }
+            if let Some(c) = ns
+                .chars()
+                .find(|c| FORBIDDEN_COORDINATE_CHARS.contains(c) || c.is_control())
+            {
+                return Err(format!(
+                    "namespace must not contain URL delimiter or control character {c:?}"
+                ));
+            }
+            if has_dot_only_segment(ns) {
+                return Err(
+                    "namespace must not contain empty or dot-only path segments".to_string()
+                );
             }
         }
         if self.ecosystem == PackageEcosystem::Maven && self.name.contains(':') {
@@ -189,6 +248,13 @@ impl PackageCoordinate {
         }
         Ok(())
     }
+}
+
+/// True when a `/`-delimited coordinate contains an empty, `.`, or `..` segment.
+fn has_dot_only_segment(value: &str) -> bool {
+    value
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
 }
 
 /// Resolved package metadata from a registry API lookup.
@@ -422,6 +488,116 @@ mod tests {
             version_requirement: None,
         };
         assert!(coord.validate().is_ok());
+    }
+
+    #[test]
+    fn registry_api_url_percent_encodes_injection_characters() {
+        // Maven Solr parameter injection: a quote must not break out of `q`.
+        let url = PackageEcosystem::Maven.registry_api_url("x\"&rows=5000&wt=xml");
+        assert!(
+            !url.contains("wt=xml\"") && !url.contains("&rows=5000"),
+            "Maven query must not carry an injected parameter: {url}"
+        );
+        assert!(
+            url.ends_with("&rows=1&wt=json"),
+            "caller rows must win: {url}"
+        );
+        assert!(!url.contains('"'), "raw quote leaked into URL: {url}");
+
+        // Path injection: traversal must not escape the API prefix.
+        let url = PackageEcosystem::CratesIo.registry_api_url("../../../../v1/users/me");
+        assert!(
+            url.starts_with("https://crates.io/api/v1/crates/"),
+            "path traversal escaped the crates API prefix: {url}"
+        );
+        assert!(
+            !url.contains(".."),
+            "literal traversal segments must not survive: {url}"
+        );
+        assert!(
+            url.contains("%2E%2E"),
+            "dot-only segments must be percent-encoded: {url}"
+        );
+    }
+
+    #[test]
+    fn registry_api_url_preserves_multi_segment_names() {
+        assert_eq!(
+            PackageEcosystem::Go.registry_api_url("github.com/foo/bar"),
+            "https://proxy.golang.org/github.com/foo/bar/@latest"
+        );
+        assert_eq!(
+            PackageEcosystem::Packagist.registry_api_url("monolog/monolog"),
+            "https://packagist.org/packages/monolog/monolog.json"
+        );
+        assert_eq!(
+            PackageEcosystem::GithubActions.registry_api_url("actions/checkout"),
+            "https://api.github.com/repos/actions/checkout"
+        );
+        // A name that is only dots must not re-form as a traversal segment.
+        assert_eq!(
+            PackageEcosystem::CratesIo.registry_api_url(".."),
+            "https://crates.io/api/v1/crates/%2E%2E"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_url_delimiters_and_traversal() {
+        for (ecosystem, name) in [
+            (PackageEcosystem::CratesIo, "axum?rows=5"),
+            (PackageEcosystem::CratesIo, "axum#frag"),
+            (PackageEcosystem::CratesIo, "a&b"),
+            (PackageEcosystem::CratesIo, "a\u{0}b"),
+            (PackageEcosystem::CratesIo, "a\\b"),
+            (PackageEcosystem::CratesIo, "../../v1/users"),
+            (PackageEcosystem::CratesIo, "axum/../.."),
+            (PackageEcosystem::Go, "/leading/slash"),
+            (PackageEcosystem::Packagist, "vendor//pkg"),
+            (PackageEcosystem::Packagist, "vendor/./pkg"),
+        ] {
+            let coord = PackageCoordinate {
+                ecosystem: ecosystem.clone(),
+                name: name.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                coord.validate().is_err(),
+                "{ecosystem} name {name:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_rejects_url_delimiters_in_namespace() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Maven,
+            name: "commons-lang3".to_string(),
+            namespace: Some("org.apache?x=1".to_string()),
+            ..Default::default()
+        };
+        assert!(coord.validate().is_err());
+    }
+
+    #[test]
+    fn validate_still_accepts_real_ecosystem_names() {
+        for (ecosystem, name) in [
+            (PackageEcosystem::Go, "github.com/foo/bar"),
+            (PackageEcosystem::Packagist, "monolog/monolog"),
+            (PackageEcosystem::Oci, "library/nginx"),
+            (PackageEcosystem::GithubActions, "actions/checkout"),
+            (PackageEcosystem::Npm, "my-package"),
+            (PackageEcosystem::Nuget, "Newtonsoft.Json"),
+        ] {
+            let coord = PackageCoordinate {
+                ecosystem: ecosystem.clone(),
+                name: name.to_string(),
+                ..Default::default()
+            };
+            assert!(
+                coord.validate().is_ok(),
+                "{ecosystem} name {name:?} should be accepted"
+            );
+        }
     }
 
     #[test]

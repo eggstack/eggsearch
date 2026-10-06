@@ -110,7 +110,11 @@ fn compute_conflict_id(source_ids: &[String], field: &str) -> String {
 
     let mut hasher = FnvHasher::new();
     write_entity_prefix(&mut hasher, "conflict");
-    write_str(&mut hasher, &source_ids.join(","));
+    // Hash each ID as its own length-prefixed field rather than joining on a
+    // separator: `["a,b"]` would otherwise collide with `["a", "b"]`.
+    for id in source_ids {
+        write_str(&mut hasher, id);
+    }
     write_str(&mut hasher, field);
     format!("conflict_{:016x}", hasher.finish())
 }
@@ -434,19 +438,19 @@ pub fn detect_entity_scoped_conflicts(
                         map
                     };
 
-                    let mut source_set_keys: Vec<(String, BTreeSet<String>)> =
+                    // `per_source_sets` is a `BTreeMap`, so `into_iter()`
+                    // already yields keys in sorted order.
+                    let source_set_keys: Vec<(String, BTreeSet<String>)> =
                         per_source_sets.into_iter().collect();
-                    source_set_keys.sort_by(|a, b| a.0.cmp(&b.0));
 
                     for i in 0..source_set_keys.len() {
                         for j in (i + 1)..source_set_keys.len() {
                             let (ref id_a, ref set_a) = source_set_keys[i];
                             let (ref id_b, ref set_b) = source_set_keys[j];
                             if set_a != set_b {
-                                let mut vals_a: Vec<String> = set_a.iter().cloned().collect();
-                                vals_a.sort();
-                                let mut vals_b: Vec<String> = set_b.iter().cloned().collect();
-                                vals_b.sort();
+                                // `BTreeSet` iterates in sorted order already.
+                                let vals_a: Vec<String> = set_a.iter().cloned().collect();
+                                let vals_b: Vec<String> = set_b.iter().cloned().collect();
                                 let val_a = vals_a.join(", ");
                                 let val_b = vals_b.join(", ");
                                 let ids_a = vec![id_a.clone()];
@@ -477,9 +481,10 @@ pub fn detect_entity_scoped_conflicts(
                         map
                     };
 
-                    let mut date_source_keys: Vec<(String, BTreeSet<String>)> =
+                    // `per_source_dates` is a `BTreeMap`, so `into_iter()`
+                    // already yields keys in sorted order.
+                    let date_source_keys: Vec<(String, BTreeSet<String>)> =
                         per_source_dates.into_iter().collect();
-                    date_source_keys.sort_by(|a, b| a.0.cmp(&b.0));
 
                     if date_source_keys.len() >= 2 {
                         for i in 0..date_source_keys.len() {
@@ -487,11 +492,10 @@ pub fn detect_entity_scoped_conflicts(
                                 let (ref id_a, ref dates_a) = date_source_keys[i];
                                 let (ref id_b, ref dates_b) = date_source_keys[j];
                                 if dates_a != dates_b {
-                                    let mut vals_a: Vec<String> = dates_a.iter().cloned().collect();
-                                    vals_a.sort();
+                                    // `BTreeSet` iterates in sorted order already.
+                                    let vals_a: Vec<String> = dates_a.iter().cloned().collect();
                                     let val_a = vals_a.join(", ");
-                                    let mut vals_b: Vec<String> = dates_b.iter().cloned().collect();
-                                    vals_b.sort();
+                                    let vals_b: Vec<String> = dates_b.iter().cloned().collect();
                                     let val_b = vals_b.join(", ");
                                     let ids_a = vec![id_a.clone()];
                                     let ids_b = vec![id_b.clone()];
@@ -632,6 +636,14 @@ mod tests {
         assert_eq!(c.severity, ConflictSeverity::Medium);
         assert_eq!(c.resolution, ConflictResolution::PreferNewerDate);
         assert!(c.directly_comparable);
+    }
+
+    #[test]
+    fn conflict_id_distinguishes_element_boundaries() {
+        // Joining on `,` made `["a,b"]` collide with `["a", "b"]`.
+        let a = compute_conflict_id(&["a,b".to_string()], "field");
+        let b = compute_conflict_id(&["a".to_string(), "b".to_string()], "field");
+        assert_ne!(a, b, "conflict ID must respect element boundaries");
     }
 
     #[test]

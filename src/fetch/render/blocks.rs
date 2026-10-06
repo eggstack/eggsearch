@@ -120,8 +120,7 @@ pub fn render_blocks(
         warnings.push("content truncated at block boundary".to_string());
     }
 
-    let total_chars: usize = blocks.iter().map(|b| b.text.chars().count()).sum();
-    let text_truncated = total_chars > max_chars || block_truncated;
+    let text_truncated = block_truncated;
 
     (
         title,
@@ -423,9 +422,9 @@ fn collect_inline_text<'a>(
     let mut parts = Vec::new();
     collect_text_parts(node, &mut parts, markdown, base_url, 0);
     let text = parts.join("");
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    // `normalize_whitespace` collapses runs to single spaces in one pass;
+    // the intermediate `Vec<&str>` and extra copy are unnecessary.
+    crate::core::sanitize::normalize_whitespace(&text)
         .trim()
         .to_string()
 }

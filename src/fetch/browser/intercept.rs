@@ -73,6 +73,13 @@ pub async fn is_request_allowed_with_dns(url_str: &str) -> Result<(), PolicyViol
     .map_err(|_| PolicyViolation::DnsResolutionFailed)?
     .map_err(|_| PolicyViolation::DnsResolutionFailed)?;
 
+    // Fail closed on an empty answer set, matching the HTTP path. Returning
+    // `Ok(())` here would let a host that resolves to nothing through the
+    // SSRF check still be handed to Chromium.
+    if addrs.is_empty() {
+        return Err(PolicyViolation::DnsResolutionFailed);
+    }
+
     for addr in addrs {
         if is_private_ip(addr.ip()) {
             return Err(PolicyViolation::ResolvedToPrivateNetwork(

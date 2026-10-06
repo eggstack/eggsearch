@@ -12,6 +12,13 @@ const MAX_OUTLINE_ENTRIES: usize = 200;
 const MAX_OUTLINE_DEPTH: usize = 6;
 const MAX_OUTLINE_TITLE_LEN: usize = 200;
 
+/// Slack allowed between a page-label range's start and the document's real
+/// page count before `/St` is treated as hostile and rendered as decimal.
+const MAX_PAGE_LABEL_SLACK: i64 = 1000;
+
+/// Hard cap on a single roman-numeral page label, independent of any caller.
+const MAX_ROMAN_LABEL_CHARS: usize = 64;
+
 /// Bound an outline title to `MAX_OUTLINE_TITLE_LEN` characters,
 /// never splitting a multi-byte UTF-8 sequence.
 fn bound_outline_title(title: &str) -> String {
@@ -337,11 +344,11 @@ fn try_extract_page_labels(doc: &lopdf::Document) -> Option<Vec<String>> {
         }
         if let Ok(lopdf::Object::Name(name)) = label_dict.get(b"S") {
             current_style = match name.as_slice() {
-                b"decimaldigits" => "decimaldigits",
-                b"romanUppercase" => "romanUppercase",
-                b"romanLowercase" => "romanLowercase",
-                b"alphaUppercase" => "alphaUppercase",
-                b"alphaLowercase" => "alphaLowercase",
+                b"D" | b"decimaldigits" => "decimaldigits",
+                b"R" | b"romanUppercase" => "romanUppercase",
+                b"r" | b"romanLowercase" => "romanLowercase",
+                b"A" | b"alphaUppercase" => "alphaUppercase",
+                b"a" | b"alphaLowercase" => "alphaLowercase",
                 _ => "decimaldigits",
             };
         }
@@ -349,20 +356,29 @@ fn try_extract_page_labels(doc: &lopdf::Document) -> Option<Vec<String>> {
             current_start = *n;
         }
 
-        let start = current_start.max(1) as usize;
+        let start = current_start.max(1);
+        let max_label_number = (total_pages as i64).saturating_add(MAX_PAGE_LABEL_SLACK);
         for (p, label) in labels
             .iter_mut()
             .enumerate()
             .take(total_pages)
             .skip(page_idx)
         {
-            let num = start + (p - page_idx);
-            let suffix = match current_style {
-                "romanLowercase" => to_roman_lower(num),
-                "romanUppercase" => to_roman_upper(num),
-                "alphaLowercase" => to_alpha_lower(num),
-                "alphaUppercase" => to_alpha_upper(num),
-                _ => num.to_string(),
+            let num = start.saturating_add((p - page_idx) as i64);
+            let suffix = if num > max_label_number {
+                // `/St` is attacker-controlled: a roman or alpha rendering of an
+                // arbitrary i64 expands without bound (one "M" per 1000). Fall
+                // back to decimal, which is always a bounded digit string.
+                num.to_string()
+            } else {
+                let n = num as usize;
+                match current_style {
+                    "romanLowercase" => to_roman_lower(n),
+                    "romanUppercase" => to_roman_upper(n),
+                    "alphaLowercase" => to_alpha_lower(n),
+                    "alphaUppercase" => to_alpha_upper(n),
+                    _ => n.to_string(),
+                }
             };
             *label = Some(format!("{current_prefix}{suffix}"));
         }
@@ -386,6 +402,11 @@ fn to_roman_upper(mut n: usize) -> String {
     let mut result = String::new();
     for (&v, s) in vals.iter().zip(syms.iter()) {
         while n >= v {
+            // Roman numerals grow linearly with `n` (one "M" per 1000), so cap
+            // the result rather than trusting every caller to bound its input.
+            if result.chars().count() >= MAX_ROMAN_LABEL_CHARS {
+                return result;
+            }
             result.push_str(s);
             n -= v;
         }
@@ -962,9 +983,12 @@ pub fn extract_pdf_text(
                 _ => "",
             })
             .filter(|s| !s.is_empty())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
+            .fold(Vec::<&str>::new(), |mut acc, kind| {
+                if !acc.contains(&kind) {
+                    acc.push(kind);
+                }
+                acc
+            });
         let kind_str = kinds.join(", ");
         warnings.push(format!(
             "pages {page_list} appear {kind_str}; OCR is unavailable in this build"
@@ -2007,6 +2031,18 @@ mod tests {
         assert_eq!(to_roman_upper(9), "IX");
         assert_eq!(to_roman_upper(58), "LVIII");
         assert_eq!(to_roman_upper(1999), "MCMXCIX");
+    }
+
+    #[test]
+    fn to_roman_upper_is_bounded() {
+        // Roman numerals grow linearly with n; a 647-byte PDF with a hostile
+        // `/St` would otherwise expand to ~100 MB of label text.
+        let label = to_roman_upper(usize::MAX);
+        assert!(
+            label.chars().count() <= MAX_ROMAN_LABEL_CHARS,
+            "roman label must be capped, got {} chars",
+            label.chars().count()
+        );
     }
 
     #[test]

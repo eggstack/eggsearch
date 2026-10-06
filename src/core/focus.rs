@@ -17,13 +17,23 @@ fn tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Tokenize already-lowercased text into a set of alphanumeric tokens.
+///
+/// Borrows from `lower` so a chunk costs one allocation instead of one
+/// `String` per token.
+fn token_set(lower: &str) -> HashSet<&str> {
+    lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
 /// Normalize text for phrase comparison: lowercase, single spaces.
+///
+/// `normalize_whitespace` already collapses runs of whitespace to single
+/// spaces, so no second split/join pass is needed.
 fn normalized(text: &str) -> String {
-    crate::core::sanitize::normalize_whitespace(text)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase()
+    crate::core::sanitize::normalize_whitespace(text).to_ascii_lowercase()
 }
 
 /// Score one chunk against the focus query.
@@ -33,6 +43,7 @@ fn normalized(text: &str) -> String {
 /// queries. Returns `0.0` when nothing matches.
 fn score_chunk(
     query_tokens: &[String],
+    query_set: &HashSet<&str>,
     query_norm: &str,
     query_raw: &str,
     chunk: &DocumentChunk,
@@ -40,11 +51,11 @@ fn score_chunk(
     if query_tokens.is_empty() {
         return 0.0;
     }
-    let chunk_tokens: HashSet<String> = tokens(&chunk.text).into_iter().collect();
+    let chunk_lower = chunk.text.to_ascii_lowercase();
+    let chunk_tokens = token_set(&chunk_lower);
     if chunk_tokens.is_empty() {
         return 0.0;
     }
-    let query_set: HashSet<String> = query_tokens.iter().cloned().collect();
     let overlap = query_set.intersection(&chunk_tokens).count();
     if overlap == 0 {
         return 0.0;
@@ -59,7 +70,10 @@ fn score_chunk(
     if !chunk.heading_path.is_empty() {
         let heading_tokens: HashSet<String> =
             chunk.heading_path.iter().flat_map(|h| tokens(h)).collect();
-        let heading_overlap = query_set.intersection(&heading_tokens).count();
+        let heading_overlap = query_set
+            .iter()
+            .filter(|t| heading_tokens.contains(**t))
+            .count();
         score += 3.0 * heading_overlap as f64;
     }
     score
@@ -96,10 +110,12 @@ pub fn select_focus_chunks(
     if query_tokens.is_empty() {
         return empty;
     }
+    // Invariant across every chunk: build the query token set once.
+    let query_set: HashSet<&str> = query_tokens.iter().map(|t| t.as_str()).collect();
     let scores: Vec<f64> = document
         .chunks
         .iter()
-        .map(|c| score_chunk(&query_tokens, &query_norm, query_raw, c))
+        .map(|c| score_chunk(&query_tokens, &query_set, &query_norm, query_raw, c))
         .collect();
     let candidate_count = scores.iter().filter(|s| **s > 0.0).count();
     if candidate_count == 0 {

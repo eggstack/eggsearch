@@ -10,6 +10,7 @@
 //! only (no semver range).
 
 use crate::core::package::{PackageCoordinate, PackageEcosystem, PackageResolution};
+use crate::meta::version_compare::compare_versions_for_ecosystem;
 use eggfetch_core::Client;
 use std::time::Duration;
 
@@ -463,7 +464,11 @@ async fn resolve_maven(
 ) -> PackageResolution {
     let group = coord.namespace.as_deref().unwrap_or("");
     let artifact = &coord.name;
-    let query = format!("g:\"{group}\"+AND+a:\"{artifact}\"");
+    let query = format!(
+        "g%3A%22{}%22+AND+a%3A%22{}%22",
+        urlencoding::encode(group),
+        urlencoding::encode(artifact)
+    );
     let api_url = format!("https://search.maven.org/solrsearch/select?q={query}&rows=1&wt=json");
 
     let builder = match client.get(api_url.as_str()) {
@@ -707,7 +712,11 @@ fn parse_packagist_response(
     let latest_version = versions.and_then(|map| {
         map.keys()
             .filter(|k| !k.starts_with("dev-") && !k.contains("alpha") && !k.contains("beta"))
-            .max_by_key(|k| k.as_str())
+            .max_by(|a, b| {
+                compare_versions_for_ecosystem(&PackageEcosystem::Packagist, a, b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.cmp(b))
+            })
             .cloned()
     });
 
@@ -1391,6 +1400,33 @@ mod tests {
             Some("https://github.com/Seldaek/monolog")
         );
         assert!(res.registry_url.unwrap().contains("packagist.org"));
+    }
+
+    #[test]
+    fn parse_packagist_response_picks_numerically_latest_not_lexicographic() {
+        let coord = PackageCoordinate {
+            ecosystem: PackageEcosystem::Packagist,
+            name: "monolog/monolog".to_string(),
+            namespace: None,
+            version: None,
+            version_requirement: None,
+        };
+        // Lexicographic max over these keys would select "9.0.0".
+        let val: serde_json::Value = serde_json::json!({
+            "package": {
+                "versions": {
+                    "1.0.0": {},
+                    "2.0.0": {},
+                    "8.5.2": {},
+                    "9.0.0": {},
+                    "10.0.0": {},
+                    "11.0.0": {}
+                }
+            }
+        });
+        let res = parse_packagist_response(&coord, &val);
+        assert_eq!(res.latest_version.as_deref(), Some("11.0.0"));
+        assert_eq!(res.resolved_version.as_deref(), Some("11.0.0"));
     }
 
     #[test]

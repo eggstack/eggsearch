@@ -284,7 +284,10 @@ impl SecurityIdentifiers {
             }
         }
         if let Some(id) = osv_id {
-            result.osv_ids.push(id.to_string());
+            let normalized = normalize_osv(id);
+            if !normalized.is_empty() {
+                result.osv_ids.push(normalized);
+            }
         }
         if let Some(id) = rustsec_id {
             let normalized = normalize_rustsec(id);
@@ -407,6 +410,13 @@ static ECOSYSTEM_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(ecosystem):([a-zA-Z0-9_\-\.]+)\b").unwrap());
 static CWE_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(CWE-\d{2,4})\b").unwrap());
+/// OSV identifiers span several upstream schemes (`OSV-2024-1`,
+/// `GHSA-aaaa-bbbb-cccc`, `PYSEC-2024-1`, `RUSTSEC-2024-0001`, ...), so this
+/// accepts the shared shape rather than a fixed prefix list: an uppercase
+/// alnum lead followed by at least two dash-separated alphanumeric segments.
+/// Anchored end to end, so trailing prose, whitespace, and delimiters are rejected.
+static OSV_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"^[A-Z][A-Z0-9]{1,9}(?:-[A-Za-z0-9]{1,32}){2,}$").unwrap());
 static SYMBOL_RE: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"(?i)\b(symbol):([a-zA-Z0-9_\-\.:\[\]<>,]+)\b").unwrap());
 static VERSION_RE: LazyLock<regex::Regex> =
@@ -414,29 +424,26 @@ static VERSION_RE: LazyLock<regex::Regex> =
 
 fn normalize_cve(raw: &str) -> String {
     let upper = raw.to_uppercase();
-    if CVE_RE.is_match(&upper) {
-        upper
-    } else {
-        String::new()
-    }
+    CVE_RE
+        .captures(&upper)
+        .map(|c| c[1].to_string())
+        .unwrap_or_default()
 }
 
 fn normalize_ghsa(raw: &str) -> String {
     let upper = raw.to_uppercase();
-    if GHSA_RE.is_match(&upper) {
-        upper
-    } else {
-        String::new()
-    }
+    GHSA_RE
+        .captures(&upper)
+        .map(|c| c[1].to_string())
+        .unwrap_or_default()
 }
 
 fn normalize_rustsec(raw: &str) -> String {
     let upper = raw.to_uppercase();
-    if RUSTSEC_RE.is_match(&upper) {
-        upper
-    } else {
-        String::new()
-    }
+    RUSTSEC_RE
+        .captures(&upper)
+        .map(|c| c[1].to_string())
+        .unwrap_or_default()
 }
 
 fn normalize_ecosystem(raw: &str) -> String {
@@ -454,7 +461,16 @@ fn normalize_ecosystem(raw: &str) -> String {
 
 fn normalize_cwe(raw: &str) -> String {
     let upper = raw.to_uppercase();
-    if CWE_RE.is_match(&upper) {
+    CWE_RE
+        .captures(&upper)
+        .map(|c| c[1].to_string())
+        .unwrap_or_default()
+}
+
+fn normalize_osv(raw: &str) -> String {
+    let trimmed = raw.trim();
+    let upper = trimmed.to_uppercase();
+    if OSV_RE.is_match(&upper) {
         upper
     } else {
         String::new()
@@ -1721,6 +1737,58 @@ mod tests {
         assert_eq!(normalize_cve("CVE-2024-0001"), "CVE-2024-0001");
         assert_eq!(normalize_cve("cve-2024-12345"), "CVE-2024-12345");
         assert_eq!(normalize_cve("CVE-2024-12345678"), "CVE-2024-12345678");
+    }
+
+    #[test]
+    fn normalize_identifiers_emit_only_the_matched_identifier() {
+        // Trailing junk must never survive into the stored identifier, which
+        // is tagged `EvidenceConfidence::Exact` downstream.
+        assert_eq!(
+            normalize_cve("CVE-2021-44228 and other junk"),
+            "CVE-2021-44228"
+        );
+        assert_eq!(
+            normalize_ghsa("GHSA-aaaa-bbbb-cccc; injected"),
+            "GHSA-AAAA-BBBB-CCCC"
+        );
+        assert_eq!(
+            normalize_rustsec("RUSTSEC-2021-0001 extra"),
+            "RUSTSEC-2021-0001"
+        );
+        assert_eq!(normalize_cwe("CWE-79 plus more"), "CWE-79");
+    }
+
+    #[test]
+    fn normalize_osv_accepts_known_shapes_and_rejects_junk() {
+        for id in ["OSV-2024-1", "GHSA-aaaa-bbbb-cccc", "PYSEC-2024-9"] {
+            assert_eq!(normalize_osv(id), id.to_uppercase(), "{id} should parse");
+        }
+        for junk in [
+            "not-an-osv-id ; injected",
+            "",
+            "hello world",
+            "OSV-2024-1 OR 1=1",
+            "a-b",
+        ] {
+            assert!(normalize_osv(junk).is_empty(), "{junk:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn parse_rejects_trailing_junk_in_explicit_identifiers() {
+        let ids = SecurityIdentifiers::parse(
+            "",
+            Some("CVE-2021-44228 and other junk"),
+            None,
+            Some("not-an-osv-id ; injected"),
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(ids.cve_ids, vec!["CVE-2021-44228".to_string()]);
+        assert!(ids.osv_ids.is_empty());
+        assert!(ids.has_strong_identifier());
     }
 
     #[test]

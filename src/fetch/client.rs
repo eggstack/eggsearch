@@ -7,9 +7,7 @@ use futures::StreamExt;
 
 use super::detect;
 use super::extract::{extract_links_from_html, LinkExtractionResult};
-use super::limits::{
-    validate_fetch_target, validate_fetch_target_with_resolved_addrs, validate_url, FetchLimits,
-};
+use super::limits::{validate_fetch_target_with_resolved_addrs, validate_url, FetchLimits};
 use super::render;
 use super::types::FetchError;
 use crate::core::code_host_fetch::resolve_code_host_fetch_target;
@@ -253,6 +251,9 @@ impl FetchClient {
         // block forever on the next acquire.
         let mut permitted_origin: Option<super::origin::OriginKey> = None;
         let mut redirect_permit: Option<tokio::sync::OwnedSemaphorePermit> = None;
+        // Addresses resolved at the redirect site, carried into the next hop so
+        // the loop head does not resolve the same host twice.
+        let mut carried_addrs: Option<Vec<std::net::SocketAddr>> = None;
 
         let mut response = loop {
             let hop_origin = super::origin::OriginKey::from_url(&current_url);
@@ -273,8 +274,12 @@ impl FetchClient {
                 }
             }
             // Full validation: credentials, localhost, DNS resolution, IP checks.
-            let resolved_addrs =
-                validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
+            let resolved_addrs = match carried_addrs.take() {
+                Some(addrs) => Some(addrs),
+                None => {
+                    validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?
+                }
+            };
             // Reuse the validated address set so the connect path
             // cannot drift to a different DNS answer for this attempt.
             let builder = self
@@ -344,10 +349,14 @@ impl FetchClient {
                     return Err(FetchError::RedirectLimitExceeded(redirect_count - 1));
                 }
 
-                // Validate the redirect target before following.
-                validate_fetch_target(&redirect_url, &self.limits)
-                    .await
-                    .map_err(map_redirect_validation_error)?;
+                // Validate the redirect target before following, and carry the
+                // resolved addresses into the next hop instead of re-resolving.
+                carried_addrs = Some(
+                    validate_fetch_target_with_resolved_addrs(&redirect_url, &self.limits)
+                        .await
+                        .map_err(map_redirect_validation_error)?
+                        .unwrap_or_default(),
+                );
 
                 current_url = redirect_url;
                 continue;
@@ -1230,10 +1239,20 @@ impl FetchClient {
 
         let mut current_url = fetch_url;
         let mut redirect_count: usize = 0;
+        let initial_origin = super::origin::OriginKey::from_url(&current_url);
+        // Addresses resolved at the redirect site, carried into the next hop so
+        // the loop head does not resolve the same host twice.
+        let mut carried_addrs: Option<Vec<std::net::SocketAddr>> = None;
 
         let response = loop {
-            let resolved_addrs =
-                validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?;
+            let hop_origin = super::origin::OriginKey::from_url(&current_url);
+            let crossed_origin = hop_origin.as_ref() != initial_origin.as_ref();
+            let resolved_addrs = match carried_addrs.take() {
+                Some(addrs) => Some(addrs),
+                None => {
+                    validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?
+                }
+            };
             let builder = self
                 .client
                 .get(current_url.as_str())
@@ -1244,8 +1263,14 @@ impl FetchClient {
                 _ => builder,
             };
             let mut req = builder;
-            for (name, value) in conditional_headers {
-                req = req.header(name.as_str(), value.as_str());
+            // ETag and Last-Modified are origin-scoped credentials for the cached
+            // entry. Replaying them after a cross-origin redirect would disclose
+            // one origin's cache state to another, so send them on the first hop
+            // only.
+            if !crossed_origin {
+                for (name, value) in conditional_headers {
+                    req = req.header(name.as_str(), value.as_str());
+                }
             }
 
             let resp = req
@@ -1255,6 +1280,14 @@ impl FetchClient {
 
             let status = resp.status().as_u16();
             if status == 304 {
+                if crossed_origin {
+                    // A different origin cannot revalidate this origin's cached
+                    // entry; treating its 304 as a fresh hit would attribute one
+                    // origin's body to another.
+                    return Err(FetchError::NetworkError(
+                        "cross-origin 304 for a conditional revalidation".to_string(),
+                    ));
+                }
                 break resp;
             }
             if (300..400).contains(&status) {
@@ -1280,9 +1313,12 @@ impl FetchClient {
                 if redirect_count > self.limits.redirect_limit {
                     return Err(FetchError::RedirectLimitExceeded(redirect_count - 1));
                 }
-                validate_fetch_target(&redirect_url, &self.limits)
-                    .await
-                    .map_err(map_redirect_validation_error)?;
+                carried_addrs = Some(
+                    validate_fetch_target_with_resolved_addrs(&redirect_url, &self.limits)
+                        .await
+                        .map_err(map_redirect_validation_error)?
+                        .unwrap_or_default(),
+                );
                 current_url = redirect_url;
                 continue;
             }

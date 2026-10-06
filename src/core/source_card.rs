@@ -263,13 +263,11 @@ pub struct SourceExcerpt {
 /// Normalized excerpt key for deterministic deduplication.
 ///
 /// Lowercases and collapses whitespace so provider passages that differ
-/// only in casing or spacing merge to one excerpt.
+/// only in casing or spacing merge to one excerpt. `normalize_whitespace`
+/// already collapses whitespace runs to single spaces, so no second
+/// split/join pass is needed.
 pub fn excerpt_normalized_key(text: &str) -> String {
-    crate::core::sanitize::normalize_whitespace(text)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_lowercase()
+    crate::core::sanitize::normalize_whitespace(text).to_ascii_lowercase()
 }
 
 /// Accept only parseable timestamp evidence for generic result timestamps.

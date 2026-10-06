@@ -137,9 +137,15 @@ pub async fn browser_fetch_with_policy(
 
     // Every request the page makes — navigation, redirects, and
     // subresources alike — is paused by CDP Fetch interception and
-    // re-validated against the SSRF policy. Chromium resolves DNS and
-    // follows redirects internally, so validating only the initial URL
-    // would leave redirect- and rebinding-based escapes open.
+    // re-validated against the SSRF policy. Validating only the initial URL
+    // would leave redirect-based escapes open, and Chromium resolving DNS
+    // internally means each hop must be checked as it is requested.
+    //
+    // Note: the resolved addresses are checked but not pinned to the request.
+    // A split-horizon resolver (public answer here, link-local answer for
+    // Chromium) is therefore not covered; the HTTP path pins via
+    // `resolved_addresses`. Unlike the HTTP path, the check runs on the
+    // validation answer only.
     let interceptor = enforce_policy_per_request(&page).await;
 
     let captured: Arc<StdMutex<Option<CapturedMainResponse>>> = Arc::new(StdMutex::new(None));
@@ -171,10 +177,28 @@ async fn enforce_policy_per_request(page: &Page) -> Option<tokio::task::JoinHand
 
     let task_page = page.clone();
     Some(tokio::spawn(async move {
+        // Validated hosts, so a page's many same-host subresources resolve once
+        // instead of once per request. Holds the decision only — the address
+        // set is deliberately not reused across requests.
+        let mut allowed_hosts: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut paused = listener;
         while let Some(event) = paused.next().await {
             let request_url = event.request.url.clone();
-            let decision = is_request_allowed_with_dns(&request_url).await;
+            let host = url::Url::parse(&request_url)
+                .ok()
+                .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()));
+            let cached = host.as_ref().is_some_and(|h| allowed_hosts.contains(h));
+            let decision = if cached {
+                Ok(())
+            } else {
+                let decision = is_request_allowed_with_dns(&request_url).await;
+                if decision.is_ok() {
+                    if let Some(h) = host {
+                        allowed_hosts.insert(h);
+                    }
+                }
+                decision
+            };
             match decision {
                 Ok(()) => {
                     let _ = task_page
