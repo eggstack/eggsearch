@@ -1,0 +1,12 @@
+schema_version = 1
+
+# Empty bootstrap install policy: every eggsearch release target is a direct
+# artifact with no bundle or archive, so there is no per-target install policy
+# to express. Eggpack still generates the exact-release installers
+# (install-exact.sh / install-exact.ps1) from this policy plus the resolved
+# ReleaseManifest.
+#
+# The public friendly install surface remains the product wrappers
+# packaging/install.sh and packaging/install.ps1, which Eggpack copies into the
+# staged release unchanged. This file exists because the GitHub staging policy
+# names it as an input; it is intentionally empty rather than omitted.

@@ -48,6 +48,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CSV/TSV rendering no longer overstates the row count at the 100-row cap, and
   counts tab-separated columns correctly (the TSV fixture now contains tabs).
 
+## [0.4.2] - 2026-10-06
+
+### Changed
+
+- Release production is now owned by Eggpack. The seven public target
+  names are unchanged, but a staged release now carries three additional
+  producer-evidence assets alongside the historical 16: `release-manifest.json`
+  (final-bytes evidence for the exact staged bytes), `install-exact.sh`, and
+  `install-exact.ps1` (exact-release bootstraps rendered from the release
+  manifest). The public friendly install surface is still `install.sh` /
+  `install.ps1`; `releases/latest/download/install.sh` is unchanged.
+- Draft staging is now fail-closed instead of clobbering: an absent asset is
+  uploaded, a byte-identical asset is reused, and a differing or unexpected
+  remote asset refuses the run. Published releases are never overwritten and
+  no workflow publishes the GitHub Release; that remains a manual step.
+- The Linux GNU binaries are now cross-built with Zig 0.14.1 and
+  cargo-zigbuild 0.23.3 (previously Zig 0.13.0 / cargo-zigbuild 0.20.1).
+  The documented glibc 2.17 floor is unchanged and is re-proven per target on
+  the exact bytes before staging.
+- ARMv7 keeps its runtime proof through a required product-owned validator
+  that executes the candidate under a digest-pinned ARMv7 runtime; a failure
+  there fails the whole release.
+
+### Fixed
+
+### Fixed
+
+- Cross-origin redirect chains no longer deadlock: the fetch loop holds at most
+  one origin permit (the origin currently being contacted) instead of one per
+  hop, and `OriginController::acquire_bounded` puts a deadline under the
+  acquire so a limiter can never outlive the request budget. A chain that
+  revisited a single cross-origin host consumed the whole per-origin semaphore
+  (`http_concurrency` 2 by default) and blocked forever.
+- `semantic_scholar` is no longer built twice when it is enabled in both
+  `[search].providers` and `[search.api.semantic_scholar]`; the API-section
+  entry now replaces the provider-section entry, as `sourcegraph` already did.
+  Double registration queried the provider twice and double-weighted it in RRF.
+- Disjoint advisory affected windows are no longer collapsed into one
+  unsatisfiable intersection: `extract_advisory_ranges` emits one
+  `AdvisoryRange` per window (combined as a union by `RangeMatch::combine`),
+  and the OSV converter pairs each `introduced`…`fixed`/`limit` window into a
+  single expression. A version inside a second window was previously reported
+  `NotAffected`.
+- The exact-fixed-version rule works for OSV data: `fixed_versions` is now
+  sourced from `patched_versions` (bare versions) instead of `patched_ranges`
+  (expressions such as `"<1.2.3"`), which could never compare equal to a
+  version.
+- `nvd` no longer advertises native freshness it does not enforce: the
+  `keywordSearch` request carries no date parameter, so `supports_freshness`
+  is `false` and the claim is locked by `provider_capability_contract`.
+- A credential environment variable that is set but empty is reported as
+  missing rather than configured, in `doctor` and in the adapter's
+  configured-provider map, matching every other credential path.
+- `package_resolver` reads registry responses through the shared bounded
+  reader (`read_bounded_body`) instead of nine unbounded `.json()` calls.
+- Non-hex credentials (`sk-…`, `ghp_…`, JWTs, `Authorization: Bearer …`) are
+  redacted from provider-facing error queries, and URLs in error text are no
+  longer mangled into a bare basename by the local-path redactor.
+- `TruncationEvidence::LimitReachedUnknown` now fires when the provider fills
+  the candidate budget (the exact-fit case where more results may exist), not
+  only when it over-delivers.
+- Repo reranking uses the shared total-ordering score comparator, so absent or
+  non-finite scores cannot tie arbitrarily and break deterministic ordering.
+- CSV/TSV rendering no longer overstates the row count at the 100-row cap, and
+  counts tab-separated columns correctly (the TSV fixture now contains tabs).
+
 ## [0.4.1] - 2026-10-02
 
 ### Fixed

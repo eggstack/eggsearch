@@ -1,0 +1,123 @@
+name: Release provenance
+
+# Authenticity layer over already-staged bytes. This workflow never builds and
+# never mutates release state: it downloads the exact staged draft inventory
+# read-only, proves each file against GitHub's own reported digest, and then
+# writes attestations. Publication remains a separate human action.
+#
+# It is deliberately a separate workflow from the Eggpack-generated release
+# writer, because Eggpack-generated jobs must stay on the least-privilege
+# model and must never request an OIDC write permission.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Exact existing tag whose draft release is already staged
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  attest:
+    name: Attest staged release bytes
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Require the tag commit and a still-draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.release_tag }}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "release tag '$tag' is not a v<semver> tag" >&2
+            exit 1
+          fi
+          tag_commit="$(git rev-list -n 1 "$tag")"
+          head_commit="$(git rev-parse HEAD)"
+          if [[ "$tag_commit" != "$head_commit" ]]; then
+            echo "checked out commit $head_commit is not the commit tagged by $tag ($tag_commit)" >&2
+            exit 1
+          fi
+          if [[ "$(git status --porcelain --untracked-files=all)" != "" ]]; then
+            echo "candidate checkout is dirty at $head_commit" >&2
+            exit 1
+          fi
+          draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          if [[ "$draft" != "true" ]]; then
+            echo "release $tag is not a draft; provenance only attests unpublished staged bytes" >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$head_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Download the exact staged inventory read-only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staged
+          python3 packaging/expected_release_assets.py --from-contract > expected.txt
+          gh release download "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY" \
+            --pattern "${{ inputs.release_tag }}" --dir "staged" 2>/dev/null || true
+          rm -rf "staged/${{ inputs.release_tag }}"
+          while IFS= read -r asset; do
+            [[ -z "$asset" ]] && continue
+            gh release download "${{ inputs.release_tag }}" --repo "$GITHUB_REPOSITORY" \
+              --pattern "$asset" --dir "staged"
+          done < expected.txt
+          echo "staged inventory:"
+          ls -1 staged | sed 's/^/  /'
+
+      - name: Verify remote inventory, digests, sidecars, manifest, and wrappers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 packaging/verify-staged-release.py \
+            --tag "${{ inputs.release_tag }}" \
+            --staged-dir staged
+
+      - name: Attest release binaries, wrappers, and generated exact installers
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            staged/eggsearch-*
+            staged/install.sh
+            staged/install.ps1
+            staged/install-exact.sh
+            staged/install-exact.ps1
+
+      - name: Verify resulting attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify staged/eggsearch-x86_64-unknown-linux-gnu --repo "$GITHUB_REPOSITORY"
+          gh attestation verify staged/eggsearch-aarch64-pc-windows-msvc.exe --repo "$GITHUB_REPOSITORY"
+          gh attestation verify staged/eggsearch-armv7-unknown-linux-gnueabihf --repo "$GITHUB_REPOSITORY"
+          gh attestation verify staged/install.sh --repo "$GITHUB_REPOSITORY"
+          gh attestation verify staged/install.ps1 --repo "$GITHUB_REPOSITORY"
+          gh attestation verify staged/install-exact.sh --repo "$GITHUB_REPOSITORY"
+          gh attestation verify staged/install-exact.ps1 --repo "$GITHUB_REPOSITORY"
+          echo "- provenance: attested the seven binaries, two public wrappers, two generated exact installers"
+          echo "- verify any asset: \`gh attestation verify <asset-path> --repo eggstack/eggsearch\`" >> "$GITHUB_STEP_SUMMARY"

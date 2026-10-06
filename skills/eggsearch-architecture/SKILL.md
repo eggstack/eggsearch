@@ -35,7 +35,7 @@ Single library + binary crate (not a workspace). All source under `src/`. The cr
 | `fetch` | `client.rs`, `egress.rs`, `extract.rs`, `detect.rs`, `limits.rs`, `render/`, `span.rs` | Outbound HTTP, optional egress proxy-chain dialer, SSRF protection, content extraction, cache, and browser transport |
 | `mcp` | `server.rs`, `tool_contract.rs`, `projection.rs`, `http.rs`, `state.rs`, `tools/` (per-tool modules plus shared `common`), `policy.rs` | MCP protocol, canonical tool contract and discovery metadata, deterministic compact/standard/diagnostic result projection after canonical capture, shared tool service, stdio/HTTP transports, health and shutdown |
 | `integrations` | `common.rs`, client adapters, `commands/integrate.rs` | Client-specific MCP configuration rendering, atomic apply, native CLI registration, and protocol verification |
-| `packaging` | `packaging/`, `.github/workflows/release-binaries.yml`, `packaging/release-validate.sh` | Release target contract, qualification/release modes, checksums, installers, artifact smoke, draft assembly |
+| `packaging` | `release/eggpack/`, `packaging/`, `.github/workflows/release-eggpack.yml`, `.github/workflows/release-provenance.yml`, `packaging/release-validate.sh` | Eggpack producer contract, generated release workflow, checksums, installers, artifact smoke, draft-only staging, provenance |
 
 ## Adapter Pattern
 

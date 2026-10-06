@@ -1,0 +1,70 @@
+schema_version = 1
+
+# One bounded core candidate smoke per canonical target.
+#
+# `--version` is the stronger identity check: it proves the exact candidate
+# executes and identifies itself as `eggsearch X.Y.Z`. A single fixed argv
+# cannot also cover `--help`, so the help path is covered by the product-owned
+# consumer validator (packaging/validate-release-binary.py) instead of by a
+# second per-target core release step.
+#
+# `armv7-unknown-linux-gnueabihf` deliberately has NO `smoke` block. It is
+# classified `structural` in pack.toml, and Eggpack correctly rejects a declared
+# core smoke for a structural target because a structural classification
+# executes nothing — the binding would be a promise that never runs. The entry
+# itself is still required: the bindings must cover exactly the ReleasePlan
+# target inventory. The ARMv7 runtime proof (32-bit ARM ELF identity,
+# glibc <= 2.17, `--version` and `--help` under the pinned ARMv7 runtime) lives
+# entirely in the required product-owned ARMv7 consumer validator.
+
+[targets."aarch64-apple-darwin"]
+[targets."aarch64-apple-darwin".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."aarch64-pc-windows-msvc"]
+[targets."aarch64-pc-windows-msvc".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."aarch64-unknown-linux-gnu"]
+[targets."aarch64-unknown-linux-gnu".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."x86_64-apple-darwin"]
+[targets."x86_64-apple-darwin".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."x86_64-pc-windows-msvc"]
+[targets."x86_64-pc-windows-msvc".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+[targets."x86_64-unknown-linux-gnu"]
+[targets."x86_64-unknown-linux-gnu".smoke]
+selector = { kind = "direct" }
+argv = ["--version"]
+timeout_ms = 10000
+stdout_limit = 8192
+stderr_limit = 8192
+
+# Present to keep the binding inventory identical to the ReleasePlan target set.
+# Intentionally empty: see the header note above.
+[targets."armv7-unknown-linux-gnueabihf"]

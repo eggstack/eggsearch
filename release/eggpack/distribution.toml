@@ -1,0 +1,108 @@
+schema_version = 1
+
+# Producer release contract for eggsearch, owned by Eggpack since
+# Ecosystem M003b.
+#
+# This file is the single authority for the published target set, release
+# asset names, install names, and checksum sidecar names. It is static: it
+# carries no release tag, no source revision, and no artifact digest.
+#
+# Public asset names are version-free by contract; `releases/latest/download`
+# and `releases/download/vX.Y.Z` both resolve the same file name. Every one of
+# the seven asset names below is byte-identical to the name published by the
+# predecessor hand-maintained release workflow, so the migration from that
+# workflow to Eggpack is additive only.
+#
+# The seven targets are the same seven the historical writer published. Unlike
+# the Eggsact and StegoEggo contracts, `armv7-unknown-linux-gnueabihf` is
+# present here because eggsearch has always shipped an ARMv7 binary; the
+# runtime proof for it lives in the required product-owned ARMv7 consumer
+# validator rather than in core qualification (see pack.toml).
+
+[product]
+id = "eggsearch"
+display_name = "eggsearch"
+
+[[targets]]
+triple = "aarch64-apple-darwin"
+aliases = ["macos-arm64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "aarch64-pc-windows-msvc"
+aliases = ["windows-arm64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}.exe"
+install = "{product}.exe"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "aarch64-unknown-linux-gnu"
+aliases = ["linux-arm64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "armv7-unknown-linux-gnueabihf"
+aliases = ["linux-armv7"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "x86_64-apple-darwin"
+aliases = ["macos-x64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "x86_64-pc-windows-msvc"
+aliases = ["windows-x64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}.exe"
+install = "{product}.exe"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"
+
+[[targets]]
+triple = "x86_64-unknown-linux-gnu"
+aliases = ["linux-x64"]
+
+[targets.asset]
+kind = "direct"
+asset = "{product}-{target}"
+install = "{product}"
+
+[targets.checksum]
+sidecar = "{asset}.sha256"

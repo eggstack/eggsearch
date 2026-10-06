@@ -44,18 +44,22 @@ git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-The tagged `Release binaries` workflow assembles a **draft** GitHub Release after
-all target jobs and checksums pass; publish that draft manually after review.
+The Eggpack-generated `Eggpack candidate builds` workflow assembles a **draft**
+GitHub Release after all seven targets qualify and validate; publish that draft
+manually after review. Then dispatch `Release provenance` for the same tag to
+verify and attest the staged bytes.
 
 Before publishing the draft, confirm:
 
-- The release contains exactly 16 assets (7 executables + 7 adjacent `.sha256`
-  files + the reviewed `install.sh` and `install.ps1`).
-- Artifact attestations were generated and the in-workflow
-  `gh attestation verify` step passed. Re-verify independently after download:
+- The release contains exactly 19 assets: 7 executables, 7 adjacent `.sha256`
+  files, the reviewed `install.sh` and `install.ps1`, plus Eggpack's additive
+  producer evidence `release-manifest.json`, `install-exact.sh`, and
+  `install-exact.ps1`.
+- `Release provenance` completed and its `gh attestation verify` steps passed.
+  Re-verify independently after download:
   `gh attestation verify <asset-path> --repo eggstack/eggsearch`.
-- The workflow refuses to overwrite an already published release, and never
-  publishes the crate.
+- Staging refused to overwrite an already published release, no workflow
+  publishes the crate, and no workflow publishes the GitHub Release.
 
 Once crates.io accepts a version it is immutable. A correction requires a new
 version bump, a new changelog entry, and a full re-qualification — `v0.4.0`
@@ -69,26 +73,46 @@ is not closure evidence.
 | Job | What it runs |
 |-----|-------------|
 | `ci` | `make ci` — fmt, clippy, no-default-features compile check, all-features tests |
-| `Release binaries` | Qualification or tagged release workflow — preflight, seven-target build/smoke/checksum, exact assembly |
+| `Eggpack candidate builds` | Generated release workflow — resolve exact tag, seven-target build/qualify/consumer-validate, required gate, aggregate, draft staging |
+| `Release drift guard` | `eggpack ci check` over the generated workflow plus the packaging contract guard |
+| `Release provenance` | Read-only staged-draft verification plus artifact attestation over the exact bytes |
 | `Egress feature qualification` | Non-publishing `egress` compile lane (`.github/workflows/egress-feature-qualify.yml`) — exact target-set preflight against `packaging/release-targets.txt`, per-target `cargo check --locked --features egress` across the 7 release targets, MSRV 1.89 all-features check |
 
 ## Binary release workflow
 
-Run `make release-check`, push the exact candidate commit, and dispatch
-`.github/workflows/release-binaries.yml` with `mode=qualify` and
-`ref=<exact SHA>` before publishing. Qualification runs the complete matrix
-without requiring crates.io or touching a GitHub Release and prints
-`QUALIFIED_SHA=<sha>`.
+Release production is owned by Eggpack. The authority set lives in
+`release/eggpack/`, the workflow at `.github/workflows/release-eggpack.yml` is
+**generated**, and `.github/workflows/release-drift.yml` fails required CI if
+the two drift apart.
 
-After qualification passes, publish with `cargo publish --locked`, confirm the
-exact version is visible on crates.io, tag that same `QUALIFIED_SHA`, and push
-`vX.Y.Z`. Tagged release mode validates the tag, package version, tagged
-commit, clean checkout, lockfile, release-tree inputs, and registry visibility
-before building. It produces default-feature assets
-using the contract in `packaging/release-targets.txt`, runs native CLI/MCP
-stdio and loopback Streamable HTTP smoke where possible, qualifies ARMv7 under QEMU, and assembles a draft
-release with checksums and the reviewed installers. It refuses to overwrite a
-published release and never publishes the crate.
+`.github/workflows/release-eggpack.yml` is never edited by hand. After changing
+anything under `release/eggpack/`:
+
+```bash
+python3 packaging/gen-release-workflow-shape.py     # re-derive the shape
+make producer-drift                                 # render + drift-check locally
+```
+
+`make producer-drift` needs the pinned tool; get it with
+`cargo install --git https://github.com/eggstack/eggpack --rev <revision from
+release/eggpack/github-policy.json> --locked eggpack-cli`.
+
+The release run is `workflow_dispatch`-only and requires an exact **existing**
+`release_tag`, so the crate must already be on crates.io before dispatching. It
+resolves the tag, verifies the checkout is that exact commit, builds all seven
+targets, qualifies them, runs the required consumer validator per target,
+enforces the required gate, aggregates into one finalized root plus
+`release-manifest.json`, and stages a **draft** release.
+
+ARMv7 is classified `structural` (no hosted ARMv7 builder), so its runtime proof
+comes from the required `packaging/validate-armv7-candidate.py` rather than from
+core qualification; a failure there fails the release.
+
+Staging is draft-only and fail-closed: absent asset uploads, byte-identical
+assets are reused, a differing asset or an unexpected remote asset fails, a
+published release fails. There is no `--clobber` and no publish path. To recover
+from a refused draft, inspect it, delete the stale draft only when
+intentionally restarting the candidate, and rerun the same tag and source.
 
 Run `make packaging-check` locally when changing release target mappings,
 installer behavior, or embedded service assets. `make release-check` also runs

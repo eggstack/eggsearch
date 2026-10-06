@@ -1,0 +1,360 @@
+{
+  "build_bindings": {
+    "schema_version": 1,
+    "targets": {
+      "aarch64-apple-darwin": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ],
+      "aarch64-pc-windows-msvc": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ],
+      "aarch64-unknown-linux-gnu": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ],
+      "armv7-unknown-linux-gnueabihf": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ],
+      "x86_64-apple-darwin": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ],
+      "x86_64-pc-windows-msvc": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ],
+      "x86_64-unknown-linux-gnu": [
+        {
+          "binary": "eggsearch",
+          "package": "eggsearch",
+          "selector": {
+            "kind": "direct"
+          }
+        }
+      ]
+    }
+  },
+  "consumer_validators": {
+    "aarch64-apple-darwin": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-release-binary.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 120000
+    },
+    "aarch64-pc-windows-msvc": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-release-binary.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 120000
+    },
+    "aarch64-unknown-linux-gnu": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-release-binary.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 120000
+    },
+    "armv7-unknown-linux-gnueabihf": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-armv7-candidate.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 600000
+    },
+    "x86_64-apple-darwin": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-release-binary.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 120000
+    },
+    "x86_64-pc-windows-msvc": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-release-binary.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 120000
+    },
+    "x86_64-unknown-linux-gnu": {
+      "interpreter": "python3",
+      "schema_version": 1,
+      "script": "packaging/validate-release-binary.py",
+      "selector": {
+        "kind": "direct"
+      },
+      "stderr_limit": 65536,
+      "stdout_limit": 65536,
+      "timeout_ms": 120000
+    }
+  },
+  "qualification_bindings": {
+    "schema_version": 1,
+    "targets": {
+      "aarch64-apple-darwin": {
+        "smoke": {
+          "argv": [
+            "--version"
+          ],
+          "selector": {
+            "kind": "direct"
+          },
+          "stderr_limit": 8192,
+          "stdout_limit": 8192,
+          "timeout_ms": 10000
+        }
+      },
+      "aarch64-pc-windows-msvc": {
+        "smoke": {
+          "argv": [
+            "--version"
+          ],
+          "selector": {
+            "kind": "direct"
+          },
+          "stderr_limit": 8192,
+          "stdout_limit": 8192,
+          "timeout_ms": 10000
+        }
+      },
+      "aarch64-unknown-linux-gnu": {
+        "smoke": {
+          "argv": [
+            "--version"
+          ],
+          "selector": {
+            "kind": "direct"
+          },
+          "stderr_limit": 8192,
+          "stdout_limit": 8192,
+          "timeout_ms": 10000
+        }
+      },
+      "armv7-unknown-linux-gnueabihf": {},
+      "x86_64-apple-darwin": {
+        "smoke": {
+          "argv": [
+            "--version"
+          ],
+          "selector": {
+            "kind": "direct"
+          },
+          "stderr_limit": 8192,
+          "stdout_limit": 8192,
+          "timeout_ms": 10000
+        }
+      },
+      "x86_64-pc-windows-msvc": {
+        "smoke": {
+          "argv": [
+            "--version"
+          ],
+          "selector": {
+            "kind": "direct"
+          },
+          "stderr_limit": 8192,
+          "stdout_limit": 8192,
+          "timeout_ms": 10000
+        }
+      },
+      "x86_64-unknown-linux-gnu": {
+        "smoke": {
+          "argv": [
+            "--version"
+          ],
+          "selector": {
+            "kind": "direct"
+          },
+          "stderr_limit": 8192,
+          "stdout_limit": 8192,
+          "timeout_ms": 10000
+        }
+      }
+    }
+  },
+  "schema_version": 1,
+  "selected_aliases": [
+    "linux-x64",
+    "linux-arm64",
+    "linux-armv7",
+    "macos-x64",
+    "macos-arm64",
+    "windows-x64",
+    "windows-arm64"
+  ],
+  "staging": {
+    "provider": "git_hub_draft",
+    "required": true,
+    "tag_source": "dispatch_input"
+  },
+  "targets": [
+    {
+      "floor": {
+        "kind": "none"
+      },
+      "host_arch": "aarch64",
+      "host_os": "macos",
+      "qualification": "native",
+      "strategy": "native_cargo",
+      "support": "required",
+      "target": "aarch64-apple-darwin",
+      "toolchain": {
+        "rust": "stable"
+      }
+    },
+    {
+      "floor": {
+        "kind": "none"
+      },
+      "host_arch": "aarch64",
+      "host_os": "windows",
+      "qualification": "native",
+      "strategy": "native_cargo",
+      "support": "required",
+      "target": "aarch64-pc-windows-msvc",
+      "toolchain": {
+        "rust": "stable"
+      }
+    },
+    {
+      "floor": {
+        "kind": "glibc",
+        "major": 2,
+        "minor": 17
+      },
+      "host_arch": "aarch64",
+      "host_os": "linux",
+      "qualification": "native",
+      "strategy": "cargo_zigbuild",
+      "support": "required",
+      "target": "aarch64-unknown-linux-gnu",
+      "toolchain": {
+        "cargo_zigbuild": "0.23.3",
+        "rust": "stable",
+        "zig": "0.14.1"
+      }
+    },
+    {
+      "floor": {
+        "kind": "glibc",
+        "major": 2,
+        "minor": 17
+      },
+      "host_arch": "x86_64",
+      "host_os": "linux",
+      "qualification": "structural",
+      "strategy": "cargo_zigbuild",
+      "support": "required",
+      "target": "armv7-unknown-linux-gnueabihf",
+      "toolchain": {
+        "cargo_zigbuild": "0.23.3",
+        "rust": "stable",
+        "zig": "0.14.1"
+      }
+    },
+    {
+      "floor": {
+        "kind": "none"
+      },
+      "host_arch": "x86_64",
+      "host_os": "macos",
+      "qualification": "native",
+      "strategy": "native_cargo",
+      "support": "required",
+      "target": "x86_64-apple-darwin",
+      "toolchain": {
+        "rust": "stable"
+      }
+    },
+    {
+      "floor": {
+        "kind": "none"
+      },
+      "host_arch": "x86_64",
+      "host_os": "windows",
+      "qualification": "native",
+      "strategy": "native_cargo",
+      "support": "required",
+      "target": "x86_64-pc-windows-msvc",
+      "toolchain": {
+        "rust": "stable"
+      }
+    },
+    {
+      "floor": {
+        "kind": "glibc",
+        "major": 2,
+        "minor": 17
+      },
+      "host_arch": "x86_64",
+      "host_os": "linux",
+      "qualification": "native",
+      "strategy": "cargo_zigbuild",
+      "support": "required",
+      "target": "x86_64-unknown-linux-gnu",
+      "toolchain": {
+        "cargo_zigbuild": "0.23.3",
+        "rust": "stable",
+        "zig": "0.14.1"
+      }
+    }
+  ]
+}

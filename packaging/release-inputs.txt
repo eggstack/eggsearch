@@ -1,5 +1,53 @@
+# Files a release candidate checkout must contain. Blank lines and `#`
+# comments are ignored.
+#
+# The producer authority is release/eggpack/ plus the Eggpack-generated
+# workflow. Every other entry below is an existing product-owned input that the
+# generated pipeline consumes or that must survive the cutover unchanged.
+#
+# Cargo.toml
+# Cargo.lock
+# release/eggpack/distribution.toml
+# release/eggpack/pack.toml
+# release/eggpack/build-bindings.toml
+# release/eggpack/qualification-bindings.toml
+# release/eggpack/consumer-validators.json
+# release/eggpack/workflow-shape.json
+# release/eggpack/github-policy.json
+# release/eggpack/github-template.json
+# release/eggpack/install-policy.toml
+# release/eggpack/installer-presentation.json
+# packaging/gen-release-workflow-shape.py
+# packaging/expected_release_assets.py
+# packaging/validate-release-binary.py
+# packaging/validate-armv7-candidate.py
+# packaging/verify-staged-release.py
+# packaging/release-targets.txt
+# packaging/release-smoke.sh
+# packaging/release-smoke.ps1
+# packaging/install.sh
+# packaging/install.ps1
+# packaging/release-validate.sh
+# packaging/check-contract.sh
+# packaging/test-install.sh
+# packaging/test-install.ps1
 Cargo.toml
 Cargo.lock
+release/eggpack/distribution.toml
+release/eggpack/pack.toml
+release/eggpack/build-bindings.toml
+release/eggpack/qualification-bindings.toml
+release/eggpack/consumer-validators.json
+release/eggpack/workflow-shape.json
+release/eggpack/github-policy.json
+release/eggpack/github-template.json
+release/eggpack/install-policy.toml
+release/eggpack/installer-presentation.json
+packaging/gen-release-workflow-shape.py
+packaging/expected_release_assets.py
+packaging/validate-release-binary.py
+packaging/validate-armv7-candidate.py
+packaging/verify-staged-release.py
 packaging/release-targets.txt
 packaging/release-smoke.sh
 packaging/release-smoke.ps1

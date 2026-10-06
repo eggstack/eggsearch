@@ -1,0 +1,46 @@
+name: Release drift guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  drift:
+    name: Eggpack drift + contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable snapshot 2026-09-28
+        with:
+          toolchain: stable
+      - name: Install pinned Eggpack tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          rev="$(python3 -c "import json;print(json.load(open('release/eggpack/github-policy.json'))['eggpack_tool']['revision'])")"
+          cargo install --git https://github.com/eggstack/eggpack --rev "$rev" --locked eggpack-cli
+          eggpack --version
+      - name: Check generated workflow matches Eggpack configuration
+        shell: bash
+        run: |
+          eggpack ci check \
+            --workflow-shape release/eggpack/workflow-shape.json \
+            --contract release/eggpack/distribution.toml \
+            --github-policy release/eggpack/github-policy.json \
+            --workflow .github/workflows/release-eggpack.yml
+      - name: Check release contract
+        shell: bash
+        run: ./packaging/check-contract.sh
+      - name: Check workflow action pins
+        shell: bash
+        run: python3 packaging/check-workflow-pins.py

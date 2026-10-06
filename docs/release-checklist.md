@@ -24,6 +24,6 @@ Short operational checklist. The authoritative release process lives in
 
 - [ ] `git tag vX.Y.Z`
 - [ ] `git push origin vX.Y.Z`
-- [ ] Confirm `Release binaries` workflow creates a complete draft release
+- [ ] Confirm the Eggpack-generated `Eggpack candidate builds` workflow creates a complete draft release
 - [ ] Review binary checksums and publish the draft release manually
-- [ ] Verify the published release has exactly 16 assets and run external Unix/Windows installer smoke
+- [ ] Verify the published release has exactly 19 assets (7 executables, 7 `.sha256` sidecars, `install.sh`, `install.ps1`, `release-manifest.json`, `install-exact.sh`, `install-exact.ps1`) and run external Unix/Windows installer smoke

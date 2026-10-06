@@ -33,5 +33,9 @@ coverage/
 *.profraw
 *.profdata
 
+# Python bytecode from the packaging release guards
+__pycache__/
+*.pyc
+
 # opencode
 .opencode/

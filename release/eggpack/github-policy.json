@@ -1,0 +1,58 @@
+{
+  "preflight_runner": "ubuntu-24.04",
+  "runners": [
+    { "os": "linux", "arch": "x86_64", "label": "ubuntu-24.04", "cargo_zigbuild": true, "zig": true },
+    { "os": "linux", "arch": "aarch64", "label": "ubuntu-24.04-arm", "cargo_zigbuild": true, "zig": true },
+    { "os": "macos", "arch": "x86_64", "label": "macos-15-intel", "cargo_zigbuild": false, "zig": false },
+    { "os": "macos", "arch": "aarch64", "label": "macos-14", "cargo_zigbuild": false, "zig": false },
+    { "os": "windows", "arch": "x86_64", "label": "windows-latest", "cargo_zigbuild": false, "zig": false },
+    { "os": "windows", "arch": "aarch64", "label": "windows-11-arm", "cargo_zigbuild": false, "zig": false }
+  ],
+  "checkout": { "reference": "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683" },
+  "rust_toolchain": { "reference": "dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87" },
+  "upload_artifact": { "reference": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" },
+  "download_artifact": { "reference": "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" },
+  "triggers": ["workflow_dispatch"],
+  "timeout_minutes": 60,
+  "cancel_in_progress": true,
+  "artifact_retention_days": 7,
+  "eggpack_tool": {
+    "repo": "https://github.com/eggstack/eggpack",
+    "revision": "6656752a141cde155a43f7d416f086431a0e40a4",
+    "package": "eggpack-cli",
+    "install_timeout_minutes": 20
+  },
+  "release_inputs": {
+    "contract": "release/eggpack/distribution.toml",
+    "release_plan": "release/eggpack/runtime/release-plan.json",
+    "build_bindings": "release/eggpack/build-bindings.toml",
+    "qualification_bindings": "release/eggpack/qualification-bindings.toml",
+    "ci_plan": "release/eggpack/runtime/release-ci-plan.json",
+    "pack_config": "release/eggpack/pack.toml",
+    "draft_template": "release/eggpack/github-template.json",
+    "installer_presentation": "release/eggpack/installer-presentation.json",
+    "consumer_validators": "release/eggpack/consumer-validators.json"
+  },
+  "staging": {
+    "runner": "ubuntu-24.04",
+    "owner": "eggstack",
+    "repository": "eggsearch",
+    "tag_source": "dispatch_input",
+    "inputs": {
+      "contract": "release/eggpack/distribution.toml",
+      "install_policy": "release/eggpack/install-policy.toml",
+      "github_policy": "release/eggpack/github-template.json",
+      "installer_presentation": "release/eggpack/installer-presentation.json"
+    },
+    "receipt_retention_days": 7
+  },
+  "cross_tools": {
+    "cargo_install_timeout_minutes": 20,
+    "zig_connect_timeout_secs": 30,
+    "zig_max_time_secs": 600,
+    "zig": {
+      "linux_x86_64_sha256": "24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c",
+      "linux_aarch64_sha256": "f7a654acc967864f7a050ddacfaa778c7504a0eca8d2b678839c21eea47c992b"
+    }
+  }
+}

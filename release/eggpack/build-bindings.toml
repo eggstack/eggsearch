@@ -1,0 +1,21 @@
+schema_version = 1
+
+# One direct Cargo output per canonical target. The same package/binary pair is
+# used for every target; only the target triple changes.
+#
+# `eggsearch` is a single-crate, single-binary project, so the package name and
+# the binary name are identical. No explicit feature flags are requested: the
+# published distribution is the crate's default feature set, which is the SKU
+# users install. A packaging guard keeps that equivalence visible.
+#
+# TOML note: the schema is a map of target triple to a *list* of outputs, so
+# each entry is an inline table rather than a `[[...outputs]]` sub-table.
+
+[targets]
+"aarch64-apple-darwin" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]
+"aarch64-pc-windows-msvc" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]
+"aarch64-unknown-linux-gnu" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]
+"armv7-unknown-linux-gnueabihf" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]
+"x86_64-apple-darwin" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]
+"x86_64-pc-windows-msvc" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]
+"x86_64-unknown-linux-gnu" = [{ selector = { kind = "direct" }, package = "eggsearch", binary = "eggsearch" }]

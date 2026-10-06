@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "owner": "eggstack",
+  "repository": "eggsearch",
+  "title_prefix": "eggsearch ",
+  "body": "Draft binary release staged by Eggpack. Maintainer review and publication are required before this release becomes public.",
+  "prerelease": false,
+  "token_env": "GITHUB_TOKEN",
+  "request_timeout_secs": 30,
+  "max_metadata_bytes": 1000000,
+  "max_list_pages": 16
+}

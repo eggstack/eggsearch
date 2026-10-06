@@ -87,7 +87,7 @@ fetch ↗
 | Self-update & platform | `src/update.rs`, `src/platform.rs` | Binary-first self-update with checksum verification; 7 release targets and host resolution | [packaging.md](packaging.md) |
 | Testing infrastructure | `tests/` (78 test suites), `fuzz/` (23 targets) | Integration, corpus, property, adversarial, fault injection, contract tests; libfuzzer harnesses | [testing.md](testing.md) |
 | Build & CI | `Cargo.toml`, `Makefile` | Feature flags, dependency pins, CI pipeline, release gates | [build.md](build.md) |
-| Release packaging | `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs` | Target contract, checksums, installers, binary-first self-update, artifact smoke, draft assembly | [packaging.md](packaging.md) |
+| Release packaging | `release/eggpack/`, `packaging/`, `.github/workflows/release-eggpack.yml`, `.github/workflows/release-provenance.yml`, `src/platform.rs`, `src/update.rs` | Producer contract and generated release workflow, checksums, installers, binary-first self-update, artifact smoke, draft-only staging | [packaging.md](packaging.md) |
 
 ---
 

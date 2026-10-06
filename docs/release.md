@@ -98,7 +98,7 @@ workflow SHA and candidate commit to match, so run it from the exact candidate
 tag.
 
 Repository release immutability is enabled for future releases. The workflow
-assembles and verifies all 16 assets on a draft first; a maintainer reviews
+assembles and verifies all 19 assets on a draft first; a maintainer reviews
 and manually publishes that draft only after checking the asset set and
 attestation. Published immutable releases cannot have their tag or assets
 replaced.
@@ -108,21 +108,25 @@ The subsequent release sequence is:
 ```text
 make release-check
 push the exact release-candidate commit
-Release binaries: mode=qualify, ref=<exact SHA>
-inspect the qualification-only artifact and QUALIFIED_SHA
 cargo publish --locked
 confirm the exact version is visible on crates.io
-git tag vX.Y.Z at QUALIFIED_SHA && git push origin vX.Y.Z
-Release binaries: mode=release, tag=vX.Y.Z
-inspect the 16-asset draft release and publish it manually
+git tag vX.Y.Z at that commit && git push origin vX.Y.Z
+Eggpack candidate builds: dispatch release_tag=vX.Y.Z
+Release provenance: dispatch release_tag=vX.Y.Z (after the draft is staged)
+inspect the 19-asset draft release and publish it manually
 run external Unix and Windows installer smoke against the published assets
 ```
 
-For release mode, the workflow checks the exact `vX.Y.Z` tag, package version,
-tag commit, clean tree, required release inputs, and crates.io visibility before
-starting the matrix. A tag whose crate version is not yet visible on crates.io
-fails in preflight. Qualification and release check out the same resolved SHA
-and use the same build, smoke, checksum, and exact asset-set validation.
+`Release provenance` additionally proves, without mutating anything, that the
+staged draft holds exactly the 19 expected files with digests and sizes
+matching GitHub's own report, that all seven binary/checksum pairs verify, and
+that `release-manifest.json` declares the same tag, source revision, and target
+inventory.
+
+Publishing stays manual. Nothing in either workflow publishes the crate or the
+GitHub Release: crates.io is first, the draft is second, and a human performs
+the final publish. A tag whose crate version is not yet visible on crates.io
+must not be dispatched — publish the crate first.
 
 Installers never elevate and only use Cargo for unsupported targets or a
 confirmed HTTP 404 for the exact binary. They fail closed on all other download,
@@ -166,4 +170,6 @@ not require a clean tree and does not build release artifacts.
 | GitHub Actions / `make ci` | Remote repetition of routine gate |
 | `Makefile` / `make release-check` | Local packaging gate |
 | `cargo publish --locked` | Explicit maintainer publication |
-| `.github/workflows/release-binaries.yml` | Non-publishing qualification and tagged draft assembly |
+| `release/eggpack/` + `.github/workflows/release-eggpack.yml` | Eggpack producer authority and the generated release workflow (build, qualify, validate, aggregate, draft staging) |
+| `.github/workflows/release-drift.yml` | `eggpack ci check` drift guard on every push and pull request |
+| `.github/workflows/release-provenance.yml` | Read-only verification of the staged draft plus artifact attestation |

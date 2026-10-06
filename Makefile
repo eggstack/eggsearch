@@ -1,4 +1,4 @@
-.PHONY: check ci fmt clippy feature-check test hygiene dependency-policy packaging-check release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
+.PHONY: check ci fmt clippy feature-check test hygiene dependency-policy packaging-check producer-drift release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
 check: fmt clippy feature-check test hygiene dependency-policy packaging-check
 
@@ -24,6 +24,24 @@ dependency-policy:
 
 packaging-check:
 	./packaging/check-contract.sh
+
+# Verifies the checked-in release workflow is exactly what the Eggpack
+# producer authority renders. Needs the pinned eggpack CLI; CI runs the same
+# check in .github/workflows/release-drift.yml. Deliberately outside `check`
+# so the routine local gate stays network-free and toolchain-free.
+producer-drift:
+	python3 packaging/gen-release-workflow-shape.py
+	eggpack ci generate \
+		--workflow-shape release/eggpack/workflow-shape.json \
+		--contract release/eggpack/distribution.toml \
+		--github-policy release/eggpack/github-policy.json \
+		--output .github/workflows/release-eggpack.yml
+	eggpack ci check \
+		--workflow-shape release/eggpack/workflow-shape.json \
+		--contract release/eggpack/distribution.toml \
+		--github-policy release/eggpack/github-policy.json \
+		--workflow .github/workflows/release-eggpack.yml
+	git diff --exit-code -- release/eggpack .github/workflows/release-eggpack.yml
 
 release-check: check release-candidate-check docs-check release-build publish-check
 

@@ -1,0 +1,79 @@
+{
+  "aarch64-apple-darwin": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-release-binary.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 120000
+  },
+  "aarch64-pc-windows-msvc": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-release-binary.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 120000
+  },
+  "aarch64-unknown-linux-gnu": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-release-binary.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 120000
+  },
+  "armv7-unknown-linux-gnueabihf": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-armv7-candidate.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 600000
+  },
+  "x86_64-apple-darwin": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-release-binary.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 120000
+  },
+  "x86_64-pc-windows-msvc": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-release-binary.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 120000
+  },
+  "x86_64-unknown-linux-gnu": {
+    "interpreter": "python3",
+    "schema_version": 1,
+    "script": "packaging/validate-release-binary.py",
+    "selector": {
+      "kind": "direct"
+    },
+    "stderr_limit": 65536,
+    "stdout_limit": 65536,
+    "timeout_ms": 120000
+  }
+}

@@ -1,6 +1,6 @@
 # Release packaging architecture
 
-**Location:** `packaging/`, `.github/workflows/release-binaries.yml`, `src/platform.rs`, `src/update.rs`
+**Location:** `release/eggpack/`, `packaging/`, `.github/workflows/release-eggpack.yml`, `.github/workflows/release-provenance.yml`, `src/platform.rs`, `src/update.rs`
 
 Release packaging adds a binary distribution boundary without changing the
 MCP application architecture. The crate remains one default-feature binary;
@@ -56,7 +56,9 @@ checkout: `Cargo.toml`, `Cargo.lock`, `packaging/release-targets.txt`,
 checks every input path exists, `candidate` additionally requires the Cargo
 package version to be release-shaped, and
 `assets DIST MODE COMMIT TAG VERSION` proves exact set equality for the
-expected 16 files (seven binaries, seven checksums, two installers), prints
+expected 19 files (seven binaries, seven checksums, two product wrappers, the
+Eggpack release manifest, two generated exact installers), derived from the
+distribution contract by `expected_release_assets.py`, prints
 expected versus observed names with missing/unexpected diffs, re-verifies
 every checksum, and requires the Unix binaries to be executable.
 `packaging/check-contract.sh` runs the full keep-in-sync gate locally (see
@@ -81,40 +83,80 @@ The first binary release was `v0.3.9` at `0cbbeee7`. `v0.4.0` is crate and
 tag only — it never received a GitHub Release and is never revisited.
 `v0.4.1` is the current version in `Cargo.toml` and is published as an
 immutable 16-asset release (seven binaries, seven checksums, two installers)
-carrying a SLSA provenance attestation; a published release is never
-overwritten. Treat `plans/registry.md` and `CHANGELOG.md` as the authority for
+carrying a SLSA provenance attestation over all 16 names; a published release
+is never overwritten. Historical releases stay 16 assets; only releases
+produced after the Eggpack cutover carry the 19-file inventory. Treat `plans/registry.md` and `CHANGELOG.md` as the authority for
 which milestone is open next.
 
-## Release workflow
+## Producer authority: Eggpack
 
-`.github/workflows/release-binaries.yml` runs on `v*` tag pushes or
-`workflow_dispatch` with `mode=qualify|release`. Dispatch takes an exact
-branch/SHA `ref` for qualification or an exact `vX.Y.Z` `tag` for release.
-Qualification resolves and prints one immutable `QUALIFIED_SHA`, runs before
-crates.io publication, and uploads only a qualification-labelled artifact. It
-never creates or edits a GitHub Release.
+Release production is owned by Eggpack. `release/eggpack/` holds the complete,
+static, identity-free authority set:
 
-Preflight checks the candidate checkout: all `release-inputs.txt` paths
-present, tree clean, version read from locked cargo metadata. Release mode
-additionally requires the tag to be SemVer-shaped, the checkout to be the
-commit named by the tag, the Cargo version to equal the tag without the `v`
-prefix, and the exact crate version to be visible on crates.io. Every build
-job checks out the resolved preflight commit, never a moving branch.
+| File | Owns |
+|---|---|
+| `distribution.toml` | seven targets, asset names, install names, checksum sidecars |
+| `pack.toml` | build strategy, host, floor, qualification intent per target |
+| `build-bindings.toml` | one direct Cargo output per target |
+| `qualification-bindings.toml` | bounded core smoke per executing target |
+| `consumer-validators.json` | required product-owned validator per target |
+| `workflow-shape.json` | the static render seam (derived, not hand-maintained) |
+| `github-policy.json` | runners, action pins, release inputs, staging, cross-tool provisioning |
+| `github-template.json` | draft release template |
+| `install-policy.toml` | empty: every target is a direct artifact |
+| `installer-presentation.json` | product wrappers are the public install surface |
 
-Per-target jobs:
+`packaging/gen-release-workflow-shape.py` derives `workflow-shape.json` from
+the other files. Hand-maintaining it would make it a second copy of every
+producer fact, which is exactly the drift this arrangement exists to remove.
 
-- Linux x86-64 and ARM64 use pinned cargo-zigbuild against the
-  `<target>.2.17` sysroot, assert the ELF class, reject any binary needing a
-  glibc newer than 2.17, then run `packaging/release-smoke.sh`.
-- Linux ARMv7 builds the same way, asserts 32-bit ARM ELF, and smokes
-  `--version` plus `--help` under QEMU (`arm32v7/ubuntu:20.04`). Its protocol
-  path is intentionally not release evidence; the hosted job runs the full
-  CLI smoke while other targets run the full MCP smoke.
-- macOS Intel and Apple Silicon build natively on separate runners, then run
-  the Unix smoke script.
-- Windows x86-64 and ARM64 build natively on separate runner labels, then run
-  `packaging/release-smoke.ps1`, write lowercase `<asset>.sha256`, and hash
-  twice to prove the checksum round-trips.
+`.github/workflows/release-eggpack.yml` is **generated**. Never edit it by
+hand; regenerate it and prove the result:
+
+```bash
+eggpack ci generate \
+  --workflow-shape release/eggpack/workflow-shape.json \
+  --contract release/eggpack/distribution.toml \
+  --github-policy release/eggpack/github-policy.json \
+  --output .github/workflows/release-eggpack.yml
+eggpack ci check \
+  --workflow-shape release/eggpack/workflow-shape.json \
+  --contract release/eggpack/distribution.toml \
+  --github-policy release/eggpack/github-policy.json \
+  --workflow .github/workflows/release-eggpack.yml
+```
+
+`.github/workflows/release-drift.yml` runs that `ci check` on every push and
+pull request, so drift fails required CI rather than a release.
+
+The generated workflow is `workflow_dispatch`-only and requires an exact
+existing `release_tag`. It renders 27 jobs: `preflight`, `resolve`, seven
+`build_*`, seven `qualify_build_*`, seven `validate_build_*` consumer
+validators, `required_gate`, `aggregate`, and `stage`.
+
+Per-target policy:
+
+- Linux x86-64 and ARM64 build with cargo-zigbuild 0.23.3 against Zig 0.14.1 on
+  the `<target>.2.17` sysroot and are qualified `native` on the matching runner.
+- Linux ARMv7 builds the same way on x86-64 and is classified `structural`,
+  because there is no hosted ARMv7 builder and a structural classification
+  correctly executes nothing. It therefore has **no** core smoke binding; its
+  runtime proof lives in the required product-owned
+  `packaging/validate-armv7-candidate.py`, which asserts 32-bit ARM ELF
+  identity, glibc <= 2.17, and `--version`/`--help` under a digest-pinned
+  ARMv7 runtime. Because that validator is required, `required_gate` and
+  `aggregate` fail closed if the ARMv7 proof does not pass.
+- macOS Intel and Apple Silicon build natively on separate runners.
+- Windows x86-64 and ARM64 build natively on separate runner labels
+  (`windows-latest`, `windows-11-arm`); Windows ARM64 stays a required target.
+
+Every natively-hosted target additionally runs the required
+`packaging/validate-release-binary.py`, which proves exact workspace version
+identity, `--help` success, and the glibc ceiling on ELF targets.
+
+The generated workflow requests `contents: write` exactly once, in the `stage`
+job, and never requests `id-token: write`, `attestations: write`, or
+`artifact-metadata: write`. It contains no `--clobber` and no publish path.
 
 Every native job runs `--version`, `--help`, keyless MCP stdio initialize
 plus `tools/list`, and loopback Streamable HTTP health/initialize plus
@@ -171,17 +213,60 @@ initialize, and `tools/list`. ARMv7 runs the version/help subset under QEMU
 with `--skip-mcp` semantics because emulated sockets are not trusted release
 evidence.
 
-## Draft assembly
+## Draft staging
 
-The `assemble` job needs all five build jobs green, downloads every
-per-target artifact with `merge-multiple`, copies the reviewed installer
-bytes into `dist/`, normalizes Unix executable bits per the target table,
-and runs `release-validate.sh assets` for exact 16-file set equality.
-Qualify mode uploads a `qualification-<version>-<commit>-complete` artifact
-and stops. Release mode creates (or reuses, only when still a draft) a draft
-GitHub Release titled `eggsearch <version>` and uploads `dist/*` with
-`--clobber`. A published release is never overwritten, no job publishes the
-crate, and no partial matrix is ever silently published.
+`aggregate` consumes every build, qualification, and consumer-validation
+evidence handoff, enforces `required_gate`, and finalizes one release root plus
+a `release-manifest.json` written **beside** that root, never inside it.
+
+`stage` then prepares the staging payload and calls Eggpack's draft stager.
+Its semantics are fixed and are not configurable:
+
+- exact existing tag and exact source revision only;
+- draft-only: a published or immutable release fails;
+- absent asset -> upload; byte-identical asset -> reuse; differing asset -> fail;
+- unexpected remote asset -> fail;
+- no `--clobber`, no auto-publish, no tag mutation.
+
+Operator recovery from a refused or incomplete draft is: inspect the refusal
+and draft inventory, delete the stale draft **only** when intentionally
+restarting the unpublished candidate, then rerun the same exact tag and source
+once the draft is absent.
+
+The resulting public inventory is exactly 19 files:
+
+| Count | Files |
+|---|---|
+| 7 | versionless executables, unchanged public names |
+| 7 | `.sha256` sidecars |
+| 2 | `install.sh`, `install.ps1` (product wrappers, byte-identical to source) |
+| 1 | `release-manifest.json` (Eggpack final-bytes evidence) |
+| 2 | `install-exact.sh`, `install-exact.ps1` (Eggpack-rendered exact installers) |
+
+The last three are additive producer evidence, not replacement entry points.
+The public friendly install surface remains `install.sh` / `install.ps1`.
+
+## Provenance
+
+`.github/workflows/release-provenance.yml` is Eggsearch-owned and separate
+from the Eggpack-generated writer, precisely so generated jobs never need an
+OIDC write permission. It is `workflow_dispatch`-only and takes an exact
+existing `release_tag`.
+
+It requires the checkout to be the tag commit with a clean tree, requires the
+GitHub Release to still be a draft, downloads the exact staged inventory
+read-only, and then proves: the remote asset set is exactly the 19 names; each
+file's local digest and size equal what GitHub reports; all seven
+binary/checksum pairs self-verify; `release-manifest.json` declares the same
+release id, source revision, and target inventory with matching artifact
+digests and sizes; the public wrappers equal the checked-in wrapper bytes at
+the tag; and both generated exact installers are present.
+
+Only then does it attest, covering the historical subject set (seven binaries
+plus the two public wrappers) and additionally the two generated exact
+installers, and it verifies the results with `gh attestation verify`. It
+mutates no tag, release metadata, or release asset. Publication stays a
+separate human action.
 
 ## Self-update: check versus update
 

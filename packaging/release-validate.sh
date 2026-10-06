@@ -16,6 +16,7 @@ check_tree() {
     local missing=0
     while IFS= read -r path; do
         [[ -z "$path" ]] && continue
+        [[ "$path" == \#* ]] && continue
         if [[ ! -e "$root/$path" ]]; then
             echo "release input missing from commit $commit: $path" >&2
             missing=1
@@ -36,11 +37,12 @@ valid_version() {
 }
 
 expected_assets() {
-    while IFS='|' read -r _target asset _os _arch; do
-        [[ -z "$asset" ]] && continue
-        printf '%s\n' "$asset" "$asset.sha256"
-    done < "$targets"
-    printf '%s\n' install.sh install.ps1
+    # Derived from the Eggpack distribution contract, not from the frozen
+    # consumer compatibility mirror, so the inventory and the producer cannot
+    # drift apart. The post-cutover inventory is 19 files: 7 executables,
+    # 7 checksum sidecars, the product wrappers, Eggpack's release manifest,
+    # and the two generated exact installers.
+    python3 "$root/packaging/expected_release_assets.py" --from-contract
 }
 
 verify_asset_set() {

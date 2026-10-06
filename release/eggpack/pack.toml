@@ -1,0 +1,110 @@
+schema_version = 1
+
+# Producer toolchain/build policy for eggsearch, owned by Eggpack since
+# Ecosystem M003b.
+#
+# Targets are canonically ordered by triple. Build strategy (how bytes are
+# produced) and qualification intent (how those exact bytes are proved) are
+# independent axes under accepted ADR-0005 Option A.
+#
+# The three GNU Linux targets are built with CargoZigbuild to hold a glibc 2.17
+# floor. Two of them build on their own native architecture and are qualified
+# natively; `armv7-unknown-linux-gnueabihf` has no hosted ARMv7 builder, so it
+# builds on Linux x86-64 and is classified `structural`. A structural
+# classification executes nothing during core qualification, which is exactly
+# why its entry in qualification-bindings.toml carries no `smoke` block; the
+# ARMv7 runtime proof is carried by the required product-owned consumer
+# validator instead.
+#
+# The exact official Zig archive digest selected for each build host is the
+# same pair already qualified by the Eggsact and StegoEggo cutovers.
+
+[[targets]]
+target = "aarch64-apple-darwin"
+strategy = "native_cargo"
+host_os = "macos"
+host_arch = "aarch64"
+floor = { kind = "none" }
+qualification = "native"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+
+[[targets]]
+target = "aarch64-pc-windows-msvc"
+strategy = "native_cargo"
+host_os = "windows"
+host_arch = "aarch64"
+floor = { kind = "none" }
+qualification = "native"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+
+[[targets]]
+target = "aarch64-unknown-linux-gnu"
+strategy = "cargo_zigbuild"
+host_os = "linux"
+host_arch = "aarch64"
+floor = { kind = "glibc", major = 2, minor = 17 }
+qualification = "native"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+cargo_zigbuild = "0.23.3"
+zig = "0.14.1"
+
+[[targets]]
+target = "armv7-unknown-linux-gnueabihf"
+strategy = "cargo_zigbuild"
+host_os = "linux"
+host_arch = "x86_64"
+floor = { kind = "glibc", major = 2, minor = 17 }
+qualification = "structural"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+cargo_zigbuild = "0.23.3"
+zig = "0.14.1"
+
+[[targets]]
+target = "x86_64-apple-darwin"
+strategy = "native_cargo"
+host_os = "macos"
+host_arch = "x86_64"
+floor = { kind = "none" }
+qualification = "native"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+
+[[targets]]
+target = "x86_64-pc-windows-msvc"
+strategy = "native_cargo"
+host_os = "windows"
+host_arch = "x86_64"
+floor = { kind = "none" }
+qualification = "native"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+
+[[targets]]
+target = "x86_64-unknown-linux-gnu"
+strategy = "cargo_zigbuild"
+host_os = "linux"
+host_arch = "x86_64"
+floor = { kind = "glibc", major = 2, minor = 17 }
+qualification = "native"
+support = "required"
+
+[targets.toolchain]
+rust = "stable"
+cargo_zigbuild = "0.23.3"
+zig = "0.14.1"
