@@ -350,8 +350,7 @@ fn is_url_scheme(head: &str) -> bool {
     };
     let token = scheme
         .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
-        .filter(|part| !part.is_empty())
-        .next_back()
+        .rfind(|part| !part.is_empty())
         .unwrap_or("");
     matches!(
         token.to_ascii_lowercase().as_str(),
