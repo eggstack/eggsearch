@@ -1179,6 +1179,22 @@ fn h2_csv_row_limit_truncates_at_100() {
 }
 
 #[test]
+fn h2b_csv_row_limit_does_not_overstate_row_count() {
+    let mut csv = String::from("id,value\n");
+    for i in 0..100 {
+        csv.push_str(&format!("{i},x\n"));
+    }
+    let rendered = render_csv(&csv, 100000);
+    assert!(rendered.text_truncated);
+    let meta = &rendered.blocks[0];
+    assert!(
+        meta.text.contains("100+ rows"),
+        "truncated document must not claim a complete row count: {}",
+        meta.text
+    );
+}
+
+#[test]
 fn h3_csv_char_budget_truncates_blocks() {
     let csv = "a,b,c\n1,2,3\n4,5,6\n";
     let rendered = render_csv(csv, 20);
@@ -1479,13 +1495,13 @@ fn k4_csv_quoted_commas_golden_snapshot() {
 }
 
 const TSV_MIXED: &str =
-    "name,age,city,bio\nAlice,30,NYC,\"Likes cats, dogs\"\nBob,25,LA,\"Plain text\"\n";
+    "name\tage\tcity\tbio\nAlice\t30\tNYC\t\"Likes cats, dogs\"\nBob\t25\tLA\t\"Plain text\"\n";
 
 #[test]
 fn k5_tsv_mixed_quoting_golden_snapshot() {
     let rendered = render_csv(TSV_MIXED, 10000);
     let meta = &rendered.blocks[0];
-    assert!(meta.text.contains("columns, 3 rows"));
+    assert!(meta.text.contains("4 columns, 3 rows"));
 
     let all_text: String = rendered
         .blocks
@@ -1493,8 +1509,8 @@ fn k5_tsv_mixed_quoting_golden_snapshot() {
         .map(|b| b.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(all_text.contains("Alice,30,NYC,\"Likes cats, dogs\""));
-    assert!(all_text.contains("Bob,25,LA,\"Plain text\""));
+    assert!(all_text.contains("Alice\t30\tNYC\t\"Likes cats, dogs\""));
+    assert!(all_text.contains("Bob\t25\tLA\t\"Plain text\""));
 }
 
 fn make_large_html_paragraphs(n: usize) -> Vec<u8> {
@@ -2460,4 +2476,163 @@ async fn o2_allowed_public_ipv6() {
         result.is_ok(),
         "Expected Ok for public IPv6, got {result:?}"
     );
+}
+
+// =========================================================================
+// P. Origin limiter and cross-origin redirect tests
+// =========================================================================
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+async fn read_http_head(stream: &mut tokio::net::TcpStream) {
+    use tokio::io::AsyncReadExt;
+    let mut buf = vec![0u8; 8192];
+    let mut seen = 0usize;
+    while seen < 16384 {
+        match stream.read(&mut buf).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                seen += n;
+                if buf[..n].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn p1_bounded_acquire_times_out_instead_of_blocking_forever() {
+    use eggsearch::fetch::origin::{OriginBackoffError, OriginController, OriginKey, OriginPolicy};
+
+    let controller = OriginController::new(
+        OriginPolicy {
+            http_concurrency: 1,
+            ..Default::default()
+        },
+        16,
+    );
+    let key = OriginKey {
+        scheme: "https".into(),
+        host: "example.com".into(),
+        port: 443,
+    };
+    let _held = controller.acquire(&key).await.expect("first permit");
+
+    let error = controller
+        .acquire_bounded(&key, Duration::from_millis(100))
+        .await
+        .expect_err("a saturated limiter must not wait forever");
+    assert!(
+        matches!(error, OriginBackoffError::AcquireTimedOut { .. }),
+        "expected AcquireTimedOut, got {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn p2_redirect_chain_revisiting_one_cross_origin_host_completes() {
+    use eggsearch::fetch::origin::{OriginController, OriginPolicy};
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpListener;
+
+    let first = TcpListener::bind("127.0.0.1:0").await.expect("bind first");
+    let first_port = first.local_addr().expect("first addr").port();
+    let second = TcpListener::bind("127.0.0.1:0").await.expect("bind second");
+    let second_port = second.local_addr().expect("second addr").port();
+
+    // First origin always bounces to the second origin.
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = first.accept().await {
+            read_http_head(&mut stream).await;
+            let _ = stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{second_port}/next\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await;
+            let _ = stream.flush().await;
+        }
+    });
+
+    // Second origin redirects to itself twice, then answers.
+    let hops = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&hops);
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = second.accept().await {
+            read_http_head(&mut stream).await;
+            let seen = counter.fetch_add(1, Ordering::SeqCst);
+            if seen < 2 {
+                let _ = stream
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{second_port}/next\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+            } else {
+                let body = "<html><body><p>redirect chain finished</p></body></html>";
+                let _ = stream
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+            }
+            let _ = stream.flush().await;
+        }
+    });
+
+    let controller = OriginController::new(
+        OriginPolicy {
+            http_concurrency: 1,
+            ..Default::default()
+        },
+        16,
+    );
+    let client = eggsearch::fetch::FetchClient::new(
+        FetchLimits {
+            allow_localhost: true,
+            allow_private_network: true,
+            timeout_ms: 5_000,
+            ..Default::default()
+        },
+        "eggsearch/test".to_string(),
+        false,
+    )
+    .expect("fetch client builds");
+
+    let url = format!("http://127.0.0.1:{first_port}/start");
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(20),
+        client.fetch_with_origin_controller(
+            &url,
+            Some(500),
+            eggsearch::core::fetch::ExtractMode::Text,
+            false,
+            None,
+            &controller,
+        ),
+    )
+    .await;
+
+    match outcome {
+        Ok(Ok(response)) => {
+            assert_eq!(response.status, 200);
+            assert!(response
+                .text
+                .as_deref()
+                .unwrap_or_default()
+                .contains("redirect chain finished"));
+        }
+        Ok(Err(error)) => panic!("redirect chain failed: {error:?}"),
+        Err(_) => panic!("redirect chain never completed: origin limiter deadlock"),
+    }
 }

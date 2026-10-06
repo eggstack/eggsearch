@@ -12,8 +12,9 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
     let mut text_truncated = false;
 
     let mut lines: Vec<&str> = text.lines().take(MAX_CSV_ROWS + 1).collect();
-    let total_lines = text.lines().count();
-    let row_count = if total_lines > MAX_CSV_ROWS + 1 {
+    // `lines` holds one row past the cap exactly when the document was
+    // truncated, so its length answers both the cap and the reported count.
+    let row_count = if lines.len() > MAX_CSV_ROWS {
         None
     } else {
         Some(lines.len())
@@ -25,7 +26,7 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
     }
 
     if let Some(header) = lines.first() {
-        let col_count = count_csv_columns(header);
+        let col_count = count_columns(header);
         let meta = match row_count {
             Some(r) => format!("{col_count} columns, {r} rows"),
             None => format!("{col_count} columns, 100+ rows"),
@@ -88,13 +89,19 @@ pub fn render_csv(text: &str, max_chars: usize) -> RenderedContent {
     }
 }
 
-fn count_csv_columns(header: &str) -> usize {
+/// Count the columns of a delimited header row.
+///
+/// The delimiter is taken from the header itself so a tab-separated
+/// document served as `DocumentKind::Csv` reports its real column count
+/// instead of one column.
+fn count_columns(header: &str) -> usize {
+    let delimiter = if header.contains('\t') { '\t' } else { ',' };
     let mut count = 1;
     let mut in_quotes = false;
     for c in header.chars() {
         match c {
             '"' => in_quotes = !in_quotes,
-            ',' if !in_quotes => count += 1,
+            c if c == delimiter && !in_quotes => count += 1,
             _ => {}
         }
     }

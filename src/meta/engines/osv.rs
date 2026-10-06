@@ -619,13 +619,24 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
             }
         }
         for range in &affected.ranges {
+            // An OSV range is a sequence of events: `introduced` opens a
+            // window, `fixed`/`limit` closes it. Each closed window is one
+            // affected range expression (an intersection of its clauses),
+            // so disjoint windows stay separate entries instead of being
+            // flattened into one unsatisfiable conjunction.
+            let mut window: Vec<String> = Vec::new();
             for event in &range.events {
                 if let Some(ref introduced) = event.introduced {
+                    if !window.is_empty() {
+                        affected_ranges.push(window.join(", "));
+                        window.clear();
+                    }
                     if introduced != "0" {
-                        affected_ranges.push(format!(">={introduced}"));
+                        window.push(format!(">={introduced}"));
                     }
                 }
                 if let Some(ref fixed) = event.fixed {
+                    window.push(format!("<{fixed}"));
                     patched_ranges.push(format!("<{fixed}"));
                     if !vulnerable_versions.contains(fixed) {
                         patched_versions.push(fixed.clone());
@@ -639,8 +650,12 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
                 if let Some(ref limit) = event.limit {
                     // limit events mark the end of the affected range
                     // but the version itself is not affected
+                    window.push(format!("<={limit}"));
                     patched_ranges.push(format!("<={limit}"));
                 }
+            }
+            if !window.is_empty() {
+                affected_ranges.push(window.join(", "));
             }
         }
     }
@@ -768,6 +783,63 @@ mod tests {
                 assert!(m.published_at.is_some());
                 assert_eq!(m.references.len(), 1);
                 assert_eq!(m.source, VulnerabilitySource::Osv);
+            }
+            other => panic!("expected Advisory metadata, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_disjoint_windows_become_separate_affected_ranges() {
+        let vulns = vec![OsvVulnerability {
+            id: "OSV-2024-1".to_string(),
+            summary: None,
+            details: None,
+            aliases: vec![],
+            severity: vec![],
+            affected: vec![OsvAffected {
+                package: Some(OsvPackage {
+                    name: "test-package".to_string(),
+                    ecosystem: "npm".to_string(),
+                }),
+                ranges: vec![OsvRange {
+                    range_type: Some("SEMVER".to_string()),
+                    events: vec![
+                        OsvEvent {
+                            introduced: Some("1.0.0".to_string()),
+                            fixed: None,
+                            last_affected: None,
+                            limit: None,
+                        },
+                        OsvEvent {
+                            introduced: None,
+                            fixed: Some("1.2.3".to_string()),
+                            last_affected: None,
+                            limit: None,
+                        },
+                        OsvEvent {
+                            introduced: Some("2.0.0".to_string()),
+                            fixed: None,
+                            last_affected: None,
+                            limit: None,
+                        },
+                    ],
+                }],
+                versions: vec![],
+            }],
+            published: None,
+            modified: None,
+            withdrawn: None,
+            references: vec![],
+        }];
+        let out = convert(vulns, 10);
+        match &out[0].metadata {
+            ResultMetadata::Advisory(m) => {
+                assert_eq!(
+                    m.affected_ranges,
+                    vec![">=1.0.0, <1.2.3".to_string(), ">=2.0.0".to_string()]
+                );
+                assert_eq!(m.patched_ranges, vec!["<1.2.3".to_string()]);
+                assert_eq!(m.patched_versions, vec!["1.2.3".to_string()]);
             }
             other => panic!("expected Advisory metadata, got: {other:?}"),
         }

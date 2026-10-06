@@ -16,6 +16,24 @@ use std::time::Duration;
 /// Default timeout for registry API lookups.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Engine label used when a registry response violates the body cap.
+const RESOLVER_ENGINE: &str = "package_resolver";
+
+/// Hard cap on a decoded registry response body.
+const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
+
+/// Read a registry response body under a hard byte cap and parse it as JSON.
+///
+/// Registry bodies are untrusted network input: reading them through the
+/// shared bounded reader keeps a hostile or compromised registry from
+/// forcing unbounded memory growth in the resolver.
+async fn read_bounded_json(response: eggfetch_core::Response) -> Result<serde_json::Value, String> {
+    let bytes = crate::meta::engines::read_bounded_body(response, RESOLVER_ENGINE, MAX_BODY_BYTES)
+        .await
+        .map_err(|e| e.to_string())?;
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+}
+
 fn resolver_timeout(timeout: Duration) -> eggfetch_core::Timeout {
     eggfetch_core::Timeout {
         pool: Some(timeout),
@@ -67,12 +85,10 @@ async fn resolve_crates_io(
         Err(e) => return fallback_with_warning(coord, &format!("crates.io API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_crates_io_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("crates.io JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_crates_io_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("crates.io JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("crates.io API returned status {}", resp.status()),
@@ -158,12 +174,10 @@ async fn resolve_pypi(
         Err(e) => return fallback_with_warning(coord, &format!("PyPI API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_pypi_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("PyPI JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_pypi_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("PyPI JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("PyPI API returned status {}", resp.status()),
@@ -282,12 +296,10 @@ async fn resolve_npm(
         Err(e) => return fallback_with_warning(coord, &format!("npm API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_npm_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("npm JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_npm_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("npm JSON parse error: {e}")),
+        },
         Ok(resp) => {
             fallback_with_warning(coord, &format!("npm API returned status {}", resp.status()))
         }
@@ -392,12 +404,10 @@ async fn resolve_go(
         Err(e) => return fallback_with_warning(coord, &format!("Go proxy error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_go_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("Go proxy JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_go_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Go proxy JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Go proxy returned status {}", resp.status()),
@@ -461,14 +471,10 @@ async fn resolve_maven(
         Err(e) => return fallback_with_warning(coord, &format!("Maven search error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_maven_response(coord, &val),
-                Err(e) => {
-                    fallback_with_warning(coord, &format!("Maven search JSON parse error: {e}"))
-                }
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_maven_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Maven search JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Maven search returned status {}", resp.status()),
@@ -535,12 +541,10 @@ async fn resolve_nuget(
         Err(e) => return fallback_with_warning(coord, &format!("NuGet API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_nuget_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("NuGet JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_nuget_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("NuGet JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("NuGet API returned status {}", resp.status()),
@@ -597,12 +601,10 @@ async fn resolve_rubygems(
         Err(e) => return fallback_with_warning(coord, &format!("RubyGems API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_rubygems_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("RubyGems JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_rubygems_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("RubyGems JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("RubyGems API returned status {}", resp.status()),
@@ -682,12 +684,10 @@ async fn resolve_packagist(
         Err(e) => return fallback_with_warning(coord, &format!("Packagist API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_packagist_response(coord, &val),
-                Err(e) => fallback_with_warning(coord, &format!("Packagist JSON parse error: {e}")),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_packagist_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Packagist JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Packagist API returned status {}", resp.status()),
@@ -761,14 +761,10 @@ async fn resolve_oci(
         Err(e) => return fallback_with_warning(coord, &format!("Docker Hub API error: {e}")),
     };
     match builder.send().await {
-        Ok(mut resp) if resp.status().is_success() => {
-            match resp.json::<serde_json::Value>().await {
-                Ok(val) => parse_oci_response(coord, &val),
-                Err(e) => {
-                    fallback_with_warning(coord, &format!("Docker Hub JSON parse error: {e}"))
-                }
-            }
-        }
+        Ok(resp) if resp.status().is_success() => match read_bounded_json(resp).await {
+            Ok(val) => parse_oci_response(coord, &val),
+            Err(e) => fallback_with_warning(coord, &format!("Docker Hub JSON parse error: {e}")),
+        },
         Ok(resp) => fallback_with_warning(
             coord,
             &format!("Docker Hub API returned status {}", resp.status()),

@@ -27,20 +27,37 @@ pub fn extract_advisory_ranges(vuln: &VulnerabilityMetadata) -> Vec<AdvisoryRang
     let patched = vuln.patched_ranges.clone();
     let vulnerable = vuln.vulnerable_versions.clone();
 
-    if !affected.is_empty() || !patched.is_empty() || !vulnerable.is_empty() {
-        ranges.push(AdvisoryRange {
-            ecosystem,
-            package,
-            affected_range: if affected.is_empty() {
-                None
-            } else {
-                Some(affected.join(", "))
-            },
-            fixed_versions: patched,
-            introduced_versions: Vec::new(),
-            last_affected_versions: vulnerable,
-            source: vuln.source.as_str().to_string(),
-        });
+    // `fixed_versions` is compared against bare version strings, so only
+    // `patched_versions` (and operator-free `patched_ranges` entries) may
+    // feed it; range expressions such as `"<1.2.3"` would never match.
+    let mut fixed = vuln.patched_versions.clone();
+    for entry in &patched {
+        if !entry.starts_with(['<', '>', '=', '!']) && !fixed.contains(entry) {
+            fixed.push(entry.clone());
+        }
+    }
+
+    let build = |affected_range: Option<String>| AdvisoryRange {
+        ecosystem: ecosystem.clone(),
+        package: package.clone(),
+        affected_range,
+        fixed_versions: fixed.clone(),
+        introduced_versions: Vec::new(),
+        last_affected_versions: vulnerable.clone(),
+        source: vuln.source.as_str().to_string(),
+    };
+
+    if affected.is_empty() {
+        if !fixed.is_empty() || !vulnerable.is_empty() {
+            ranges.push(build(None));
+        }
+        return ranges;
+    }
+
+    // Each entry is a self-contained window; combining them would turn
+    // disjoint vulnerable windows into an unsatisfiable intersection.
+    for window in &affected {
+        ranges.push(build(Some(window.clone())));
     }
 
     ranges
@@ -699,6 +716,45 @@ mod tests {
         let ranges = extract_advisory_ranges(&vuln);
         assert_eq!(ranges.len(), 1);
         assert_eq!(ranges[0].fixed_versions, vec!["1.2.3"]);
+    }
+
+    #[test]
+    fn disjoint_affected_windows_are_evaluated_as_a_union() {
+        let mut vuln = make_vuln(vec!["<1.5", ">=2.0, <2.5"], vec![]);
+        vuln.patched_ranges = Vec::new();
+        let ranges = extract_advisory_ranges(&vuln);
+        assert_eq!(ranges.len(), 2, "each window becomes its own range");
+
+        let inside_second =
+            assess_version_applicability("2.2.0", &ranges, &PackageEcosystem::CratesIo);
+        assert_eq!(
+            inside_second.status,
+            ApplicabilityStatus::Affected,
+            "a version inside the second window must not be reported as unaffected"
+        );
+
+        let inside_first =
+            assess_version_applicability("1.1.0", &ranges, &PackageEcosystem::CratesIo);
+        assert_eq!(inside_first.status, ApplicabilityStatus::Affected);
+
+        let outside = assess_version_applicability("3.0.0", &ranges, &PackageEcosystem::CratesIo);
+        assert_eq!(outside.status, ApplicabilityStatus::NotAffected);
+    }
+
+    #[test]
+    fn osv_patched_version_is_reported_not_affected() {
+        let mut vuln = make_vuln(vec![">=1.0.0, <1.2.3"], vec!["<1.2.3"]);
+        vuln.patched_versions = vec!["1.2.3".to_string()];
+        let ranges = extract_advisory_ranges(&vuln);
+        assert_eq!(ranges[0].fixed_versions, vec!["1.2.3"]);
+
+        let outcome = assess_version_applicability("1.2.3", &ranges, &PackageEcosystem::CratesIo);
+        assert_eq!(
+            outcome.status,
+            ApplicabilityStatus::NotAffected,
+            "a version the advisory says was fixed must be NotAffected: {:?}",
+            outcome.reasons
+        );
     }
 
     #[test]

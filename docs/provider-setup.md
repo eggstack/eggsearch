@@ -459,7 +459,7 @@ api_key_env = "GITHUB_TOKEN"
 - No API key needed
 - Enabled by default: yes
 - Advisory lookup by CVE ID
-- Native capability declared: `freshness` (`supports_freshness: true` in the provider descriptor). Note that NVD is an advisory service, not a generic-search one, and the current engine maps only `keywordSearch` onto the upstream request.
+- Native capability declared: none. NVD is an advisory service, not a generic-search one, and the engine maps only `keywordSearch` onto the upstream request, so `supports_freshness` is `false` — freshness is not forwarded and no local approximation claims otherwise.
 
 ### CISA Known Exploited Vulnerabilities
 

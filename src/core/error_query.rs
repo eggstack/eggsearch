@@ -13,6 +13,14 @@ static API_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)(?:api[_-]?key|token|secret|password)\s*[=:]\s*["']?([a-f0-9]{32,})["']?"#)
         .expect("API token regex is valid")
 });
+/// Credential shapes that are not hex: `sk-…`, `ghp_…`, `AKIA…`, JWTs and
+/// `Authorization: Bearer …` headers all reach `redact_error_query`.
+static API_TOKEN_ALT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)(?:api[_-]?key|api[_-]?token|access[_-]?key|secret[_-]?key|secret|token|password|passwd|authorization)\s*[=:]\s*(?:bearer\s+|basic\s+|token\s+)?["']?([A-Za-z0-9_\-\.=+/]{16,})["']?"#,
+    )
+    .expect("alternate API token regex is valid")
+});
 static UUID_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#)
         .expect("UUID regex is valid")
@@ -254,6 +262,22 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
         }
     }
 
+    // Redact non-hex credentials (`sk-…`, `ghp_…`, JWTs, bearer tokens)
+    for cap in API_TOKEN_ALT_RE.captures_iter(&normalized.clone()) {
+        if let Some(matched) = cap.get(1) {
+            let token = matched.as_str().to_string();
+            if !looks_like_credential(&token) {
+                continue;
+            }
+            replace_in_provider_fields(&mut normalized, &mut quoted_exact, &token, "[REDACTED]");
+            redactions.push(format!(
+                "api_token: {}...{}",
+                &token[..8],
+                &token[token.len() - 4..]
+            ));
+        }
+    }
+
     // Redact UUIDs (not commit SHAs)
     for m in UUID_RE.find_iter(&normalized.clone()) {
         let uuid = m.as_str().to_string();
@@ -275,6 +299,16 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
         if path.starts_with("/dev") || path.starts_with("/proc") || path.starts_with("/sys") {
             continue;
         }
+        // Skip URL authorities and paths: the match starts mid-URL, so the
+        // scheme and host would be silently dropped from the search query.
+        let prefix = &normalized[..m.start()];
+        let preceded_by_url = is_url_scheme(prefix.trim_end_matches('/'))
+            || prefix.rsplit_once("//").is_some_and(|(head, tail)| {
+                !tail.contains(char::is_whitespace) && is_url_scheme(head)
+            });
+        if preceded_by_url {
+            continue;
+        }
         // Keep basename
         let basename = path.rsplit('/').next().unwrap_or(&path);
         // If basename is meaningful (not just a number or generic dir), keep it
@@ -289,6 +323,40 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
     result.quoted_exact = quoted_exact;
     result.redactions_applied = redactions;
     result
+}
+
+/// Whether a candidate value reads as a credential rather than an ordinary
+/// identifier.
+///
+/// Real credentials (`sk-…`, `ghp_…`, JWTs) carry digits or token
+/// punctuation; plain identifiers like `MyLongFunctionName` do not. Hex-only
+/// secrets are handled by `API_TOKEN_RE` and skipped here so a value is never
+/// reported as redacted twice.
+fn looks_like_credential(token: &str) -> bool {
+    token.len() >= 16
+        && token
+            .chars()
+            .any(|c| c.is_ascii_digit() || matches!(c, '_' | '-' | '.' | '/' | '+'))
+        && !token.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Whether the text ending at a `scheme://` boundary names a URL scheme.
+///
+/// Only well-known schemes are recognized, so a `//` line comment in a
+/// compiler diagnostic is never mistaken for a URL.
+fn is_url_scheme(head: &str) -> bool {
+    let Some(scheme) = head.strip_suffix(':') else {
+        return false;
+    };
+    let token = scheme
+        .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+        .filter(|part| !part.is_empty())
+        .next_back()
+        .unwrap_or("");
+    matches!(
+        token.to_ascii_lowercase().as_str(),
+        "http" | "https" | "ftp" | "file" | "ws" | "wss"
+    )
 }
 
 fn replace_in_provider_fields(
@@ -865,6 +933,54 @@ mod tests {
 
         assert!(!exact.query.contains(secret));
         assert!(exact.query.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redacts_non_hex_credentials_from_provider_facing_text() {
+        for secret in [
+            "sk-proj-AbCdEf0123456789XyZ",
+            "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig",
+        ] {
+            let text = format!("request failed with token={secret} while reading config");
+            let redacted = redact_error_query(&parse_error_query(&text));
+            assert!(
+                !redacted.normalized.contains(secret),
+                "{secret} must not reach the provider query"
+            );
+            assert!(redacted.normalized.contains("[REDACTED]"));
+        }
+
+        let bearer = "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig";
+        let redacted = redact_error_query(&parse_error_query(bearer));
+        assert!(!redacted.normalized.contains("eyJhbGciOiJIUzI1NiJ9"));
+    }
+
+    #[test]
+    fn keeps_urls_intact_in_provider_facing_text() {
+        let text = "GET https://api.github.com/repos/foo/bar returned 404";
+        let redacted = redact_error_query(&parse_error_query(text));
+        assert!(
+            redacted
+                .normalized
+                .contains("https://api.github.com/repos/foo/bar"),
+            "a URL must not be rewritten as a bare basename: {}",
+            redacted.normalized
+        );
+
+        let registry = "failed http://registry.internal:8080/v2/images/manifest";
+        let redacted = redact_error_query(&parse_error_query(registry));
+        assert!(redacted
+            .normalized
+            .contains("http://registry.internal:8080/v2/images/manifest"));
+
+        let local = "error in /Users/john/project/src/main.rs";
+        let redacted = redact_error_query(&parse_error_query(local));
+        assert!(
+            !redacted.normalized.contains("/Users/john"),
+            "local absolute paths must still be redacted"
+        );
+        assert!(redacted.normalized.contains("main.rs"));
     }
 
     #[test]

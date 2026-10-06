@@ -170,13 +170,15 @@ pub fn build_default_engines_with_egress(
                 }));
             }
             "semantic_scholar" => {
-                let api_key = std::env::var("SEMANTIC_SCHOLAR_API_KEY")
-                    .ok()
-                    .filter(|k| !k.is_empty());
-                engines.push(Arc::new(SemanticScholarEngine {
-                    client: client.clone(),
-                    api_key,
-                }));
+                if !api_providers.contains_key("semantic_scholar") {
+                    let api_key = std::env::var("SEMANTIC_SCHOLAR_API_KEY")
+                        .ok()
+                        .filter(|k| !k.is_empty());
+                    engines.push(Arc::new(SemanticScholarEngine {
+                        client: client.clone(),
+                        api_key,
+                    }));
+                }
             }
             "sourcegraph" => {
                 if !api_providers.contains_key("sourcegraph") {

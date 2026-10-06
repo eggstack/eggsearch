@@ -116,7 +116,7 @@ fn provider_capability_summary(
                 && api_cfg
                     .api_key_env
                     .as_deref()
-                    .is_some_and(|env| std::env::var(env).is_ok())
+                    .is_some_and(eggsearch::core::config::api_env_value_set)
         });
         let configured = provider_configured_state(
             id,
@@ -187,9 +187,8 @@ fn api_credential_status(cfg: &AppConfig) -> Vec<serde_json::Value> {
         .map(|(id, api_cfg)| {
             let env_set = api_cfg
                 .api_key_env
-                .as_ref()
-                .map(|env| std::env::var(env).is_ok())
-                .unwrap_or(false);
+                .as_deref()
+                .is_some_and(eggsearch::core::config::api_env_value_set);
             serde_json::json!({
                 "id": id,
                 "enabled": api_cfg.enabled,
@@ -250,9 +249,8 @@ fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
         if api_cfg.enabled {
             let key_set = api_cfg
                 .api_key_env
-                .as_ref()
-                .map(|env| std::env::var(env).is_ok())
-                .unwrap_or(false);
+                .as_deref()
+                .is_some_and(eggsearch::core::config::api_env_value_set);
             if !key_set {
                 warnings.push(format!(
                     "API provider '{id}' is enabled but its api_key_env is not set"
@@ -329,6 +327,43 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
 mod tests {
     use super::*;
     use eggsearch::core::config::{ApiProviderConfig, AppConfig, SearxngConfig};
+
+    #[test]
+    fn empty_credential_env_is_reported_as_missing_not_configured() {
+        let env = "EGGSEARCH_TEST_DOCTOR_EMPTY_CREDENTIAL";
+        std::env::set_var(env, "");
+        let mut cfg = AppConfig::default();
+        cfg.search.api.insert(
+            "brave_api".to_string(),
+            ApiProviderConfig {
+                enabled: true,
+                api_key_env: Some(env.to_string()),
+                base_url: None,
+            },
+        );
+
+        let status = api_credential_status(&cfg);
+        let brave = status
+            .iter()
+            .find(|entry| entry["id"].as_str() == Some("brave_api"))
+            .expect("brave_api credential status");
+        assert_eq!(
+            brave["api_key_set"], false,
+            "an empty credential env var must not count as set"
+        );
+
+        let summary = provider_capability_summary(&cfg, false);
+        let brave_summary = summary
+            .iter()
+            .find(|p| p["id"].as_str() == Some("brave_api"))
+            .expect("brave_api provider summary");
+        assert_eq!(
+            brave_summary["configured"], false,
+            "an empty credential env var must not report the provider as configured"
+        );
+
+        std::env::remove_var(env);
+    }
 
     #[test]
     fn provider_capability_summary_reflects_default_configuration() {

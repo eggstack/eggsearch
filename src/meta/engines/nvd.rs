@@ -505,7 +505,10 @@ mod tests {
         assert_eq!(desc.id, "nvd");
         assert!(desc.capabilities.supports_security_search);
         assert!(desc.capabilities.supports_advisory_lookup_by_id);
-        assert!(desc.capabilities.supports_freshness);
+        assert!(
+            !desc.capabilities.supports_freshness,
+            "keywordSearch carries no date parameter, so freshness is not natively enforced"
+        );
         assert!(!desc.capabilities.supports_advisory_lookup_by_package);
     }
 

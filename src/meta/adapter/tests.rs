@@ -641,6 +641,38 @@ fn build_default_engines_includes_mojeek() {
 }
 
 #[test]
+fn build_default_engines_does_not_duplicate_api_and_provider_entries() {
+    let enabled = vec!["semantic_scholar".to_string(), "sourcegraph".to_string()];
+    let mut api = std::collections::BTreeMap::new();
+    for id in ["semantic_scholar", "sourcegraph"] {
+        api.insert(
+            id.to_string(),
+            crate::core::config::ApiProviderConfig {
+                enabled: true,
+                api_key_env: None,
+                base_url: None,
+            },
+        );
+    }
+    let (engines, _) = build_default_engines(&enabled, None, None, &api).expect("build");
+
+    let mut semantic_scholar_engines = 0;
+    let mut sourcegraph_engines = 0;
+    for engine in &engines {
+        match engine.name() {
+            "semantic_scholar" => semantic_scholar_engines += 1,
+            "sourcegraph" => sourcegraph_engines += 1,
+            _ => {}
+        }
+    }
+    assert_eq!(
+        semantic_scholar_engines, 1,
+        "an api-section entry must replace the provider-section entry, not add a second engine"
+    );
+    assert_eq!(sourcegraph_engines, 1);
+}
+
+#[test]
 fn build_default_engines_includes_searxng_with_base_url() {
     let enabled = vec!["searxng".to_string()];
     let (engines, skipped) = build_default_engines(

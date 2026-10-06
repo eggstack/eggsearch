@@ -330,12 +330,9 @@ fn rerank_group(cards: &mut [SourceCard], hints: &RepoQueryHints) {
         card.metadata.rank_reasons.extend(reasons);
     }
 
-    // Stable sort by updated score (descending).
-    cards.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // Stable sort by updated score (descending) using the shared total
+    // ordering, so absent or non-finite scores cannot tie arbitrarily.
+    cards.sort_by(|a, b| crate::meta::adapter::normalization::cmp_score_desc(a.score, b.score));
 }
 
 /// Apply exact-error reranking boosts within a group.
@@ -439,12 +436,9 @@ pub fn apply_error_reranking(
         card.metadata.rank_reasons.extend(reasons);
     }
 
-    // Stable sort by updated score (descending).
-    cards.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // Stable sort by updated score (descending) using the shared total
+    // ordering, so absent or non-finite scores cannot tie arbitrarily.
+    cards.sort_by(|a, b| crate::meta::adapter::normalization::cmp_score_desc(a.score, b.score));
 }
 
 /// Group a flat list of SourceCards into RepoResultGroups.
@@ -529,6 +523,43 @@ mod tests {
             ..Default::default()
         });
         card
+    }
+
+    #[test]
+    fn rerank_places_unranked_cards_deterministically() {
+        let mut cards = vec![
+            make_card(SourceKind::SourceRepository, "https://example.test/a"),
+            make_card(SourceKind::SourceRepository, "https://example.test/b"),
+            make_card(SourceKind::SourceRepository, "https://example.test/c"),
+        ];
+        cards[0].score = None;
+        cards[1].score = Some(0.10);
+        cards[2].score = Some(f64::NAN);
+
+        rerank_group(&mut cards, &RepoQueryHints::default());
+
+        let scored_first = cards
+            .iter()
+            .position(|c| c.url == "https://example.test/b")
+            .unwrap_or(usize::MAX);
+        assert_eq!(
+            scored_first,
+            0,
+            "the only finite score must rank first, got {:?}",
+            cards.iter().map(|c| (&c.url, c.score)).collect::<Vec<_>>()
+        );
+
+        let mut reversed = cards.clone();
+        reversed.reverse();
+        rerank_group(&mut reversed, &RepoQueryHints::default());
+        let scored_first = reversed
+            .iter()
+            .position(|c| c.url == "https://example.test/b")
+            .unwrap_or(usize::MAX);
+        assert_eq!(
+            scored_first, 0,
+            "a scored card must rank first regardless of input order"
+        );
     }
 
     #[test]

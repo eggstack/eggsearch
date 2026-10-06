@@ -200,6 +200,14 @@ breaking shared by the fetch path:
   and any open circuit; `record_failure` applies jittered exponential backoff
   (`base * 2^count`, capped) and opens the circuit at the threshold (capped at
   120 s). `NonRetryable` resets the counter and returns `NoBackoff`.
+- `acquire_bounded(key, wait)` wraps `acquire` in a deadline and returns
+  `AcquireTimedOut { wait_ms }` instead of waiting forever, so a limiter can
+  never outlive the request budget.
+- The redirect loop holds **at most one** permit, for the origin currently being
+  contacted: it is released and re-acquired only when the next hop changes
+  origin. Holding one permit per hop would let a chain that revisits one
+  cross-origin host consume the whole per-origin semaphore (`http_concurrency`
+  2 by default, `redirect_limit` 5) and block permanently on the next acquire.
 - Classification: `classify_http_status` (429 → `RateLimited`, 502–504 →
   `Retryable`), `classify_network_error` (reset/refused/DNS/broken-pipe/EOF →
   `Retryable`), plus typed eggfetch classifiers so timeouts and refused/DNS

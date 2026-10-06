@@ -137,6 +137,18 @@ fn kagi_native_enforcement_matches_documented_contract() {
 }
 
 #[test]
+fn nvd_native_enforcement_matches_documented_contract() {
+    let caps = descriptor("nvd").capabilities;
+    assert!(caps.supports_security_search);
+    assert!(caps.supports_advisory_lookup_by_id);
+    assert!(
+        !caps.supports_freshness,
+        "the keywordSearch request carries no date parameter, so freshness is not natively enforced"
+    );
+    assert!(!caps.supports_advisory_lookup_by_package);
+}
+
+#[test]
 fn credentialed_providers_require_operator_credentials() {
     for id in ["serpapi", "kagi"] {
         assert!(

@@ -140,6 +140,19 @@ impl OriginController {
         Ok(permit)
     }
 
+    pub async fn acquire_bounded(
+        &self,
+        key: &OriginKey,
+        wait: Duration,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, OriginBackoffError> {
+        match tokio::time::timeout(wait, self.acquire(key)).await {
+            Ok(result) => result,
+            Err(_) => Err(OriginBackoffError::AcquireTimedOut {
+                wait_ms: wait.as_millis().min(u128::from(u64::MAX)) as u64,
+            }),
+        }
+    }
+
     pub async fn record_success(&self, key: &OriginKey) {
         if let Some(state) = self.get_state(key).await {
             let mut failures = state.failures.lock().await;
@@ -269,6 +282,7 @@ impl OriginController {
 pub enum OriginBackoffError {
     CircuitOpen { remaining_ms: u64 },
     LimiterClosed,
+    AcquireTimedOut { wait_ms: u64 },
 }
 
 impl std::fmt::Display for OriginBackoffError {
@@ -278,6 +292,9 @@ impl std::fmt::Display for OriginBackoffError {
                 write!(f, "origin circuit breaker open, retry in {remaining_ms}ms")
             }
             Self::LimiterClosed => write!(f, "origin limiter closed"),
+            Self::AcquireTimedOut { wait_ms } => {
+                write!(f, "origin limiter wait exceeded after {wait_ms}ms")
+            }
         }
     }
 }

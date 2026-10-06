@@ -16,6 +16,44 @@ pub const REPO_GOAL_VALUES: &[&str] = &[
     "post_change",
 ];
 
+/// Values accepted by [`parse_research_goal`]: the research workflows plus
+/// the repo-goal aliases it also honors.
+pub const RESEARCH_GOAL_VALUES: &[&str] = &[
+    "general",
+    "architecture_decision",
+    "api_evaluation",
+    "library_comparison",
+    "migration_planning",
+    "security_review",
+    "performance_investigation",
+    "ecosystem_survey",
+    "understand",
+    "debug",
+    "compare",
+    "pre_change",
+    "post_change",
+];
+
+/// Values accepted by [`parse_security_goal`]: the workflow kinds plus the
+/// repo-goal aliases it also honors.
+pub const SECURITY_GOAL_VALUES: &[&str] = &[
+    "security_review",
+    "api_comprehension",
+    "repository_architecture",
+    "error_investigation",
+    "version_migration",
+    "dependency_evaluation",
+    "performance_investigation",
+    "comparative_research",
+    "pre_change_evidence",
+    "post_change_review",
+    "understand",
+    "debug",
+    "compare",
+    "pre_change",
+    "post_change",
+];
+
 pub const REPO_SOURCE_VALUES: &[&str] = &[
     "code",
     "docs",
@@ -85,15 +123,15 @@ pub fn parse_security_goal(s: &str) -> Option<WorkflowKind> {
     parse_repo_goal(s)
 }
 
-fn goal_error(tool: &str, field: &str, raw: &str) -> ToolError {
+fn goal_error(tool: &str, field: &str, raw: &str, accepted: &[&str]) -> ToolError {
     let message = format!(
         "invalid {field} '{raw}' for {tool}; accepted values: {}. Repair: omit {field} or use one of the listed values.",
-        REPO_GOAL_VALUES.join(", ")
+        accepted.join(", ")
     );
     ToolError::execution_with_repair(
         super::common::ToolErrorCode::InvalidSemanticValue,
         message,
-        super::common::RepairHint::new(Some(field), REPO_GOAL_VALUES, None),
+        super::common::RepairHint::new(Some(field), accepted, None),
     )
 }
 
@@ -136,7 +174,10 @@ pub fn resolve_repo_semantics(
             if trimmed.is_empty() {
                 None
             } else {
-                Some(parse_repo_goal(trimmed).ok_or_else(|| goal_error("repo_search", "goal", g))?)
+                Some(
+                    parse_repo_goal(trimmed)
+                        .ok_or_else(|| goal_error("repo_search", "goal", g, REPO_GOAL_VALUES))?,
+                )
             }
         }
         None => None,
@@ -391,10 +432,9 @@ pub fn resolve_research_workflow(
             if trimmed.is_empty() {
                 None
             } else {
-                Some(
-                    parse_research_goal(trimmed)
-                        .ok_or_else(|| goal_error("research_search", "goal", g))?,
-                )
+                Some(parse_research_goal(trimmed).ok_or_else(|| {
+                    goal_error("research_search", "goal", g, RESEARCH_GOAL_VALUES)
+                })?)
             }
         }
         None => None,
@@ -510,10 +550,9 @@ pub fn resolve_security_workflow(
             if trimmed.is_empty() {
                 None
             } else {
-                Some(
-                    parse_security_goal(trimmed)
-                        .ok_or_else(|| goal_error("security_search", "goal", g))?,
-                )
+                Some(parse_security_goal(trimmed).ok_or_else(|| {
+                    goal_error("security_search", "goal", g, SECURITY_GOAL_VALUES)
+                })?)
             }
         }
         None => None,
@@ -638,6 +677,38 @@ mod tests {
             Some(WorkflowKind::PreChangeEvidence)
         );
         assert_eq!(parse_repo_goal("bogus"), None);
+    }
+
+    #[test]
+    fn advertised_goal_values_are_all_accepted() {
+        for value in REPO_GOAL_VALUES {
+            assert!(
+                parse_repo_goal(value).is_some(),
+                "REPO_GOAL_VALUES advertises '{value}', which parse_repo_goal rejects"
+            );
+        }
+        for value in RESEARCH_GOAL_VALUES {
+            assert!(
+                parse_research_goal(value).is_some(),
+                "RESEARCH_GOAL_VALUES advertises '{value}', which parse_research_goal rejects"
+            );
+        }
+        for value in SECURITY_GOAL_VALUES {
+            assert!(
+                parse_security_goal(value).is_some(),
+                "SECURITY_GOAL_VALUES advertises '{value}', which parse_security_goal rejects"
+            );
+        }
+    }
+
+    #[test]
+    fn research_goal_repair_hint_lists_research_workflows() {
+        let err = resolve_research_workflow(Some("not_a_goal"), None).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("ecosystem_survey"),
+            "research goal hint must advertise research-only workflows: {message}"
+        );
     }
 
     #[test]

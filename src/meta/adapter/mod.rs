@@ -166,7 +166,7 @@ impl MetadataSearchAdapter {
                 && cfg
                     .api_key_env
                     .as_deref()
-                    .is_some_and(|env| std::env::var(env).is_ok());
+                    .is_some_and(crate::core::config::api_env_value_set);
             api_configured.insert(id.clone(), configured);
         }
 
@@ -308,7 +308,7 @@ mod advisory;
 mod builders;
 mod error;
 mod execution;
-mod normalization;
+pub(crate) mod normalization;
 mod repo;
 mod research;
 mod security;

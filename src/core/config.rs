@@ -7,6 +7,16 @@ use serde::{Deserialize, Serialize};
 use crate::core::error::{CoreError, CoreResult};
 use crate::core::provider::{API_PROVIDER_IDS, KNOWN_PROVIDER_IDS};
 
+/// Returns `true` when the named credential environment variable is set to
+/// a non-empty value.
+///
+/// A variable that is set but empty is a broken credential, not a usable
+/// one: every credential path in the crate treats it as missing, so
+/// diagnostics must report it the same way.
+pub fn api_env_value_set(env: &str) -> bool {
+    !env.is_empty() && std::env::var(env).ok().is_some_and(|v| !v.is_empty())
+}
+
 /// Returns `true` if an API provider is actually configured enough to
 /// build or route requests: enabled, known, has a non-empty
 /// `api_key_env`, and the referenced environment variable is present.
@@ -18,8 +28,8 @@ fn api_provider_is_configured(id: &str, cfg: &ApiProviderConfig) -> bool {
         return false;
     }
     match cfg.api_key_env.as_deref() {
-        Some(env) if !env.is_empty() => std::env::var(env).ok().is_some_and(|v| !v.is_empty()),
-        _ => false,
+        Some(env) => api_env_value_set(env),
+        None => false,
     }
 }
 

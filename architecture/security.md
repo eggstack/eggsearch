@@ -158,10 +158,21 @@ across providers and collapses mismatched sources to `Generic`.
 ## Applicability Assessment
 
 `extract_advisory_ranges()` (`src/meta/advisory_range.rs`) converts
-`affected_ranges` / `patched_ranges` / `vulnerable_versions` into
+`affected_ranges` / `patched_versions` / `vulnerable_versions` into
 `AdvisoryRange { ecosystem, package, affected_range, fixed_versions,
 introduced_versions, last_affected_versions, source }`, requiring a parsable
-`PackageEcosystem` and non-empty package.
+`PackageEcosystem` and non-empty package. Each `affected_ranges` entry is one
+self-contained vulnerable window and becomes its own `AdvisoryRange`, so
+disjoint windows are combined by `RangeMatch::combine()` (a union), never by
+joining expressions into an unsatisfiable intersection. Within one entry,
+comma-separated clauses remain an intersection. `fixed_versions` holds bare
+version strings from `patched_versions` (plus operator-free `patched_ranges`
+entries); range expressions such as `"<1.2.3"` are never placed there because
+the exact-fixed-match rule compares against a bare version.
+
+OSV conversion (`src/meta/engines/osv.rs`) emits one `affected_ranges` entry
+per `introduced`…`fixed`/`limit` event window, e.g. `[">=1.0.0, <1.2.3",
+">=2.0.0"]`.
 
 `assess_version_applicability()` returns a tri-state
 `ApplicabilityOutcome { status, reasons, matched_ranges }`: exact fixed

@@ -91,7 +91,7 @@ pub(crate) fn local_result_budget(effective_max_results: usize) -> usize {
 /// Non-finite scores (NaN, ±inf) are treated as absent rather than
 /// silently comparing `Equal`, so a malformed score can never take
 /// part in a tie and leak a nondeterministic order into the ranking.
-fn cmp_score_desc(a: Option<f64>, b: Option<f64>) -> std::cmp::Ordering {
+pub(crate) fn cmp_score_desc(a: Option<f64>, b: Option<f64>) -> std::cmp::Ordering {
     use std::cmp::Ordering;
     let a = a.filter(|score| score.is_finite());
     let b = b.filter(|score| score.is_finite());

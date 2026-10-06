@@ -408,8 +408,11 @@ pub(crate) async fn dispatch_parallel(
                                     tr.subquery_id.clone(),
                                     retrieval_metadata,
                                 ));
+                                // The limit is "reached, remainder unknown" once the provider fills the
+                                // candidate budget: an exact fit is precisely the case where more results
+                                // may exist but cannot be observed.
                                 let limit_reached_unknown =
-                                    result_count > 0 && result_count > config.candidate_limit;
+                                    result_count > 0 && result_count >= config.candidate_limit;
                                 let outcome = if result_count == 0 {
                                     RetrievalAttemptOutcome::SuccessZeroResults
                                 } else {
@@ -953,7 +956,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn candidate_limit_exact_fit_is_not_unknown_truncation() {
+    async fn candidate_limit_exact_fit_is_unknown_truncation() {
         let engine: Arc<dyn SearchEngine> = Arc::new(RoleEngine {
             unsupported: EvidenceRole::OfficialDocumentation,
         });
@@ -976,6 +979,34 @@ mod tests {
         assert_eq!(attempt.outcome, RetrievalAttemptOutcome::SuccessWithResults);
         assert_eq!(attempt.result_count, 1);
         assert!(!attempt.truncated);
+        assert_eq!(
+            attempt.truncation_evidence,
+            crate::core::retrieval_status::TruncationEvidence::LimitReachedUnknown
+        );
+    }
+
+    #[tokio::test]
+    async fn results_below_candidate_limit_are_not_unknown_truncation() {
+        let engine: Arc<dyn SearchEngine> = Arc::new(RoleEngine {
+            unsupported: EvidenceRole::OfficialDocumentation,
+        });
+        let mut job = make_job("unsaturated", "query", "role_engine", engine, 0, 0, 0);
+        job.intended_roles = vec![EvidenceRole::PrimaryImplementation];
+
+        let output = dispatch_parallel(
+            vec![job],
+            DispatchConfig {
+                candidate_limit: 5,
+                global_timeout: Duration::from_secs(1),
+                max_concurrent_jobs: 1,
+                max_concurrent_per_provider: 1,
+            },
+            "test",
+        )
+        .await;
+
+        let attempt = output.attempts.first().expect("one retrieval attempt");
+        assert_eq!(attempt.result_count, 1);
         assert_eq!(
             attempt.truncation_evidence,
             crate::core::retrieval_status::TruncationEvidence::default()

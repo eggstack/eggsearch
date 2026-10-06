@@ -1154,7 +1154,7 @@ pub fn built_in_provider_descriptor(
             configured: configured && enabled,
             capabilities: ProviderCapabilities {
                 supports_safe_search: false,
-                supports_freshness: true,
+                supports_freshness: false,
                 supports_language: false,
                 supports_region: false,
                 supports_domain_filters: false,

@@ -247,17 +247,29 @@ impl FetchClient {
         let mut current_url = fetch_url;
         let mut redirect_count: usize = 0;
         let initial_origin = super::origin::OriginKey::from_url(&current_url);
-        let mut redirect_permits = Vec::new();
+        // At most one origin permit is held at a time. Holding one permit
+        // per redirect hop would let a chain that revisits a single
+        // cross-origin host consume the whole per-origin semaphore and
+        // block forever on the next acquire.
+        let mut permitted_origin: Option<super::origin::OriginKey> = None;
+        let mut redirect_permit: Option<tokio::sync::OwnedSemaphorePermit> = None;
 
         let mut response = loop {
             let hop_origin = super::origin::OriginKey::from_url(&current_url);
             let redirected_origin = hop_origin.as_ref() != initial_origin.as_ref();
-            if redirected_origin {
+            if permitted_origin.as_ref() != hop_origin.as_ref() {
+                redirect_permit = None;
+                permitted_origin = hop_origin.clone();
+            }
+            if redirected_origin && redirect_permit.is_none() {
                 if let (Some(controller), Some(key)) = (origin_controller, hop_origin.as_ref()) {
-                    let permit = controller.acquire(key).await.map_err(|error| {
-                        FetchError::NetworkError(format!("origin backoff: {error}"))
-                    })?;
-                    redirect_permits.push(permit);
+                    let permit = controller
+                        .acquire_bounded(key, Duration::from_millis(self.limits.timeout_ms))
+                        .await
+                        .map_err(|error| {
+                            FetchError::NetworkError(format!("origin backoff: {error}"))
+                        })?;
+                    redirect_permit = Some(permit);
                 }
             }
             // Full validation: credentials, localhost, DNS resolution, IP checks.
