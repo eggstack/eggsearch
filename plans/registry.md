@@ -33,6 +33,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Search capability and provider evidence | closed | `plans/subsystems/search-capability-roadmap.md` | M001-M005 closed | None. Pre-migration baseline `e645a3fe` (`eggsearch` 0.3.7). |
 | CodeGG legacy search parity corrective | closed | `plans/subsystems/codegg-legacy-search-parity-corrective-addendum.md` | M001 through M005 closed. Immutable `v0.4.1` published (fix-prep `32769d6`, qualify `37070932877`, release `37072825644` incl. attest, 16 assets, provenance/install evidence); `v0.4.0` remains crate+tag only. Closure `plans/closure/codegg-legacy-search-parity/005-status.md`. | Downstream CodeGG parity adoption unblocked: pin `>=0.4.1` and begin the registered legacy-backend retirement sequence. Hardening M002's first-release provenance condition is satisfied by the v0.4.1 evidence; its formal flip awaits a hardening-owned reconciliation. |
 | Binary distribution, install/update, deployment | closed | `plans/subsystems/binary-distribution-deployment-roadmap.md` | M001-M006 closed | None. First binary release `v0.3.9` at `0cbbeee7`; qualify `34653366561`, release `34655458760`. |
+| Eggpack release adoption | active | `plans/subsystems/eggpack-release-adoption-roadmap.md` | M001 ready | Paired with `eggstack/eggpack@325d44e` Ecosystem M003b. Seven-target cutover is architecture-ready; implementation must re-prove glibc 2.17, ARMv7 runtime, Windows ARM64, exact 16→19 additive inventory, provenance subject parity, and safe single-writer cutover. |
 | Maintenance, consolidation, CodeGG quality | closed | `plans/subsystems/maintenance-codegg-quality-roadmap.md` | M001-M005 closed | None. Baseline `4a713ff8`. |
 | HTTP transport consolidation | closed | `plans/subsystems/transport-consolidation-roadmap.md` | M001-M003 closed | None. `eggfetch-core 0.2.0` at `bac6f49f`; qualify `35692096012`. |
 | Performance optimization and footprint | closed | `plans/subsystems/performance-optimization-roadmap.md` | M001-M005 closed | None. Corrective candidate `0af540b8`; qualify `35542118569`. |
@@ -45,6 +46,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 
 | Subsystem | Milestone | Status | Implementation plan | Dependencies / handoff note |
 |---|---|---|---|---|
+| Eggpack release adoption | M001 seven-target Eggpack producer cutover | ready | `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | Paired producer plan `eggstack/eggpack: plans/implementation/ecosystem-adoption/003b-eggsearch-seven-target-eggpack-producer-cutover.md` (`325d44e`); no architecture blocker remains. Do not edit Eggpack production code; stop on glibc/ARMv7/provenance/inventory incompatibility. |
 | CodeGG legacy search parity corrective | M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | Closed at `e9103b4`; closure `plans/closure/codegg-legacy-search-parity/001-status.md`. Added Wikipedia, arXiv, PubMed, HN Algolia, and GitHub repository discovery plus the additive `structured_api` provider kind; inventory 37 -> 42. |
 | CodeGG legacy search parity corrective | M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | Closed at `5233315`; closure `plans/closure/codegg-legacy-search-parity/002-status.md`. Added opt-in `serpapi` and `kagi` (current v1, terms gate passed); inventory 42 -> 44. |
 | CodeGG legacy search parity corrective | M003 CodeGG retirement handoff + qualification | closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | Closed at `8e5ec75` plus M005 reconciliation: sole publication condition cleared by immutable 0.4.1 release. Historical closure `plans/closure/codegg-legacy-search-parity/003-status.md`; reconciliation in `plans/closure/codegg-legacy-search-parity/005-status.md`. |
@@ -96,6 +98,8 @@ closed historical evidence. Their closure records live in `plans/closure/`
 per subsystem. Do not reopen them for new scope; register new milestones
 under the owning subsystem roadmap instead.
 
+**Eggpack release-adoption gate:** `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` is ready and is the active release-distribution handoff. It is paired with Eggpack Ecosystem M003b at `eggstack/eggpack@325d44e`. The historical Binary Distribution roadmap stays closed; M001 must qualify the new generated producer path before retiring the old release writer.
+
 ## Blocked work
 
 CodeGG legacy search parity is closed. M005 delivered the immutable `v0.4.1`
@@ -128,6 +132,7 @@ release that makes HTTP discovery / reqwest optional without regressing
 |---|---|---|
 | Search capability | closed | `plans/closure/search-capability/001-status.md`; archived phases 1-5 |
 | Binary distribution and deployment | closed | `plans/closure/binary-distribution-deployment/001-status.md`; archived phases 6-10, 16 |
+| Eggpack release adoption | active; M001 ready | Planned closure `plans/closure/eggpack-release-adoption/001-status.md`; paired producer control point `eggstack/eggpack` Ecosystem M003b |
 | Maintenance and CodeGG quality | closed | `plans/closure/maintenance-codegg-quality/001-status.md`; archived phases 11-15 |
 | Transport consolidation | closed | `plans/closure/transport-consolidation/001-status.md`; archived phases 17-18, 24 |
 | Performance optimization | closed | `plans/closure/performance-optimization/001-status.md`; archived phases 19-23 |
