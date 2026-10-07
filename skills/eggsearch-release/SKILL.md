@@ -45,9 +45,20 @@ git push origin vX.Y.Z
 ```
 
 The Eggpack-generated `Eggpack candidate builds` workflow assembles a **draft**
-GitHub Release after all seven targets qualify and validate; publish that draft
-manually after review. Then dispatch `Release provenance` for the same tag to
-verify and attest the staged bytes.
+GitHub Release after all seven targets qualify and validate.
+
+Order matters and is not interchangeable:
+
+1. Review the 19-asset draft.
+2. Dispatch `Release provenance` for the same tag to verify and attest the staged
+   bytes.
+3. **Only then** publish the draft manually.
+
+`Release provenance` **refuses to run against an already-published release** — it
+exists to attest unpublished staged bytes, and its guard exits non-zero if
+`isDraft` is not `true`. Attesting after publication is therefore impossible, and
+skipping it leaves a public release with no provenance. If you already published,
+that release cannot be retroactively attested; cut a new version instead.
 
 Before publishing the draft, confirm:
 

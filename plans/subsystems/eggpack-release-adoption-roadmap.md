@@ -1,6 +1,6 @@
 # Eggpack Release Adoption Roadmap
 
-Status: active
+Status: closed
 
 Long-term references:
 
@@ -137,11 +137,13 @@ Implementation plan:
 
 `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`
 
-Status: conditionally closed. Closure record: `plans/closure/eggpack-release-adoption/001-status.md`.
+Status: closed. Closure record: `plans/closure/eggpack-release-adoption/001-status.md`.
 
 Outcome: the cutover landed at `eabbf80` and hosted run `37531104901` staged eggsearch `v0.4.2` as draft `405157598` with the exact 19-asset inventory: all seven targets built, qualified, and consumer-validated (including the required ARMv7 runtime proof and Windows ARM64 on `windows-11-arm`), glibc 2.17 re-proven on all three GNU targets after the Zig 0.14.1 / cargo-zigbuild 0.23.3 bump, provenance moved to a separate read-only workflow with no OIDC in any generated job, `--clobber` replaced by fail-closed staging, and the legacy writer deleted so exactly one writer exists.
 
-Named condition: publishing the `v0.4.2` draft is a manual maintainer action that was not authorized. See the closure §12 for the ordered next steps.
+The named condition — publishing the `v0.4.2` draft — was **discharged on 2026-10-07**. Provenance run `37561960304` attested the staged bytes while the release was still a draft, and the release was then published by explicit maintainer action. See the closure §12 for the evidence and §13 for the Medium provenance defect that publication exposed.
+
+Lesson recorded at closure §13: the provenance workflow had **never been dispatched** when this milestone closed conditionally. Its guard required a draft the job's own token could not see, so it could not have passed in any release state. Design review and static assertions both looked clean. Only performing the next step found it. A seam asserted from design is not evidence — only execution is.
 
 ## 8. Verification strategy
 
@@ -175,4 +177,4 @@ This subsystem closes when Eggsearch has one Eggpack-owned producer release auth
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 seven-target Eggpack producer cutover | conditionally closed | `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | `plans/closure/eggpack-release-adoption/001-status.md` | Implementation `eabbf80`; hosted run `37531104901` staged `v0.4.2` as draft `405157598`, 19 assets, all seven targets green. Named condition: publication is manual. Open Medium: release build is not byte-reproducible across attempts, so a rerun refuses instead of reusing |
+| M001 seven-target Eggpack producer cutover | closed | `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | `plans/closure/eggpack-release-adoption/001-status.md` | Implementation `eabbf80`; hosted run `37531104901` staged `v0.4.2` as draft `405157598`, 19 assets, all seven targets green; provenance `37561960304` attested the staged bytes; published 2026-10-07, discharging the named condition. Open Medium: release build is not byte-reproducible across attempts, so a rerun refuses instead of reusing |
