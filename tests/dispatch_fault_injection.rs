@@ -797,3 +797,100 @@ async fn credentialed_quota_failure_is_provider_scoped_and_cools_down() {
     let healthy = health.snapshot("duckduckgo", true, true);
     assert_eq!(healthy.consecutive_failures, 0);
 }
+
+/// Engine that sleeps before answering, so JoinSet completion order differs
+/// from `queried_ids` order.
+struct DelayedMockEngine {
+    name: &'static str,
+    delay_ms: u64,
+    fail: bool,
+}
+
+impl eggsearch::meta::engines::SearchEngine for DelayedMockEngine {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+    fn search<'a>(
+        &'a self,
+        _request: &'a eggsearch::meta::engines::EngineSearchRequest,
+    ) -> eggsearch::meta::engines::BoxFuture<
+        'a,
+        Result<
+            Vec<eggsearch::meta::engines::models::SearchResult>,
+            eggsearch::meta::engines::error::EngineError,
+        >,
+    > {
+        let name = self.name;
+        let delay_ms = self.delay_ms;
+        let fail = self.fail;
+        Box::pin(async move {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+            if fail {
+                return Err(eggsearch::meta::engines::error::EngineError::NetworkError {
+                    engine: name,
+                    reason: "mock network failure".to_string(),
+                });
+            }
+            Ok(vec![eggsearch::meta::engines::models::SearchResult {
+                title: name.to_string(),
+                url: format!("http://{name}.example/"),
+                snippet: Some(name.to_string()),
+                source_engine: name.to_string(),
+                excerpts: Vec::new(),
+                published_at: None,
+                metadata: eggsearch::meta::engines::models::ResultMetadata::None,
+            }])
+        })
+    }
+}
+
+#[tokio::test]
+async fn attempts_ledger_is_ordered_by_queried_ids_not_completion() {
+    // `slow_a` is queried first but answers last, and `fast_b` fails before
+    // `slow_a` even starts. Completion order is therefore b, slow_a, fast_b —
+    // the ledger must still read slow_a, fast_b, slow_b.
+    let engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>> = vec![
+        Arc::new(DelayedMockEngine {
+            name: "slow_a",
+            delay_ms: 300,
+            fail: false,
+        }),
+        Arc::new(DelayedMockEngine {
+            name: "fast_b",
+            delay_ms: 20,
+            fail: true,
+        }),
+        Arc::new(DelayedMockEngine {
+            name: "slow_b",
+            delay_ms: 150,
+            fail: false,
+        }),
+    ];
+    let adapter = MetadataSearchAdapter::from_engines(engines, Duration::from_secs(10));
+    let resp = adapter.web_search(&make_request("test"), 10, 10).await;
+
+    let summary = resp
+        .evidence_postprocess
+        .as_ref()
+        .and_then(|p| p.retrieval_summary.as_ref())
+        .expect("retrieval summary must be present");
+    let order: Vec<&str> = summary
+        .dimensions
+        .iter()
+        .map(|dimension| dimension.provider_id.as_deref().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        order,
+        vec!["slow_a", "fast_b", "slow_b"],
+        "attempt ledger must follow queried_ids order"
+    );
+    assert_eq!(
+        resp.providers_queried,
+        vec![
+            "slow_a".to_string(),
+            "fast_b".to_string(),
+            "slow_b".to_string()
+        ],
+        "engines are queried in declaration order"
+    );
+}

@@ -516,3 +516,65 @@ fn f9_conflict_metadata_serde_roundtrip() {
         assert_eq!(orig.values, deser.values);
     }
 }
+
+fn repo_pinned_card(id: &str, owner: &str, repo: &str, pinned: bool) -> SourceCard {
+    SourceCard {
+        id: id.to_string(),
+        stable_id: Some(id.to_string()),
+        title: format!("{owner}/{repo}"),
+        url: format!("https://github.com/{owner}/{repo}"),
+        providers: vec!["github".to_string()],
+        score: Some(1.0),
+        trust: eggsearch::core::result::TrustLevel::ExternalUntrusted,
+        fetched: false,
+        snippet: None,
+        trust_markers: eggsearch::core::sanitize::TrustMarkers::default(),
+        metadata: SourceMetadata {
+            source_kind: SourceKind::SourceRepository,
+            code_evidence: Some(eggsearch::core::code_evidence::CodeEvidence {
+                host: Some(eggsearch::core::code_metadata::CodeHost::Github),
+                owner: Some(owner.to_string()),
+                repo: Some(repo.to_string()),
+                commit_sha: pinned.then(|| "a".repeat(40)),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        quality: None,
+        excerpts: Vec::new(),
+    }
+}
+
+#[test]
+fn structured_conflicts_are_ordered_by_repo_key() {
+    // `repo_groups` fed `conflicts` before the MAX_CONFLICTS truncate, so
+    // HashMap iteration order decided *which* conflicts survived. Repo keys
+    // are built zero-padded so lexical order is numeric order.
+    let mut cards = Vec::new();
+    for i in 0..30 {
+        let repo = format!("repo-{i:02}");
+        cards.push(repo_pinned_card(&format!("m{i}"), "owner", &repo, false));
+        cards.push(repo_pinned_card(&format!("p{i}"), "owner", &repo, true));
+    }
+
+    let conflicts = eggsearch::core::evidence_postprocess::detect_structured_conflicts(&cards);
+    assert_eq!(conflicts.len(), 20, "conflicts are capped at 20");
+    // Each conflict's ids are `m{n}` + `p{n}`; BTreeMap iteration over the
+    // zero-padded repo keys means the surviving conflicts are repo 0..=19.
+    let order: Vec<usize> = conflicts
+        .iter()
+        .map(|conflict| {
+            let id = conflict
+                .source_ids
+                .iter()
+                .find(|id| id.starts_with('m'))
+                .expect("conflict names its mutable source");
+            id[1..].parse::<usize>().expect("numeric repo index")
+        })
+        .collect();
+    assert_eq!(
+        order,
+        (0..20).collect::<Vec<_>>(),
+        "conflicts must be emitted in sorted repo-key order"
+    );
+}

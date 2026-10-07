@@ -95,11 +95,13 @@ fn published_date_bounds(
     if let Some(range) = date_range {
         let start = range.start.trim();
         let end = range.end.trim();
-        if start.is_empty() || end.is_empty() {
-            return (None, None);
+        if !start.is_empty() && !end.is_empty() {
+            return (Some(format_day_start(start)), Some(format_day_end(end)));
         }
-        return (Some(format_day_start(start)), Some(format_day_end(end)));
     }
+    // A range with an empty bound cannot be expressed as an exact window, so
+    // fall through to the relative `freshness` bound rather than sending an
+    // unconstrained request.
     match relative_start_bound(freshness, now) {
         Some(lower) => (Some(lower), None),
         None => (None, None),
@@ -285,6 +287,30 @@ mod tests {
         let (start, end) = published_date_bounds(Freshness::Any, Some(&range), fixed_now());
         assert_eq!(start.as_deref(), Some("2024-01-01T00:00:00.000Z"));
         assert_eq!(end.as_deref(), Some("2024-01-31T23:59:59.999Z"));
+    }
+
+    #[test]
+    fn partial_range_falls_back_to_relative_freshness() {
+        // An exact range needs both bounds. Returning `(None, None)` here also
+        // skipped the relative window entirely, so the request went out with
+        // no date constraint at all.
+        for range in [
+            SearchDateRange::new("", "2024-01-31"),
+            SearchDateRange::new("2024-01-01", ""),
+            SearchDateRange::new("  ", "  "),
+        ] {
+            let (start, end) = published_date_bounds(Freshness::Week, Some(&range), fixed_now());
+            assert!(
+                start.is_some(),
+                "relative freshness must still set a lower bound for {range:?}"
+            );
+            assert!(end.is_none(), "relative end bound is omitted");
+        }
+
+        // With no relative window either, no date constraint is correct.
+        let range = SearchDateRange::new("", "");
+        let (start, end) = published_date_bounds(Freshness::Any, Some(&range), fixed_now());
+        assert!(start.is_none() && end.is_none());
     }
 
     #[test]

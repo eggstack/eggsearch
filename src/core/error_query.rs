@@ -292,16 +292,22 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
         redactions.push(format!("memory_address: {addr}"));
     }
 
-    // Redact local absolute paths (but keep basename and useful crate/module segments)
-    for m in LOCAL_PATH_RE.find_iter(&normalized.clone()) {
-        let path = m.as_str().to_string();
+    // Redact local absolute paths (but keep basename and useful crate/module segments).
+    //
+    // Matches are collected from an immutable snapshot and applied in a single
+    // cursor pass: indices into the snapshot stay valid because the output is
+    // never re-sliced while earlier replacements have already shortened it.
+    let snapshot = normalized.clone();
+    let mut path_edits: Vec<(usize, usize, &str, &str)> = Vec::new();
+    for m in LOCAL_PATH_RE.find_iter(&snapshot) {
+        let path = m.as_str();
         // Skip paths that look like URLs or error codes
         if path.starts_with("/dev") || path.starts_with("/proc") || path.starts_with("/sys") {
             continue;
         }
         // Skip URL authorities and paths: the match starts mid-URL, so the
         // scheme and host would be silently dropped from the search query.
-        let prefix = &normalized[..m.start()];
+        let prefix = &snapshot[..m.start()];
         let preceded_by_url = is_url_scheme(prefix.trim_end_matches('/'))
             || prefix.rsplit_once("//").is_some_and(|(head, tail)| {
                 !tail.contains(char::is_whitespace) && is_url_scheme(head)
@@ -310,11 +316,27 @@ pub fn redact_error_query(parts: &ErrorQueryParts) -> ErrorQueryParts {
             continue;
         }
         // Keep basename
-        let basename = path.rsplit('/').next().unwrap_or(&path);
+        let basename = path.rsplit('/').next().unwrap_or(path);
         // If basename is meaningful (not just a number or generic dir), keep it
         if !basename.chars().all(|c| c.is_ascii_digit()) && basename.len() > 1 {
-            replace_in_provider_fields(&mut normalized, &mut quoted_exact, &path, basename);
+            path_edits.push((m.start(), m.end(), path, basename));
             redactions.push(format!("local_path: {path}"));
+        }
+    }
+    if !path_edits.is_empty() {
+        let mut rewritten = String::with_capacity(snapshot.len());
+        let mut cursor = 0;
+        for (start, end, _, basename) in &path_edits {
+            rewritten.push_str(&snapshot[cursor..*start]);
+            rewritten.push_str(basename);
+            cursor = *end;
+        }
+        rewritten.push_str(&snapshot[cursor..]);
+        normalized = rewritten;
+        for (_, _, path, basename) in &path_edits {
+            if quoted_exact.contains(path) {
+                quoted_exact = quoted_exact.replace(path, basename);
+            }
         }
     }
 
@@ -979,6 +1001,54 @@ mod tests {
             !redacted.normalized.contains("/Users/john"),
             "local absolute paths must still be redacted"
         );
+        assert!(redacted.normalized.contains("main.rs"));
+    }
+
+    #[test]
+    fn redacts_every_local_path_without_panicking() {
+        // Two or more absolute paths in one error string is ordinary compiler
+        // output. Matches are collected from a snapshot and applied in one
+        // cursor pass, so no offset into the mutating string can go stale.
+        for text in [
+            "error at /verylongpath/bb while loading /c/d",
+            "no such file: /aaa/bb/cc: /d/ee",
+            "cannot open /Users/someone/very/deep/path/to/file.rs and /tmp/x/y",
+            "/aa/bb /cc/dd /ee/ff",
+            "see /aaa/bbb/ccc then /ddd/eee",
+            "error[E0308]: mismatched types in /a/b/c.rs and /d/e/f.rs and /g/h/i.rs",
+        ] {
+            let redacted = redact_error_query(&parse_error_query(text));
+            assert!(
+                !redacted.normalized.contains("/aa")
+                    && !redacted.normalized.contains("/Users/someone"),
+                "directory prefixes must be redacted for {text:?}: {}",
+                redacted.normalized
+            );
+            for redaction in &redacted.redactions_applied {
+                assert!(
+                    redaction.starts_with("local_path:"),
+                    "expected local path redactions for {text:?}, got {:?}",
+                    redacted.redactions_applied
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn local_path_redaction_preserves_urls_in_the_same_string() {
+        // The URL guard reads the prefix from the immutable snapshot, so a URL
+        // later in the string is still recognized after earlier local paths
+        // have been rewritten.
+        let text = "failed at /home/u/project/src/main.rs and https://api.example.com/v1/items/42";
+        let redacted = redact_error_query(&parse_error_query(text));
+        assert!(
+            redacted
+                .normalized
+                .contains("https://api.example.com/v1/items/42"),
+            "URL path must survive redaction: {}",
+            redacted.normalized
+        );
+        assert!(!redacted.normalized.contains("/home/u"));
         assert!(redacted.normalized.contains("main.rs"));
     }
 

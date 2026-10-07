@@ -9,6 +9,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Error-query redaction no longer panics on ordinary compiler output. Local
+  path matches were collected from an immutable snapshot but applied while
+  indexing the mutating string, so every offset after the first replacement
+  was stale and a second absolute path in the same message could slice out of
+  bounds. Matches are now applied in a single cursor pass, which also keeps the
+  URL guard reading the correct prefix so URLs later in the string survive
+  redaction.
+- A KEV lookup for a CVE that is *not* in the catalog no longer re-downloads
+  the whole CISA catalog. The TTL freshness check was nested inside the
+  cache-hit branch, so it only ran when the CVE was present; one
+  `security_search` returning 20 vulnerabilities could fire 20 full catalog
+  fetches inside a single tool call.
+- `batch_fetch` returns results in input order. Skipped items were pushed
+  during the spawn loop while wave results were appended after the `JoinSet`
+  drained, which reversed the vector whenever the total character budget
+  skipped an item, and mis-attributed every `focused_*` and `cache_*`
+  telemetry counter to the wrong item.
+- `detect_structured_conflicts` groups repositories in a `BTreeMap`, so the
+  conflicts that survive the 20-entry cap no longer depend on `HashMap`
+  iteration order and repeated identical calls return identical payloads.
+- The `web_search` attempts ledger is emitted in `queried_ids` order instead
+  of `JoinSet` completion order, matching the existing `providers_failed`
+  handling, so `retrieval_summary.dimensions` is stable across runs with
+  identical inputs and outcomes.
+- Browser rendering is bounded. `[fetch.browser].global_concurrency` gates a
+  process-wide semaphore and `OriginController::acquire_browser` caps
+  concurrent renders per origin (sized by the tighter of
+  `origin_browser_concurrency` and `browser.per_origin_concurrency`), acquired
+  in `run_browser_fetch` before a browser is launched. Browser escalation runs
+  before the direct-fetch retry loop, so concurrent `web_fetch` calls
+  previously launched one Chromium each with no cap.
+- `repo_map` hides `providers` from its advertised schema like the other three
+  tools, and rejects a non-empty value instead of ignoring it. An agent
+  targeting a self-hosted forge silently received another host's tree.
+- PDF page specifications are deduplicated through a set rather than a linear
+  `Vec::contains` scan, so a spec with many tokens no longer costs quadratic
+  time on the async runtime thread before `max_pages` rejects it.
+- `date_range_unenforced`, `language_unenforced`, `region_unenforced`, and
+  `domain_filters_local` are now registered warning codes. The adapter
+  emitted all four, but they fell through to `unknown_warning`, so agents
+  could not distinguish "no provider enforces this" from an unclassified
+  warning.
+- `Config::save` writes atomically (staged temp file, then renamed) like every
+  other config-writing path in the crate, so a crash mid-write cannot leave a
+  truncated TOML file that fails to parse on the next start.
+- The dependency finding-budget diagnostic is appended after the diagnostic
+  count cap, so the note explaining *why* findings are missing is no longer
+  the tail that `truncate` drops.
+- `OriginPolicy`'s write-only `next_allowed_at` field is gone. Backoff delay
+  was carried by the returned `OriginBackoffDecision` the caller sleeps on,
+  so the field enforced nothing while reading like a cool-off gate.
+- The invalid-`mode` repair hint names the rejected value once. A
+  `.replace("invalid", mode)` over a literal containing `invalid` twice
+  produced `"fancy mode 'fancy'"` for `mode: "fancy"`, asserting the rejected
+  value was valid.
+- `web_fetch` distinguishes a failed conditional revalidation from a non-304
+  response. The error was discarded and the same origin was immediately
+  re-requested unconditionally, amplifying the load a backoff was avoiding;
+  the tool now serves the cached response and names the cause.
+- U+061C (Arabic Letter Mark) is treated as unsafe by `strip_control_chars`
+  and as evasive by the injection-marker scanner. It is `Bidi_Control` and
+  directionally forceful but sat outside every range the other arms cover.
+- Evidence-bundle text clipped to the remaining character budget is marked
+  `truncated`. The `remaining == 0` branch already set the flag; the
+  `remaining > 0` branch truncated the text and left it `false`, so consumers
+  treated clipped text as verbatim evidence.
+- A `date_range` with an empty bound now falls through to the relative
+  `freshness` window in `exa` and `brave_api` instead of returning no date
+  constraint at all.
 - Cross-origin redirect chains no longer deadlock: the fetch loop holds at most
   one origin permit (the origin currently being contacted) instead of one per
   hop, and `OriginController::acquire_bounded` puts a deadline under the

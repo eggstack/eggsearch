@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5665 | 23 |
-| `--features mock` | 5395 | 1 |
+| `--all-features` | 5686 | 23 |
+| `--features mock` | 5415 | 1 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -68,7 +68,7 @@ Placement authority is the table in `architecture/testing.md`.
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
-| `dispatch_fault_injection` | `mock` | 33 | Provider failure, timeout, hang, health transitions, concurrency, panic, credentialed quota isolation (rate-limited class, cooldown threshold, auth vs quota classes) |
+| `dispatch_fault_injection` | `mock` | 34 | Provider failure, timeout, hang, health transitions, concurrency, panic, credentialed quota isolation (rate-limited class, cooldown threshold, auth vs quota classes) |
 | `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
 | `provider_request_contract` | `mock` | 36 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, credentialed-provider wire contracts (SerpApi pinned engine/no extra verticals/query-parameter credential; Kagi v1 POST + bearer + search-only collection, terminal quota), provider-scoped failures, credential redaction in every error path, and oversized-body rejection |
@@ -173,8 +173,8 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | Suite | Tests | Focus |
 |-------|-------|-------|
 | `mcp_tool_contract` | 14 | Canonical registry parity: aliases, discovery text, sanitization, fingerprint determinism |
-| `mcp_schema_slimming` | 16 | Slimmed ordinary schema size budget with legacy-field acceptance |
-| `mcp_2026_protocol` | 13 | Structured results, output schemas, repairable error contract |
+| `mcp_schema_slimming` | 17 | Slimmed ordinary schema size budget with legacy-field acceptance |
+| `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
 | `mcp_projection` | 14 | Response-detail projection: failure-vs-absence, trust, conflicts, truncation, bundle identity, byte reduction |
 
 ## Tool-Surface Evaluation (2 suites)
@@ -185,8 +185,9 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `tool_surface_live` | None (comparison `#[ignore]`d) | 1 (+1 ignored) | Layer 3 report contract (fingerprint, config, deltas); opt-in manual multi-model comparison via `EGGSEARCH_EVAL_MODEL` |
 
 Corpus: `tests/fixtures/tool_surface/cases.json` (43 cases) with `README.md`
-post-consolidation baseline (73037 definition bytes, 1614 instruction bytes,
-43/43 top-1). Re-run with `make eval-tool-surface`.
+baseline (72939 definition bytes, 1614 instruction bytes, 43/43 top-1; the
+post-consolidation v0.3.9 figure was 73037 definition bytes before `repo_map`
+stopped advertising `providers`). Re-run with `make eval-tool-surface`.
 
 ## Documentation Contract Tests (5 suites)
 

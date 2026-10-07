@@ -118,7 +118,7 @@ Git subprocesses run through `run_bounded_command()` with a process-group kill s
 
 The fetch cache separates raw and derived maxima: a fresh raw hit with a derived miss re-runs the shared extraction pipeline locally instead of issuing another network request, and derived keys bucket by `max_chars` so differently-bounded views never share entries. Timeout overrides reuse the shared transport for equal or shorter values and build exactly one widened client for longer values, so resolved-route connect policy matches the requested timeout without rebuilding per call. Batch setup performs one timeout adjustment per call regardless of batch width. Local inventory and derived-cache internals use shared immutable ownership; public owned-return wrappers sit at the boundary so hot paths never copy deeply.
 
-Browser rendering carries millisecond startup and navigation timeouts plus per-origin browser concurrency of 1 (HTTP concurrency 2), enforced by the same `OriginController` semaphores as direct fetches. Dynamic fetch targets (`web_fetch`, `batch_fetch`, `repo_fetch`) stay direct with resolved-address pinning; only provider upstreams may use the `egress` route, and chain failures never fall back to direct.
+Browser rendering carries millisecond startup and navigation timeouts plus concurrency caps, all enforced in `run_browser_fetch` before a browser is launched: a process-wide semaphore sized by `[fetch.browser].global_concurrency`, and a per-origin permit from `OriginController.acquire_browser` sized by the tighter of `[fetch].origin_browser_concurrency` and `[fetch.browser].per_origin_concurrency` (both default 1; HTTP concurrency is 2). Origin states holding either permit are ineligible for eviction, and the circuit-breaker check is shared with direct fetches. Dynamic fetch targets (`web_fetch`, `batch_fetch`, `repo_fetch`) stay direct with resolved-address pinning; only provider upstreams may use the `egress` route, and chain failures never fall back to direct.
 
 ## Absence versus failure
 
@@ -133,13 +133,13 @@ The metadata adapter returns a response, never an error: every provider contribu
 | Knob | Default | Effect |
 |------|---------|--------|
 | `http_concurrency` | 2 | At most two concurrent HTTP fetches per origin |
-| `browser_concurrency` | 1 | At most one browser render per origin |
+| `browser_concurrency` | 1 | At most one browser render per origin (sized by `min(origin_browser_concurrency, browser.per_origin_concurrency)`) |
 | `retry_max_attempts` | 2 | Bounded retries, then the attempt fails structured |
 | `retry_base_delay_ms` / `retry_max_delay_ms` | 250 / 4,000 | Exponential backoff window per origin |
 | `circuit_failure_threshold` | 3 | Consecutive retryable failures open the circuit |
 | `circuit_duration_ms` | 60,000 | Open-circuit window before the origin is retried |
 
-Permits are `OwnedSemaphorePermit`s scoped to the fetch; success resets the failure counters while retryable, rate-limited, and non-retryable classes feed distinct backoff paths. The probe service (`src/meta/probe.rs`) applies the same discipline to provider health checks with its own `PROBE_MAX_CONCURRENCY` semaphore, so probing cannot wedge dispatch.
+Permits are `OwnedSemaphorePermit`s scoped to the fetch; success resets the failure counters while retryable, rate-limited, and non-retryable classes feed distinct backoff paths. Backoff delay is carried by the `OriginBackoffDecision` the caller sleeps on, not by stored cool-off state, so `FailureState` holds only the counters and the circuit window. The probe service (`src/meta/probe.rs`) applies the same discipline to provider health checks with its own `PROBE_MAX_CONCURRENCY` semaphore, so probing cannot wedge dispatch.
 
 ---
 

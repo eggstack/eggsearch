@@ -53,6 +53,7 @@ impl Default for OriginPolicy {
 
 pub struct OriginState {
     pub semaphore: Arc<Semaphore>,
+    pub browser_semaphore: Arc<Semaphore>,
     pub failures: Mutex<FailureState>,
     pub last_access_ms: AtomicU64,
 }
@@ -66,7 +67,6 @@ fn now_ms() -> u64 {
 
 pub struct FailureState {
     pub consecutive_retryable_failures: u8,
-    pub next_allowed_at: Option<Instant>,
     pub circuit_open_until: Option<Instant>,
     pub last_failure_class: Option<OriginFailureClass>,
 }
@@ -75,7 +75,6 @@ impl FailureState {
     fn new() -> Self {
         Self {
             consecutive_retryable_failures: 0,
-            next_allowed_at: None,
             circuit_open_until: None,
             last_failure_class: None,
         }
@@ -153,11 +152,49 @@ impl OriginController {
         }
     }
 
+    /// Acquire a browser-render permit for an origin.
+    ///
+    /// Shares the circuit-breaker check with `acquire` but uses the separate
+    /// `browser_semaphore`, so `OriginPolicy::browser_concurrency` caps
+    /// concurrent headless renders per origin independently of HTTP fetches.
+    pub async fn acquire_browser(
+        &self,
+        key: &OriginKey,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, OriginBackoffError> {
+        let state = self.get_or_create_state(key).await;
+        if let Some(open_until) = state.failures.lock().await.circuit_open_until {
+            if Instant::now() < open_until {
+                let remaining_ms = open_until
+                    .duration_since(Instant::now())
+                    .as_millis()
+                    .min(u128::from(u64::MAX)) as u64;
+                return Err(OriginBackoffError::CircuitOpen { remaining_ms });
+            }
+        }
+
+        let sem = Arc::clone(&state.browser_semaphore);
+        let permit = sem
+            .acquire_owned()
+            .await
+            .map_err(|_| OriginBackoffError::LimiterClosed)?;
+        let circuit_open_until = state.failures.lock().await.circuit_open_until;
+        if let Some(open_until) = circuit_open_until {
+            if Instant::now() < open_until {
+                let remaining_ms = open_until
+                    .duration_since(Instant::now())
+                    .as_millis()
+                    .min(u128::from(u64::MAX)) as u64;
+                drop(permit);
+                return Err(OriginBackoffError::CircuitOpen { remaining_ms });
+            }
+        }
+        Ok(permit)
+    }
+
     pub async fn record_success(&self, key: &OriginKey) {
         if let Some(state) = self.get_state(key).await {
             let mut failures = state.failures.lock().await;
             failures.consecutive_retryable_failures = 0;
-            failures.next_allowed_at = None;
             failures.circuit_open_until = None;
             failures.last_failure_class = None;
         }
@@ -174,7 +211,6 @@ impl OriginController {
         match class {
             OriginFailureClass::NonRetryable => {
                 failures.consecutive_retryable_failures = 0;
-                failures.next_allowed_at = None;
                 failures.last_failure_class = Some(class);
                 return OriginBackoffDecision::NoBackoff;
             }
@@ -214,7 +250,6 @@ impl OriginController {
             _ => None,
         };
 
-        failures.next_allowed_at = Some(Instant::now() + Duration::from_millis(delay_ms));
         OriginBackoffDecision::Backoff {
             delay_ms,
             retry_after_ms: retry_after,
@@ -226,7 +261,6 @@ impl OriginController {
             let mut failures = state.failures.lock().await;
             failures.circuit_open_until = None;
             failures.consecutive_retryable_failures = 0;
-            failures.next_allowed_at = None;
         }
     }
 
@@ -244,7 +278,10 @@ impl OriginController {
             // backoff.
             let mut idle: Vec<(u64, OriginKey)> = Vec::new();
             for (key, state) in states.iter() {
-                if state.semaphore.available_permits() < self.defaults.http_concurrency {
+                if state.semaphore.available_permits() < self.defaults.http_concurrency
+                    || state.browser_semaphore.available_permits()
+                        < self.defaults.browser_concurrency
+                {
                     continue;
                 }
                 let failures = state.failures.lock().await;
@@ -279,6 +316,7 @@ impl OriginController {
 
         let state = Arc::new(OriginState {
             semaphore: Arc::new(Semaphore::new(self.defaults.http_concurrency)),
+            browser_semaphore: Arc::new(Semaphore::new(self.defaults.browser_concurrency)),
             failures: Mutex::new(FailureState::new()),
             last_access_ms: AtomicU64::new(now_ms()),
         });
@@ -496,6 +534,82 @@ mod tests {
             })
             .await
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn browser_permits_are_capped_per_origin() {
+        let policy = OriginPolicy {
+            http_concurrency: 2,
+            browser_concurrency: 1,
+            ..OriginPolicy::default()
+        };
+        let controller = Arc::new(OriginController::new(policy, 8));
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "render.example".into(),
+            port: 443,
+        };
+
+        let first = controller
+            .acquire_browser(&key)
+            .await
+            .expect("first browser permit");
+        // The second permit must wait; it resolves only after the first drops.
+        let pending = {
+            let controller = Arc::clone(&controller);
+            let key = key.clone();
+            tokio::spawn(async move { controller.acquire_browser(&key).await })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !pending.is_finished(),
+            "browser_concurrency must cap renders"
+        );
+        drop(first);
+        let second = pending.await.expect("join").expect("second permit");
+        drop(second);
+    }
+
+    #[tokio::test]
+    async fn browser_permits_are_independent_of_http_permits() {
+        let controller = OriginController::new(OriginPolicy::default(), 8);
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "mixed.example".into(),
+            port: 443,
+        };
+
+        let http = controller
+            .acquire_bounded(&key, Duration::from_secs(1))
+            .await
+            .expect("http permit");
+        let render = controller
+            .acquire_browser(&key)
+            .await
+            .expect("browser permit while http is held");
+        drop(http);
+        drop(render);
+    }
+
+    #[tokio::test]
+    async fn browser_permit_respects_an_open_circuit() {
+        let policy = OriginPolicy {
+            circuit_failure_threshold: 1,
+            ..OriginPolicy::default()
+        };
+        let controller = OriginController::new(policy, 8);
+        let key = OriginKey {
+            scheme: "https".into(),
+            host: "dead.example".into(),
+            port: 443,
+        };
+        controller
+            .record_failure(&key, OriginFailureClass::Retryable)
+            .await;
+        assert!(matches!(
+            controller.acquire_browser(&key).await,
+            Err(OriginBackoffError::CircuitOpen { .. })
+        ));
     }
 
     #[test]

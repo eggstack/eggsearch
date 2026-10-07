@@ -334,8 +334,11 @@ pub fn build_retrieval_summary_from_attempts(
 pub fn detect_structured_conflicts(cards: &[SourceCard]) -> Vec<EvidenceConflict> {
     let mut conflicts = detect_entity_scoped_conflicts(cards);
 
-    let mut repo_groups: std::collections::HashMap<String, (Vec<String>, Vec<String>)> =
-        std::collections::HashMap::new();
+    // BTreeMap, not HashMap: iteration order feeds `conflicts` and the list is
+    // truncated, so randomized order would make repeated identical calls return
+    // different conflicts.
+    let mut repo_groups: std::collections::BTreeMap<String, (Vec<String>, Vec<String>)> =
+        std::collections::BTreeMap::new();
 
     for card in cards {
         let id = card.stable_id.clone().unwrap_or_default();

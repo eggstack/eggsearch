@@ -33,6 +33,14 @@ pub enum WarningCode {
     SafeSearchUnenforced,
     /// Freshness hint requested but no provider applies server-side filtering.
     FreshnessUnenforced,
+    /// Exact date_range requested but no provider filters server-side.
+    DateRangeUnenforced,
+    /// Language hint requested but no provider filters server-side.
+    LanguageUnenforced,
+    /// Region hint requested but no provider filters server-side.
+    RegionUnenforced,
+    /// Domain filters enforced locally on result URLs, not provider-native.
+    DomainFiltersLocal,
 
     // --- Native Provider Availability ---
     /// intent=code but no code/repository search provider.
@@ -219,6 +227,10 @@ impl WarningCode {
             Self::PromptInjectionMarkerDetected => "prompt_injection_marker_detected",
             Self::SafeSearchUnenforced => "safe_search_unenforced",
             Self::FreshnessUnenforced => "freshness_unenforced",
+            Self::DateRangeUnenforced => "date_range_unenforced",
+            Self::LanguageUnenforced => "language_unenforced",
+            Self::RegionUnenforced => "region_unenforced",
+            Self::DomainFiltersLocal => "domain_filters_local",
             Self::NativeCodeSearchUnavailable => "native_code_search_unavailable",
             Self::NativeIssueSearchUnavailable => "native_issue_search_unavailable",
             Self::NativeReleaseSearchUnavailable => "native_release_search_unavailable",
@@ -313,6 +325,10 @@ impl WarningCode {
             | Self::MissingApiKey
             | Self::SafeSearchUnenforced
             | Self::FreshnessUnenforced
+            | Self::DateRangeUnenforced
+            | Self::LanguageUnenforced
+            | Self::RegionUnenforced
+            | Self::DomainFiltersLocal
             | Self::NativeCodeSearchUnavailable
             | Self::NativeIssueSearchUnavailable
             | Self::NativeReleaseSearchUnavailable
@@ -767,6 +783,10 @@ impl WarningAccumulator {
 const KNOWN_PREFIXES: &[(&str, WarningCode)] = &[
     ("safe_search_unenforced", WarningCode::SafeSearchUnenforced),
     ("freshness_unenforced", WarningCode::FreshnessUnenforced),
+    ("date_range_unenforced", WarningCode::DateRangeUnenforced),
+    ("language_unenforced", WarningCode::LanguageUnenforced),
+    ("region_unenforced", WarningCode::RegionUnenforced),
+    ("domain_filters_local", WarningCode::DomainFiltersLocal),
     (
         "native_code_search_unavailable",
         WarningCode::NativeCodeSearchUnavailable,

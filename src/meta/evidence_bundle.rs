@@ -359,7 +359,12 @@ fn apply_fetch_caps(
                 item.text = None;
                 item.truncated = true;
             } else if let Some(ref mut text) = item.text {
-                *text = crate::core::sanitize::bound_text(text, remaining).0;
+                let (bounded, was_truncated) = crate::core::sanitize::bound_text(text, remaining);
+                *text = bounded;
+                // A consumer told `truncated: false` treats the clipped text
+                // as verbatim evidence, which is exactly what the bundle
+                // exists to prevent.
+                item.truncated |= was_truncated;
             }
             total_chars_exceeded = true;
             break;

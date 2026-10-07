@@ -1628,6 +1628,49 @@ fn diagnostic_count_and_length_are_bounded() {
 }
 
 #[test]
+fn finding_budget_note_survives_the_diagnostic_cap() {
+    // The note is the only diagnostic explaining why findings are missing, so
+    // it must not be the tail the count cap truncates away.
+    let budget = DependencyParserBudget {
+        max_findings_per_file: 1,
+        max_diagnostics: 2,
+        ..DependencyParserBudget::standard()
+    };
+    let report = DependencyParseReport {
+        findings: vec![synthetic_finding("a"), synthetic_finding("b")],
+        status: ParseStatus::Complete,
+        diagnostics: vec![
+            eggsearch::core::security_applicability::ParseDiagnostic {
+                code: "dependency_parse_partial".to_string(),
+                message: "first".to_string(),
+                line: None,
+            },
+            eggsearch::core::security_applicability::ParseDiagnostic {
+                code: "dependency_parse_partial".to_string(),
+                message: "second".to_string(),
+                line: None,
+            },
+            eggsearch::core::security_applicability::ParseDiagnostic {
+                code: "dependency_parse_partial".to_string(),
+                message: "third".to_string(),
+                line: None,
+            },
+        ],
+    };
+    let bounded = truncate_report(report, budget);
+    assert_eq!(bounded.findings.len(), 1);
+    assert_eq!(bounded.status, ParseStatus::Partial);
+    assert!(
+        bounded
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "dependency_finding_budget_exceeded"),
+        "budget note must survive the diagnostic cap: {:?}",
+        bounded.diagnostics
+    );
+}
+
+#[test]
 fn every_diagnostic_code_maps_to_a_stable_warning() {
     use eggsearch::core::warning::convert_warnings;
     use eggsearch::meta::advisory_range::{parse_diagnostic_warning, weak_evidence_summary};

@@ -1170,6 +1170,10 @@ and `warnings` (legacy string array) for backward compatibility.
 | `profile_provider_not_built` | Notice | A profile provider is missing its API key |
 | `native_code_search_unavailable` | Notice | No GitHub/GitLab/Gitea provider configured |
 | `freshness_unenforced` | Notice | Freshness requested but no provider enforces it |
+| `date_range_unenforced` | Notice | Exact date range requested but no provider enforces it |
+| `language_unenforced` | Notice | Language hint requested but no provider enforces it |
+| `region_unenforced` | Notice | Region hint requested but no provider enforces it |
+| `domain_filters_local` | Notice | Domain filters applied locally to result URLs, not provider-natively |
 | `safe_search_unenforced` | Notice | Safe search requested but not enforced |
 | `kev_match` | Warning | CVE found in KEV catalog |
 | `version_match_unavailable` | Notice | Affected version could not be determined |

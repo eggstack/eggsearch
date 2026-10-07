@@ -192,6 +192,16 @@ impl MetadataSearchAdapter {
             effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
         );
 
+        // Rank providers by `queried_ids` order once, up front: both
+        // `providers_failed` and the attempts ledger are drained from a
+        // JoinSet (task completion order), so both need this map to be
+        // emitted deterministically.
+        let provider_rank: std::collections::HashMap<&str, usize> = queried_ids
+            .iter()
+            .enumerate()
+            .map(|(rank, id)| (id.as_str(), rank))
+            .collect();
+
         // Build attempt records from raw results and failures before
         // aggregating/consuming them for provider failure classification.
         let mut web_search_attempts: Vec<crate::core::retrieval_status::RetrievalAttempt> =
@@ -410,11 +420,6 @@ impl MetadataSearchAdapter {
                 message: err.to_string(),
             })
             .collect();
-        let provider_rank: std::collections::HashMap<&str, usize> = queried_ids
-            .iter()
-            .enumerate()
-            .map(|(rank, id)| (id.as_str(), rank))
-            .collect();
         providers_failed.sort_by_key(|failure| {
             provider_rank
                 .get(failure.id.as_str())
@@ -449,6 +454,17 @@ impl MetadataSearchAdapter {
                 });
             }
         }
+
+        // The attempts ledger is also completion-ordered (results, failures,
+        // then the deadline rows appended above). Sort it into `queried_ids`
+        // order so `retrieval_summary.dimensions` is stable across runs with
+        // identical inputs and outcomes.
+        web_search_attempts.sort_by_key(|attempt| {
+            provider_rank
+                .get(attempt.provider_id.as_str())
+                .copied()
+                .unwrap_or(usize::MAX)
+        });
 
         let providers_queried: Vec<String> = queried_ids;
 

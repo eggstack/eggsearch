@@ -378,6 +378,67 @@ fn bundle_limit_enforcement_max_total_chars() {
 }
 
 #[test]
+fn bundle_marks_char_clipped_fetch_items_as_truncated() {
+    // Text clipped to the remaining budget must be flagged: a consumer told
+    // `truncated: false` treats it as verbatim evidence.
+    let req = EvidenceBundleRequest {
+        fetches: vec![
+            EvidenceFetchInput {
+                source_id: None,
+                url: Some("https://a.com".into()),
+                locator: None,
+                fetched: true,
+                content_type: None,
+                language: None,
+                selected_span: None,
+                code_span_id: None,
+                line_start: None,
+                line_end: None,
+                text: Some("a".repeat(80)),
+                truncated: false,
+                trust: None,
+                trust_markers: None,
+                warnings: vec![],
+            },
+            EvidenceFetchInput {
+                source_id: None,
+                url: Some("https://b.com".into()),
+                locator: None,
+                fetched: true,
+                content_type: None,
+                language: None,
+                selected_span: None,
+                code_span_id: None,
+                line_start: None,
+                line_end: None,
+                text: Some("b".repeat(80)),
+                truncated: false,
+                trust: None,
+                trust_markers: None,
+                warnings: vec![],
+            },
+        ],
+        max_total_chars: Some(100),
+        ..empty_request()
+    };
+
+    let bundle = build_evidence_bundle(req);
+    assert!(bundle.limits.total_chars_exceeded);
+    let clipped = bundle
+        .fetched_items
+        .iter()
+        .find(|item| item.truncated)
+        .expect("char-clipped item must be marked truncated");
+    let text = clipped.text.as_deref().unwrap_or_default();
+    assert!(
+        text.chars().count() <= 100,
+        "clipped text must respect the char cap: {}",
+        text.chars().count()
+    );
+    assert!(text.ends_with('…'), "clipped text must be ellipsized");
+}
+
+#[test]
 fn bundle_preserves_trust_labels() {
     let req = EvidenceBundleRequest {
         sources: vec![

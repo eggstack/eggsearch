@@ -334,7 +334,11 @@ pub async fn run_batch_fetch(
     // so items are fetched one at a time, preserving strict
     // abort-on-first-failure semantics.
     let effective_concurrency = if continue_on_error { concurrency } else { 1 };
-    let mut results: Vec<BatchFetchResult> = Vec::with_capacity(effective_items.len());
+    // Results are recorded by item index and emitted in index order. Wave
+    // results arrive in JoinSet completion order and skipped items are
+    // discovered during the spawn loop, so a plain `Vec` of pushes would
+    // interleave them and desynchronize the index-based accounting below.
+    let mut results: Vec<Option<BatchFetchResult>> = vec![None; effective_items.len()];
     let mut total_chars: usize = 0;
     let mut budget_exhausted = false;
     let mut aborted = false;
@@ -348,7 +352,7 @@ pub async fn run_batch_fetch(
                 } else {
                     "batch aborted due to previous failure".to_string()
                 };
-                results.push(BatchFetchResult {
+                results[i] = Some(BatchFetchResult {
                     index: i,
                     item_type: match item {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
@@ -377,8 +381,10 @@ pub async fn run_batch_fetch(
             .unwrap_or(remaining_budget);
         let item_budget_cap = per_item_cap.max(1).min(per_wave_item_budget.max(1));
         // Maximum number of wave items that can be safely spawned without
-        // overshooting the total budget. When remaining_budget is smaller
-        // than wave_len, the remaining items are skipped before launching.
+        // overshooting the total budget. Every spawn reserves at least one
+        // character of `remaining_budget`, so the reservation count and the
+        // item count share the same unit: when remaining_budget is smaller
+        // than the wave length, the tail is skipped before launching.
         let launchable = remaining_budget;
 
         let mut join_set = tokio::task::JoinSet::new();
@@ -395,7 +401,7 @@ pub async fn run_batch_fetch(
             .skip(wave_start)
         {
             if budget_exhausted || spawned_in_wave >= launchable {
-                results.push(BatchFetchResult {
+                results[i] = Some(BatchFetchResult {
                     index: i,
                     item_type: match item {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
@@ -477,7 +483,7 @@ pub async fn run_batch_fetch(
                     total_chars += batch_result.chars_returned;
                     // The result's index is already correct from the future.
                     // No mutation needed.
-                    results.push(batch_result);
+                    results[*idx] = Some(batch_result);
                 }
                 None => {
                     // Index was not returned — task panicked or tool error.
@@ -488,7 +494,7 @@ pub async fn run_batch_fetch(
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
                     };
-                    results.push(BatchFetchResult {
+                    results[*idx] = Some(BatchFetchResult {
                         index: *idx,
                         item_type,
                         label: effective_items[*idx].label(),
@@ -509,6 +515,10 @@ pub async fn run_batch_fetch(
         }
     }
 
+    // Every item index is filled by the wave loop above (spawned, skipped, or
+    // synthesized as a failure), so flattening yields input order.
+    let results: Vec<BatchFetchResult> = results.into_iter().flatten().collect();
+
     if budget_exhausted {
         warnings.push(format!(
             "batch_total_budget_exhausted: total character budget of {total_cap} was reached; remaining items skipped"
@@ -527,7 +537,12 @@ pub async fn run_batch_fetch(
     let mut cache_misses = 0usize;
     let mut cache_bypassed = 0usize;
     let mut cache_not_cacheable = 0usize;
-    for (result, item) in results.iter().zip(effective_items.iter()) {
+    // `results` is in input order, so this pairs each result with its own item.
+    for (item_index, (result, item)) in results.iter().zip(effective_items.iter()).enumerate() {
+        debug_assert_eq!(
+            result.index, item_index,
+            "batch_fetch result out of input order"
+        );
         if item.focus_query().is_some() && result.ok {
             if let Some(payload) = result.response.as_ref() {
                 if let Some(focus) = payload.get("focus") {

@@ -490,7 +490,7 @@ The `[fetch.browser]` section configures optional headless Chrome/Chromium rende
 | `max_requests` | `100` | Maximum requests per browser session |
 | `max_dom_bytes` | `4000000` | Maximum DOM size |
 | `global_concurrency` | `1` | Global browser concurrency |
-| `per_origin_concurrency` | `1` | Per-origin browser concurrency |
+| `per_origin_concurrency` | `1` | Per-origin browser render cap (combined with `origin_browser_concurrency` via `min`) |
 | `block_media` | `true` | Block media autoplay |
 
 ### Persistent Browser Profiles

@@ -394,10 +394,8 @@ pub async fn run_web_fetch(
                                     &raw_entry.validators,
                                 );
                             if !conditional.is_empty() {
-                                if let Ok((status, reval_headers, _, _)) =
-                                    client.fetch_conditional(trimmed_url, &conditional).await
-                                {
-                                    if status == 304 {
+                                match client.fetch_conditional(trimmed_url, &conditional).await {
+                                    Ok((304, reval_headers, _, _)) => {
                                         metadata.cache_status = CacheStatus::Revalidated;
                                         let mut updated_freshness = raw_entry.freshness.clone();
                                         let mut updated_validators = raw_entry.validators.clone();
@@ -432,6 +430,38 @@ pub async fn run_web_fetch(
                                         } else {
                                             derive().await.ok()
                                         };
+                                    }
+                                    Ok(_) => {}
+                                    Err(reval_err) => {
+                                        // Revalidation failed. Serve the cached body
+                                        // instead of immediately re-requesting the same
+                                        // origin unconditionally: that doubles the load
+                                        // on an origin that has just signalled it is
+                                        // unhealthy, and the cause was previously
+                                        // discarded entirely.
+                                        tracing::warn!(
+                                            url = trimmed_url,
+                                            error = %reval_err,
+                                            "conditional revalidation failed; serving cached response"
+                                        );
+                                        let cached =
+                                            match cache.get_derived_shared(&derived_key).await {
+                                                Some(derived) => Some(cached_document_response(
+                                                    trimmed_url,
+                                                    &raw_entry,
+                                                    &derived.response,
+                                                )),
+                                                None => derive().await.ok(),
+                                            };
+                                        if let Some(mut resp) = cached {
+                                            metadata.cache_status = CacheStatus::Hit;
+                                            resp.cache_status = CacheStatus::Hit;
+                                            resp.warnings.push(format!(
+                                                "cache_revalidation_failed: serving cached \
+                                                 response without revalidation ({reval_err})"
+                                            ));
+                                            cached_response = Some(resp);
+                                        }
                                     }
                                 }
                             }

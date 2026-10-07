@@ -672,7 +672,10 @@ fn warning_code_no_duplicate_serialized_names() {
         WarningCode::UntrustedLocalWorkspaceContent,
         WarningCode::PromptInjectionMarkerDetected,
         WarningCode::SafeSearchUnenforced,
-        WarningCode::FreshnessUnenforced,
+        WarningCode::DateRangeUnenforced,
+        WarningCode::LanguageUnenforced,
+        WarningCode::RegionUnenforced,
+        WarningCode::DomainFiltersLocal,
         WarningCode::NativeCodeSearchUnavailable,
         WarningCode::NativeIssueSearchUnavailable,
         WarningCode::NativeReleaseSearchUnavailable,
@@ -981,6 +984,10 @@ fn all_warning_codes_serialize_to_expected_snake_case() {
         ),
         (&WarningCode::SafeSearchUnenforced, "safe_search_unenforced"),
         (&WarningCode::FreshnessUnenforced, "freshness_unenforced"),
+        (&WarningCode::DateRangeUnenforced, "date_range_unenforced"),
+        (&WarningCode::LanguageUnenforced, "language_unenforced"),
+        (&WarningCode::RegionUnenforced, "region_unenforced"),
+        (&WarningCode::DomainFiltersLocal, "domain_filters_local"),
         (
             &WarningCode::NativeCodeSearchUnavailable,
             "native_code_search_unavailable",
@@ -1159,7 +1166,10 @@ fn all_warning_codes_have_default_severity() {
         WarningCode::UntrustedLocalWorkspaceContent,
         WarningCode::PromptInjectionMarkerDetected,
         WarningCode::SafeSearchUnenforced,
-        WarningCode::FreshnessUnenforced,
+        WarningCode::DateRangeUnenforced,
+        WarningCode::LanguageUnenforced,
+        WarningCode::RegionUnenforced,
+        WarningCode::DomainFiltersLocal,
         WarningCode::NativeCodeSearchUnavailable,
         WarningCode::NativeIssueSearchUnavailable,
         WarningCode::NativeReleaseSearchUnavailable,
@@ -1766,7 +1776,10 @@ fn warning_code_as_str_all_snake_case() {
         WarningCode::UntrustedLocalWorkspaceContent,
         WarningCode::PromptInjectionMarkerDetected,
         WarningCode::SafeSearchUnenforced,
-        WarningCode::FreshnessUnenforced,
+        WarningCode::DateRangeUnenforced,
+        WarningCode::LanguageUnenforced,
+        WarningCode::RegionUnenforced,
+        WarningCode::DomainFiltersLocal,
         WarningCode::NativeCodeSearchUnavailable,
         WarningCode::NativeIssueSearchUnavailable,
         WarningCode::NativeReleaseSearchUnavailable,
@@ -2105,4 +2118,54 @@ fn web_fetch_response_raw_text_truncated_present_when_true() {
     };
     let json = serde_json::to_value(&resp).unwrap();
     assert_eq!(json["raw_text_truncated"], true);
+}
+
+#[test]
+fn every_adapter_capability_prefix_maps_to_a_typed_warning() {
+    // The web adapter emits these prefixes from CapabilityEnforcementTelemetry.
+    // If one is missing from the warning registry it silently degrades to
+    // `unknown_warning`, which is indistinguishable from an unclassified
+    // warning for an agent reading `warnings[].code`.
+    use eggsearch::core::warning::{search_warning_to_agent_warning, WarningCode};
+    use eggsearch::core::SearchWarning;
+
+    let cases = [
+        ("safe_search_unenforced", "no provider enforces safe search"),
+        ("freshness_unenforced", "no server-side freshness filtering"),
+        ("date_range_unenforced", "no server-side date filtering"),
+        ("language_unenforced", "no server-side language filtering"),
+        ("region_unenforced", "no server-side region filtering"),
+        (
+            "domain_filters_local",
+            "filters applied locally to result URLs",
+        ),
+        ("native_code_search_unavailable", "no native code provider"),
+        (
+            "native_issue_search_unavailable",
+            "no native issue provider",
+        ),
+        (
+            "native_release_search_unavailable",
+            "no native release provider",
+        ),
+        (
+            "native_advisory_search_unavailable",
+            "no native advisory provider",
+        ),
+    ];
+
+    for (prefix, description) in cases {
+        let warning = SearchWarning::new("_system", format!("{prefix}: {description}"));
+        let agent_warning = search_warning_to_agent_warning(&warning);
+        assert_ne!(
+            agent_warning.code,
+            WarningCode::UnknownWarning,
+            "prefix `{prefix}` has no registered warning code"
+        );
+        assert_eq!(
+            agent_warning.code.as_str(),
+            prefix,
+            "prefix `{prefix}` must map to its own code"
+        );
+    }
 }

@@ -105,7 +105,7 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `retry_base_delay_ms` | `u64` | `250` | Backoff base |
 | `retry_max_delay_ms` | `u64` | `4000` | Backoff ceiling |
 | `origin_http_concurrency` | `usize` | `2` | Concurrent HTTP requests per origin |
-| `origin_browser_concurrency` | `usize` | `1` | Concurrent browser requests per origin |
+| `origin_browser_concurrency` | `usize` | `1` | Concurrent browser renders per origin (capped by `browser.per_origin_concurrency`) |
 | `origin_circuit_failure_threshold` | `u8` | `3` | Retryable failures before the circuit opens |
 | `origin_circuit_duration_ms` | `u64` | `60_000` | Circuit open duration |
 | `cache` | `FetchCacheSection` | see below | In-memory fetch cache |

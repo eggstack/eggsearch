@@ -339,8 +339,9 @@ pub struct RepoMapRequest {
     /// Timeout in milliseconds for the overall request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Explicit list of providers to query. When empty, the server
-    /// selects providers based on the host and configuration.
+    /// Explicit list of providers to query. `repo_map` reads the tree from
+    /// the single forge named by `host`, so this list is not consulted; the
+    /// MCP tool rejects a non-empty value rather than silently ignoring it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers: Vec<String>,
 }

@@ -96,16 +96,18 @@ impl KevClient {
     pub async fn lookup(&self, cve_id: &str) -> Result<Option<KevMetadata>, anyhow::Error> {
         let normalized = cve_id.to_uppercase();
 
-        // Check cache first
+        // A warm cache answers both hits and misses: freshness is a property of
+        // the catalog, not of whether this particular CVE is in it.
         {
             let cache = self.cache.read().await;
-            if let Some(entry) = cache.entries.get(&normalized) {
-                if cache
-                    .fetched_at
-                    .is_some_and(|t| t.elapsed() < self.cache_ttl)
-                {
-                    return Ok(Some(entry.metadata.clone()));
-                }
+            if cache
+                .fetched_at
+                .is_some_and(|t| t.elapsed() < self.cache_ttl)
+            {
+                return Ok(cache
+                    .entries
+                    .get(&normalized)
+                    .map(|entry| entry.metadata.clone()));
             }
         }
 
@@ -247,5 +249,65 @@ mod tests {
         let client = crate::meta::engines::build_http_client(None).expect("test client");
         let kev = KevClient::new(client);
         assert!(!kev.is_cache_fresh().await);
+    }
+
+    #[tokio::test]
+    async fn negative_lookup_against_a_warm_cache_does_not_refetch() {
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
+        let kev = KevClient::new(client);
+        {
+            let mut cache = kev.cache.write().await;
+            cache.entries.insert(
+                "CVE-2021-0001".to_string(),
+                KevEntry {
+                    metadata: KevMetadata {
+                        vendor: Some("TestVendor".to_string()),
+                        product: Some("TestProduct".to_string()),
+                        required_action: None,
+                        due_date: None,
+                        known_ransomware_usage: false,
+                        catalog_date: None,
+                    },
+                    cve_id: "CVE-2021-0001".to_string(),
+                },
+            );
+            cache.fetched_at = Some(Instant::now());
+        }
+
+        // A fresh catalog answers misses without re-downloading it. Without
+        // this, every non-KEV CVE in a security_search would trigger a full
+        // catalog fetch against CISA.
+        assert!(kev.lookup("CVE-1999-9999").await.unwrap().is_none());
+        assert!(kev.is_cache_fresh().await);
+
+        let hits = kev.cache.read().await.entries.len();
+        assert_eq!(hits, 1, "a negative lookup must not mutate the catalog");
+    }
+
+    #[tokio::test]
+    async fn positive_lookup_against_a_warm_cache_does_not_refetch() {
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
+        let kev = KevClient::new(client);
+        {
+            let mut cache = kev.cache.write().await;
+            cache.entries.insert(
+                "CVE-2021-0001".to_string(),
+                KevEntry {
+                    metadata: KevMetadata {
+                        vendor: Some("TestVendor".to_string()),
+                        product: Some("TestProduct".to_string()),
+                        required_action: None,
+                        due_date: None,
+                        known_ransomware_usage: false,
+                        catalog_date: None,
+                    },
+                    cve_id: "CVE-2021-0001".to_string(),
+                },
+            );
+            cache.fetched_at = Some(Instant::now());
+        }
+
+        let hit = kev.lookup("cve-2021-0001").await.unwrap();
+        assert_eq!(hit.and_then(|m| m.vendor).as_deref(), Some("TestVendor"));
     }
 }

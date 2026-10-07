@@ -155,7 +155,7 @@ Grouped by responsibility; `mod.rs` declares modules and re-exports the public s
 
 `sanitize.rs` exposes four primitives; callers compose them according to the `sanitize_output` flag (production default `true`, tests default `false`):
 
-1. **Strip** — `strip_control_chars` removes NUL/CR, ASCII control ranges, bidi controls (U+200E-200F, U+202A-202E, U+2066-2069), zero-width chars (U+200B-200D, U+FEFF), and U+2028-2029 separators; NUL, CR, and U+2028/U+2029 are replaced by a space rather than dropped, and LF/TAB are preserved. Returns the cleaned string plus removal count.
+1. **Strip** — `strip_control_chars` removes NUL/CR, ASCII control ranges, bidi controls (U+061C, U+200E-200F, U+202A-202E, U+2066-2069), zero-width chars (U+200B-200D, U+FEFF), and U+2028-2029 separators; NUL, CR, and U+2028/U+2029 are replaced by a space rather than dropped, and LF/TAB are preserved. Returns the cleaned string plus removal count.
 2. **Bound** — `bound_text` clamps to `max_chars` (`TITLE_MAX_CHARS` 200, `SNIPPET_MAX_CHARS` 500, excerpt caps in `source_card.rs`) with word-safe `truncate_at_word` where applicable; truncation appends `…` and sets the truncated flag.
 3. **Frame** — `frame` wraps output in `<<<EXTERNAL_UNTRUSTED field=... id=...>>>` … `<<<END>>>` delimiters when `sanitize_output` is on (Tier 2).
 4. **Scan** — `scan_injection_markers` reports `MarkerHit` entries (`ignore_previous`, `disregard_all`, `system_colon`, `assistant_colon`, `im_start`, `im_end`, `chatml_tag` families) without mutating input (Tier 3).

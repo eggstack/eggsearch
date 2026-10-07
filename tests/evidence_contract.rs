@@ -905,3 +905,92 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .output()
         .ok();
 }
+
+#[tokio::test]
+async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
+    use httpmock::prelude::*;
+
+    // A one-character total budget leaves room for exactly one item, so item 1
+    // is skipped during the spawn loop while item 0 lands after the JoinSet
+    // drains. Pushing skips first reversed the whole results vector and
+    // mis-attributed every telemetry counter.
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/first");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("first item body");
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/second");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("second item body");
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let items: Vec<eggsearch::core::batch_fetch::BatchFetchItem> = ["/first", "/second"]
+        .into_iter()
+        .map(|path| eggsearch::core::batch_fetch::BatchFetchItem::Web {
+            url: server.url(path),
+            extract_mode: Some(ExtractMode::Text),
+            include_links: Some(false),
+            max_chars: Some(12000),
+            cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+        })
+        .collect();
+
+    let result = run_batch_fetch(
+        state.clone(),
+        eggsearch::mcp::tools::BatchFetchArgs {
+            items,
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(1),
+            continue_on_error: Some(true),
+            timeout_ms: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("batch_fetch ok");
+
+    let arr = result["results"].as_array().expect("results is array");
+    assert_eq!(arr.len(), 2, "one result per input item");
+    for (expected_index, entry) in arr.iter().enumerate() {
+        assert_eq!(
+            entry["index"].as_u64(),
+            Some(expected_index as u64),
+            "result {expected_index} is out of input order: {arr:?}"
+        );
+    }
+    // The skipped item must still be the last one, and the launched item the
+    // first — with labels carrying the URL each result describes.
+    assert_eq!(arr[0]["ok"].as_bool(), Some(true), "item 0 must be fetched");
+    assert!(
+        arr[0]["label"]
+            .as_str()
+            .is_some_and(|l| l.contains("/first")),
+        "result 0 must describe item 0: {arr:?}"
+    );
+    assert_eq!(
+        arr[1]["ok"].as_bool(),
+        Some(false),
+        "item 1 must be skipped once the budget is spent"
+    );
+    assert!(
+        arr[1]["label"]
+            .as_str()
+            .is_some_and(|l| l.contains("/second")),
+        "result 1 must describe item 1: {arr:?}"
+    );
+}

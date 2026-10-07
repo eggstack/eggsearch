@@ -129,7 +129,9 @@ decisions. `AgentWarning` carries stable `code` (`WarningCode`),
 (`untrusted_external_content`,
 `untrusted_local_workspace_content`,
 `prompt_injection_marker_detected`), capability enforcement
-(`safe_search_unenforced`, `freshness_unenforced`), native-provider
+(`safe_search_unenforced`, `freshness_unenforced`, `date_range_unenforced`,
+`language_unenforced`, `region_unenforced`, `domain_filters_local`),
+native-provider
 availability (`native_code_search_unavailable`,
 `native_issue_search_unavailable`,
 `native_release_search_unavailable`,

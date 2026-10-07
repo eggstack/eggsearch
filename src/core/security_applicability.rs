@@ -560,12 +560,14 @@ pub fn truncate_report(
 ) -> DependencyParseReport {
     let (findings, budget_note) = truncate_findings(report.findings, budget.max_findings_per_file);
     report.findings = findings;
-    if let Some(note) = budget_note {
-        report.diagnostics.push(note);
-        report.status = ParseStatus::Partial;
-    }
     if report.diagnostics.len() > budget.max_diagnostics {
         report.diagnostics.truncate(budget.max_diagnostics);
+        report.status = ParseStatus::Partial;
+    }
+    // Appended after the diagnostic cap so the note explaining *why* findings
+    // are missing is never the diagnostic the truncate drops.
+    if let Some(note) = budget_note {
+        report.diagnostics.push(note);
         report.status = ParseStatus::Partial;
     }
     for diagnostic in &mut report.diagnostics {

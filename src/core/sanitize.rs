@@ -3,9 +3,9 @@
 //! Three operations are provided:
 //! - [`strip_control_chars`]: replaces NUL, CR, and line separators with
 //!   spaces; removes ASCII 1-8/11-12/14-31/127,
-//!   bidi controls (U+200E-200F, U+202A-202E, U+2066-2069), and zero-width
-//!   characters (U+200B-200D, U+FEFF). Returns the cleaned string and
-//!   the number of characters removed.
+//!   bidi controls (U+061C, U+200E-200F, U+202A-202E, U+2066-2069), and
+//!   zero-width characters (U+200B-200D, U+FEFF). Returns the cleaned
+//!   string and the number of characters removed.
 //! - [`bound_text`]: clamps to at most `max_chars` characters. If
 //!   truncation occurred, appends a single `…` (U+2026, 3 bytes UTF-8
 //!   but 1 char). Returns `(text, truncated)`.
@@ -104,7 +104,7 @@ static CHATML_TAG: LazyLock<Regex> = LazyLock::new(|| {
 ///
 /// Replaces NUL (`\0`), CR (`\r`), and line/paragraph separators with spaces.
 /// Removes ASCII 1-8/11-12/14-31/127 and bidi
-/// controls (U+200E-200F, U+202A-202E, U+2066-2069), zero-width
+/// controls (U+061C, U+200E-200F, U+202A-202E, U+2066-2069), zero-width
 /// characters (U+200B-200D, U+FEFF), and line/paragraph separators
 /// (U+2028-U+2029). LF (`\n`) and TAB (`\t`) are preserved.
 ///
@@ -141,6 +141,9 @@ fn is_unsafe_char(c: char) -> bool {
         '\u{200E}'..='\u{200F}' => true,
         '\u{202A}'..='\u{202E}' => true,
         '\u{2066}'..='\u{2069}' => true,
+        // Arabic Letter Mark: Bidi_Control and directionally forceful like
+        // the isolates above, but outside their contiguous ranges.
+        '\u{061C}' => true,
         // Zero-width
         '\u{200B}'..='\u{200D}' => true,
         '\u{FEFF}' => true,
@@ -285,7 +288,13 @@ fn scan_all_patterns(s: &str) -> Vec<MarkerHit> {
 fn is_evasive_char(c: char) -> bool {
     matches!(
         c,
-        '\0' | '\r' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
+        '\0'
+            | '\r'
+            | '\u{061C}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{2028}'..='\u{202E}'
+            | '\u{2066}'..='\u{2069}'
+            | '\u{FEFF}'
     )
 }
 
@@ -438,6 +447,16 @@ mod tests {
         let (out, n) = strip_control_chars(s);
         assert_eq!(out, "abcdefghijkl");
         assert_eq!(n, 11);
+    }
+
+    #[test]
+    fn strip_removes_arabic_letter_mark() {
+        // U+061C is Bidi_Control and directionally forceful, but sits outside
+        // the U+200E-200F / U+202A-202E / U+2066-2069 ranges the other arms use.
+        let s = "a\u{061C}b\u{061C}c";
+        let (out, n) = strip_control_chars(s);
+        assert_eq!(out, "abc");
+        assert_eq!(n, 2);
     }
 
     #[test]

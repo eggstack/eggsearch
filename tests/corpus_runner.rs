@@ -301,7 +301,7 @@ async fn corpus_repo_map_returns_structure() {
         include_ci: None,
         include_security: None,
         timeout_ms: None,
-        providers: vec!["mock_a".into()],
+        providers: vec![],
         response_detail: None,
     };
     let v = run_repo_map(state, args)
@@ -349,6 +349,37 @@ async fn corpus_repo_map_missing_owner_repo_returns_error() {
     };
     let res = run_repo_map(state, args).await;
     assert!(res.is_err(), "missing owner/repo should fail");
+}
+
+#[tokio::test]
+async fn corpus_repo_map_rejects_ignored_providers() {
+    // `providers` used to be accepted and then silently dropped, so an agent
+    // asking for a self-hosted forge got another host's tree with no signal.
+    let state = state_with(corpus_cfg(), vec![], Duration::from_secs(5));
+    let args = RepoMapArgs {
+        host: None,
+        owner: "tokio-rs".into(),
+        repo: "axum".into(),
+        ref_name: None,
+        commit_sha: None,
+        max_entries: None,
+        max_depth: None,
+        include_files: None,
+        include_directories: None,
+        include_ci: None,
+        include_security: None,
+        timeout_ms: None,
+        providers: vec!["gitlab_code".into()],
+        response_detail: None,
+    };
+    let err = match run_repo_map(state, args).await {
+        Ok(_) => panic!("providers must be rejected, not silently ignored"),
+        Err(err) => err.to_string(),
+    };
+    assert!(
+        err.contains("providers") && err.contains("host"),
+        "error must name the field and point at `host`: {err}"
+    );
 }
 
 // ---------------------------------------------------------------------------

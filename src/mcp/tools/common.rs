@@ -637,6 +637,35 @@ pub(crate) async fn run_browser_fetch(
     policy: &crate::fetch::browser::RenderPolicy,
     profile_dir: Option<&std::path::Path>,
 ) -> Result<crate::fetch::browser::BrowserFetchResult, crate::fetch::browser::BrowserFetchError> {
+    // Headless renders are the most expensive thing this server does, so they
+    // are bounded twice: process-wide by `[fetch.browser].global_concurrency`
+    // and per origin by `OriginPolicy::browser_concurrency`. Browser escalation
+    // runs before the direct-fetch retry loop, so without these permits a
+    // burst of `web_fetch` calls would launch one Chromium per call.
+    let _global_permit = match state.browser_global_semaphore() {
+        Some(sem) => Some(sem.acquire_owned().await.map_err(|_| {
+            crate::fetch::browser::BrowserFetchError::LaunchFailed(
+                "browser concurrency limiter closed".to_string(),
+            )
+        })?),
+        None => None,
+    };
+    let _origin_permit = match state.origin_controller.as_ref() {
+        Some(controller) => {
+            let key = url::Url::parse(url)
+                .ok()
+                .and_then(|parsed| crate::fetch::origin::OriginKey::from_url(&parsed))
+                .ok_or_else(|| {
+                    crate::fetch::browser::BrowserFetchError::LaunchFailed(
+                        "cannot derive origin key for browser render".to_string(),
+                    )
+                })?;
+            Some(controller.acquire_browser(&key).await.map_err(|e| {
+                crate::fetch::browser::BrowserFetchError::LaunchFailed(e.to_string())
+            })?)
+        }
+        None => None,
+    };
     let shared = state.browser_lifecycle().ok_or_else(|| {
         crate::fetch::browser::BrowserFetchError::LaunchFailed(
             "browser lifecycle unavailable".to_string(),

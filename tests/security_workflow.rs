@@ -820,6 +820,8 @@ mod security_context_safety {
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
             #[cfg(feature = "browser")]
+            browser_global_semaphore: None,
+            #[cfg(feature = "browser")]
             browser_discovery_state:
                 eggsearch::fetch::browser::types::BrowserDiscoveryState::NotFound,
         });
@@ -882,6 +884,8 @@ mod security_context_safety {
             profile_manager: None,
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
+            #[cfg(feature = "browser")]
+            browser_global_semaphore: None,
             #[cfg(feature = "browser")]
             browser_discovery_state:
                 eggsearch::fetch::browser::types::BrowserDiscoveryState::NotFound,

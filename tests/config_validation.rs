@@ -878,6 +878,26 @@ fn save_and_load_roundtrip_through_filesystem() {
 }
 
 #[test]
+fn save_is_atomic_and_leaves_no_staging_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let cfg = default_config();
+    cfg.save(&path).unwrap();
+    cfg.save(&path).unwrap();
+
+    let entries: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .collect();
+    assert_eq!(
+        entries,
+        vec!["config.toml".to_string()],
+        "atomic save must rename the staging file into place, not leave one behind"
+    );
+    AppConfig::load(&path).expect("saved config must still parse");
+}
+
+#[test]
 fn load_missing_file_returns_defaults() {
     let path = std::path::Path::new("/nonexistent/eggsearch_test_config.toml");
     let cfg = AppConfig::load(path).unwrap();

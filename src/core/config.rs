@@ -890,13 +890,26 @@ impl AppConfig {
     }
 
     /// Save the config to the given path. Creates parent dirs as needed.
+    ///
+    /// The write is atomic (staged in a sibling temp file, then renamed) so a
+    /// crash mid-write cannot leave a truncated TOML file that fails to parse
+    /// on the next start.
     pub fn save(&self, path: &Path) -> CoreResult<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let text = toml::to_string_pretty(self).map_err(|e| CoreError::TomlSer(e.to_string()))?;
-        std::fs::write(path, text)?;
-        Ok(())
+        use std::io::Write;
+        let parent = path.parent().ok_or_else(|| {
+            CoreError::Io(std::io::Error::other("config path has no parent directory"))
+        })?;
+        let mut staged = tempfile::NamedTempFile::new_in(parent)?;
+        staged.write_all(text.as_bytes())?;
+        staged.as_file().sync_all()?;
+        staged
+            .persist(path)
+            .map(|_| ())
+            .map_err(|e| CoreError::Io(e.error))
     }
 
     /// Resolve the effective provider list for a request.

@@ -265,7 +265,7 @@ pub fn resolve_repo_semantics(
                 let parsed = RepoSearchMode::parse(trimmed).ok_or_else(|| {
                     ToolError::execution_with_repair(
                         ToolErrorCode::InvalidSemanticValue,
-                        "invalid mode 'invalid'; accepted values: default, exact_error. Repair: omit mode and use goal 'debug' for error investigation.".to_string().replace("invalid", m),
+                        format!("invalid mode '{m}'; accepted values: default, exact_error. Repair: omit mode and use goal 'debug' for error investigation."),
                         RepairHint::new(Some("mode"), &["default", "exact_error"], Some("exact_error")),
                     )
                 })?;

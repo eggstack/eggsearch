@@ -199,6 +199,25 @@ fn security_search_advertises_goal_and_include() {
 }
 
 #[test]
+fn repo_map_hides_infrastructure_controls() {
+    // `providers` was advertised but never read, so an agent could target a
+    // self-hosted forge and silently receive another host's tree. `timeout_ms`
+    // is the one tuning knob repo_map legitimately advertises.
+    let schema = schema_for("repo_map");
+    assert!(
+        !has_prop(&schema, "providers"),
+        "repo_map providers must stay hidden"
+    );
+    assert!(has_prop(&schema, "owner"), "owner must stay advertised");
+    assert!(has_prop(&schema, "repo"), "repo must stay advertised");
+    assert!(has_prop(&schema, "host"), "host must stay advertised");
+    assert!(
+        has_prop(&schema, "timeout_ms"),
+        "repo_map timeout_ms is an advertised knob"
+    );
+}
+
+#[test]
 fn legacy_repo_fields_still_deserialize() {
     let json = r#"{
         "query": "Router::layer",

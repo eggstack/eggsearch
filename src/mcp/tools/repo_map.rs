@@ -40,8 +40,12 @@ pub struct RepoMapArgs {
     /// Per-request timeout override in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Explicit provider ID list.
+    /// Explicit provider ID list. Hidden from the advertised schema: the
+    /// tree is always fetched from the single host named by `host`, so there
+    /// is no provider set to select. A non-empty value is rejected rather
+    /// than ignored.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
     pub providers: Vec<String>,
     /// Response detail: compact, standard, or diagnostic (default diagnostic).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +111,14 @@ pub async fn run_repo_map(
     }
 
     let host = parse_code_host_arg(args.host.as_deref())?;
+
+    if !args.providers.is_empty() {
+        return Err(ToolError::Validation(
+            "providers is not supported by repo_map; the tree is always fetched from the single \
+             host named by `host`. Remove `providers` or set `host` to the intended forge."
+                .to_string(),
+        ));
+    }
 
     let req = RepoMapRequest {
         query: String::new(),

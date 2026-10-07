@@ -122,6 +122,29 @@ fn canonical_invalid_goal_carries_accepted_values() {
 }
 
 #[test]
+fn canonical_invalid_mode_names_the_rejected_value_once() {
+    // The message used to be built by `.replace("invalid", mode)` over a
+    // literal containing `invalid` twice, so `mode: "fancy"` produced
+    // "fancy mode 'fancy'" — asserting the rejected value was valid.
+    let err =
+        eggsearch::mcp::tools::canonical::resolve_repo_semantics(None, None, Some("fancy"), None)
+            .unwrap_err();
+    assert_eq!(err.code(), ToolErrorCode::InvalidSemanticValue);
+    let message = err.error_payload()["message"]
+        .as_str()
+        .expect("payload carries a message")
+        .to_string();
+    assert!(
+        message.starts_with("invalid mode 'fancy'"),
+        "message must state the mode is invalid: {message}"
+    );
+    assert!(
+        !message.contains("fancy mode"),
+        "the rejected value must never be labelled a mode: {message}"
+    );
+}
+
+#[test]
 fn all_stable_tools_have_output_schemas() {
     for name in tool_contract::tool_names() {
         let schema = output_schema::output_schema_for(name);

@@ -63,6 +63,11 @@ pub struct ServerState {
     /// warm browser process for reuse across requests.
     #[cfg(feature = "browser")]
     pub browser_lifecycle: Option<Arc<BrowserLifecycle>>,
+    /// Global cap on concurrent headless renders, sized by
+    /// `[fetch.browser].global_concurrency`. `None` when the browser
+    /// feature is not compiled in or rendering is disabled.
+    #[cfg(feature = "browser")]
+    pub browser_global_semaphore: Option<Arc<tokio::sync::Semaphore>>,
     /// Cached browser discovery result computed at startup. Stored to
     /// avoid re-probing the filesystem on every `provider_status` call.
     #[cfg(feature = "browser")]
@@ -90,6 +95,18 @@ impl std::fmt::Debug for ServerState {
 }
 
 impl ServerState {
+    /// Effective per-origin headless-render cap: the tighter of
+    /// `[fetch].origin_browser_concurrency` and
+    /// `[fetch.browser].per_origin_concurrency`. Both default to 1, and both
+    /// describe the same limit, so the smaller wins rather than silently
+    /// ignoring either knob.
+    fn effective_browser_concurrency(config: &AppConfig) -> usize {
+        config
+            .fetch
+            .origin_browser_concurrency
+            .min(config.fetch.browser.per_origin_concurrency)
+    }
+
     /// Build a new server state.
     ///
     /// The adapter is constructed from the effective enabled provider
@@ -184,7 +201,7 @@ impl ServerState {
         let origin_controller = if config.fetch.enabled {
             let policy = OriginPolicy {
                 http_concurrency: config.fetch.origin_http_concurrency,
-                browser_concurrency: config.fetch.origin_browser_concurrency,
+                browser_concurrency: Self::effective_browser_concurrency(&config),
                 retry_max_attempts: config.fetch.retry_max_attempts,
                 retry_base_delay_ms: config.fetch.retry_base_delay_ms,
                 retry_max_delay_ms: config.fetch.retry_max_delay_ms,
@@ -265,6 +282,14 @@ impl ServerState {
         } else {
             None
         };
+        #[cfg(feature = "browser")]
+        let browser_global_semaphore = if config.fetch.browser.enabled {
+            Some(Arc::new(tokio::sync::Semaphore::new(
+                config.fetch.browser.global_concurrency.max(1),
+            )))
+        } else {
+            None
+        };
 
         // Build local workspace backend
         let local_backend = match LocalWorkspaceBackend::new(config.local.clone()) {
@@ -296,6 +321,8 @@ impl ServerState {
             #[cfg(feature = "browser")]
             browser_lifecycle,
             #[cfg(feature = "browser")]
+            browser_global_semaphore,
+            #[cfg(feature = "browser")]
             browser_discovery_state,
         })
     }
@@ -322,7 +349,7 @@ impl ServerState {
         let origin_controller = if config.fetch.enabled {
             let policy = OriginPolicy {
                 http_concurrency: config.fetch.origin_http_concurrency,
-                browser_concurrency: config.fetch.origin_browser_concurrency,
+                browser_concurrency: Self::effective_browser_concurrency(&config),
                 retry_max_attempts: config.fetch.retry_max_attempts,
                 retry_base_delay_ms: config.fetch.retry_base_delay_ms,
                 retry_max_delay_ms: config.fetch.retry_max_delay_ms,
@@ -360,6 +387,8 @@ impl ServerState {
             #[cfg(feature = "browser")]
             browser_lifecycle: None,
             #[cfg(feature = "browser")]
+            browser_global_semaphore: None,
+            #[cfg(feature = "browser")]
             browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState::NotFound,
         }
     }
@@ -378,6 +407,13 @@ impl ServerState {
     #[cfg(feature = "browser")]
     pub fn browser_lifecycle(&self) -> Option<Arc<BrowserLifecycle>> {
         self.browser_lifecycle.clone()
+    }
+
+    /// Returns the semaphore capping concurrent headless renders
+    /// process-wide, sized by `[fetch.browser].global_concurrency`.
+    #[cfg(feature = "browser")]
+    pub fn browser_global_semaphore(&self) -> Option<Arc<tokio::sync::Semaphore>> {
+        self.browser_global_semaphore.clone()
     }
 
     /// Returns the cached local repository inventory, re-running the

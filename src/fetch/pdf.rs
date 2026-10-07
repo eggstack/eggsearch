@@ -134,7 +134,9 @@ pub fn parse_pdf_page_spec(spec: &str, max_pages: usize) -> Result<Vec<u32>, Fet
         ));
     }
 
-    let mut pages = Vec::new();
+    // A set keeps dedup O(log n) per token, so a hostile spec cannot force
+    // quadratic work before `max_pages` rejects it. It also iterates sorted.
+    let mut selected: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
     for part in spec.split(',') {
         let part = part.trim();
         if part.is_empty() {
@@ -173,9 +175,7 @@ pub fn parse_pdf_page_spec(spec: &str, max_pages: usize) -> Result<Vec<u32>, Fet
             }
 
             for p in start..=end {
-                if !pages.contains(&p) {
-                    pages.push(p);
-                }
+                selected.insert(p);
             }
         } else {
             let p: u32 = part.parse().map_err(|_| {
@@ -186,13 +186,11 @@ pub fn parse_pdf_page_spec(spec: &str, max_pages: usize) -> Result<Vec<u32>, Fet
                     "page numbers are one-indexed; page 0 is not valid".into(),
                 ));
             }
-            if !pages.contains(&p) {
-                pages.push(p);
-            }
+            selected.insert(p);
         }
     }
 
-    pages.sort();
+    let pages: Vec<u32> = selected.into_iter().collect();
 
     if pages.is_empty() {
         return Err(FetchError::PdfPageSpecInvalid(
@@ -1729,6 +1727,21 @@ mod tests {
     fn parse_pdf_pages_whitespace_tolerant() {
         let pages = parse_pdf_pages(" 1 , 3 , 5 ", 10, 25).unwrap();
         assert_eq!(pages, vec![1, 3, 5]);
+    }
+
+    #[test]
+    fn parse_pdf_pages_deduplicates_sorts_and_stays_bounded() {
+        // Set-backed dedup stays linear where `contains` on a Vec did not.
+        assert_eq!(parse_pdf_pages("5,3,5,1,3", 10, 10).unwrap(), vec![1, 3, 5]);
+        let dupes = std::iter::repeat_n("1", 200_000)
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(parse_pdf_pages(&dupes, 10, 10).unwrap(), vec![1]);
+        let distinct: Vec<String> = (1..=200_000).map(|n| n.to_string()).collect();
+        assert!(matches!(
+            parse_pdf_pages(&distinct.join(","), 10, 10),
+            Err(FetchError::PdfPageCapExceeded { .. })
+        ));
     }
 
     #[test]

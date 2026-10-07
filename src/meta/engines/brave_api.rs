@@ -76,7 +76,8 @@ fn map_freshness(request: &EngineSearchRequest) -> Option<String> {
         if !start.is_empty() && !end.is_empty() {
             return Some(format!("{start}to{end}"));
         }
-        return None;
+        // An exact range needs both bounds; fall through to the relative
+        // freshness window rather than dropping the constraint entirely.
     }
     match request.freshness {
         Freshness::Any => None,
@@ -535,6 +536,22 @@ mod tests {
             map_freshness(&req).as_deref(),
             Some("2024-01-01to2024-01-31")
         );
+    }
+
+    #[test]
+    fn map_freshness_partial_range_falls_back_to_relative_window() {
+        // An empty bound cannot form an exact window; the request must still
+        // carry the relative freshness constraint rather than none at all.
+        let mut req = simple_req("q", 10);
+        req.freshness = Freshness::Week;
+        req.date_range = Some(crate::core::query::SearchDateRange::new("", "2024-01-31"));
+        assert_eq!(map_freshness(&req).as_deref(), Some("pw"));
+
+        req.date_range = Some(crate::core::query::SearchDateRange::new("2024-01-01", ""));
+        assert_eq!(map_freshness(&req).as_deref(), Some("pw"));
+
+        req.date_range = Some(crate::core::query::SearchDateRange::new("  ", "  "));
+        assert_eq!(map_freshness(&req).as_deref(), Some("pw"));
     }
 
     #[test]
