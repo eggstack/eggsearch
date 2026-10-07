@@ -128,6 +128,16 @@ GitHub Release: crates.io is first, the draft is second, and a human performs
 the final publish. A tag whose crate version is not yet visible on crates.io
 must not be dispatched — publish the crate first.
 
+`Release provenance` must run **while the release is still a draft**: its guard
+rejects an already-published release, so the ordering above is not advisory.
+That guard also means the job needs a push-scoped token. GitHub answers
+`GET /releases/tags/{tag}` with 404 for a draft unless the token carries push
+access, so a read-scoped token fails closed with `release not found` even when
+the draft exists. The job therefore requests `contents: write` while issuing
+only GET requests; `packaging/check-contract.sh` enforces that it stays a
+non-writer by rejecting any mutating release command and by requiring the write
+scope to remain job-scoped rather than workflow-wide.
+
 Installers never elevate and only use Cargo for unsupported targets or a
 confirmed HTTP 404 for the exact binary. They fail closed on all other download,
 integrity, identity, or version errors. The release smoke still starts `mcp

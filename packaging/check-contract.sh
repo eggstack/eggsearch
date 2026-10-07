@@ -129,13 +129,35 @@ for forbidden in ("gh release publish", "release publish", "git push origin --ta
     if forbidden in workflow:
         raise SystemExit(f"generated workflow must not contain {forbidden!r}")
 
-# Provenance is an authenticity layer over already-staged bytes. It must never
-# acquire release-write authority or become a second writer.
+# Provenance is an authenticity layer over already-staged bytes. The invariant
+# is that it never *behaves* as a writer, not that it never holds a write-scoped
+# token. GitHub answers `GET /releases/tags/{tag}` with 404 for a draft release
+# unless the token carries push access, so a read-scoped token cannot observe the
+# very draft this workflow exists to attest and fails closed with "release not
+# found". Assert the behavioural property directly, and confine any write scope
+# to the job that needs it rather than the whole file.
 provenance = read(provenance_path)
-if "contents: write" in provenance or "attestations: write" not in provenance:
-    raise SystemExit("provenance workflow must attest without release-write authority")
+if "attestations: write" not in provenance:
+    raise SystemExit("provenance workflow must request attestations: write")
+
+# Comment lines are stripped first so that prose explaining *why* a write scope
+# exists cannot itself satisfy or trip a structural assertion.
+provenance_code = "\n".join(
+    line for line in provenance.splitlines() if not line.lstrip().startswith("#")
+)
+_lines = provenance_code.splitlines()
+for _i, _line in enumerate(_lines):
+    if re.match(r"^permissions:\s*$", _line):
+        _j = _i + 1
+        while _j < len(_lines) and _lines[_j].strip() and _lines[_j][:1].isspace():
+            if _lines[_j].strip() == "contents: write":
+                raise SystemExit(
+                    "provenance workflow must keep release-write scope job-scoped, "
+                    "not workflow-wide"
+                )
+            _j += 1
 for forbidden in ("gh release create", "gh release edit", "gh release upload", "gh release delete", "--clobber"):
-    if forbidden in provenance:
+    if forbidden in provenance_code:
         raise SystemExit(f"provenance workflow must not mutate release state: {forbidden!r}")
 
 unix = read(unix_path)
