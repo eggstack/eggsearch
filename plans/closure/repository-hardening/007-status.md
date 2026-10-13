@@ -1,8 +1,8 @@
 # Repository Hardening M007 — Corrective Closure Evidence and Process Ratchet
 
-Status: conditionally closed
+Status: closed (reconciled by M010)
 
-Recommendation: conditionally closed with one operational condition: the first successful GitHub Actions run of `.github/workflows/dependency-security.yml` with event `schedule`.
+Recommendation: closed
 
 Implementation candidate: `15ae6e57693c5ca8b15a684298730ba70de09bb9`
 Closure candidate: `15ae6e57693c5ca8b15a684298730ba70de09bb9` (code-qualified candidate; closure records commit is docs-only and does not change production code)
@@ -77,20 +77,30 @@ No M004 cross-target requalification was fabricated: production process code cha
 
 | Milestone | Status |
 |---|---|
-| M001 dependency security/policy | conditionally closed via M007 pending first scheduled run |
-| M002 release provenance | conditionally closed on first tagged release |
+| M001 dependency security/policy | closed via M007/M010 |
+| M002 release provenance | closed by M009 |
 | M003 rmcp HTTP verification | closed |
 | M004 process/unsafe boundary | closed through M007 |
 | M005 forge safety decomposition | closed |
 | M006 zero-reqwest closure | blocked on upstream chromiumoxide |
-| M007 corrective evidence + ratchet | conditionally closed pending first scheduled run |
+| M007 corrective evidence + ratchet | closed by M010 |
 
-M002 and M006 were not opportunistically promoted. M002 still requires generated/verified attestation and immutable behavior on first tagged release. M006 still requires an upstream chromiumoxide release making HTTP discovery optional without regressing `Browser::launch`. No fork was introduced.
+M002 was separately promoted by M009 on first-tagged-release evidence. M006
+remains blocked on an upstream chromiumoxide release making HTTP discovery
+optional without regressing `Browser::launch`. No fork was introduced.
 
 ## Compatibility
 
 No MCP, CLI, CodeGG, provider, browser, PDF, or egress behavior change. Ten stable tools and schemas unchanged. CLI arguments and integration formats unchanged. Default graph remains reqwest-free; all-features reqwest remains chromiumoxide-only. M003 eggfetch verification semantics unchanged. M005 forge policy/budget/host separation unchanged. quick-xml 0.41.0 and rustls 0.23.45 floors remain enforced. cargo-deny policy remains fail-closed.
 
-## Operational condition to promote to closed
+## Scheduled evidence reconciliation (M010)
 
-When the first `schedule`-event dependency-security run succeeds, a closure-only reconciliation commit may promote M001/M007 to closed citing run ID, event type `schedule`, head SHA, and outcome, without reworking implementation. If it fails on a new advisory, treat per M001 policy; do not weaken to close. `workflow_dispatch` success does not satisfy this condition.
+The condition was satisfied by scheduled run `38290328560` on 2026-10-12.
+The `cargo-deny` job passed on head
+`90e996ef6c83c969e30c30a36bc9d968a85dc00f`, and its output ended
+`advisories ok, bans ok, licenses ok, sources ok`. M010 records the run audit
+and promotes M001/M007 to closed without changing implementation.
+
+M002 was separately reconciled by M009. M006 remains blocked on an upstream
+chromiumoxide release making HTTP discovery optional without regressing
+`Browser::launch`.

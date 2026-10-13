@@ -36,3 +36,12 @@ enabled. No migration or compatibility change was introduced.
 
 No unresolved High/Medium dependency finding remains. Review the scoped
 unmaintained entries by 2026-11-27.
+
+## Scheduled workflow operational evidence (M010)
+
+The dependency-security workflow's first successful scheduled execution was
+run `38290328560`, event `schedule`, on head
+`90e996ef6c83c969e30c30a36bc9d968a85dc00f` (2026-10-12). Its `cargo-deny`
+job completed successfully and reported advisories, bans, licenses, and
+sources all okay. M001's scheduled operational condition is closed through
+M010; see `plans/closure/repository-hardening/010-status.md`.

@@ -2204,14 +2204,14 @@ fn planning_status_consistency_no_closed_range_shorthand() {
     }
     let bad = "Summary: M001-M005 closed\n| M002 | conditionally closed |\n";
     assert!(contains_closed_range_shorthand(bad));
-    let good = "M001 conditionally closed via M007\nM002 closed by M009\n";
+    let good = "M001 closed via M007/M010\nM002 closed by M009\nM007 closed by M010\n";
     assert!(!contains_closed_range_shorthand(good));
     for (name, text) in [("roadmap", &roadmap), ("overview", &overview)] {
         for (mid, want) in [
-            ("M001", "conditionally"),
+            ("M001", "closed"),
             ("M002", "closed"),
             ("M006", "blocked"),
-            ("M007", "conditionally closed"),
+            ("M007", "closed"),
         ] {
             let row = text
                 .lines()
