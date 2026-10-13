@@ -243,7 +243,7 @@ Current milestone state: M001 is conditionally closed via M007 pending the first
 | M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
 | M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
 | M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
-| M009 first tagged-release provenance reconciliation | closing | `plans/implementation/repository-hardening/009-first-tagged-release-provenance-reconciliation.md` |
+| M009 first tagged-release provenance reconciliation | closed | `plans/closure/repository-hardening/009-status.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 

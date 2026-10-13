@@ -1,6 +1,6 @@
 # Plan 009 — First Tagged-Release Provenance Reconciliation
 
-Status: closing
+Status: closed
 
 Source roadmap: `plans/subsystems/repository-hardening-roadmap.md`
 Milestone: M009 corrective reconciliation for M002
