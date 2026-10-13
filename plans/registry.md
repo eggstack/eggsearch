@@ -42,6 +42,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | MCP tool-surface consolidation | closed | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M007 closed | M001-M007 closed. Current control points `plans/closure/mcp-tool-surface-consolidation/001-status.md` through `007-status.md`. |
 | Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
 | Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M001/M002/M007/M008/M009/M010 closed; M006 blocked | Scheduled dependency-security run `38290328560` succeeded; M010 records M001/M007 closure. M002 closed by M009; M006 remains externally blocked on chromiumoxide. |
+| Python native library for agents | active (M001 ready; M002-M004 blocked) | `plans/subsystems/python-native-library-roadmap.md` | M001 Rust SDK facade and parity ready; M002 asyncio binding, M003 Python agent API, M004 wheel release qualification gated | ADR-0005 accepted; Python-only in-process SDK workstream. M002 hard-gated by M001 closure, M003 by M002, M004 by M003 and release qualification. |
 
 ## Dependency-ready implementation plans
 
@@ -83,6 +84,10 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Repository hardening | M008 Windows startup + cross-target release portability | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` | Closed at `44f38ab`; closure `plans/closure/repository-hardening/008-status.md`. CI `37036453017`, egress `37036467646`, release qualify `37036489273` all green on the exact candidate. |
 | Repository hardening | M009 first tagged-release provenance reconciliation | closed | `plans/closure/repository-hardening/009-status.md` | Implementation `cf1e26a`; M002 closed after auditing v0.4.1 release run `37072825644` and its attestation/immutability evidence. |
 | Repository hardening | M010 scheduled dependency-security evidence reconciliation | closed | `plans/closure/repository-hardening/010-status.md` | Closed at `31175e2`; first schedule-event run `38290328560` completed successfully on `90e996ef6c83c969e30c30a36bc9d968a85dc00f`. |
+| Python native library | M001 shared Rust SDK facade/parity | **ready** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | No outstanding hard dependencies; preserve all ten tool semantics and Mode-Off zero dispatch. |
+| Python native library | M002 PyO3 asyncio binding/lifecycle | **blocked** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | Hard dependency: M001 closure; no per-call Tokio runtime or MCP subprocess. |
+| Python native library | M003 Python agent API, types, parity | **blocked** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Hard dependency: M002 closure; all ten native methods and trusted semantics. |
+| Python native library | M004 wheels, sdist and release qualification | **blocked** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Hard dependency: M003 closure; operational gate: target qualification and separate publish approval. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
@@ -94,6 +99,8 @@ Dependency evidence handoff checklist: `plans/implementation/dependency-evidence
 Corrective closure sequence: `plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md` then `plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`.
 
 ## Current execution order and dependency gates
+
+**Python native library gate:** ADR-0005 authorizes a narrow direct Rust SDK facade and Python PyO3 native package without broad Rust module stability. M001 is ready; M002-M004 must not be handed off before prior milestone closure records and registry updates. Python package publication is separately authorized and does not alter Eggpack binary assets.
 
 **Tool-surface gate:** M001-M007 closed. Do not run evaluation
 against pre-consolidation bytes and present it as consolidation
@@ -165,6 +172,7 @@ release that makes HTTP discovery / reqwest optional without regressing
 | Repository hardening | active; M008 closed, M007 conditional, M002 conditional, M006 blocked | M008 closed at `44f38ab` (`008-status.md`); M007 remains conditional evidence control point. Historical closure records `001-status.md` through `008-status.md`. |
 | CodeGG legacy search parity | closed; M001 through M005 closed | `plans/closure/codegg-legacy-search-parity/005-status.md`; prior control points `plans/closure/codegg-legacy-search-parity/004-status.md` and `003-status.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003), `81a2e49` (M004 release-prep), `32769d6` (M005 fix-prep); historical provider-parity closure retained, new Mode-Off locality issue separately registered |
 | Mode-Off local repository dispatch corrective | active; M001 closed; M002 and M003 blocked | M001 closure `plans/closure/mode-off-repository-locality-corrective/001-status.md` at `cc0c9c7`; M002 blocked pending M003 and immutable release evidence; M003 implementation `fcb1fb5`, blocked pending default-branch hosted qualification, closure `plans/closure/mode-off-repository-locality-corrective/003-status.md`. CodeGG paired requalification remains consumer-owned. |
+| Python native library | active; M001 ready, M002-M004 blocked | `plans/subsystems/python-native-library-roadmap.md`; forthcoming `plans/closure/python-native-library/001-status.md` through `004-status.md` only upon executed evidence |
 
 ## Closure rule
 
