@@ -59,4 +59,6 @@ immutable corrected eggsearch release exists and the paired process test is
 run against it.
 
 No unresolved M003 correctness or security findings remain. M003 is closed;
-M002 is unblocked for its remaining release work.
+M002 subsequently completed immutable `v0.4.3` publication and is closed;
+publication and provenance evidence are recorded in
+`plans/closure/mode-off-repository-locality-corrective/002-status.md`.

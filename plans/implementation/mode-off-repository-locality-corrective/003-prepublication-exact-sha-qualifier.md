@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality M003 — Non-Publishing Exact-SHA Eggpack Qualifier
 
-Status: blocked
+Status: closed
 Primary class: release-qualification infrastructure
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f`.
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`

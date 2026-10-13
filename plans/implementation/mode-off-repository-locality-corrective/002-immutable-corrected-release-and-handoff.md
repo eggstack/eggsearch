@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality M002 — Immutable Corrected Eggsearch Release and CodeGG Handoff
 
-Status: blocked
+Status: closed
 Primary class: capability / immutable release qualification
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f`.
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`
@@ -112,20 +112,17 @@ The release must not claim zero network by observing empty output or timeout. Th
 
 Closure: `plans/closure/mode-off-repository-locality-corrective/002-status.md` with source/qualification/publication SHAs, CI run IDs, native targets, artifact/digest inventory, positive and adversarial no-remote test matrix, exact public tag/URL, security and migration assessment, CodeGG handoff link, residual issues and release/consumer distinction.
 
-## Execution finding — release workflow sequence
+## Closure outcome
 
-Candidate preparation and every required local source gate are complete at
-`5e7b853e7eebf29c58f84959805c8774279d7ea4`. The current generated Eggpack
-workflow does not expose the prepublication `mode=qualify` exact-SHA path
-assumed by WP3. It accepts an exact existing `release_tag`, checks out that
-tag, and stages a draft. The current release contract requires the matching
-crate version to be visible before dispatch, so hosted build/stage evidence
-cannot precede crate publication under the existing workflow.
+M003 supplied the hosted, non-publishing exact-SHA qualifier for candidate
+`5e7b853e7eebf29c58f84959805c8774279d7ea4`. After it passed, M002 published
+crate `0.4.3`, pushed tag `v0.4.3` at that exact SHA, ran the current producer
+and provenance workflows, reviewed all 19 release assets, and published the
+verified draft. Full run, manifest, artifact digest, public binary smoke, and
+release-backed zero-call evidence are recorded in
+`plans/closure/mode-off-repository-locality-corrective/002-status.md`.
 
-This conflicts with WP3/WP4's required order. No crate was published, no tag
-was created, and no workflow was dispatched. M002 remains blocked until M003
-provides a hosted, non-publishing, exact-SHA qualifier and the candidate
-completes it. M003 registers the prepublication qualifier path; the current
-release producer remains the only path that stages and publishes releases.
-Do not pin CodeGG to the candidate until immutable release and provenance
-evidence exists.
+The eggsearch handoff is documented in `docs/codegg-integration.md` and
+`architecture/codegg-contract.md`. CodeGG C002 remains consumer-owned and
+must pass its pinned-binary paired qualification before the legacy search
+backend can be retired.
