@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M008 corrective closed, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed pending M009, M006 blocked
+Status: active; M008 corrective closed, M007 conditionally closed, M001 conditionally closed via M007, M002 closed by M009, M006 blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -231,19 +231,19 @@ transport-feature change, and process refactor remain independently reviewable.
 
 ## 8. Milestones
 
-Current milestone state after M007 corrective implementation: M001 is conditionally closed via M007 pending the first scheduled dependency-security run. M002 remains conditionally closed pending M009 reconciliation of its recorded first tagged-release evidence. M003 remains closed. M004 is closed through M007 once repository-wide guards pass. M005 remains closed. M006 remains blocked on upstream chromiumoxide. M007 is conditionally closed with the single operational condition of the first scheduled dependency-security run. Original closure records remain historical evidence; M007 is the corrective control point.
+Current milestone state: M001 is conditionally closed via M007 pending the first scheduled dependency-security run. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 is closed through M007 once repository-wide guards pass. M005 remains closed. M006 remains blocked on upstream chromiumoxide. M007 is conditionally closed with the single operational condition of the first scheduled dependency-security run. Original closure records remain historical evidence; M007 is the corrective control point.
 
 | Milestone | Current status | Control point |
 |---|---|---|
 | M001 dependency security/policy | conditionally closed via M007 operational evidence correction | `plans/closure/repository-hardening/001-status.md` + M007 |
-| M002 release provenance | conditionally closed | `plans/closure/repository-hardening/002-status.md` |
+| M002 release provenance | closed by M009 | `plans/closure/repository-hardening/002-status.md` + `plans/closure/repository-hardening/009-status.md` |
 | M003 rmcp HTTP verification on eggfetch | closed | `plans/closure/repository-hardening/003-status.md` |
 | M004 process/unsafe boundary | closed through M007 once repository-wide guards pass | `plans/closure/repository-hardening/004-status.md` + M007 |
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
 | M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
 | M007 closure evidence + process ratchet corrective | conditionally closed | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
 | M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
-| M009 first tagged-release provenance reconciliation | ready | `plans/implementation/repository-hardening/009-first-tagged-release-provenance-reconciliation.md` |
+| M009 first tagged-release provenance reconciliation | closing | `plans/implementation/repository-hardening/009-first-tagged-release-provenance-reconciliation.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 

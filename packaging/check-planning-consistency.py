@@ -40,7 +40,7 @@ def main():
             errors.append(f"registry hardening row must not claim M001-M005 closed: {line.strip()[:160]}")
     expectations = [
         ("M001", "conditionally"),
-        ("M002", "conditionally"),
+        ("M002", "closed"),
         ("M003", "closed"),
         ("M004", "closed"),
         ("M005", "closed"),
