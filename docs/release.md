@@ -41,14 +41,21 @@ check, all-features deterministic tests), plus documentation build, release
 compilation, and `cargo publish --dry-run --locked`. The publish dry-run
 requires a clean working tree; commit or stash changes before running this step.
 
-The current Eggpack producer accepts an exact existing release tag and stages
-a draft; it does not provide the historical pre-publication `mode=qualify`
-flow. Inspect `.github/workflows/release-eggpack.yml` and
-`architecture/packaging.md` for the live dispatch contract. The candidate must
-be a clean, pushed commit, and the release tag must resolve to that exact
-commit. The workflow runs all seven target builds and required validators, then
-stages the exact 19-asset draft. Do not dispatch it until the matching crate
-version is visible on crates.io.
+`.github/workflows/qualify-eggpack-candidate.yml` provides a separate,
+non-publishing hosted qualification for an exact 40-character commit SHA. It
+reuses the current Eggpack producer's seven target builds, qualification,
+consumer validators, required gate, and aggregate. It creates only
+run-scoped qualification artifacts and does not stage a draft, create a tag,
+or publish a crate. The workflow must be available on the default branch
+before it can be dispatched; inspect its run and all seven target results
+before publication.
+
+The generated `.github/workflows/release-eggpack.yml` remains the release
+producer. It accepts an exact existing tag and stages the exact 19-asset draft.
+The candidate must be a clean, pushed commit, and the tag must resolve to that
+same commit. Do not dispatch the release producer until the matching crate
+version is visible on crates.io. See `architecture/packaging.md` for the live
+producer contract.
 
 ## Publication and binary release
 
@@ -109,6 +116,8 @@ The current Eggpack release sequence is:
 
 ```text
 make release-check on a clean, pushed candidate commit
+Eggpack exact-SHA candidate qualification: dispatch candidate_sha=<full commit SHA>
+inspect all seven target, consumer, and aggregate results; confirm no release state changed
 cargo publish --locked
 confirm the exact version is visible on crates.io
 git tag vX.Y.Z at the candidate commit && git push origin vX.Y.Z
@@ -124,10 +133,11 @@ matching GitHub's own report, that all seven binary/checksum pairs verify, and
 that `release-manifest.json` declares the same tag, source revision, and target
 inventory.
 
-Publishing stays manual. Nothing in either workflow publishes the crate or the
-GitHub Release: crates.io is first, the draft is second, and a human performs
-the final publish. A tag whose crate version is not yet visible on crates.io
-must not be dispatched — publish the crate first.
+Publishing stays manual. The candidate qualifier, release producer, and
+provenance workflow do not publish the crate or GitHub Release: crates.io is
+first, the draft is second, and a human performs the final publish. A tag whose
+crate version is not yet visible on crates.io must not be dispatched — publish
+the crate first.
 
 `Release provenance` must run **while the release is still a draft**: its guard
 rejects an already-published release, so the ordering above is not advisory.
@@ -181,6 +191,7 @@ not require a clean tree and does not build release artifacts.
 | GitHub Actions / `make ci` | Remote repetition of routine gate |
 | `Makefile` / `make release-check` | Local packaging gate |
 | `cargo publish --locked` | Explicit maintainer publication |
+| `.github/workflows/qualify-eggpack-candidate.yml` | Hosted exact-SHA candidate qualification; no tag or release writes |
 | `release/eggpack/` + `.github/workflows/release-eggpack.yml` | Eggpack producer authority and the generated release workflow (build, qualify, validate, aggregate, draft staging) |
 | `.github/workflows/release-drift.yml` | `eggpack ci check` drift guard on every push and pull request |
 | `.github/workflows/release-provenance.yml` | Read-only verification of the staged draft plus artifact attestation |
