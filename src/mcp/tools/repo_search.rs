@@ -123,15 +123,15 @@ pub async fn run_repo_search(
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::repo_search::RepoSearchRequest;
 
-    // Permit a local-only path when the local backend is enabled and the
-    // caller has not explicitly opted out of local results. The remote
-    // provider dispatch is then suppressed below by routing with an empty
-    // provider list.
-    let local_only_path = matches!(live_allowed(state.config.search.mode), Policy::Deny)
-        && state.local_backend.is_some()
+    let remote_denied = matches!(live_allowed(state.config.search.mode), Policy::Deny);
+    let local_only_path = remote_denied
+        && state
+            .local_backend
+            .as_ref()
+            .is_some_and(|backend| backend.is_enabled())
         && args.include_local != Some(false);
 
-    if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
+    if remote_denied && !local_only_path {
         return Err(ToolError::Validation(live_search_denied_message(
             "repo_search",
         )));
@@ -203,11 +203,7 @@ pub async fn run_repo_search(
         max_per_group: args.max_per_group,
         freshness,
         timeout_ms: args.timeout_ms,
-        providers: if local_only_path {
-            Vec::new()
-        } else {
-            args.providers.clone()
-        },
+        providers: args.providers.clone(),
         profile,
         ecosystem: parse_strict_enum_arg(
             "ecosystem",
@@ -248,12 +244,12 @@ pub async fn run_repo_search(
     let routing_decision = if local_only_path {
         crate::meta::provider_diagnostics::ProviderRoutingDecision {
             requested_profile: None,
-            requested_providers: Vec::new(),
+            requested_providers: req.providers.clone(),
             selected_providers: Vec::new(),
             skipped_providers: Vec::new(),
             degraded: false,
             partial: false,
-            reason: Some("local-only path: remote provider dispatch suppressed".to_string()),
+            reason: Some("local-only execution policy denies remote dispatch".to_string()),
         }
     } else {
         crate::meta::provider_diagnostics::resolve_provider_routing(
@@ -324,17 +320,24 @@ pub async fn run_repo_search(
     );
 
     let mut req = req;
-    req.providers = effective_providers;
+    if !local_only_path {
+        req.providers = effective_providers;
+    }
 
     let local_inventory = state.local_inventory().await;
     let mut response = state
         .adapter
-        .repo_search(
+        .repo_search_with_remote_execution(
             &req,
             effective_max,
             state.config.search.max_results_cap,
             state.local_backend.as_deref(),
             Some(&local_inventory),
+            if local_only_path {
+                crate::meta::adapter::RepoRemoteExecution::Denied
+            } else {
+                crate::meta::adapter::RepoRemoteExecution::Allowed
+            },
         )
         .await;
 

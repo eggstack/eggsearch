@@ -2,11 +2,17 @@
 
 use std::sync::Arc;
 
-use eggsearch::core::config::AppConfig;
+use eggsearch::core::config::{AppConfig, Mode};
 use eggsearch::mcp::state::ServerState;
 use eggsearch::mcp::tools::{
     run_repo_fetch, run_repo_map, run_repo_search, RepoFetchArgs, RepoMapArgs, RepoSearchArgs,
 };
+use eggsearch::meta::engines::error::EngineError;
+use eggsearch::meta::engines::models::SearchResult;
+use eggsearch::meta::engines::{BoxFuture, EngineSearchRequest, SearchEngine};
+use eggsearch::meta::MetadataSearchAdapter;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use tempfile::TempDir;
 
@@ -20,6 +26,171 @@ fn integration_state(root: &std::path::Path) -> Arc<ServerState> {
     cfg.local.max_indexed_files = 50_000;
     cfg.search.providers.insert("duckduckgo".into(), true);
     Arc::new(ServerState::build(cfg).expect("build server state"))
+}
+
+struct CountingEngine {
+    id: &'static str,
+    calls: Arc<AtomicUsize>,
+}
+
+impl SearchEngine for CountingEngine {
+    fn name(&self) -> &'static str {
+        self.id
+    }
+
+    fn search<'a>(
+        &'a self,
+        _request: &'a EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+fn mode_off_counting_state(
+    root: &std::path::Path,
+    calls: Arc<AtomicUsize>,
+    other_calls: Arc<AtomicUsize>,
+) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.search.mode = Mode::Off;
+    cfg.search.providers.insert("mock_a".into(), true);
+    cfg.search.providers.insert("mock_b".into(), true);
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![root.to_path_buf()];
+    cfg.local.respect_gitignore = true;
+    cfg.local.follow_symlinks = false;
+    cfg.local.max_file_bytes = 1_048_576;
+    cfg.local.max_indexed_files = 50_000;
+    let adapter = MetadataSearchAdapter::from_engines(
+        vec![
+            Arc::new(CountingEngine {
+                id: "mock_a",
+                calls,
+            }),
+            Arc::new(CountingEngine {
+                id: "mock_b",
+                calls: other_calls,
+            }),
+        ],
+        Duration::from_secs(2),
+    );
+    let mut state = ServerState::with_adapter(cfg.clone(), Arc::new(adapter));
+    state.local_backend = Some(Arc::new(
+        eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local)
+            .expect("local workspace backend"),
+    ));
+    Arc::new(state)
+}
+
+#[tokio::test]
+async fn mode_off_repo_search_uses_local_workspace_without_remote_dispatch() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("lib.rs"),
+        "pub fn locality_fixture_marker() -> i32 { 42 }",
+    )
+    .unwrap();
+    init_git_repo(tmp.path());
+    git_add_and_commit(tmp.path(), "locality fixture");
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
+    let state = mode_off_counting_state(tmp.path(), calls.clone(), other_calls.clone());
+    let response = run_repo_search(
+        state.clone(),
+        RepoSearchArgs {
+            query: "locality_fixture_marker".into(),
+            providers: vec!["mock_a".into()],
+            include_local: Some(true),
+            ecosystem: Some("crates_io".into()),
+            package: Some("locality-fixture-package".into()),
+            include_security_context: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("Mode-Off local repo_search");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    assert!(response["groups"].as_array().is_some_and(|groups| {
+        groups.iter().any(|group| {
+            group["results"].as_array().is_some_and(|results| {
+                results.iter().any(|result| {
+                    result["snippet"]
+                        .as_str()
+                        .is_some_and(|text| text.contains("locality_fixture_marker"))
+                })
+            })
+        })
+    }));
+    assert_eq!(
+        response["providers_queried"],
+        serde_json::json!(["local_workspace"])
+    );
+    assert!(response["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().any(|warning| {
+            warning["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("skipped by local-only execution policy"))
+        })
+    }));
+    assert!(response["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().all(|warning| {
+            warning["message"]
+                .as_str()
+                .is_none_or(|message| !message.contains("using generic web search"))
+        })
+    }));
+
+    let empty_workspace = TempDir::new().unwrap();
+    let no_match = run_repo_search(
+        mode_off_counting_state(empty_workspace.path(), calls.clone(), other_calls.clone()),
+        RepoSearchArgs {
+            query: "zzquuxnomatch".into(),
+            mode: Some("exact_error".into()),
+            providers: vec!["mock_a".into()],
+            include_local: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("Mode-Off exact-error local search");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        no_match["providers_queried"],
+        serde_json::json!(["local_workspace"])
+    );
+    assert!(no_match["groups"].as_array().is_none_or(|groups| {
+        groups.iter().all(|group| {
+            group["results"]
+                .as_array()
+                .is_none_or(|results| results.is_empty())
+        })
+    }));
+    assert!(no_match["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().any(|warning| {
+            warning["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("local_search_completed_no_matches"))
+        })
+    }));
+
+    let denied = run_repo_search(
+        state,
+        RepoSearchArgs {
+            query: "locality_fixture_marker".into(),
+            providers: vec!["mock_a".into()],
+            include_local: Some(false),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(denied.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
 }
 
 fn init_git_repo(root: &std::path::Path) {

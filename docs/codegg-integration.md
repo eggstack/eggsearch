@@ -1465,6 +1465,30 @@ are present, they are valid evidence from the providers that succeeded.
 
 ## Versioning and Compatibility
 
+### Mode-Off Local Repository Release Contract
+
+The `v0.4.3` release candidate contains the correction for Mode-Off
+`repo_search`. Do not pin a consumer to it until the immutable release and
+source revision are recorded in
+`plans/closure/mode-off-repository-locality-corrective/002-status.md`; the
+release manifest and closure record are the identity and provenance sources.
+This eggsearch-side contract does not mean CodeGG has passed paired
+qualification or is ready to release.
+
+| Case | eggsearch contract | Required CodeGG requalification |
+|---|---|---|
+| Mode Off with enabled local workspace and `include_local=true` | Search configured local roots; local cards retain `local_trusted` provenance and response reports local workspace retrieval. Provider engines, package-registry resolution, and package advisory lookup are not called. | Use a private Mode-Off config and local fixture; invoke native `repo_search` and assert a fixture match plus zero remote engine/resolver calls. |
+| `include_local=false`, local backend disabled, or no local backend | Policy-denied; no automatic remote routing. | Verify the policy denial for the configured unavailable/opted-out case and ensure the harness does not fall back to the legacy search backend. |
+| `web_search` / `security_search` under Mode Off | Existing Mode-Off denial behavior remains in force. | Run the current denial checks against the same pinned binary. |
+| Live mode | Empty provider selection continues to mean normal auto-selection; explicit provider selection retains its existing routing. MCP tool surface remains ten tools with the structured `retrieval_summary` contract. | Recheck configured live provider behavior and response compatibility without changing consumer routing assumptions. |
+
+Before clearing CodeGG C002, update every version owner and immutable source
+pointer to the published release, set `CODEGG_EGGSEARCH_BIN` or its equivalent
+to that exact binary, run the native local fixture and Mode-Off denial cases,
+then run `scripts/verify.sh quick` on the same CodeGG commit. Record the paired
+binary digest and both source revisions in the consumer-owned closure. An
+eggsearch source-only test is not a substitute for this process-level check.
+
 ### Breaking Changes (require major version bump)
 
 These changes break existing harnesses:

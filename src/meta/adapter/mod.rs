@@ -24,6 +24,41 @@ pub struct SkippedProvider {
 
 pub(crate) type EngineList = Vec<Arc<dyn SearchEngine>>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RepoRemoteExecution {
+    Allowed,
+    Denied,
+}
+
+pub(crate) type PackageResolutionFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = crate::core::package::PackageResolution> + Send>,
+>;
+pub(crate) type PackageResolver = Arc<
+    dyn Fn(crate::core::package::PackageCoordinate, Duration) -> PackageResolutionFuture
+        + Send
+        + Sync,
+>;
+
+fn default_package_resolver() -> PackageResolver {
+    Arc::new(|coordinate, timeout| {
+        Box::pin(async move {
+            if let Ok(client) = crate::meta::engines::build_http_client(None) {
+                crate::meta::package_resolver::resolve_package(&client, &coordinate, Some(timeout))
+                    .await
+            } else {
+                let mut resolution = crate::core::package::PackageResolution {
+                    coordinate,
+                    ..Default::default()
+                };
+                resolution
+                    .warnings
+                    .push("failed to build HTTP client for package resolution".to_string());
+                resolution
+            }
+        })
+    })
+}
+
 #[derive(Debug)]
 struct PlannedSubquery {
     label: String,
@@ -45,6 +80,7 @@ struct PlannedSubquery {
 pub struct MetadataSearchAdapter {
     engines: EngineList,
     provider_ids: Vec<String>,
+    package_resolver: PackageResolver,
     /// Hard timeout for the whole `web_search` call, including fan-out.
     global_timeout: Duration,
     /// Whether to wrap untrusted search-result text in
@@ -174,6 +210,7 @@ impl MetadataSearchAdapter {
         Ok(Self {
             engines,
             provider_ids,
+            package_resolver: default_package_resolver(),
             global_timeout,
             sanitize_output,
             default_providers,
@@ -198,6 +235,7 @@ impl MetadataSearchAdapter {
         Self {
             engines,
             provider_ids,
+            package_resolver: default_package_resolver(),
             global_timeout,
             sanitize_output: false,
             default_providers: Vec::new(),
@@ -225,6 +263,7 @@ impl MetadataSearchAdapter {
         Self {
             engines,
             provider_ids,
+            package_resolver: default_package_resolver(),
             global_timeout,
             sanitize_output,
             default_providers: Vec::new(),
@@ -234,6 +273,17 @@ impl MetadataSearchAdapter {
             multiquery_provider_concurrency: 2,
             health: Arc::new(ProviderHealthRegistry::new()),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_engines_with_package_resolver(
+        engines: Vec<Arc<dyn SearchEngine>>,
+        global_timeout: Duration,
+        package_resolver: PackageResolver,
+    ) -> Self {
+        let mut adapter = Self::from_engines(engines, global_timeout);
+        adapter.package_resolver = package_resolver;
+        adapter
     }
 
     /// Subset of `engines` whose `name()` matches one of the given

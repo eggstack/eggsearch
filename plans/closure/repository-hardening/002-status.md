@@ -1,8 +1,8 @@
 # Repository Hardening M002 — CI and Release Supply-Chain Provenance
 
-Status: conditionally closed
+Status: closed (reconciled by M009)
 
-Recommendation: conditionally closed
+Recommendation: closed
 
 Implementation commits: `cb4048180e29cdeaffb77f2cc86eaec2a8e33b7b`, `85322ac127033bdc4058177ea09cff67417308d0`
 
@@ -55,8 +55,6 @@ installer, binding repository `eggstack/eggsearch`, workflow
 `release-binaries.yml@refs/tags/v0.4.1`, commit `32769d6`); the published
 release is immutable (16 assets, published 2026-10-02T22:49:33Z); full
 evidence in `plans/closure/codegg-legacy-search-parity/005-status.md` §2.
-The formal status flip stays with a hardening-owned reconciliation commit:
-the CI-enforced planning gates pin this workstream's M002 rows to
-`conditionally`, so this milestone remains `conditionally closed` with its
-condition met and evidence cited. This note appends the evidence without
-rewriting the implementation record above.
+The formal status flip was completed by hardening-owned M009 after the
+recorded condition and evidence were audited. This note appends the evidence
+without rewriting the implementation record above.

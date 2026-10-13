@@ -2204,14 +2204,14 @@ fn planning_status_consistency_no_closed_range_shorthand() {
     }
     let bad = "Summary: M001-M005 closed\n| M002 | conditionally closed |\n";
     assert!(contains_closed_range_shorthand(bad));
-    let good = "M001 conditionally closed via M007\nM002 conditionally closed\n";
+    let good = "M001 closed via M007/M010\nM002 closed by M009\nM007 closed by M010\n";
     assert!(!contains_closed_range_shorthand(good));
     for (name, text) in [("roadmap", &roadmap), ("overview", &overview)] {
         for (mid, want) in [
-            ("M001", "conditionally"),
-            ("M002", "conditionally"),
+            ("M001", "closed"),
+            ("M002", "closed"),
             ("M006", "blocked"),
-            ("M007", "conditionally closed"),
+            ("M007", "closed"),
         ] {
             let row = text
                 .lines()
@@ -2400,5 +2400,38 @@ fn windows_startup_portability_stays_total() {
     assert!(
         update.contains("#[cfg(not(unix))]") && update.contains("let _ = path;"),
         "non-Unix executable-permission helper must stay explicit"
+    );
+}
+
+#[test]
+fn repo_search_local_only_uses_explicit_remote_execution_authority() {
+    let tool_source = strip_test_code(&read_source("src/mcp/tools/repo_search.rs"));
+    let adapter_source = strip_test_code(&read_source("src/meta/adapter/repo.rs"));
+    assert!(
+        tool_source.contains("repo_search_with_remote_execution")
+            && tool_source.contains("RepoRemoteExecution::Denied"),
+        "Mode-Off repo_search must pass explicit remote-denied authority to the adapter"
+    );
+    let package_start = adapter_source
+        .find("let package_resolution = if let Some(coord) = req.package_coordinate()")
+        .expect("package resolution path not found");
+    let package_end = adapter_source[package_start..]
+        .find("// In exact-error mode")
+        .expect("package resolution end not found")
+        + package_start;
+    let package_path = &adapter_source[package_start..package_end];
+    assert!(
+        package_path.contains("RepoRemoteExecution::Denied")
+            && package_path.contains("skipped by local-only execution policy"),
+        "package resolution must be explicitly skipped under local-only authority"
+    );
+    assert!(
+        adapter_source.contains("RepoRemoteExecution::Denied => (Vec::new(), Vec::new())"),
+        "remote-denied repo dispatch must select no engines without empty-provider auto-selection"
+    );
+    assert!(
+        adapter_source.contains("if remote_execution == super::RepoRemoteExecution::Denied")
+            && adapter_source.contains("Advisory lookup skipped by local-only execution policy"),
+        "package advisory lookup must remain behind the same execution authority"
     );
 }

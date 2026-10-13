@@ -44,6 +44,8 @@ release/eggpack/github-template.json
 release/eggpack/install-policy.toml
 release/eggpack/installer-presentation.json
 packaging/gen-release-workflow-shape.py
+packaging/gen-eggpack-qualify-workflow.py
+packaging/check-eggpack-qualifier.py
 packaging/expected_release_assets.py
 packaging/validate-release-binary.py
 packaging/validate-armv7-candidate.py

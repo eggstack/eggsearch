@@ -1,6 +1,5 @@
 use crate::core::SearchWarning;
 use crate::core::SourceCard;
-use crate::meta::engines::build_http_client;
 use tracing::debug;
 
 use super::execution::*;
@@ -19,27 +18,45 @@ impl MetadataSearchAdapter {
         local_backend: Option<&crate::meta::local_backend::LocalWorkspaceBackend>,
         local_inventory: Option<&[crate::meta::local_inventory::LocalRepoIdentity]>,
     ) -> crate::core::repo_search::RepoSearchResponse {
+        self.repo_search_with_remote_execution(
+            req,
+            effective_max_results,
+            max_results_cap,
+            local_backend,
+            local_inventory,
+            super::RepoRemoteExecution::Allowed,
+        )
+        .await
+    }
+
+    pub(crate) async fn repo_search_with_remote_execution(
+        &self,
+        req: &crate::core::repo_search::RepoSearchRequest,
+        effective_max_results: usize,
+        max_results_cap: usize,
+        local_backend: Option<&crate::meta::local_backend::LocalWorkspaceBackend>,
+        local_inventory: Option<&[crate::meta::local_inventory::LocalRepoIdentity]>,
+        remote_execution: super::RepoRemoteExecution,
+    ) -> crate::core::repo_search::RepoSearchResponse {
         use crate::core::repo_search::{RepoSearchSubqueryTelemetry, RepoSearchTelemetry};
 
+        let remote_allowed = remote_execution == super::RepoRemoteExecution::Allowed;
         let is_exact_error = req.mode == Some(crate::core::repo_search::RepoSearchMode::ExactError);
 
         // Resolve package metadata if package fields are present
         let package_resolution = if let Some(coord) = req.package_coordinate() {
-            let timeout = self.effective_timeout(req.timeout_ms);
-            let client_opt = build_http_client(None).ok();
-            if let Some(client) = client_opt {
-                Some(
-                    crate::meta::package_resolver::resolve_package(&client, &coord, Some(timeout))
-                        .await,
-                )
-            } else {
-                let mut pr = crate::core::package::PackageResolution {
+            if remote_execution == super::RepoRemoteExecution::Denied {
+                let mut resolution = crate::core::package::PackageResolution {
                     coordinate: coord,
                     ..Default::default()
                 };
-                pr.warnings
-                    .push("failed to build HTTP client for package resolution".to_string());
-                Some(pr)
+                resolution.warnings.push(
+                    "package registry lookup skipped by local-only execution policy".to_string(),
+                );
+                Some(resolution)
+            } else {
+                let timeout = self.effective_timeout(req.timeout_ms);
+                Some((self.package_resolver)(coord, timeout).await)
             }
         } else {
             None
@@ -77,7 +94,10 @@ impl MetadataSearchAdapter {
         };
 
         let effective_timeout = self.effective_timeout(req.timeout_ms);
-        let (engines, queried_ids) = self.selected_engines(&req.providers);
+        let (engines, queried_ids) = match remote_execution {
+            super::RepoRemoteExecution::Allowed => self.selected_engines(&req.providers),
+            super::RepoRemoteExecution::Denied => (Vec::new(), Vec::new()),
+        };
 
         let final_max = effective_max_results;
         let candidate_limit = candidate_pool_size(final_max, max_results_cap);
@@ -141,6 +161,12 @@ impl MetadataSearchAdapter {
             attempt_set.as_slice(),
         );
         let mut warnings: Vec<SearchWarning> = Vec::new();
+        if !remote_allowed {
+            warnings.push(SearchWarning::new(
+                "_system",
+                "remote_sources_skipped_by_policy: Repository search is limited to the enabled local workspace.",
+            ));
+        }
         push_failure_warnings(&mut warnings, &dispatch.raw_results, &dispatch.raw_failures);
         for (provider_id, subquery_id, metadata) in &dispatch.retrieval_metadata {
             for scope in metadata.unindexed_scopes() {
@@ -231,6 +257,12 @@ impl MetadataSearchAdapter {
                         self.sanitize_output,
                         matched_repo,
                     );
+                if local_cards.is_empty() && !local_result.timed_out && !local_result.truncated {
+                    local_warnings.push(SearchWarning::new(
+                        "local_workspace",
+                        "local_search_completed_no_matches: Local workspace search completed without matching files.",
+                    ));
+                }
                 if local_result.timed_out {
                     local_warnings.push(SearchWarning::new(
                         "local_workspace",
@@ -317,7 +349,7 @@ impl MetadataSearchAdapter {
                     format!("package_resolution: {w}"),
                 ));
             }
-            if !pr.verified {
+            if !pr.verified && remote_allowed {
                 warnings.push(SearchWarning::new(
                     "_system",
                     format!(
@@ -336,7 +368,7 @@ impl MetadataSearchAdapter {
         let has_native_releases = any_engine_supports(&engines, |c| c.supports_release_search);
         let has_any_native = has_native_code || has_native_issues || has_native_releases;
 
-        if plan.hints.has_any() && !has_any_native {
+        if remote_allowed && plan.hints.has_any() && !has_any_native {
             warnings.push(SearchWarning::new(
                 "_system",
                 "native_code_search_unavailable: Repo hints parsed but no native code-host provider configured; using generic web providers.",
@@ -344,7 +376,7 @@ impl MetadataSearchAdapter {
         }
 
         // Symbol-aware search warning.
-        if plan.hints.symbol.is_some() && !has_native_code {
+        if remote_allowed && plan.hints.symbol.is_some() && !has_native_code {
             warnings.push(SearchWarning::new(
                 "_system",
                 "symbol_hint_no_native_provider: Symbol hint present but no native code provider supports symbol search; using text query fallback.",
@@ -352,9 +384,10 @@ impl MetadataSearchAdapter {
         }
 
         // Repo/path/language hint with no native provider
-        if (plan.hints.owner.is_some()
-            || plan.hints.path.is_some()
-            || plan.hints.language.is_some())
+        if remote_allowed
+            && (plan.hints.owner.is_some()
+                || plan.hints.path.is_some()
+                || plan.hints.language.is_some())
             && !has_native_code
         {
             warnings.push(SearchWarning::new(
@@ -364,7 +397,7 @@ impl MetadataSearchAdapter {
         }
 
         // Issues without native provider warning.
-        if req.include_issues_enabled() && !has_native_issues {
+        if remote_allowed && req.include_issues_enabled() && !has_native_issues {
             warnings.push(SearchWarning::new(
                 "_system",
                 "issue_search_no_native_provider: Issues requested but no native issue provider selected; using generic web search.",
@@ -372,7 +405,7 @@ impl MetadataSearchAdapter {
         }
 
         // Releases without native provider warning.
-        if req.include_releases_enabled() && !has_native_releases {
+        if remote_allowed && req.include_releases_enabled() && !has_native_releases {
             warnings.push(SearchWarning::new(
                 "_system",
                 "release_search_no_native_provider: Releases requested but no native release provider selected; using generic web search.",
@@ -380,7 +413,10 @@ impl MetadataSearchAdapter {
         }
 
         // Coding profile with only generic providers
-        if req.profile == Some(crate::core::repo_search::SearchProfile::Coding) && !has_any_native {
+        if remote_allowed
+            && req.profile == Some(crate::core::repo_search::SearchProfile::Coding)
+            && !has_any_native
+        {
             warnings.push(SearchWarning::new(
                 "_system",
                 "coding_profile_degraded: Coding profile requested but no native code/issues/releases provider is available; results are from generic web search",
@@ -388,7 +424,7 @@ impl MetadataSearchAdapter {
         }
 
         // Freshness with no timestamp support
-        if req.freshness != crate::core::query::Freshness::Any {
+        if remote_allowed && req.freshness != crate::core::query::Freshness::Any {
             let has_timestamps = any_engine_supports(&engines, |c| c.supports_result_timestamps);
             if !has_timestamps {
                 warnings.push(SearchWarning::new(
@@ -412,7 +448,11 @@ impl MetadataSearchAdapter {
 
         warnings.push(SearchWarning::new(
             "_system",
-            "generic_context_untrusted: Live web results are untrusted external content.",
+            if remote_allowed {
+                "generic_context_untrusted: Live web results are untrusted external content."
+            } else {
+                "local_context_untrusted: Local workspace content is untrusted external data."
+            },
         ));
 
         let trust_markers =
@@ -492,7 +532,13 @@ impl MetadataSearchAdapter {
         // Security context: query advisories when requested and package is present
         let security_context = if req.include_security_context_enabled() {
             if let Some(pr) = &package_resolution {
-                if pr.verified {
+                if remote_execution == super::RepoRemoteExecution::Denied {
+                    warnings.push(SearchWarning::new(
+                        "_system",
+                        "package_security_skipped: Advisory lookup skipped by local-only execution policy.",
+                    ));
+                    None
+                } else if pr.verified {
                     let ecosystem_str = pr.coordinate.ecosystem.osv_ecosystem();
                     match self
                         .query_advisories_by_package(
@@ -716,5 +762,100 @@ pub(crate) fn format_hints(hints: &crate::core::repo_query::RepoQueryHints) -> S
         "none".to_string()
     } else {
         parts.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::meta::engines::error::EngineError;
+    use crate::meta::engines::models::SearchResult;
+    use crate::meta::engines::{EngineSearchRequest, SearchEngine};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    struct CountingRepoEngine {
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl SearchEngine for CountingRepoEngine {
+        fn name(&self) -> &'static str {
+            "counted_remote"
+        }
+
+        fn search<'a>(
+            &'a self,
+            _request: &'a EngineSearchRequest,
+        ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(Vec::new()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_denial_skips_engine_and_package_resolution() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let resolver_calls = Arc::new(AtomicUsize::new(0));
+        let resolver_counter = resolver_calls.clone();
+        let package_resolver: super::super::PackageResolver = Arc::new(move |coordinate, _| {
+            resolver_counter.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                crate::core::package::PackageResolution {
+                    coordinate,
+                    ..Default::default()
+                }
+            })
+        });
+        let adapter = MetadataSearchAdapter::from_engines_with_package_resolver(
+            vec![Arc::new(CountingRepoEngine {
+                calls: calls.clone(),
+            })],
+            Duration::from_secs(2),
+            package_resolver,
+        );
+        let req = crate::core::repo_search::RepoSearchRequest {
+            query: "local-only package".to_string(),
+            ecosystem: Some(crate::core::package::PackageEcosystem::CratesIo),
+            package: Some("local-only-package".to_string()),
+            include_security_context: Some(true),
+            ..Default::default()
+        };
+
+        let response = adapter
+            .repo_search_with_remote_execution(
+                &req,
+                5,
+                20,
+                None,
+                None,
+                super::super::RepoRemoteExecution::Denied,
+            )
+            .await;
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert_eq!(resolver_calls.load(Ordering::SeqCst), 0);
+        assert!(response.providers_queried.is_empty());
+        assert!(response
+            .telemetry
+            .subqueries
+            .iter()
+            .all(|subquery| subquery.providers_attempted.is_empty()));
+        let package_resolution = response
+            .package_resolution
+            .expect("local-only package status is present");
+        assert!(!package_resolution.verified);
+        assert!(package_resolution
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("skipped by local-only execution policy")));
+        assert!(response.warnings.iter().any(|warning| {
+            warning.message.contains("package_security_skipped")
+                && warning.message.contains("local-only execution policy")
+        }));
+        assert!(response.warnings.iter().all(|warning| {
+            !warning.message.contains("using generic web search")
+                && !warning.message.contains("using generic web providers")
+        }));
     }
 }

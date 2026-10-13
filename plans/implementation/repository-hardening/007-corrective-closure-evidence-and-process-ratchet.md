@@ -1,8 +1,9 @@
 # Plan 007 — Corrective Closure Evidence and Repository-Wide Process Ratchet
 
-Status: conditionally closed
+Status: closed (reconciled by M010)
 
-Closure record: `plans/closure/repository-hardening/007-status.md`.
+Closure record: `plans/closure/repository-hardening/007-status.md`; scheduled
+evidence reconciliation: `plans/closure/repository-hardening/010-status.md`.
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`

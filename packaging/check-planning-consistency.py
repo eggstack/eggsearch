@@ -39,13 +39,13 @@ def main():
         if "hardening" in low and "m001-m005" in low and "closed" in low:
             errors.append(f"registry hardening row must not claim M001-M005 closed: {line.strip()[:160]}")
     expectations = [
-        ("M001", "conditionally"),
-        ("M002", "conditionally"),
+        ("M001", "closed"),
+        ("M002", "closed"),
         ("M003", "closed"),
         ("M004", "closed"),
         ("M005", "closed"),
         ("M006", "blocked"),
-        ("M007", "conditionally closed"),
+        ("M007", "closed"),
     ]
     for mid, want in expectations:
         marker = f"| {mid}"
@@ -67,8 +67,8 @@ def main():
         errors.append("roadmap M004 must reference M007 corrective ratchet")
     hardening_lines = [l for l in registry.splitlines() if "hardening" in l.lower()]
     hardening_blob = "\n".join(hardening_lines).lower()
-    if "m007" not in hardening_blob or "conditionally" not in hardening_blob or "blocked" not in hardening_blob:
-        errors.append("registry hardening entries must mention M007, conditional status, and blocked M006")
+    if "m007" not in hardening_blob or "closed" not in hardening_blob or "blocked" not in hardening_blob:
+        errors.append("registry hardening entries must mention closed M007 and blocked M006")
     m007_impl = None
     for line in registry.splitlines():
         if "007-corrective-closure-evidence-and-process-ratchet" in line:
@@ -76,8 +76,8 @@ def main():
             break
     if m007_impl is None:
         errors.append("registry must link M007 implementation plan")
-    elif "conditionally closed" not in m007_impl.lower():
-        errors.append(f"registry M007 row must be conditionally closed: {m007_impl.strip()[:200]}")
+    elif "closed by m010" not in m007_impl.lower():
+        errors.append(f"registry M007 row must be closed by M010: {m007_impl.strip()[:200]}")
     if errors:
         for e in errors:
             print(f"planning-consistency: {e}", file=sys.stderr)

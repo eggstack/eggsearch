@@ -1,6 +1,6 @@
 # Release packaging architecture
 
-**Location:** `release/eggpack/`, `packaging/`, `.github/workflows/release-eggpack.yml`, `.github/workflows/release-provenance.yml`, `src/platform.rs`, `src/update.rs`
+**Location:** `release/eggpack/`, `packaging/`, `.github/workflows/release-eggpack.yml`, `.github/workflows/qualify-eggpack-candidate.yml`, `.github/workflows/release-provenance.yml`, `src/platform.rs`, `src/update.rs`
 
 Release packaging adds a binary distribution boundary without changing the
 MCP application architecture. The crate remains one default-feature binary;
@@ -46,7 +46,8 @@ agree exactly.
 ## Release inputs and validation entry points
 
 `packaging/release-inputs.txt` lists every path that must exist in the release
-checkout: `Cargo.toml`, `Cargo.lock`, `packaging/release-targets.txt`,
+checkout, including the Eggpack qualification generator and contract guard:
+`Cargo.toml`, `Cargo.lock`, `packaging/release-targets.txt`,
 `packaging/release-smoke.sh`, `packaging/release-smoke.ps1`,
 `packaging/install.sh`, `packaging/install.ps1`,
 `packaging/release-validate.sh`, `packaging/check-contract.sh`,
@@ -129,8 +130,27 @@ eggpack ci check \
 `.github/workflows/release-drift.yml` runs that `ci check` on every push and
 pull request, so drift fails required CI rather than a release.
 
-The generated workflow is `workflow_dispatch`-only and requires an exact
-existing `release_tag`. It renders 27 jobs: `preflight`, `resolve`, seven
+`.github/workflows/qualify-eggpack-candidate.yml` is a separate, non-publishing
+exact-SHA workflow. Its deterministic generator,
+`packaging/gen-eggpack-qualify-workflow.py`, transforms the generated release
+workflow, and `packaging/check-eggpack-qualifier.py` proves it preserves every
+producer job except `stage`, retains all seven target validators, and has no
+release-write or tag-checkout path. It accepts a full lowercase 40-hex commit
+SHA, verifies `HEAD` against that input, and derives its internal Eggpack
+release identity from the checked-out Cargo version. That identity is used
+only to create run-scoped qualification evidence; it does not assert that a
+tag exists. The workflow and every target job use read-only repository
+permissions. Its outputs are workflow-run artifacts, not public release
+assets. The generated release workflow remains the only path that stages a
+draft.
+
+Dispatch the qualifier only after it is present on the default branch. A
+green hosted qualifier is required before crates.io publication; it does not
+replace the later exact-tag release build, draft provenance check, or manual
+publication review.
+
+The generated release workflow is `workflow_dispatch`-only and requires an exact
+existing `release_tag`. It renders 26 jobs: `preflight`, `resolve`, seven
 `build_*`, seven `qualify_build_*`, seven `validate_build_*` consumer
 validators, `required_gate`, `aggregate`, and `stage`.
 
