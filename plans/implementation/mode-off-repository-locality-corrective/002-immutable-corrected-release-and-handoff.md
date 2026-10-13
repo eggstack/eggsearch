@@ -123,8 +123,9 @@ crate version to be visible before dispatch, so hosted build/stage evidence
 cannot precede crate publication under the existing workflow.
 
 This conflicts with WP3/WP4's required order. No crate was published, no tag
-was created, and no workflow was dispatched. M002 is blocked pending a
-decision to register a non-publishing exact-candidate qualifier or revise the
-release sequence to qualify/stage after crate publication while keeping final
-GitHub Release publication manual. Do not pin CodeGG to the candidate until
-the selected path provides immutable release and provenance evidence.
+was created, and no workflow was dispatched. M002 remains blocked until M003
+provides a hosted, non-publishing, exact-SHA qualifier and the candidate
+completes it. M003 registers the prepublication qualifier path; the current
+release producer remains the only path that stages and publishes releases.
+Do not pin CodeGG to the candidate until immutable release and provenance
+evidence exists.
