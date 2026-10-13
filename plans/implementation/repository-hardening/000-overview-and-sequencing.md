@@ -1,6 +1,6 @@
 # Repository Hardening — Overview and Sequencing
 
-Status: active; M008 corrective closed, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed, M006 blocked
+Status: active; M008 corrective closed, M007 conditionally closed, M001 conditionally closed via M007, M002 conditionally closed pending M009, M006 blocked
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -27,6 +27,7 @@ modes and should produce separate closure evidence.
 | M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
 | M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | conditionally closed | none; full closure operationally depends on first successful `schedule` dependency-security run; see `plans/closure/repository-hardening/007-status.md` |
 | M008 | `008-windows-startup-cross-target-portability-corrective.md` | closed | none; release gate cleared at `44f38ab` (CI `37036453017`, egress `37036467646`, release qualify `37036489273`) |
+| M009 | `009-first-tagged-release-provenance-reconciliation.md` | ready | first tagged-release evidence recorded in M002 closure |
 
 ## Execution deviation
 
