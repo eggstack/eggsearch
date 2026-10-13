@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality M001 — Explicit Zero-Remote-Dispatch Boundary
 
-Status: ready
+Status: closed
 Primary class: invariant / security and correctness
 Repository baseline: `eggstack/eggsearch@90e996ef6c83c969e30c30a36bc9d968a85dc00f` (main, 2026-10-13)
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`

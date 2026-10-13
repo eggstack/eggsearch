@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality — Corrective Roadmap
 
-Status: active (M001 ready, M002 blocked on M001)
+Status: active (M001 closed, M002 ready)
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f` (2026-10-13)
 Primary class: invariant / security and runtime correctness
 
@@ -28,7 +28,7 @@ This is an **eggsearch** fix. CodeGG's far-future release readiness, TUI/daemon 
 
 CodeGG's C001 exploratory real-process test observed `repo_search(include_local=true)` under `search.mode="off"` dispatch to DuckDuckGo and return remote provider telemetry/results/timeouts. No user credentials were supplied. That observation is documented but is not a synthetic packet-capture proof; further tests must use counting/failing local adapters, not external requests.
 
-Upstream `src/mcp/tools/repo_search.rs` currently:
+At the corrective baseline, upstream `src/mcp/tools/repo_search.rs`:
 1. identifies `local_only_path` if Mode Off, a local backend is present, and `include_local != Some(false)`;
 2. skips the normal remote-provider routing decision and sets `RepoSearchRequest.providers = Vec::new()`;
 3. invokes `state.adapter.repo_search(...)`.
@@ -69,10 +69,10 @@ CodeGG legacy builtin backend retirement M002 (separate repo)
 
 | Milestone | Status | Plan | Exit evidence |
 |---|---|---|---|
-| M001 explicit remote permission and offline local repository correctness | **ready** | `plans/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md` | Real local matches with 0 provider + 0 resolver/fetch calls; negative and fallback cases; local, MCP and static tests |
-| M002 patch publication and CodeGG compatibility handoff | **blocked (M001)** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | Immutable released fixed artifact; source commit/tag/digest and exact provenance/qualification; concise CodeGG paired test contract |
+| M001 explicit remote permission and offline local repository correctness | **closed** | `plans/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md` | Closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; closure `plans/closure/mode-off-repository-locality-corrective/001-status.md`. Local match, empty-workspace/exact-error, opt-out, two provider counters, injected resolver counter, advisory skip, live routing, full `make check`, and docs pass. |
+| M002 patch publication and CodeGG compatibility handoff | **ready** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | M001 strict closure satisfied. Release audit found `0.4.2` latest and `0.4.3` unused; qualify the exact release candidate and preserve the current Eggpack 19-asset/provenance process. |
 
-M001 is independently ready; no release-process prep is required to implement or prove it. M002 must not publish until M001 strictly closes. A user/operator may choose to defer release publication, but the CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
+M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M002 is now dependency-ready. The CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
 
 ## 5. Verification and authority
 

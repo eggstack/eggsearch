@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality M002 — Immutable Corrected Eggsearch Release and CodeGG Handoff
 
-Status: blocked (M001 strict closure required)
+Status: ready
 Primary class: capability / immutable release qualification
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f`.
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`
