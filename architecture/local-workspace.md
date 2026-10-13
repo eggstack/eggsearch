@@ -224,6 +224,16 @@ flag: `RepoSearchRequest.include_local` (and `repo_search` tool arg
 backend `is_enabled()` and `req.include_local_enabled()` both hold, inside
 `local_result_budget()`.
 
+When `[search].mode = "off"`, `repo_search` may run only if the local backend
+is enabled and local results were not explicitly disabled. The MCP endpoint
+passes a call-scoped remote execution denial to the adapter; this is separate
+from provider selection, where an empty provider list still means automatic
+selection in live mode. Mode-Off requests skip provider engines, package
+registry resolution, and package advisory lookup. Responses identify the
+local workspace as queried, report remote sources skipped by policy, and keep
+local source text marked untrusted. Missing, disabled, or opted-out local
+search is rejected before adapter dispatch.
+
 ---
 
 **Back to:** [overview.md](overview.md)

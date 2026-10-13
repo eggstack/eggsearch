@@ -436,6 +436,20 @@ No consumer-specific field may be added to the MCP request or response schema
 to support retirement. If that appears necessary, it is a defect in this
 contract rather than a feature gap.
 
+### 12.5 Mode-Off Local Repository Search
+
+`repo_search` under `[search].mode = "off"` is eligible only when the local
+workspace backend is enabled and local results have not been opted out. The
+endpoint grants a call-scoped local-only execution authority; provider hints
+do not grant remote access, and empty provider selection is not used to encode
+the denial. Provider engines, package-registry resolution, and package
+advisory lookup are skipped. Responses report local workspace retrieval and
+remote-source policy skips separately, while local source text remains
+untrusted. A missing/disabled local backend or `include_local = false` is a
+policy error. The corrected source contract requires a new immutable
+eggsearch release and downstream paired qualification before legacy-backend
+retirement; a source checkout alone does not clear that release gate.
+
 ---
 
 **Back to:** [overview.md](overview.md)

@@ -19,6 +19,13 @@ Related: [overview.md](overview.md) (system map) · [engines.md](engines.md) (pr
 - `provider_ids()`, `health()`, `effective_timeout()` expose routing state. Per-request `timeout_ms` is clamped by the global timeout.
 - `PlannedSubquery` (label, query, priority, intended roles, `RepoScope`, `excerpt_count`) is the internal handoff from planners to dispatch.
 
+`MetadataSearchAdapter::repo_search()` is the remote-allowed adapter entry:
+empty provider lists retain automatic provider selection there. The MCP
+`repo_search` path passes a separate call-scoped `RepoRemoteExecution` value;
+Mode Off uses `Denied`, which supplies no engines and skips package and
+advisory resolution. Local-only authority is never encoded as an empty
+provider list.
+
 Behavior splits by file with stable `adapter::X` paths:
 
 | File | Responsibility |
