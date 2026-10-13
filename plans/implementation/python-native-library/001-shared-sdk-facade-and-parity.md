@@ -5,7 +5,7 @@ Primary class: infrastructure
 Source: `plans/subsystems/python-native-library-roadmap.md` M001
 Baseline: `main` `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo 0.4.3)
 ADRs: `ADR-0001` (fixed MCP tool ownership) and `ADR-0005` (Python SDK boundary).
-Long-term: `plans/000-long-term-specification.md` ``1-4, 6-9; `plans/001-terminology-and-domain-model.md` ``1-5.
+Long-term: `plans/000-long-term-specification.md` sections 1-4, 6-9; `plans/001-terminology-and-domain-model.md` sections 1-5.
 
 ## Objective, readiness and non-goals
 

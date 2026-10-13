@@ -4,7 +4,7 @@ Status: active (M001 ready; M002-M004 blocked by predecessor closure)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
-References: `plans/000-long-term-specification.md` ``1-4, 6-9; `plans/001-terminology-and-domain-model.md` ``1-5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md` and `plans/adrs/ADR-0005-python-native-library-boundary.md`.
+References: `plans/000-long-term-specification.md` sections 1-4, 6-9; `plans/001-terminology-and-domain-model.md` sections 1-5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md` and `plans/adrs/ADR-0005-python-native-library-boundary.md`.
 
 ## Purpose and ownership
 

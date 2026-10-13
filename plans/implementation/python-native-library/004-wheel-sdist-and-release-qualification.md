@@ -4,7 +4,7 @@ Status: blocked (hard dependency: M003 closed; operational: platform qualificati
 Primary class: infrastructure
 Source: `plans/subsystems/python-native-library-roadmap.md` M004
 Planning baseline: `main` `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b`; re-qualify actual candidate after M003.
-ADRs: `ADR-0005`; long-term `plans/000-long-term-specification.md` ``6, 7, 9.
+ADRs: `ADR-0005`; long-term `plans/000-long-term-specification.md` sections 6, 7, 9.
 
 ## Objective, scope, gates
 

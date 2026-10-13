@@ -5,7 +5,7 @@ Date: 2026-10-13
 Decision owners: project maintainers
 Scope: Python only
 
-Related: `plans/000-long-term-specification.md` ``1-4, 6-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md`; `plans/003-planning-process.md`.
+Related: `plans/000-long-term-specification.md` sections 1-4, 6-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md`; `plans/003-planning-process.md`.
 Affected subsystem: `plans/subsystems/python-native-library-roadmap.md`.
 
 ## Context and problem
@@ -37,7 +37,7 @@ The facade is intentionally public for binding compilation but **does not make t
 
 Root remains a single library + binary *package* with its current public binary assets; the Python extension may be a separate non-workspace Cargo package under `bindings/python/` with a path/version dependency on the root package. The integration must prove `cargo package`, `cargo publish --dry-run`, baseline `make check`, and lockfile hygiene still work. Using a workspace would require a separate justified decision because it can modify root packaging and lockfile semantics.
 
-M001 must reconcile normative product description (`plans/000-long-term-specification.md` ``1, 6, 8 as applicable), `src/lib.rs`, and `architecture/maintenance.md` to express the precise SDK exception. Do not opportunistically rewrite the other canonical architectural guarantees.
+M001 must reconcile normative product description (`plans/000-long-term-specification.md` sections 1, 6, 8 as applicable), `src/lib.rs`, and `architecture/maintenance.md` to express the precise SDK exception. Do not opportunistically rewrite the other canonical architectural guarantees.
 
 ## Contract and compatibility
 

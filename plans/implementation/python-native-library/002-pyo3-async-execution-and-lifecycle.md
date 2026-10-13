@@ -4,7 +4,7 @@ Status: blocked (hard dependency: M001 closed)
 Primary class: capability
 Source: `plans/subsystems/python-native-library-roadmap.md` M002
 Planning baseline: `main` `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b`; rebase implementation evidence after M001 closure.
-ADRs: `ADR-0001`, `ADR-0005`; long-term ``1-4, 6-9 of `plans/000-long-term-specification.md`.
+ADRs: `ADR-0001`, `ADR-0005`; long-term sections 1-4, 6-9 of `plans/000-long-term-specification.md`.
 
 ## Objective, readiness, non-goals
 
