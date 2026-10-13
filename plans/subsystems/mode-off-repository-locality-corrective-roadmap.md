@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality — Corrective Roadmap
 
-Status: active (M001 closed, M002 blocked pending M003 and release evidence)
+Status: active (M001 closed; M002 and M003 blocked on hosted release qualification)
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f` (2026-10-13)
 Primary class: invariant / security and runtime correctness
 
@@ -57,6 +57,11 @@ M001 explicit no-remote-dispatch ownership + instrumented regressions
                        |
                   strict closure
                        v
+M003 non-publishing exact-SHA Eggpack qualifier
+                       |
+       hosted exact-SHA qualification path
+                       |
+                       v
 M002 immutable corrected eggsearch patch release + downstream handoff
                        |
         immutable tag / source SHA / provenance / zero-call tests
@@ -70,9 +75,10 @@ CodeGG legacy builtin backend retirement M002 (separate repo)
 | Milestone | Status | Plan | Exit evidence |
 |---|---|---|---|
 | M001 explicit remote permission and offline local repository correctness | **closed** | `plans/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md` | Closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; closure `plans/closure/mode-off-repository-locality-corrective/001-status.md`. Local match, empty-workspace/exact-error, opt-out, two provider counters, injected resolver counter, advisory skip, live routing, full `make check`, and docs pass. |
-| M002 patch publication and CodeGG compatibility handoff | **blocked** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | Candidate `5e7b853` and local gates are ready. Current Eggpack accepts an existing tag and stages only after the crate is published, so its workflow cannot satisfy WP3's prepublication hosted qualification order. |
+| M003 non-publishing exact-SHA Eggpack qualifier | **blocked** | `plans/implementation/mode-off-repository-locality-corrective/003-prepublication-exact-sha-qualifier.md` | Implementation `fcb1fb5` is pushed with deterministic generation and local guards green. Hosted exact-SHA evidence requires the workflow to be available on the default branch. Closure `plans/closure/mode-off-repository-locality-corrective/003-status.md`. |
+| M002 patch publication and CodeGG compatibility handoff | **blocked** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | Candidate `5e7b853` and local gates are ready. M002 WP3 awaits the M003 hosted exact-SHA qualifier and then the immutable release evidence. No crate, tag, draft, or publication occurred. |
 
-M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M002 local candidate preparation is complete, but its hosted qualification and publication order needs resolution. The CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
+M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M003's implementation is pushed at `fcb1fb5`, but its hosted acceptance is blocked until the workflow is available on the default branch and completes against an exact SHA. M002 local candidate preparation is complete, but its hosted qualification and publication depend on M003. The CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
 
 ## 5. Verification and authority
 
@@ -80,7 +86,7 @@ Tests must have **counting/failing `SearchEngine` doubles** and a separate **cou
 
 Include a real local workspace fixture and direct MCP `repo_search` trajectory with `search.mode="off"`, alongside no-local-backend, `include_local=false`, explicit provider list, exact-error, package-coordinate and cancellation/deadline cases. Reconfirm live-mode auto-provider routing unaffected. Observe/fix misleading warnings such as `using generic web search` on a path that is strictly local.
 
-M001 closure: `plans/closure/mode-off-repository-locality-corrective/001-status.md`. M002 closure: `plans/closure/mode-off-repository-locality-corrective/002-status.md`. Both require exact commands/run results, fixtures, security and cancellation evidence, source/schema compatibility, unresolved findings, and named blockers. Do not overwrite historical CodeGG/eggsearch parity closure records.
+M001 closure: `plans/closure/mode-off-repository-locality-corrective/001-status.md`. M002 closure: `plans/closure/mode-off-repository-locality-corrective/002-status.md`. M003 closure: `plans/closure/mode-off-repository-locality-corrective/003-status.md`. Records include exact commands/run results, fixtures, security and cancellation evidence, source/schema compatibility, unresolved findings, and named blockers. Do not overwrite historical CodeGG/eggsearch parity closure records.
 
 ## 6. Deferred and stop conditions
 
