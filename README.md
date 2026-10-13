@@ -88,7 +88,7 @@ or a persistent loopback endpoint:
 ```bash
 $ eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp &
 $ curl -s http://127.0.0.1:11320/healthz
-{"service":"eggsearch","status":"ready","version":"0.4.1","protocol":"streamable-http"}
+{"service":"eggsearch","status":"ready","version":"0.4.3","protocol":"streamable-http"}
 ```
 
 `mcp serve` accepts loopback binds only and registers no service on its own — see

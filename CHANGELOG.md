@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-13
+
 ### Fixed
+
+- `repo_search` in Mode Off now uses an explicit local-only dispatch authority.
+  Provider engines, package-registry resolution, and package advisory lookup
+  are skipped while configured local workspace search remains available.
 
 - Error-query redaction no longer panics on ordinary compiler output. Local
   path matches were collected from an immutable snapshot but applied while
