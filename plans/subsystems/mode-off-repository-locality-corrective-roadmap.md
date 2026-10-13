@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality — Corrective Roadmap
 
-Status: active (M001 closed, M002 ready)
+Status: active (M001 closed, M002 blocked on release qualification sequence)
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f` (2026-10-13)
 Primary class: invariant / security and runtime correctness
 
@@ -70,9 +70,9 @@ CodeGG legacy builtin backend retirement M002 (separate repo)
 | Milestone | Status | Plan | Exit evidence |
 |---|---|---|---|
 | M001 explicit remote permission and offline local repository correctness | **closed** | `plans/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md` | Closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; closure `plans/closure/mode-off-repository-locality-corrective/001-status.md`. Local match, empty-workspace/exact-error, opt-out, two provider counters, injected resolver counter, advisory skip, live routing, full `make check`, and docs pass. |
-| M002 patch publication and CodeGG compatibility handoff | **ready** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | M001 strict closure satisfied. Release audit found `0.4.2` latest and `0.4.3` unused; qualify the exact release candidate and preserve the current Eggpack 19-asset/provenance process. |
+| M002 patch publication and CodeGG compatibility handoff | **blocked** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | Candidate `5e7b853` and local gates are ready. Current Eggpack accepts an existing tag and stages only after the crate is published, so its workflow cannot satisfy WP3's prepublication hosted qualification order. |
 
-M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M002 is now dependency-ready. The CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
+M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M002 local candidate preparation is complete, but its hosted qualification and publication order needs resolution. The CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
 
 ## 5. Verification and authority
 

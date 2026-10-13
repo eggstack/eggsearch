@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality M002 — Immutable Corrected Eggsearch Release and CodeGG Handoff
 
-Status: ready
+Status: blocked
 Primary class: capability / immutable release qualification
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f`.
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`
@@ -111,3 +111,20 @@ The release must not claim zero network by observing empty output or timeout. Th
 **Stop** if patch version is already occupied, upstream policy change is not backward compatible, release producer cannot guarantee artifact identity/provenance, or any provider/resolver counter is nonzero. Never overwrite tags or skip provenance to force release.
 
 Closure: `plans/closure/mode-off-repository-locality-corrective/002-status.md` with source/qualification/publication SHAs, CI run IDs, native targets, artifact/digest inventory, positive and adversarial no-remote test matrix, exact public tag/URL, security and migration assessment, CodeGG handoff link, residual issues and release/consumer distinction.
+
+## Execution finding — release workflow sequence
+
+Candidate preparation and every required local source gate are complete at
+`5e7b853e7eebf29c58f84959805c8774279d7ea4`. The current generated Eggpack
+workflow does not expose the prepublication `mode=qualify` exact-SHA path
+assumed by WP3. It accepts an exact existing `release_tag`, checks out that
+tag, and stages a draft. The current release contract requires the matching
+crate version to be visible before dispatch, so hosted build/stage evidence
+cannot precede crate publication under the existing workflow.
+
+This conflicts with WP3/WP4's required order. No crate was published, no tag
+was created, and no workflow was dispatched. M002 is blocked pending a
+decision to register a non-publishing exact-candidate qualifier or revise the
+release sequence to qualify/stage after crate publication while keeping final
+GitHub Release publication manual. Do not pin CodeGG to the candidate until
+the selected path provides immutable release and provenance evidence.
