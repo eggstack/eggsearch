@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M001/M002/M007/M008/M009 closed, M006 blocked, M010 closing
+Status: active; M001/M002/M007/M008/M009/M010 closed, M006 blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -244,7 +244,7 @@ Current milestone state: M001/M007 are closed by M010 after reconciling the firs
 | M007 closure evidence + process ratchet corrective | closed by M010 | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
 | M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
 | M009 first tagged-release provenance reconciliation | closed | `plans/closure/repository-hardening/009-status.md` |
-| M010 scheduled dependency-security evidence reconciliation | closing | `plans/implementation/repository-hardening/010-scheduled-security-evidence-reconciliation.md` |
+| M010 scheduled dependency-security evidence reconciliation | closed | `plans/closure/repository-hardening/010-status.md` |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 

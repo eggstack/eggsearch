@@ -1,6 +1,6 @@
 # Plan 010 — Scheduled Dependency-Security Evidence Reconciliation
 
-Status: closing
+Status: closed
 
 Source roadmap: `plans/subsystems/repository-hardening-roadmap.md`
 Milestone: M010 corrective reconciliation for M001/M007

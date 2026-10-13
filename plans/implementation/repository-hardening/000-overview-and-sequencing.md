@@ -28,7 +28,7 @@ modes and should produce separate closure evidence.
 | M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | closed via M010 | none; schedule run `38290328560` passed |
 | M008 | `008-windows-startup-cross-target-portability-corrective.md` | closed | none; release gate cleared at `44f38ab` (CI `37036453017`, egress `37036467646`, release qualify `37036489273`) |
 | M009 | `009-first-tagged-release-provenance-reconciliation.md` | closed | `plans/closure/repository-hardening/009-status.md` |
-| M010 | `010-scheduled-security-evidence-reconciliation.md` | closing | first successful schedule run `38290328560` recorded |
+| M010 | `010-scheduled-security-evidence-reconciliation.md` | closed | `plans/closure/repository-hardening/010-status.md` |
 
 ## Execution deviation
 
