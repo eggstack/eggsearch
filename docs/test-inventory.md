@@ -220,7 +220,7 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 
 | Suite | Runtime | Tests | Focus |
 |-------|---------|-------|-------|
-| `bindings/python/tests/test_native.py` | CPython 3.11–3.14; PyO3 extension | 16 | Ten-operation asyncio smoke, typed method delegation and explicit null/false/empty preservation, async context manager, structured errors, Mode-Off local trust, bounded JSON conversion and invalid inputs, cycles, cancellation/close, and sequential event-loop lifecycle |
+| `bindings/python/tests/test_native.py` | CPython 3.11–3.14; PyO3 extension | 17 | Ten-operation asyncio smoke, canonical schema/type coverage, typed method delegation and explicit null/false/empty preservation, async context manager, structured errors, Mode-Off local trust, bounded JSON conversion and invalid inputs, cycles, cancellation/close, and sequential event-loop lifecycle |
 
 Run from the repository root after installing the extension into an active
 virtual environment:

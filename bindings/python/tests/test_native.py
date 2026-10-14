@@ -4,6 +4,7 @@ import math
 import pytest
 
 from eggsearch import AsyncEggsearch, EggsearchError, tool_names
+from eggsearch import types as eggsearch_types
 
 
 EXPECTED_TOOLS = {
@@ -17,6 +18,19 @@ EXPECTED_TOOLS = {
     "security_search",
     "research_search",
     "build_evidence_bundle",
+}
+
+REQUEST_TYPES = {
+    "web_search": eggsearch_types.WebSearchRequest,
+    "web_fetch": eggsearch_types.WebFetchRequest,
+    "batch_fetch": eggsearch_types.BatchFetchRequest,
+    "provider_status": eggsearch_types.ProviderStatusRequest,
+    "repo_search": eggsearch_types.RepoSearchRequest,
+    "repo_fetch": eggsearch_types.RepoFetchRequest,
+    "repo_map": eggsearch_types.RepoMapRequest,
+    "security_search": eggsearch_types.SecuritySearchRequest,
+    "research_search": eggsearch_types.ResearchSearchRequest,
+    "build_evidence_bundle": eggsearch_types.EvidenceBundleRequest,
 }
 
 
@@ -54,6 +68,21 @@ def test_native_module_import_and_tool_inventory():
     assert len(names) == 10
     assert set(names) == EXPECTED_TOOLS
     assert len(set(names)) == len(names)
+
+
+def test_typed_requests_cover_canonical_rust_input_schemas():
+    client = AsyncEggsearch()
+    contracts = client.tool_contracts()
+    schemas = {
+        contract["name"]: contract["input_schema"]
+        for contract in contracts["tools"]
+    }
+
+    assert len(contracts["fingerprint"]) > 0
+    assert set(schemas) == EXPECTED_TOOLS
+    for name, request_type in REQUEST_TYPES.items():
+        properties = schemas[name].get("properties", {})
+        assert set(properties).issubset(request_type.__annotations__)
 
 
 def test_native_client_executes_all_operations_without_an_mcp_process(config_path):

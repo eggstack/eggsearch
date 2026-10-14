@@ -209,6 +209,11 @@ impl PyAsyncEggsearch {
             Python::attach(|py| Ok(py.None()))
         })
     }
+
+    fn tool_contracts(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let contracts = self.state.client.tool_contracts();
+        json_to_python(py, &contracts).map(Bound::unbind)
+    }
 }
 
 #[pyfunction]

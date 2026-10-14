@@ -145,6 +145,25 @@ impl EggsearchClient {
             .map(|contract| contract.name)
     }
 
+    pub fn tool_contracts(&self) -> serde_json::Value {
+        let server = crate::mcp::server::EggsearchServer::new(self.state.clone());
+        let tools = server
+            .tool_definitions()
+            .into_iter()
+            .map(|tool| {
+                serde_json::json!({
+                    "name": tool.name.as_ref(),
+                    "input_schema": tool.input_schema,
+                    "output_schema": tool.output_schema,
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "fingerprint": server.tool_fingerprint(),
+            "tools": tools,
+        })
+    }
+
     pub async fn execute(
         &self,
         tool: impl AsRef<str>,

@@ -333,6 +333,17 @@ class ToolResponse(TypedDict, total=False):
     gaps: list[dict[str, JSONValue]]
 
 
+class ToolContract(TypedDict):
+    name: str
+    input_schema: dict[str, JSONValue]
+    output_schema: dict[str, JSONValue] | None
+
+
+class ToolContractSet(TypedDict):
+    fingerprint: str
+    tools: list[ToolContract]
+
+
 WebSearchResponse = ToolResponse
 WebFetchResponse = ToolResponse
 BatchFetchResponse = ToolResponse
@@ -375,6 +386,8 @@ __all__ = [
     "SecuritySearchResponse",
     "SourceCard",
     "ToolResponse",
+    "ToolContract",
+    "ToolContractSet",
     "TrustLabel",
     "TrustMarkers",
     "WebFetchRequest",

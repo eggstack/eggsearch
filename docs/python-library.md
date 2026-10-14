@@ -46,7 +46,10 @@ including advanced fields. Omitted keys remain omitted; explicit `None`,
 `False`, empty lists, and zero values keep their JSON meanings through the
 native boundary and are validated by Rust. The generic `execute` method is
 available for dynamic tool dispatch. `tool_names()` returns the canonical
-ten-name inventory.
+ten-name inventory. `client.tool_contracts()` returns the MCP input/output
+schemas and their content fingerprint directly from Rust's server
+definitions. The package tests check that each Python request `TypedDict`
+covers every advertised input property.
 
 Importing the package does not create the Tokio runtime or start operations.
 The first operation initializes one process-scoped Tokio runtime shared by

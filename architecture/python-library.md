@@ -50,4 +50,7 @@ and response `TypedDict` definitions live in `bindings/python/python/eggsearch/t
 they describe common JSON fields while runtime dictionaries retain additive
 keys. The `py.typed` marker and native extension stub make the package
 discoverable to type checkers. `tool_names()` comes from the Rust SDK's
-code-derived canonical inventory.
+code-derived canonical inventory. `tool_contracts()` returns input/output
+schemas and the MCP contract fingerprint from the existing server definitions;
+the Python test suite checks request type coverage against advertised schema
+properties.

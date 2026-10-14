@@ -22,6 +22,7 @@ from .types import (
     ResearchSearchResponse,
     SecuritySearchRequest,
     SecuritySearchResponse,
+    ToolContractSet,
     WebFetchRequest,
     WebFetchResponse,
     WebSearchRequest,
@@ -48,6 +49,10 @@ class AsyncEggsearch:
 
     async def execute(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return await self._native.execute(tool, arguments)
+
+    def tool_contracts(self) -> ToolContractSet:
+        """Return the fingerprint and canonical Rust input/output schemas."""
+        return cast(ToolContractSet, self._native.tool_contracts())
 
     async def web_search(
         self, **kwargs: Unpack[WebSearchRequest]
