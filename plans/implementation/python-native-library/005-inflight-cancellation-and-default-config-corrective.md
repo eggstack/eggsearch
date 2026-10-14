@@ -5,7 +5,7 @@ Primary class: invariant (lifecycle correctness and explicit configuration autho
 Source: `plans/subsystems/python-native-library-roadmap.md` M005
 Baseline: `main` `1434c1e55ddd92947042cff9918ffc0fe130ed01` (2026-10-14; Python 0.4.3)
 Predecessors: M002 `plans/closure/python-native-library/002-status.md` (closed, candidate `2392e72178aa249445a64bd629caac8219353499`); M003 `plans/closure/python-native-library/003-status.md` (closed, candidate `ca4d0d6`). M004 distribution qualification remains active and must be repeated after this corrective changes the candidate.
-Architecture: `plans/adrs/ADR-0005-python-native-library-boundary.md`, `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md`; normative `plans/000-long-term-specification.md` ``1–4, 7, 9 and `plans/003-planning-process.md` ``2.4, 7.
+Architecture: `plans/adrs/ADR-0005-python-native-library-boundary.md`, `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md`; normative `plans/000-long-term-specification.md` sections 1–4, 7, 9 and `plans/003-planning-process.md` sections 2.4, 7.
 
 ## Objective and evidence gap
 
