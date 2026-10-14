@@ -156,8 +156,9 @@ and size limits, eliminating TOCTOU races between validation and open;
 on Windows the walk-time link checks leave a documented check-to-open
 swap window (no atomic no-follow open in std), contained by the
 user-owned jail-root trust boundary. Intermediate links are rejected
-fail-closed everywhere (`SymlinkDetected` on Linux and Windows, `Io`
-on macOS where `O_NOFOLLOW` reports `ENOTDIR`).
+fail-closed everywhere; Windows reports `SymlinkDetected`, macOS
+reports `Io` (`ENOTDIR` from `O_NOFOLLOW`), and Linux rejects from the
+untouched `openat2`/`openat` path with a platform-specific variant.
 `SafeOpenError` covers `Empty`, `AbsolutePath`, `PathTraversal`,
 `NullByte`, `NotFound`, `SymlinkDetected`, `NotAFile`, `FileTooLarge`,
 `FileContentLimitExceeded`, `RootOpenFailed`,

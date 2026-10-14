@@ -1,6 +1,6 @@
 # Python Native Library M008 — Advisory Remediation and Symlink-Containment Re-qualification
 
-Status: active
+Status: closed (closure `plans/closure/python-native-library/008-status.md` at candidate `067468a26c21716dd1063d67679768c6d794a2b9`, qualifying run `38641009246` 27/27 including audit)
 Roadmap: `plans/subsystems/python-native-library-roadmap.md` M008
 Class: invariant
 Related: ADR-0005 (`plans/adrs/ADR-0005-python-native-library-boundary.md`);

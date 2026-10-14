@@ -14,7 +14,10 @@ cancellation and default-config corrective is closed at
 `plans/closure/python-native-library/005-status.md`; M004 distribution
 qualification, M006 exact-SHA closure, and the M007 Windows safe-read
 corrective are closed together at `plans/closure/python-native-library/004-status.md`
-(candidate `faa1da2`, qualifying run `38617598636`, unpublished by design).
+(candidate `faa1da2`, qualifying run `38617598636`, unpublished by design),
+superseded as the qualification basis by M008 advisory remediation and
+symlink containment at `plans/closure/python-native-library/008-status.md`
+(candidate `067468a`, fully-green run `38641009246`).
 
 ## Rust operation facade
 
