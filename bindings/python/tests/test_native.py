@@ -586,10 +586,11 @@ def test_no_arg_defaults_ignore_platform_config(tmp_path, monkeypatch):
     isolated = tmp_path / "isolated-home"
     isolated.mkdir()
     _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
     resolved = AsyncEggsearch.default_config_path()
     assert resolved
     assert "eggsearch" in resolved
-    assert "config.toml" in resolved
+    assert resolved.endswith("config.toml") or resolved.endswith("eggsearch.toml")
     _write_config(
         __import__("pathlib").Path(resolved),
         "[search]\n"
@@ -637,6 +638,7 @@ def test_from_default_config_loads_platform_config(tmp_path, monkeypatch):
     isolated = tmp_path / "isolated-home"
     isolated.mkdir()
     _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
     resolved = AsyncEggsearch.default_config_path()
     _write_config(
         __import__("pathlib").Path(resolved),
@@ -702,6 +704,7 @@ def test_explicit_path_overrides_default_config(tmp_path, monkeypatch):
     isolated = tmp_path / "isolated-home"
     isolated.mkdir()
     _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
     resolved = AsyncEggsearch.default_config_path()
     _write_config(
         __import__("pathlib").Path(resolved),
@@ -794,6 +797,7 @@ def test_from_default_config_missing_file_falls_back_to_defaults(
     isolated = tmp_path / "empty-home"
     isolated.mkdir()
     _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
 
     async def run():
         client = AsyncEggsearch.from_default_config()
@@ -815,6 +819,7 @@ def test_from_default_config_invalid_toml_reports_deterministic_error(
     isolated = tmp_path / "bad-home"
     isolated.mkdir()
     _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
     resolved = AsyncEggsearch.default_config_path()
     _write_config(
         __import__("pathlib").Path(resolved),
@@ -832,6 +837,7 @@ def test_config_construction_hides_tokens(tmp_path, monkeypatch):
     isolated = tmp_path / "secret-home"
     isolated.mkdir()
     _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
     resolved = AsyncEggsearch.default_config_path()
     _write_config(
         __import__("pathlib").Path(resolved),
