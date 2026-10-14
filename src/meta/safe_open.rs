@@ -130,7 +130,9 @@ fn fstat_is_regular_and_size(fd: libc::c_int) -> Result<(bool, u64), std::io::Er
 /// primitive is available.
 ///
 /// On non-Unix platforms, `follow_symlinks=true` returns
-/// `SafeSymlinkFollowingUnsupported`.
+/// `SafeSymlinkFollowingUnsupported`, and components that are symlinks
+/// at walk time are rejected with `SymlinkDetected` when following is
+/// disabled.
 #[allow(unsafe_code)]
 pub fn safe_open_relative(
     root: &Path,
@@ -366,13 +368,20 @@ pub fn safe_open_relative(
             accumulated = accumulated.join(name);
 
             if is_last {
-                let meta = std::fs::metadata(&accumulated).map_err(|e| {
+                let meta = std::fs::symlink_metadata(&accumulated).map_err(|e| {
                     if e.kind() == std::io::ErrorKind::NotFound {
                         SafeOpenError::NotFound(accumulated.display().to_string())
                     } else {
                         SafeOpenError::Io(e)
                     }
                 })?;
+                if meta.file_type().is_symlink() {
+                    return Err(SafeOpenError::SymlinkDetected(format!(
+                        "{}/{}",
+                        root.display(),
+                        relative
+                    )));
+                }
                 if !meta.is_file() {
                     return Err(SafeOpenError::NotAFile);
                 }
@@ -395,13 +404,16 @@ pub fn safe_open_relative(
                 });
             }
 
-            let entry_meta = std::fs::metadata(&accumulated).map_err(|e| {
+            let entry_meta = std::fs::symlink_metadata(&accumulated).map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     SafeOpenError::NotFound(accumulated.display().to_string())
                 } else {
                     SafeOpenError::Io(e)
                 }
             })?;
+            if entry_meta.file_type().is_symlink() {
+                return Err(SafeOpenError::SymlinkDetected(name.to_string()));
+            }
             if !entry_meta.is_dir() {
                 return Err(SafeOpenError::NotFound(format!(
                     "component is not a directory: {}",
@@ -580,6 +592,37 @@ mod tests {
                 Err(SafeOpenError::SymlinkDetected(_))
             ));
         }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(
+                dir.path().join("target.txt"),
+                dir.path().join("link.txt"),
+            )
+            .unwrap();
+            let config = default_config();
+            assert!(matches!(
+                safe_open_relative(dir.path(), "link.txt", &config),
+                Err(SafeOpenError::SymlinkDetected(_))
+            ));
+        }
+    }
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn safe_open_symlink_intermediate_rejected_when_no_follow() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("leaf.txt"), "data").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("linkdir")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(outside.path(), dir.path().join("linkdir")).unwrap();
+        let config = default_config();
+        let result = safe_open_relative(dir.path(), "linkdir/leaf.txt", &config);
+        #[cfg(any(target_os = "linux", windows))]
+        assert!(matches!(result, Err(SafeOpenError::SymlinkDetected(_))));
+        #[cfg(not(any(target_os = "linux", windows)))]
+        assert!(result.is_err());
     }
 
     #[test]

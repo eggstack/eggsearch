@@ -791,6 +791,77 @@ def test_explicit_path_overrides_default_config(tmp_path, monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows non-Unix safe-open path only")
+def test_windows_symlinked_local_file_content_not_surfaced(tmp_path, monkeypatch):
+    workspace = tmp_path / "symlink-workspace"
+    workspace.mkdir()
+    (workspace / "README.md").write_text(
+        "Real workspace marker gamma.",
+        encoding="utf-8",
+    )
+    outside = tmp_path / "outside.md"
+    outside.write_text(
+        "Outside symlink target marker zeta.",
+        encoding="utf-8",
+    )
+    try:
+        os.symlink(outside, workspace / "link.md")
+    except OSError:
+        pytest.skip("symlink creation privilege unavailable")
+    isolated = tmp_path / "symlink-home"
+    isolated.mkdir()
+    _platform_env(monkeypatch, isolated)
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "symlink.toml"
+    config.write_text(
+        "[search]\n"
+        "mode = 'off'\n"
+        "default_max_results = 10\n"
+        "max_results_cap = 50\n"
+        "max_query_chars = 512\n"
+        "timeout_ms = 8000\n"
+        "default_providers = ['duckduckgo']\n"
+        "sanitize_output = true\n\n"
+        "[search.providers]\nduckduckgo = true\nmojeek = true\n\n"
+        "[fetch]\n"
+        "enabled = false\n"
+        "timeout_ms = 8000\n"
+        "max_bytes = 2000000\n"
+        "max_chars_default = 12000\n"
+        "max_chars_cap = 50000\n"
+        "redirect_limit = 5\n"
+        "allow_private_network = false\n"
+        "allow_localhost = false\n"
+        "sanitize_output = true\n\n"
+        f"[local]\nenabled = true\nroots = [\"{workspace.as_posix()}\"]\n",
+        encoding="utf-8",
+    )
+
+    async def run():
+        client = AsyncEggsearch(str(config))
+        try:
+            gamma_result = await asyncio.wait_for(
+                client.repo_search(query="gamma", include_local=True),
+                timeout=10.0,
+            )
+            zeta_result = await asyncio.wait_for(
+                client.repo_search(query="zeta", include_local=True),
+                timeout=10.0,
+            )
+            snippets = [
+                card.get("snippet") or ""
+                for result in (gamma_result, zeta_result)
+                for group in result.get("groups", [])
+                for card in group.get("results", [])
+            ]
+            assert any("gamma" in snippet for snippet in snippets)
+            assert all("zeta" not in snippet for snippet in snippets)
+        finally:
+            await asyncio.wait_for(client.aclose(), timeout=5.0)
+
+    asyncio.run(run())
+
+
 def test_from_default_config_missing_file_falls_back_to_defaults(
     tmp_path, monkeypatch
 ):
