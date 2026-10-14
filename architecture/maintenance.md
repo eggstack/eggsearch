@@ -2,7 +2,7 @@
 
 **Purpose:** Keep the post-consolidation repository from re-concentrating into new monoliths. Contributor contract for adding tools, providers, workflows, parsers, and tests.
 
-The crate is application-first: the stable contract is MCP tools (10) plus CLI. The Rust module tree is an implementation detail for the binary, integration tests, and fuzz harnesses. Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`. Factual claims about tools and providers must agree with the code; inventories below are guard-enforced, the rest is kept in sync by discipline.
+The crate is application-first: the stable contract is MCP tools (10) plus CLI, with the narrow `src/sdk.rs` application facade for native consumers. The remaining Rust module tree is an implementation detail for the binary, integration tests, and fuzz harnesses. Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`. Factual claims about tools and providers must agree with the code; inventories below are guard-enforced, the rest is kept in sync by discipline.
 
 ---
 
@@ -26,6 +26,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Fetch execution | `src/fetch/` (client, limits, cache, origin, browser) | Search ranking, evidence roles |
 | Outbound HTTP transport | `eggfetch-core` (transport, pooling, TLS, decompression, deadlines, bounded reads, pinned routing, redirect mechanics, typed failures); optional `src/fetch/egress.rs` (`EggressDialer` beneath the eggfetch `Dialer` seam, provider-only, fail-closed, credential-indirected); rmcp transitively owns only its Streamable HTTP client transport | eggsearch-local reqwest clients or facades; SSRF/retry/truncation policy stays in eggsearch; dynamic `FetchClient` targets never use egress |
 | Release/deploy surface | `src/platform.rs`, `src/update.rs`, `src/startup.rs`, `packaging/` | Search/fetch policy |
+| Native SDK facade | `src/sdk.rs` delegates to the ten `src/mcp/tools/` handlers and owns only dispatch, config-backed shared state, and structured errors | Provider selection, validation, policy, projection, and tool semantics |
 
 Overlap ratchets (each a named guard):
 

@@ -2,7 +2,7 @@
 
 eggsearch is a lightweight MCP search/fetch server for AI agents (live metasearch with RRF dedup, bounded fetch, deterministic evidence bundles). Transports: client-owned `mcp stdio` or explicit loopback-only `mcp serve`.
 
-Single library + binary crate, not a workspace. Stable contract is MCP tools (10) plus CLI; the Rust module tree is an implementation detail with no semver library guarantee (see `src/lib.rs`). Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`. Start with `src/lib.rs` (module map) and `architecture/overview.md` (component index); operator docs live in `docs/`.
+Single library + binary crate, not a workspace. Stable contract is MCP tools (10) plus CLI, with a narrow native operation facade in `src/sdk.rs`; the remaining Rust module tree has no general semver library guarantee (see `src/lib.rs` and `architecture/python-library.md`). Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`. Start with `src/lib.rs` (module map) and `architecture/overview.md` (component index); operator docs live in `docs/`.
 
 ## Build & verification
 

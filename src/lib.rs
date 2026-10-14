@@ -2,9 +2,9 @@
 //! server for AI agents.
 //!
 //! This crate is application-first. The stable contract is the MCP tool
-//! surface and the CLI; the Rust module tree is an implementation detail
-//! for the binary, integration tests, and fuzz harnesses. It carries no
-//! semver stability guarantee as a general-purpose library.
+//! surface and the CLI. The narrow [`sdk`] module is an additional
+//! application facade for supported native consumers; it does not make
+//! the remaining Rust module tree a general semver-stable library.
 //!
 //! Intentionally reusable domain types live in [`core`] (request, response,
 //! config, and identity types such as [`core::WebSearchRequest`]). The
@@ -12,9 +12,9 @@
 //! `platform`, `startup`, `update`) are internal implementation details
 //! that remain `pub` only so the binary, integration tests, and fuzz
 //! targets can link against them. They may change without a major version
-//! bump. Downstream Rust consumers should depend only on `core` types and
-//! the MCP/CLI contract, not on engines, adapters, tool internals, or
-//! deployment/update machinery.
+//! bump. Downstream Rust consumers should use [`sdk`] for direct tool
+//! execution, or depend only on `core` types and the MCP/CLI contract, not
+//! on engines, adapters, tool internals, or deployment/update machinery.
 //!
 //! - [`core`]:    source card model, config, error, query types.
 //! - [`meta`]:    metasearch adapter with vendored search engines.
@@ -53,6 +53,7 @@ pub mod mcp;
 pub mod meta;
 pub mod platform;
 pub(crate) mod process;
+pub mod sdk;
 pub mod startup;
 pub mod update;
 
