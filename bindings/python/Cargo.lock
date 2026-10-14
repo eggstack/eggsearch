@@ -548,9 +548,9 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "eggfetch-core"
-version = "0.2.0"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cd254b82aa20d1becb6e3e90a5103e8bcc2d7057bb13532096326e43cd98904"
+checksum = "27463e41d20019d7f1dd877ab2e71d49db14a01e2781766ecc2ef112421e4055"
 dependencies = [
  "async-compression",
  "brotli",

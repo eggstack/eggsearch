@@ -2093,19 +2093,19 @@ fn egress_feature_budget_stays_bounded() {
         "Cargo.toml must declare a single `egress` feature over eggress-outbound + eggress-uri (+ eggress-core for the stream type)"
     );
     assert!(
-        cargo.contains("eggress-outbound = { version = \"=1.0.8\""),
-        "egress must pin published eggress-outbound 1.0.8"
+        cargo.contains("eggress-outbound = { version = \"=1.0.12\""),
+        "egress must pin published eggress-outbound 1.0.12"
     );
     assert!(
-        cargo.contains("eggress-uri = { version = \"=1.0.8\""),
-        "egress must pin published eggress-uri 1.0.8"
+        cargo.contains("eggress-uri = { version = \"=1.0.12\""),
+        "egress must pin published eggress-uri 1.0.12"
     );
     assert!(
-        cargo.contains("eggress-core = { version = \"=1.0.8\""),
-        "egress must pin published eggress-core 1.0.8"
+        cargo.contains("eggress-core = { version = \"=1.0.12\""),
+        "egress must pin published eggress-core 1.0.12"
     );
     assert!(
-        cargo.contains("eggress-outbound = { version = \"=1.0.8\", default-features = false"),
+        cargo.contains("eggress-outbound = { version = \"=1.0.12\", default-features = false"),
         "eggress-outbound must use default-features = false"
     );
     for forbidden in [
