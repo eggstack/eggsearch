@@ -97,6 +97,7 @@ its package-local tests:
 maturin develop --manifest-path bindings/python/Cargo.toml --locked
 python -m pytest -q bindings/python/tests
 python -m compileall bindings/python/python/eggsearch
+pyright bindings/python/python/eggsearch bindings/python/examples
 ```
 
 For startup supervision rendering and policy:

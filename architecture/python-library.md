@@ -8,7 +8,7 @@ operations. Its ownership boundary is registered in
 Current handoff: M001's shared Rust facade and ten-operation parity are
 closed at `plans/closure/python-native-library/001-status.md`; M002's native
 asyncio bridge is closed at `plans/closure/python-native-library/002-status.md`;
-M003's Python API, types, and semantic parity work is active.
+M003's Python API, types, examples, and semantic parity work is active.
 
 ## Rust operation facade
 
@@ -43,3 +43,11 @@ Milestone status and exact-candidate evidence live in
 extension alone is not evidence of a supported Python consumer. Wheel support
 is limited to targets with native install and runtime qualification, and
 publication requires separate authorization.
+
+The public Python `AsyncEggsearch` wrapper adds `async with`, `aclose()`, and
+the ten named keyword methods over the generic native `execute` call. Request
+and response `TypedDict` definitions live in `bindings/python/python/eggsearch/types.py`;
+they describe common JSON fields while runtime dictionaries retain additive
+keys. The `py.typed` marker and native extension stub make the package
+discoverable to type checkers. `tool_names()` comes from the Rust SDK's
+code-derived canonical inventory.

@@ -24,7 +24,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
 | `src/**/mod.rs` unit tests | Private-function coverage at the bottom of the source file |
-| `bindings/python/tests/test_native.py` | PyO3 asyncio consumer behavior, bounded input conversion, cancellation and close lifecycle |
+| `bindings/python/tests/test_native.py` | PyO3 asyncio consumer behavior, typed method delegation, bounded input conversion, cancellation and close lifecycle |
 
 ---
 
@@ -74,7 +74,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 - Provider failure modes go in `dispatch_fault_injection.rs`, not scattered across workflow suites.
 - Packaging behavior belongs under `packaging/test-install.sh` and `packaging/test-install.ps1`, never under `tests/`.
 - Multi-step regressions go in `corpus_runner.rs`; single-step edge cases stay in the owning behavioral suite.
-- Python binding behavior belongs in `bindings/python/tests/`; run it after building the extension with the package's pinned maturin version. Keep its inventory in `docs/test-inventory.md`.
+- Python binding behavior belongs in `bindings/python/tests/`; run it after building the extension with the package's pinned maturin version. Run the pinned Pyright dev extra on package code and examples. Keep its inventory in `docs/test-inventory.md`.
 
 ---
 

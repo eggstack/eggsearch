@@ -86,7 +86,7 @@ def test_native_client_executes_all_operations_without_an_mcp_process(config_pat
         await client.aclose()
         await client.aclose()
         with pytest.raises(EggsearchError) as closed:
-            client.execute("provider_status", {})
+                await client.provider_status()
         assert closed.value.code == "client_closed"
 
     asyncio.run(run())
@@ -107,7 +107,7 @@ def test_native_client_executes_all_operations_without_an_mcp_process(config_pat
 def test_native_boundary_rejects_invalid_or_oversized_inputs(config_path, arguments):
     client = AsyncEggsearch(str(config_path))
     with pytest.raises((TypeError, ValueError)):
-        client.execute("web_search", arguments)
+        client._native.execute("web_search", arguments)
 
     async def close():
         await client.aclose()
@@ -120,7 +120,7 @@ def test_native_boundary_rejects_cycles(config_path):
     value.append(value)
     client = AsyncEggsearch(str(config_path))
     with pytest.raises(ValueError, match="cyclic"):
-        client.execute("web_search", {"value": value})
+        client._native.execute("web_search", {"value": value})
 
     async def close():
         await client.aclose()
@@ -131,13 +131,13 @@ def test_native_boundary_rejects_cycles(config_path):
 def test_native_futures_cancel_and_client_close_is_bounded(config_path):
     async def run():
         client = AsyncEggsearch(str(config_path))
-        pending = client.execute("provider_status", {})
+        pending = client._native.execute("provider_status", {})
         pending.cancel()
         with pytest.raises(asyncio.CancelledError):
             await pending
         await client.aclose()
         with pytest.raises(EggsearchError):
-            client.execute("provider_status", {})
+            await client.provider_status()
 
     asyncio.run(run())
 
@@ -151,3 +151,96 @@ def test_native_runtime_supports_sequential_python_event_loops(config_path):
 
     asyncio.run(run_once())
     asyncio.run(run_once())
+
+
+def test_named_methods_delegate_without_rewriting_arguments():
+    methods = {
+        "web_search": {
+            "query": "parity",
+            "providers": [],
+            "max_results": 0,
+            "safe_search": None,
+        },
+        "web_fetch": {"url": "https://example.invalid", "include_links": False},
+        "batch_fetch": {"items": [], "continue_on_error": False},
+        "provider_status": {"probe": False, "recipe_detail": "none"},
+        "repo_search": {"query": "local", "include_local": True},
+        "repo_fetch": {"owner": "acme", "repo": "widget", "path": "README.md"},
+        "repo_map": {"owner": "acme", "repo": "widget", "include_files": False},
+        "security_search": {"cve_id": "CVE-2024-1234", "providers": []},
+        "research_search": {"query": "parity", "constraints": []},
+        "build_evidence_bundle": {"sources": [], "fetches": []},
+    }
+
+    async def run():
+        client = AsyncEggsearch()
+        calls = []
+
+        async def execute(tool, arguments):
+            calls.append((tool, arguments))
+            return {"tool": tool, "arguments": arguments}
+
+        client.execute = execute
+        for name, arguments in methods.items():
+            assert await getattr(client, name)(**arguments) == {
+                "tool": name,
+                "arguments": arguments,
+            }
+        assert calls == list(methods.items())
+
+    asyncio.run(run())
+
+
+def test_async_context_manager_closes_native_client(config_path):
+    async def run():
+        async with AsyncEggsearch(str(config_path)) as client:
+            assert isinstance(await client.provider_status(), dict)
+        with pytest.raises(EggsearchError) as closed:
+            await client.provider_status()
+        assert closed.value.code == "client_closed"
+
+    asyncio.run(run())
+
+
+def test_public_error_exposes_structured_fields(config_path):
+    async def run():
+        async with AsyncEggsearch(str(config_path)) as client:
+            with pytest.raises(EggsearchError) as failure:
+                await client.web_search(query="")
+            assert failure.value.code
+            assert failure.value.message
+            assert failure.value.repair is None or isinstance(failure.value.repair, dict)
+            assert failure.value.data is None or isinstance(failure.value.data, dict)
+
+    asyncio.run(run())
+
+
+def test_mode_off_repo_search_returns_local_trusted_results(config_path, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "README.md").write_text(
+        "Distinctive local retry-policy fixture for native Python search.",
+        encoding="utf-8",
+    )
+    config = config_path.read_text(encoding="utf-8")
+    config = config.replace(
+        "enabled = false\nroots = []",
+        f'enabled = true\nroots = ["{workspace}"]',
+    )
+    config_path.write_text(config, encoding="utf-8")
+
+    async def run():
+        async with AsyncEggsearch(str(config_path)) as client:
+            result = await client.repo_search(
+                query="retry",
+                include_local=True,
+            )
+        cards = [
+            card
+            for group in result.get("groups", [])
+            for card in group.get("results", [])
+        ]
+        assert cards
+        assert any(card.get("trust") == "local_trusted" for card in cards)
+
+    asyncio.run(run())

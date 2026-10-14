@@ -16,8 +16,10 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
-    "Operating System :: OS Independent",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "pyright==1.1.414"]
 
 [tool.maturin]
 manifest-path = "Cargo.toml"
@@ -25,3 +27,7 @@ python-source = "python"
 module-name = "eggsearch._native"
 bindings = "pyo3"
 features = []
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"

@@ -82,6 +82,7 @@ fetch ↗
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#6-render-subsystem-render-8-files) |
 | MCP server & tools | `src/mcp/` (7 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
 | Native SDK facade | `src/sdk.rs` | Narrow direct Rust operation API delegating to the same ten MCP handlers | [python-library.md](python-library.md) |
+| Python native package | `bindings/python/` | PyO3 asyncio client, named Python methods, and typed agent-facing JSON contracts | [python-library.md](python-library.md) |
 | CLI commands | `src/commands/` (binary-only, `mod` + 9 modules) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
 | Agent/IDE integrations | `src/integrations/` (10 files, 7 clients) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
 | Startup supervision | `src/startup.rs`, `packaging/systemd/`, `packaging/launchd/`, `packaging/windows/` | Canonical persistent runtime, manager detection/rendering, cron watchdog, identity-safe restart, and service state | [startup.md](startup.md) |
