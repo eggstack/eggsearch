@@ -75,6 +75,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 - Packaging behavior belongs under `packaging/test-install.sh` and `packaging/test-install.ps1`, never under `tests/`.
 - Multi-step regressions go in `corpus_runner.rs`; single-step edge cases stay in the owning behavioral suite.
 - Python binding behavior belongs in `bindings/python/tests/`; run it after building the extension with the package's pinned maturin version. Run the pinned Pyright dev extra on package code and examples. Keep its inventory in `docs/test-inventory.md`.
+- Native wheel and sdist release qualification lives in `.github/workflows/python-native-qualification.yml`; it builds native platform wheels, smokes each stable-ABI wheel on the supported CPython matrix, and rebuilds an extracted sdist with cached dependencies while Cargo networking is disabled.
 
 ---
 

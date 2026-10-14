@@ -46,6 +46,16 @@ extension alone is not evidence of a supported Python consumer. Wheel support
 is limited to targets with native install and runtime qualification, and
 publication requires separate authorization.
 
+M004's candidate binding uses PyO3's `abi3-py311` stable ABI. Its release
+matrix builds a manylinux2014 Linux x86_64/aarch64 wheel, macOS x86_64/arm64
+wheels, and a Windows x86_64 wheel, then installs each exact artifact on
+CPython 3.11–3.14 in separate consumer jobs. These platform claims remain
+conditional on the matching exact-candidate matrix jobs passing. An sdist
+rebuild uses the binding and root Cargo manifests from clean extraction; it can
+build offline with locked crates already cached, otherwise Cargo registry
+access is required. PyPy, free-threaded CPython, ARMv7, and Windows ARM64 are
+outside the support matrix.
+
 The public Python `AsyncEggsearch` wrapper adds `async with`, `aclose()`, and
 the ten named keyword methods over the generic native `execute` call. Request
 and response `TypedDict` definitions live in `bindings/python/python/eggsearch/types.py`;

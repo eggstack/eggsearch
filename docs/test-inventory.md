@@ -215,6 +215,7 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 |-----|----------|----------------|
 | `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + hygiene + packaging-check |
 | `windows-portability` | ~4min | `cargo check --locked --all-features --target x86_64-pc-windows-msvc` on `windows-latest` with pinned Rust 1.89; routine PR/main sentinel so Windows cfg breakage cannot hide behind Linux-green CI |
+| `python-native-qualification` | varies | Native wheel builds for five targets; each exact abi3 wheel runs the 17-test suite on CPython 3.11–3.14; extracted sdist offline rebuild and smoke; Cargo and Python dependency audits |
 
 ## Python Native Binding
 

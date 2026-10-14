@@ -19,10 +19,12 @@ python -m pytest -q bindings/python/tests
 pyright bindings/python/python/eggsearch bindings/python/examples
 ```
 
-No Python runtime dependencies are required. The package uses `eggsearch` as
-its import name; install from a locally built wheel or editable source build.
-The distribution name is a temporary unpublished name pending M004's PyPI
-name and release preflight.
+No Python runtime dependencies are required. The candidate distribution and
+import name are both `eggsearch`, and the Python package version tracks the root
+Eggsearch version as a starting point for synchronized candidate artifacts.
+PyPI's project JSON endpoint returned 404 for `eggsearch` on 2026-10-14. The
+package remains unpublished, and name availability must be rechecked
+immediately before any separately authorized publication.
 
 ## Client API
 
@@ -96,11 +98,28 @@ remote source text uses `external_untrusted`. Preserve the `trust` and
 
 ## Compatibility and features
 
-The extension package currently enables no optional Rust `browser`, `egress`,
-or `pdf` features. The local native smoke has run on CPython 3.14.2 and macOS
-x86_64; other interpreter and platform wheel support remains unqualified until
-M004 completes. PyPy, free-threaded CPython, ARMv7, and Windows ARM64 are not
-claimed. Python distributions do not alter Eggpack's binary release assets.
+The binding enables PyO3's `abi3-py311` stable ABI, targeting CPython 3.11 and
+newer. M004 qualifies the same platform wheel on CPython 3.11, 3.12, 3.13, and
+3.14. Linux wheels use the manylinux2014 baseline; native targets are Linux
+x86_64 and aarch64, macOS x86_64 and arm64, and Windows x86_64. CI builds on
+each target and installs each exact wheel on all four interpreters without
+installing Rust in the consumer job. This support statement is conditional on
+the corresponding M004 workflow jobs passing for the released candidate.
+
+PyPy, free-threaded CPython, ARMv7, and Windows ARM64 are not claimed. The
+extension package enables no optional Rust `browser`, `egress`, or `pdf`
+features. The native library uses the same Eggsearch configuration, provider
+credential environment variables, bounded operations, sanitization, and trust
+labels as the Rust engine. It does not probe credentials during import.
+Python distributions do not alter Eggpack's binary release assets.
+
+An sdist build requires Rust 1.89, a C toolchain, and the Cargo dependencies in
+`bindings/python/Cargo.lock`. It can build offline when those locked crate
+sources are already in Cargo's local cache; a fresh build must be able to fetch
+them from Cargo registries. Native wheels avoid those build requirements at
+install and runtime. After a separately authorized publication,
+upgrade with `python -m pip install --upgrade eggsearch` and remove with
+`python -m pip uninstall eggsearch`.
 
 See [Tool Matrix](tool-matrix.md), [Agent Workflows](agent-workflows.md), and
 [Python Library Architecture](../architecture/python-library.md) for tool
