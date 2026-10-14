@@ -264,12 +264,31 @@ def test_mode_off_repo_search_returns_local_trusted_results(config_path, tmp_pat
                 query="retry",
                 include_local=True,
             )
-        cards = [
-            card
-            for group in result.get("groups", [])
-            for card in group.get("results", [])
-        ]
-        assert cards
-        assert any(card.get("trust") == "local_trusted" for card in cards)
+            cards = [
+                card
+                for group in result.get("groups", [])
+                for card in group.get("results", [])
+            ]
+            assert cards
+            selected = next(
+                card for card in cards if card.get("trust") == "local_trusted"
+            )
+            bundle = await client.build_evidence_bundle(
+                goal="Review local retry policy",
+                sources=[
+                    {
+                        "id": selected.get("id"),
+                        "url": selected.get("url"),
+                        "title": selected.get("title"),
+                        "snippet": selected.get("snippet"),
+                        "providers": [selected.get("provider_id", "local_workspace")],
+                        "trust": selected.get("trust"),
+                        "trust_markers": selected.get("trust_markers", {}),
+                    }
+                ],
+            )
+            assert bundle.get("bundle_id")
+            assert bundle.get("sources")
+            assert bundle["sources"][0].get("trust") == "local_trusted"
 
     asyncio.run(run())
