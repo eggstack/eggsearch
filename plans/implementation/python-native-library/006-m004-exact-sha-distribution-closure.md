@@ -1,6 +1,6 @@
 # M006 — M004 Exact-SHA Distribution Qualification and Closure Reconciliation
 
-Status: active (executing; M005 closed at `plans/closure/python-native-library/005-status.md`. Qualification of `c8bd030`/`748ae59` exposed a Windows product defect now owned by corrective M007 (`plans/implementation/python-native-library/007-windows-safe-read-corrective.md`); the final matrix must run on the M007 repair candidate. M004 remains active until then)
+Status: closed (closure `plans/closure/python-native-library/006-status.md` at candidate `faa1da2`, run `38617598636`; M004 and M007 close in the same commit)
 Primary class: infrastructure (release qualification and evidence control)
 Source: `plans/subsystems/python-native-library-roadmap.md` M006; closes remaining exit conditions of active M004 (`plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`).
 Planning baseline: `main` `1434c1e55ddd92947042cff9918ffc0fe130ed01`, 2026-10-14.

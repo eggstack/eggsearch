@@ -1,6 +1,6 @@
 # M007 — Windows Safe-Read Corrective for Local Content Access
 
-Status: active
+Status: closed (closure `plans/closure/python-native-library/007-status.md` at candidate `faa1da2`, proven by run `38617598636` Windows smokes)
 Primary class: invariant (local path-jail reads must behave identically on all supported platforms; fail-closed semantics preserved)
 Source: `plans/subsystems/python-native-library-roadmap.md` M007; corrective to M004/M006 qualification, not a rewrite of closed M001–M003/M005 records.
 Planning baseline: `plan/python-native-closure-correctives` `d5e4dcb`, 2026-10-14.
