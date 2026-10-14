@@ -1,9 +1,10 @@
 # M003 — Python Agent API, Types and Semantic Compatibility
 
-Status: active
+Status: closed
 Primary class: capability
 Source: `plans/subsystems/python-native-library-roadmap.md` M003
 Planning baseline: M002 candidate `2392e72178aa249445a64bd629caac8219353499`; M002 closure evidence is `plans/closure/python-native-library/002-status.md`.
+Closure: `plans/closure/python-native-library/003-status.md`; candidate `ca4d0d6`.
 ADRs `ADR-0001`, `ADR-0005`; relevant long-term sections 1-5, 7-9 of `plans/000-long-term-specification.md`.
 
 ## Objective and non-goals
