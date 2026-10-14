@@ -31,5 +31,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+`AsyncEggsearch.from_default_config()` loads the standard installed
+`eggsearch/config.toml` via Rust-owned path resolution, matching CLI fallback
+semantics. Bare `AsyncEggsearch()` keeps `AppConfig` defaults and never reads
+that path implicitly. Cancelling a pending operation drops its Rust future and
+releases the shared 32-call permit; `aclose()` drains active work and reports
+`client_closed` for close-triggered calls.
+
 See [`docs/python-library.md`](../../docs/python-library.md) for configuration,
 types, trust handling, and the framework-neutral search/fetch/evidence example.

@@ -32,7 +32,7 @@ mechanism. Do not add wildcard or crate-wide ignores.
 ## Remediated lockfile findings
 
 - `quick-xml` is constrained to `>=0.41` for the checked-attribute parser fix.
-- `rustls` resolves to `0.23.45` or newer in the 0.23 line.
+- `rustls` resolves to `0.23.46` or newer in the 0.23 line.
 - The yanked `chacha20 0.10.1` lock entry was replaced by `0.10.2`.
 - `rmcp` no longer enables its reqwest HTTP client feature. Chromiumoxide is
   the only all-features reqwest dependency until its upstream optional

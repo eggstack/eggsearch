@@ -144,15 +144,26 @@ directory file descriptor:
 - Non-Linux with `follow_symlinks=true`: `SafeSymlinkFollowingUnsupported`
   — there is no race-safe containment primitive, so the backend reports
   instead of approximating.
+- Windows (`follow_symlinks=false`): every component is
+  `symlink_metadata`-checked at walk time and links are rejected with
+  `SymlinkDetected`; the root itself is followed, matching the unix root
+  policy.
 
 Pre-walk validation rejects empty, absolute, `..`-traversal, and
 null-byte components plus hidden components unless `include_hidden` is set.
-The final descriptor is `fstat`-checked for regular file type and size
-limits, eliminating TOCTOU races between validation and open.
+On Linux the final descriptor is `fstat`-checked for regular file type
+and size limits, eliminating TOCTOU races between validation and open;
+on Windows the walk-time link checks leave a documented check-to-open
+swap window (no atomic no-follow open in std), contained by the
+user-owned jail-root trust boundary. Intermediate links are rejected
+fail-closed everywhere; Windows reports `SymlinkDetected`, macOS
+reports `Io` (`ENOTDIR` from `O_NOFOLLOW`), and Linux rejects from the
+untouched `openat2`/`openat` path with a platform-specific variant.
 `SafeOpenError` covers `Empty`, `AbsolutePath`, `PathTraversal`,
-`NullByte`, `NotFound`, `RootOpenFailed`, and
-`SafeSymlinkFollowingUnsupported`; `safe_read_file()` layers bounded reads
-on top.
+`NullByte`, `NotFound`, `SymlinkDetected`, `NotAFile`, `FileTooLarge`,
+`FileContentLimitExceeded`, `RootOpenFailed`,
+`SafeSymlinkFollowingUnsupported`, and `Io`; `safe_read_file()` layers
+bounded reads on top.
 
 ---
 

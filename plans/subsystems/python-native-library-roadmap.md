@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: active (M001-M003 closed; M004 active for distribution qualification)
+Status: closed (M001-M008 closed; unpublished by design, publication separately authorized)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -10,7 +10,7 @@ References: `plans/000-long-term-specification.md` sections 1-4, 6-9; `plans/001
 
 Provide a native Python library wrapping Eggsearch's Rust search/fetch/evidence engine. Python users must be able to `pip install` a compatible wheel, instantiate an asyncio client, execute any of the ten established tools without spawning the MCP server, share search/cache/provider state across concurrent calls, and receive structured, trustworthy results and repairable errors.
 
-Ownership: `src/sdk/` owns the narrow direct-operation/application API and shared client lifecycle, while `src/mcp/tools/` remains the single semantic tool execution owner. `bindings/python/` owns PyO3 integration and Python-only ergonomics; it MUST NOT implement its own provider selection, policy, SSRF, fetch, sanitization, result projection, stable-ID algorithm, or ranking. Root default binary/deployment packaging remains owned by existing release and Eggpack paths.
+Ownership: `src/sdk.rs` owns the narrow direct-operation/application API and shared client lifecycle, while `src/mcp/tools/` remains the single semantic tool execution owner. `bindings/python/` owns PyO3 integration and Python-only ergonomics; it MUST NOT implement its own provider selection, policy, SSRF, fetch, sanitization, result projection, stable-ID algorithm, or ranking. Root default binary/deployment packaging remains owned by existing release and Eggpack paths.
 
 ## Invariants (must hold in every milestone)
 
@@ -39,20 +39,32 @@ At the planning baseline, `src/lib.rs` promised only MCP/CLI stability, `src/mcp
 `M003 (capability: ergonomic Python agent API, types, examples, semantic parity)`
   -> closed at `plans/closure/python-native-library/003-status.md`
 `M004 (infrastructure + operational: wheel/sdist/release qualification)`
-  -> active
+  -> closed at `plans/closure/python-native-library/004-status.md`
+`M005 (invariant: in-flight cancellation/close and CLI-config opt-in corrective)`
+  -> closed at `plans/closure/python-native-library/005-status.md`
+`M006 (infrastructure: M004 exact-SHA artifact and closure reconciliation)`
+  -> closed at `plans/closure/python-native-library/006-status.md`
+`M007 (invariant: Windows safe-read corrective for local content access)`
+  -> closed at `plans/closure/python-native-library/007-status.md`
+`M008 (invariant: rustls advisory remediation and Windows symlink-containment re-qualification)`
+  -> closed at `plans/closure/python-native-library/008-status.md`
 
-M001-M003 are closed and M004 is dependency-ready. Platform qualification remains required; no cross-repository or Mode-Off release blocker is waived. Re-run the exact Mode-Off regressions, with separate operational gating for publication if existing immutable-release qualification remains blocked.
+M001-M008 are closed. M004/M006/M007 closed at `faa1da2` (run `38617598636`); M008 then resolved the two residuals those closures named — upstream rustls advisories RUSTSEC-2026-0346–0349 and the non-unix symlink-following gap — and re-qualified the repair candidate `067468a` in fully-green run `38641009246`, reconciled in `008-status.md` without amending the earlier records. No cross-repository or Mode-Off release blocker is waived. Publication remains separately authorized.
 
 | Milestone | Class | Status | Plan | User-facing exit |
 |---|---|---|---|---|
 | M001 direct execution facade | infrastructure | **closed** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | Closure `plans/closure/python-native-library/001-status.md`; candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; ten handler parity cases, Mode-Off zero-dispatch counter, and `make check` passed |
 | M002 native asyncio bridge | capability | **closed** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | Closure `plans/closure/python-native-library/002-status.md`; candidate `2392e72178aa249445a64bd629caac8219353499`; ten-operation asyncio smoke, bounded conversion, cancellation and close |
 | M003 Python agent ergonomics and safety | capability | **closed** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Closure `plans/closure/python-native-library/003-status.md`; candidate `ca4d0d6`; typed methods, schema coverage, no-network Mode-Off agent flow |
-| M004 Python distribution and qualification | infrastructure | **active** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Clean wheel/sdist installation and reproducible native consumer smoke on qualified targets |
+| M004 Python distribution and qualification | infrastructure | **closed** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Closure `plans/closure/python-native-library/004-status.md`; candidate `faa1da2`; 5/5 builds, 20/20 smokes, offline sdist rebuild, digests recorded |
+| M005 lifecycle and configuration corrective | invariant | **closed** | `plans/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md` | Closure `plans/closure/python-native-library/005-status.md`; candidate `baf00cfc8e72f5975010f62e40d5d56985f77c78`; deterministic confirmed-in-flight cancellation/close + permit recovery; explicit default-config opt-in and backwards-compatible no-arg semantics |
+| M006 M004 exact-SHA closure reconciliation | infrastructure | **closed** | `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md` | Closure `plans/closure/python-native-library/006-status.md`; qualifying run `38617598636` on `faa1da2`; unpublished unless separately approved |
+| M007 Windows safe-read corrective | invariant | **closed** | `plans/implementation/python-native-library/007-windows-safe-read-corrective.md` | Closure `plans/closure/python-native-library/007-status.md`; repaired `safe_open_relative` non-unix root handling; proven by 4/4 Windows smokes on `faa1da2` |
+| M008 advisory remediation and symlink-containment re-qualification | invariant | **closed** | `plans/implementation/python-native-library/008-rustls-and-symlink-containment-requalification.md` | Closure `plans/closure/python-native-library/008-status.md`; candidate `067468a`; rustls 0.23.46 in both lockfiles, walk-time link rejection, 27/27 re-qualification with green audit |
 
 ## Cross-cutting design requirements
 
-**Configuration:** default and explicit config-file loading must use `AppConfig` and its validation. JSON/dict overrides are optional and MUST not allow privileged policy bypass. Credentials remain referenced by environment names. Python client owns or borrows an immutable effective configuration; avoid global mutable knobs.
+**Configuration:** currently `AsyncEggsearch()` uses `AppConfig::default()` rather than the CLI's `default_config_path()`. M005 must preserve that documented no-arg behavior, add an explicit typed opt-in for Rust-owned default-config-path loading, and test parity/security with the CLI and with an explicit config path. All forms must use `AppConfig` validation, keep credentials environment-indirected and avoid mutable global overrides.
 
 **Lifecycle and async:** single shared Tokio runtime/bridge is reused, never constructed once per operation. Ref-counted state may be shared by clients; per-instance close rejects new work, drains/cancels bounded in-flight work and is idempotent. Failure to cancel at the Python layer must not imply unbounded Rust work.
 
@@ -68,6 +80,6 @@ M001-M003 are closed and M004 is dependency-ready. Platform qualification remain
 
 ## Verification and closure
 
-Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001-M003 are closed by their corresponding closure records; M004 is active.
+Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. M005 adds a barrier-controlled *running Rust future* cancellation/close regression, and M006 requalifies all wheels and the extracted sdist at the final exact SHA, recording long-lived hashes and native consumer evidence. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001-M008 are closed by their corresponding closure records (`008-status.md` at `067468a` joining `001-status.md`–`007-status.md`); M008 re-qualified the repair candidate and reconciled without amending the earlier records.
 
-Do not declare Python availability merely because a PyO3 extension compiled; user-visible capability requires a real Python consumer smoke. Do not publish wheels until exact-SHA qualification and separate publisher approval. Branch and PR handoff is acceptable; do not merge planning into unrelated repository-hardening or Mode-Off release work.
+Do not declare Python availability merely because a PyO3 extension compiled; user-visible capability requires a real Python consumer smoke. Do not treat the green M004 baseline run as proof for later bytes or as a closure record. M004/M006/M007 closed together on the M007 repair candidate `faa1da2` with qualifying run `38617598636`; M008 superseded that basis with the fully green re-qualification of `067468a` (run `38641009246`). Do not publish wheels until exact-SHA qualification and separate publisher approval. Branch and PR handoff is acceptable; do not merge planning into unrelated repository-hardening or Mode-Off release work.

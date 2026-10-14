@@ -42,7 +42,7 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | MCP tool-surface consolidation | closed | `plans/subsystems/tool-surface-consolidation-roadmap.md` | M001-M007 closed | M001-M007 closed. Current control points `plans/closure/mcp-tool-surface-consolidation/001-status.md` through `007-status.md`. |
 | Dependency evidence hardening | closed | `plans/subsystems/dependency-evidence-hardening-roadmap.md` | M010 corrective closed | M001-M010 closed. Current control point `plans/closure/dependency-evidence-hardening/010-status.md`; implementation `23676cc`, CI `36253474005`. |
 | Repository security, supply-chain, and maintenance hardening | active | `plans/subsystems/repository-hardening-roadmap.md` | M001/M002/M007/M008/M009/M010 closed; M006 blocked | Scheduled dependency-security run `38290328560` succeeded; M010 records M001/M007 closure. M002 closed by M009; M006 remains externally blocked on chromiumoxide. |
-| Python native library for agents | active (M001-M003 closed; M004 active) | `plans/subsystems/python-native-library-roadmap.md` | M003 closed at `plans/closure/python-native-library/003-status.md`; M004 qualification work is active | ADR-0005 accepted; Python-only in-process SDK workstream. Publication remains separately authorized. |
+| Python native library for agents | closed (M001-M008 closed; unpublished by design) | `plans/subsystems/python-native-library-roadmap.md` | M008 closed at `067468a`, qualifying run `38641009246` (27/27 incl. audit) | ADR-0005 accepted. Runs `38522548258`, `38608502185`/`38611932990`/`38614592873`, `38637266178`, and `38638066765` are historical/deficiency/supporting evidence only. Publication separately authorized. |
 
 ## Dependency-ready implementation plans
 
@@ -87,7 +87,11 @@ Historical `phase-*.md` plans and pre-migration roadmaps are archived under
 | Python native library | M001 shared Rust SDK facade/parity | **closed** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | Candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; closure `plans/closure/python-native-library/001-status.md`. |
 | Python native library | M002 PyO3 asyncio binding/lifecycle | **closed** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | Candidate `2392e72`; closure `plans/closure/python-native-library/002-status.md`; bounded conversion, cancellation/close, and ten-operation consumer smoke. |
 | Python native library | M003 Python agent API, types, parity | **closed** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Candidate `ca4d0d6`; closure `plans/closure/python-native-library/003-status.md`; typed ten-method API, schema coverage, Mode-Off agent flow. |
-| Python native library | M004 wheels, sdist and release qualification | **active** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | M003 closed; qualify clean wheel/sdist installs and exact native artifacts. No publication. |
+| Python native library | M004 wheels, sdist and release qualification | **closed** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Candidate `faa1da2`; closure `plans/closure/python-native-library/004-status.md`; 5/5 builds, 20/20 smokes, offline sdist rebuild, digests; no publication. |
+| Python native library | M005 in-flight cancellation/config corrective | **closed** | `plans/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md` | Candidate `baf00cf`; closure `plans/closure/python-native-library/005-status.md`; confirmed-in-flight cancellation/close with permit recovery plus opt-in default-config path. |
+| Python native library | M006 M004 exact-SHA closure and registry reconciliation | **closed** | `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md` | Candidate `faa1da2`; closure `plans/closure/python-native-library/006-status.md`; qualifying run `38617598636`. |
+| Python native library | M007 Windows safe-read corrective | **closed** | `plans/implementation/python-native-library/007-windows-safe-read-corrective.md` | Candidate `faa1da2`; closure `plans/closure/python-native-library/007-status.md`; non-unix root check repaired, proven by 4/4 Windows smokes. |
+| Python native library | M008 advisory remediation and symlink-containment re-qualification | **closed** | `plans/implementation/python-native-library/008-rustls-and-symlink-containment-requalification.md` | Candidate `067468a`; closure `plans/closure/python-native-library/008-status.md`; rustls 0.23.46 in both lockfiles, walk-time link rejection with fail-closed unix pin, 27/27 re-qualification with green audit. |
 
 Sequencing overview: `plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist: `plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
@@ -100,7 +104,7 @@ Corrective closure sequence: `plans/implementation/dependency-evidence-hardening
 
 ## Current execution order and dependency gates
 
-**Python native library gate:** ADR-0005 authorizes a narrow direct Rust SDK facade and Python PyO3 native package without broad Rust module stability. M001-M003 are closed with exact-candidate evidence; M004 distribution qualification is active. Python package publication requires separate authorization and does not alter Eggpack binary assets.
+**Python native library gate:** ADR-0005 authorizes a narrow direct Rust SDK facade and Python PyO3 native package without broad Rust module stability. M001-M008 are closed at `067468a` with fully-green qualifying run `38641009246` (5/5 builds, 20/20 smokes, offline sdist rebuild, green audit, digests in `008-status.md`). Earlier runs are historical/deficiency/supporting evidence only. Publishing still needs separate authorization; Eggpack binary assets remain unchanged.
 
 **Tool-surface gate:** M001-M007 closed. Do not run evaluation
 against pre-consolidation bytes and present it as consolidation
@@ -172,7 +176,7 @@ release that makes HTTP discovery / reqwest optional without regressing
 | Repository hardening | active; M008 closed, M007 conditional, M002 conditional, M006 blocked | M008 closed at `44f38ab` (`008-status.md`); M007 remains conditional evidence control point. Historical closure records `001-status.md` through `008-status.md`. |
 | CodeGG legacy search parity | closed; M001 through M005 closed | `plans/closure/codegg-legacy-search-parity/005-status.md`; prior control points `plans/closure/codegg-legacy-search-parity/004-status.md` and `003-status.md`; implementations `e9103b4` (M001), `5233315` (M002), `8e5ec75` (M003), `81a2e49` (M004 release-prep), `32769d6` (M005 fix-prep); historical provider-parity closure retained, new Mode-Off locality issue separately registered |
 | Mode-Off local repository dispatch corrective | active; M001 closed; M002 and M003 blocked | M001 closure `plans/closure/mode-off-repository-locality-corrective/001-status.md` at `cc0c9c7`; M002 blocked pending M003 and immutable release evidence; M003 implementation `fcb1fb5`, blocked pending default-branch hosted qualification, closure `plans/closure/mode-off-repository-locality-corrective/003-status.md`. CodeGG paired requalification remains consumer-owned. |
-| Python native library | active; M001-M003 closed, M004 active | `plans/subsystems/python-native-library-roadmap.md`; M003 control point `plans/closure/python-native-library/003-status.md` |
+| Python native library | closed; M001-M008 closed | `plans/subsystems/python-native-library-roadmap.md`; closure records `001-status.md`–`008-status.md`; M008 closed at `067468a`, run `38641009246`; unpublished by design |
 
 ## Closure rule
 

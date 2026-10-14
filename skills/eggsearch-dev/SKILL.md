@@ -66,7 +66,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
-| `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, cancellation and close lifecycle |
+| `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
 This table is representative, not exhaustive — 78 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 

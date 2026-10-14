@@ -28,11 +28,17 @@ immediately before any separately authorized publication.
 
 ## Client API
 
-`AsyncEggsearch(config_path=None)` loads the standard Eggsearch config file
-when a path is supplied, or uses `AppConfig` defaults. Context management calls
-`aclose()` on exit. Closing is idempotent, cancels active operation futures,
-waits for them to drop, and rejects later calls with `EggsearchError` whose
-`code` is `client_closed`.
+`AsyncEggsearch(config_path=None)` uses `AppConfig` defaults when no path is
+supplied and loads the given TOML file otherwise; it never reads the standard
+installed config on its own. `AsyncEggsearch.from_default_config()` opts into
+the standard installed config using Rust-owned `default_config_path()` and
+`AppConfig::load` policy, matching the CLI fallback to defaults when the file
+is absent and reporting invalid TOML as a deterministic `ValueError` without
+leaking credentials. `AsyncEggsearch.default_config_path()` exposes the
+resolved standard path without loading credentials or raw config. Context
+management calls `aclose()` on exit. Closing is idempotent, cancels active
+operation futures, waits for them to drop, and rejects later calls with
+`EggsearchError` whose `code` is `client_closed`.
 
 The generic `execute(tool, arguments)` method and these named async methods use
 the canonical tool names and pass accepted arguments to the Rust SDK:
@@ -60,6 +66,23 @@ return a structured budget error. Argument conversion is capped at 1 MiB, 64
 nested levels, and 10,000 values. Non-string keys, cycles, unsupported Python
 objects, non-finite numbers, out-of-range integers, invalid Unicode, and
 oversized arguments are rejected before execution.
+
+## Cancellation and close
+
+`asyncio.Future.cancel()` on a pending `execute` drops the corresponding Rust
+future promptly via `pyo3-async-runtimes` 0.29 `Cancellable` polling; the
+shared 32-permit and per-client active count are released by RAII guards, and a
+subsequent operation succeeds. `aclose()` cancels the per-client
+`CancellationToken`, makes the `tokio::select!` close branch win over a running
+`EggsearchClient::execute`, drains active calls, and returns `client_closed`
+for close-triggered operations while user cancellation still surfaces as
+`asyncio.CancelledError`. Dropping the SDK future also drops a blocked provider
+engine future, verified by a counted barrier engine in `src/sdk.rs` and a
+debug-only bridge barrier in `bindings/python`. Underlying TCP/TLS teardown
+remains bounded by Tokio and `eggfetch-core` timeouts; cancellation is a prompt
+future drop with permit recovery, not a proven instantaneous socket reset. New
+calls after close fail with `client_closed`, independent clients keep their own
+lifecycle, and the runtime survives sequential `asyncio.run` loops.
 
 ## Types and errors
 
