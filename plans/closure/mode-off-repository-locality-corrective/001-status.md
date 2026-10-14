@@ -74,6 +74,30 @@ remote-call counter (`left: 6`, `right: 0`) as expected. Both temporarily
 mutated source/test files were restored to the implementation candidate before
 this closure record was prepared.
 
+## Post-merge parity and security revalidation
+
+The merged implementation was rechecked on mainline commit
+`8d00db27c0c5cb2f14e0bc56165ca7b53f09f640` on 2026-10-14. This validates the
+accepted implementation in the merged tree; the original implementation
+candidate and its full `make check`/docs evidence above remain the M001
+qualification SHA.
+
+| Evidence | Command and result |
+|---|---|
+| Direct MCP local-only trajectory and outbound-call denial | `cargo test --locked --features mock --test local_workspace_integration mode_off_repo_search_uses_local_workspace_without_remote_dispatch -- --exact --nocapture` — 1 passed. The local fixture matched with local provenance; both configured provider counters and the package resolver counter stayed at zero across the local-only and policy-denied cases. |
+| Adapter authority and independent resolver seam | `cargo test --locked --lib meta::adapter::repo::tests::remote_denial_skips_engine_and_package_resolution -- --exact` — 1 passed. Engine and resolver counters stayed at zero; package advisory lookup remained policy-skipped. |
+| Live-mode routing parity | `cargo test --locked --features mock --test provider_routing -- --test-threads=1` — 83 passed. Empty/default provider selection and explicit provider routing remain intact. |
+| Stable MCP surface parity | `cargo test --locked --test docs_tool_names -- --test-threads=1` — 2 passed; the ten-tool inventory remains code-derived and unchanged. |
+| Defensive source guards | `cargo test --locked --test static_guards -- --test-threads=1` — 60 passed, including the explicit remote-execution-authority regression guard. |
+
+No live provider, registry, forge, or fetch requests were made in these tests.
+The original empty-provider mutation evidence above demonstrates that the MCP
+counter regression detects the pre-fix behavior rather than passing only
+because networking is unavailable. The existing local trust/provenance checks
+continue to mark repository text as local source data without granting it
+instructional authority. No public MCP schema, tool name, provider mapping,
+storage format, or migration changed.
+
 ## Findings and handoff
 
 - No unresolved severity findings remain within M001 scope.
