@@ -61,10 +61,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rmcp = { version = "3.2.0", features = ["server", "client", "transport-io", "transport-child-process", "transport-streamable-http-server", "macros"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 url = { version = "2", features = ["serde"] }
-eggress-outbound = { version = "=1.0.8", default-features = false, optional = true }
-eggress-uri = { version = "=1.0.8", default-features = false, optional = true }
-eggress-core = { version = "=1.0.8", default-features = false, optional = true }
-eggfetch-core = { version = "0.2.0", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
+eggress-outbound = { version = "=1.0.12", default-features = false, optional = true }
+eggress-uri = { version = "=1.0.12", default-features = false, optional = true }
+eggress-core = { version = "=1.0.12", default-features = false, optional = true }
+eggfetch-core = { version = "0.2.2", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
 semver = "1"
 scraper = "0.20"
 ego-tree = "0.6.2"
