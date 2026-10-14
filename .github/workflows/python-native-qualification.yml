@@ -119,14 +119,14 @@ jobs:
           name: wheel-${{ matrix.id }}
           path: ${{ runner.temp }}/wheelhouse
       - name: Create a clean consumer environment
-        run: python -m venv .venv
+        run: python -m venv "$RUNNER_TEMP/.venv"
         shell: bash
       - name: Test installed wheel outside checkout
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            python_bin="./.venv/Scripts/python.exe"
+            python_bin="$RUNNER_TEMP/.venv/Scripts/python.exe"
           else
-            python_bin="./.venv/bin/python"
+            python_bin="$RUNNER_TEMP/.venv/bin/python"
           fi
           "$python_bin" -m pip install --no-index --no-deps --only-binary=:all: wheelhouse/*.whl
           "$python_bin" -m pip install pytest==8.4.2
