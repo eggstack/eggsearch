@@ -124,7 +124,7 @@ jobs:
       - name: Test installed wheel outside checkout
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            python_bin="$RUNNER_TEMP/.venv/Scripts/python.exe"
+            python_bin="$(cygpath -u "$RUNNER_TEMP")/.venv/Scripts/python.exe"
           else
             python_bin="$RUNNER_TEMP/.venv/bin/python"
           fi
