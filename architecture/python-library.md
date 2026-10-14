@@ -10,7 +10,7 @@ closed at `plans/closure/python-native-library/001-status.md`; M002's native
 asyncio bridge is closed at `plans/closure/python-native-library/002-status.md`;
 M003's Python API, types, examples, and semantic parity work is closed at
 `plans/closure/python-native-library/003-status.md`; M004 distribution
-qualification is ready.
+qualification is active.
 
 ## Rust operation facade
 

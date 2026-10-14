@@ -1,6 +1,6 @@
 # M004 — Python Wheel, Sdist and Release Qualification
 
-Status: ready
+Status: active
 Primary class: infrastructure
 Source: `plans/subsystems/python-native-library-roadmap.md` M004
 Planning baseline: M003 candidate `ca4d0d6`; M003 closure evidence is `plans/closure/python-native-library/003-status.md`.
