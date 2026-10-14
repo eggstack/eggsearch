@@ -10,8 +10,9 @@ closed at `plans/closure/python-native-library/001-status.md`; M002's native
 asyncio bridge is closed at `plans/closure/python-native-library/002-status.md`;
 M003's Python API, types, examples, and semantic parity work is closed at
 `plans/closure/python-native-library/003-status.md`; M005 in-flight
-cancellation and default-config corrective is closing; M004 distribution
-qualification remains active and M006 exact-SHA closure is blocked on M005.
+cancellation and default-config corrective is closed at
+`plans/closure/python-native-library/005-status.md`; M004 distribution
+qualification remains active and M006 exact-SHA closure is ready.
 
 ## Rust operation facade
 

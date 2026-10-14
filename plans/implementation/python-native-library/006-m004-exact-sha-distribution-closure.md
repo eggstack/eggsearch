@@ -1,6 +1,6 @@
 # M006 — M004 Exact-SHA Distribution Qualification and Closure Reconciliation
 
-Status: blocked (hard dependency: M005 closure; M004 remains active)
+Status: ready (hard dependency satisfied: M005 closed at `plans/closure/python-native-library/005-status.md`, candidate `baf00cfc8e72f5975010f62e40d5d56985f77c78`; M004 remains active)
 Primary class: infrastructure (release qualification and evidence control)
 Source: `plans/subsystems/python-native-library-roadmap.md` M006; closes remaining exit conditions of active M004 (`plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`).
 Planning baseline: `main` `1434c1e55ddd92947042cff9918ffc0fe130ed01`, 2026-10-14.

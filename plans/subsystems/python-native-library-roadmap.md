@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: active (M001-M003 closed; M004 active; M005 corrective ready; M006 final closure blocked)
+Status: active (M001-M003 closed; M004 active; M005 corrective closed; M006 final closure ready)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -41,9 +41,9 @@ At the planning baseline, `src/lib.rs` promised only MCP/CLI stability, `src/mcp
 `M004 (infrastructure + operational: wheel/sdist/release qualification)`
   -> active, final candidate must follow M005
 `M005 (invariant: in-flight cancellation/close and CLI-config opt-in corrective)`
-  -> ready, M002/M003 closure predecessors satisfied
+  -> closed at `plans/closure/python-native-library/005-status.md`
 `M006 (infrastructure: M004 exact-SHA artifact and closure reconciliation)`
-  -> blocked pending M005 closure
+  -> ready, M005 closure satisfied; must qualify the post-M005 candidate
 
 M001-M003 are closed. M004 has substantial preliminary hosted evidence: Python-native run `38522548258` passed on main `1434c1e` across five build targets, 20 interpreter/platform smokes, extracted sdist, and dependency audit, but lacks the required `004-status.md`. M005 is a new, ready corrective for remaining cancellation/close and configuration-selection evidence; M006 is hard-blocked on M005 closure and must qualify **the post-corrective candidate** before recording M004 closure. No cross-repository or Mode-Off release blocker is waived. Publication remains separately authorized.
 
@@ -53,8 +53,8 @@ M001-M003 are closed. M004 has substantial preliminary hosted evidence: Python-n
 | M002 native asyncio bridge | capability | **closed** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | Closure `plans/closure/python-native-library/002-status.md`; candidate `2392e72178aa249445a64bd629caac8219353499`; ten-operation asyncio smoke, bounded conversion, cancellation and close |
 | M003 Python agent ergonomics and safety | capability | **closed** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Closure `plans/closure/python-native-library/003-status.md`; candidate `ca4d0d6`; typed methods, schema coverage, no-network Mode-Off agent flow |
 | M004 Python distribution and qualification | infrastructure | **active** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Baseline matrix green (`38522548258`, `1434c1e`), but final exact-SHA evidence and `004-status.md` pending M005/M006 |
-| M005 lifecycle and configuration corrective | invariant | **ready** | `plans/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md` | Deterministic confirmed-in-flight cancellation/close + permit recovery; explicit default-config opt-in and backwards-compatible no-arg semantics |
-| M006 M004 exact-SHA closure reconciliation | infrastructure | **blocked (hard: M005 closure)** | `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md` | Final wheel/sdist + root compatibility evidence with recorded digests and `004-status.md` / `006-status.md`; unpublished unless separately approved |
+| M005 lifecycle and configuration corrective | invariant | **closed** | `plans/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md` | Closure `plans/closure/python-native-library/005-status.md`; candidate `baf00cfc8e72f5975010f62e40d5d56985f77c78`; deterministic confirmed-in-flight cancellation/close + permit recovery; explicit default-config opt-in and backwards-compatible no-arg semantics |
+| M006 M004 exact-SHA closure reconciliation | infrastructure | **ready (hard: M005 closure satisfied)** | `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md` | Final wheel/sdist + root compatibility evidence with recorded digests and `004-status.md` / `006-status.md`; unpublished unless separately approved; must qualify post-M005 bytes, not baseline `38522548258` |
 
 ## Cross-cutting design requirements
 
@@ -74,6 +74,6 @@ M001-M003 are closed. M004 has substantial preliminary hosted evidence: Python-n
 
 ## Verification and closure
 
-Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. M005 adds a barrier-controlled *running Rust future* cancellation/close regression, and M006 requalifies all wheels and the extracted sdist at the final exact SHA, recording long-lived hashes and native consumer evidence. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001-M003 are closed by their corresponding closure records; M004 is active, M005 is ready, and M006 is blocked on M005 closure.
+Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. M005 adds a barrier-controlled *running Rust future* cancellation/close regression, and M006 requalifies all wheels and the extracted sdist at the final exact SHA, recording long-lived hashes and native consumer evidence. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001-M003 are closed by their corresponding closure records; M004 is active, M005 is closed at `baf00cfc8e72f5975010f62e40d5d56985f77c78`, and M006 is ready to qualify those post-M005 bytes.
 
-Do not declare Python availability merely because a PyO3 extension compiled; user-visible capability requires a real Python consumer smoke. Do not treat the green M004 baseline run as proof for future M005-modified bytes or as a closure record. Do not publish wheels until exact-SHA qualification and separate publisher approval. Branch and PR handoff is acceptable; do not merge planning into unrelated repository-hardening or Mode-Off release work.
+Do not declare Python availability merely because a PyO3 extension compiled; user-visible capability requires a real Python consumer smoke. Do not treat the green M004 baseline run as proof for post-M005 bytes or as a closure record. M005 is closed at `baf00cfc8e72f5975010f62e40d5d56985f77c78`; M006 must requalify those changed bytes. Do not publish wheels until exact-SHA qualification and separate publisher approval. Branch and PR handoff is acceptable; do not merge planning into unrelated repository-hardening or Mode-Off release work.
