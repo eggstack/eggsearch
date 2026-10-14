@@ -7,7 +7,7 @@ operations. Its ownership boundary is registered in
 
 Current handoff: M001's shared Rust facade and ten-operation parity are
 closed at `plans/closure/python-native-library/001-status.md`; M002's native
-asyncio bridge is ready.
+asyncio bridge is active.
 
 ## Rust operation facade
 
@@ -30,7 +30,12 @@ The Python package lives in an independent `bindings/python` Cargo package.
 PyO3 and Python packaging dependencies must not enter the root crate's
 default dependency graph or change its binary artifact inventory. Python
 import is side-effect-free. The binding owns Python types and lifecycle
-adaptation; all execution delegates through `src/sdk.rs`.
+adaptation; all execution delegates through `src/sdk.rs`. The PyO3 layer
+initializes one process-scoped Tokio runtime on first operation, caps shared
+in-flight calls at 32, and bounds JSON conversion to 1 MiB, 64 levels, and
+10,000 values. `aclose()` rejects new work, cancels active operations, and
+waits for their Rust futures to drop; Python task cancellation drops its
+corresponding future. The runtime intentionally remains process-scoped.
 
 Milestone status and exact-candidate evidence live in
 `plans/registry.md` and `plans/closure/python-native-library/`. A compiled

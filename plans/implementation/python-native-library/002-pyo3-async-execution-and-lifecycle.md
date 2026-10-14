@@ -1,6 +1,6 @@
 # M002 — PyO3 Asyncio Execution and Lifecycle
 
-Status: ready
+Status: active
 Primary class: capability
 Source: `plans/subsystems/python-native-library-roadmap.md` M002
 Planning baseline: M001 SDK candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; M001 closure evidence is `plans/closure/python-native-library/001-status.md`.

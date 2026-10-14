@@ -1,0 +1,19 @@
+[package]
+name = "eggsearch-python"
+version = "0.4.3"
+edition = "2021"
+rust-version = "1.89"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+eggsearch = { path = "../..", version = "=0.4.3" }
+futures = "0.3"
+pyo3 = { version = "=0.29.3", features = ["extension-module", "macros"] }
+pyo3-async-runtimes = { version = "=0.29.0", features = ["tokio-runtime"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-util = "0.7"

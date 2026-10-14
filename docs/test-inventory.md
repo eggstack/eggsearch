@@ -215,3 +215,18 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 |-----|----------|----------------|
 | `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + hygiene + packaging-check |
 | `windows-portability` | ~4min | `cargo check --locked --all-features --target x86_64-pc-windows-msvc` on `windows-latest` with pinned Rust 1.89; routine PR/main sentinel so Windows cfg breakage cannot hide behind Linux-green CI |
+
+## Python Native Binding
+
+| Suite | Runtime | Tests | Focus |
+|-------|---------|-------|-------|
+| `bindings/python/tests/test_native.py` | CPython 3.11–3.14; PyO3 extension | 12 | Ten-operation asyncio smoke, bounded JSON conversion and invalid inputs, cycles, cancellation/close, and sequential event-loop lifecycle |
+
+Run from the repository root after installing the extension into an active
+virtual environment:
+
+```bash
+maturin develop --manifest-path bindings/python/Cargo.toml --locked
+python -m pytest -q bindings/python/tests
+python -m compileall bindings/python/python/eggsearch
+```

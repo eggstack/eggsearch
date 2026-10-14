@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: active (M001 closed; M002 ready; M003-M004 blocked by predecessor closure)
+Status: active (M001 closed; M002 active; M003-M004 blocked by predecessor closure)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -45,7 +45,7 @@ Interfaces after M001 may inform parallel exploratory packaging, but the officia
 | Milestone | Class | Status | Plan | User-facing exit |
 |---|---|---|---|---|
 | M001 direct execution facade | infrastructure | **closed** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | Closure `plans/closure/python-native-library/001-status.md`; candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; ten handler parity cases, Mode-Off zero-dispatch counter, and `make check` passed |
-| M002 native asyncio bridge | capability | **ready** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | M001 hard dependency closed; Python asyncio client invokes ten tools concurrently without MCP process, honors typed errors and shutdown |
+| M002 native asyncio bridge | capability | **active** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | M001 hard dependency closed; Python asyncio client invokes ten tools concurrently without MCP process, honors typed errors and shutdown |
 | M003 Python agent ergonomics and safety | capability | **blocked (hard: M002 closure)** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Typed, documented Python tool wrappers and representative working agent workflow |
 | M004 Python distribution and qualification | infrastructure | **blocked (hard: M003 closure; operational: publisher approval/platform qualification)** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Clean wheel/sdist installation and reproducible native consumer smoke on qualified targets |
 
