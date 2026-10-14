@@ -342,8 +342,14 @@ pub fn safe_open_relative(
             return Err(SafeOpenError::SafeSymlinkFollowingUnsupported);
         }
 
-        let _ = File::open(root)
+        let root_meta = std::fs::metadata(root)
             .map_err(|e| SafeOpenError::RootOpenFailed(format!("{}: {}", root.display(), e)))?;
+        if !root_meta.is_dir() {
+            return Err(SafeOpenError::RootOpenFailed(format!(
+                "root is not a directory: {}",
+                root.display()
+            )));
+        }
 
         let mut accumulated = root.to_path_buf();
 
@@ -546,6 +552,18 @@ mod tests {
         std::fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
         let config = default_config();
         assert!(safe_open_relative(dir.path(), "src/main.rs", &config).is_ok());
+    }
+
+    #[test]
+    fn safe_open_root_must_be_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_file = dir.path().join("root.txt");
+        std::fs::write(&root_file, "not a directory").unwrap();
+        let config = default_config();
+        assert!(matches!(
+            safe_open_relative(&root_file, "test.txt", &config),
+            Err(SafeOpenError::RootOpenFailed(_))
+        ));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: active (M001-M003 closed; M004 active; M005 corrective closed; M006 final closure ready)
+Status: active (M001-M003 closed; M004 active; M005 corrective closed; M006 closure active; M007 safe-read corrective active)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -43,9 +43,11 @@ At the planning baseline, `src/lib.rs` promised only MCP/CLI stability, `src/mcp
 `M005 (invariant: in-flight cancellation/close and CLI-config opt-in corrective)`
   -> closed at `plans/closure/python-native-library/005-status.md`
 `M006 (infrastructure: M004 exact-SHA artifact and closure reconciliation)`
-  -> ready, M005 closure satisfied; must qualify the post-M005 candidate
+  -> active; must qualify the M007 repair candidate (post-M005 bytes)
+`M007 (invariant: Windows safe-read corrective for local content access)`
+  -> active; repairs `safe_open_relative` non-unix root handling exposed by M006 Windows smoke
 
-M001-M003 are closed. M004 has substantial preliminary hosted evidence: Python-native run `38522548258` passed on main `1434c1e` across five build targets, 20 interpreter/platform smokes, extracted sdist, and dependency audit, but lacks the required `004-status.md`. M005 is a new, ready corrective for remaining cancellation/close and configuration-selection evidence; M006 is hard-blocked on M005 closure and must qualify **the post-corrective candidate** before recording M004 closure. No cross-repository or Mode-Off release blocker is waived. Publication remains separately authorized.
+M001-M003 are closed. M004 has substantial preliminary hosted evidence: Python-native run `38522548258` passed on main `1434c1e` across five build targets, 20 interpreter/platform smokes, extracted sdist, and dependency audit, but lacks the required `004-status.md`. M005 is closed. M006 qualification of post-M005 bytes exposed a Windows-only product defect (`File::open` on a directory root fails on Windows, so all jail-checked content reads fail there); M007 repairs it and M006 must qualify **the M007 repair candidate** before recording M004 closure. No cross-repository or Mode-Off release blocker is waived. Publication remains separately authorized.
 
 | Milestone | Class | Status | Plan | User-facing exit |
 |---|---|---|---|---|
@@ -54,7 +56,8 @@ M001-M003 are closed. M004 has substantial preliminary hosted evidence: Python-n
 | M003 Python agent ergonomics and safety | capability | **closed** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Closure `plans/closure/python-native-library/003-status.md`; candidate `ca4d0d6`; typed methods, schema coverage, no-network Mode-Off agent flow |
 | M004 Python distribution and qualification | infrastructure | **active** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Baseline matrix green (`38522548258`, `1434c1e`), but final exact-SHA evidence and `004-status.md` pending M005/M006 |
 | M005 lifecycle and configuration corrective | invariant | **closed** | `plans/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md` | Closure `plans/closure/python-native-library/005-status.md`; candidate `baf00cfc8e72f5975010f62e40d5d56985f77c78`; deterministic confirmed-in-flight cancellation/close + permit recovery; explicit default-config opt-in and backwards-compatible no-arg semantics |
-| M006 M004 exact-SHA closure reconciliation | infrastructure | **ready (hard: M005 closure satisfied)** | `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md` | Final wheel/sdist + root compatibility evidence with recorded digests and `004-status.md` / `006-status.md`; unpublished unless separately approved; must qualify post-M005 bytes, not baseline `38522548258` |
+| M006 M004 exact-SHA closure reconciliation | infrastructure | **active** | `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md` | Final wheel/sdist + root compatibility evidence with recorded digests and `004-status.md` / `006-status.md`; unpublished unless separately approved; must qualify the M007 repair candidate, not baseline `38522548258` or pre-fix bytes |
+| M007 Windows safe-read corrective | invariant | **active** | `plans/implementation/python-native-library/007-windows-safe-read-corrective.md` | Repair `safe_open_relative` non-unix root handling (directory open fails on Windows, voiding all jail-checked content reads); regression tests; closure `plans/closure/python-native-library/007-status.md`; unblocks M004/M006 final matrix |
 
 ## Cross-cutting design requirements
 

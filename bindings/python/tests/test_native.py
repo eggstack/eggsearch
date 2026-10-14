@@ -774,16 +774,6 @@ def test_explicit_path_overrides_default_config(tmp_path, monkeypatch):
                 explicit.repo_search(query="beta", include_local=True),
                 timeout=10.0,
             )
-            print("DIAG cwd=", __import__("os").getcwd())
-            print("DIAG resolved=", resolved)
-            print("DIAG default_groups=", len(default_result.get("groups", [])))
-            for group in default_result.get("groups", []):
-                print(
-                    "DIAG group results=",
-                    len(group.get("results", [])),
-                    "first=",
-                    str(group.get("results", [{}])[0])[:300],
-                )
             assert any(
                 "alpha" in (card.get("snippet") or "")
                 for group in default_result.get("groups", [])

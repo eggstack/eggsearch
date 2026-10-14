@@ -1,6 +1,6 @@
 # M006 — M004 Exact-SHA Distribution Qualification and Closure Reconciliation
 
-Status: ready (hard dependency satisfied: M005 closed at `plans/closure/python-native-library/005-status.md`, candidate `baf00cfc8e72f5975010f62e40d5d56985f77c78`; M004 remains active)
+Status: active (executing; M005 closed at `plans/closure/python-native-library/005-status.md`. Qualification of `c8bd030`/`748ae59` exposed a Windows product defect now owned by corrective M007 (`plans/implementation/python-native-library/007-windows-safe-read-corrective.md`); the final matrix must run on the M007 repair candidate. M004 remains active until then)
 Primary class: infrastructure (release qualification and evidence control)
 Source: `plans/subsystems/python-native-library-roadmap.md` M006; closes remaining exit conditions of active M004 (`plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`).
 Planning baseline: `main` `1434c1e55ddd92947042cff9918ffc0fe130ed01`, 2026-10-14.
@@ -45,7 +45,7 @@ Re-run `make check`, `make release-check` where environment permits, `cargo publ
 
 ### WP5 — Close M004 and reconcile planning truth
 
-Create `plans/closure/python-native-library/004-status.md` on the final candidate containing a requirement-to-evidence matrix, exact SHA, completed platform/interpreter/job table, five wheel filenames/tags/hashes and sdist hash, extracted-sdist clean rebuild and import proof, Python consumer fixture run, provenance/action/dependency evidence, binary/root compatibility gates, publication status (unpublished), unsupported targets, observed limitations, and severity-classified residual findings. Write `plans/closure/python-native-library/006-status.md` as a small final reconciliation cross-referencing the real M004 and M005 records, not duplicating their test tables.
+Create `plans/closure/python-native-library/004-status.md` on the final candidate containing a requirement-to-evidence matrix, exact SHA, completed platform/interpreter/job table, five wheel filenames/tags/hashes and sdist hash, extracted-sdist clean rebuild and import proof, Python consumer fixture run, provenance/action/dependency evidence, binary/root compatibility gates, publication status (unpublished), unsupported targets, observed limitations, and severity-classified residual findings. Write `plans/closure/python-native-library/006-status.md` as a small final reconciliation cross-referencing the real M004, M005, and M007 records, not duplicating their test tables. The final candidate is the M007 repair SHA, not any pre-fix bytes; pre-fix runs stay on record as superseded evidence showing the deficiency, never as qualification.
 
 Update `plans/subsystems/python-native-library-roadmap.md`, `plans/registry.md`, `docs/python-library.md`, package README, release guidance and any test inventory/architecture docs that actually changed. Close M004 and M006 **only together with the required exact-candidate evidence and both closure records in the same commit**; do not claim the workstream is published or prematurely archive still-actionable documents. If a high/medium gap appears, leave M004 active/blocked, record the deficiency, and issue another corrective rather than writing fictional green closure.
 
