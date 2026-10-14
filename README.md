@@ -147,6 +147,10 @@ See [Safety](docs/safety.md) and [Threat model](docs/threat-model.md).
 [CodeGG harness integration](docs/codegg-integration.md) ·
 [Test inventory](docs/test-inventory.md)
 
+The in-process asyncio Python package is under `bindings/python` and is not
+published yet. See the [Python library guide](docs/python-library.md) for
+local build instructions and current support limits.
+
 ## Build
 
 ```bash

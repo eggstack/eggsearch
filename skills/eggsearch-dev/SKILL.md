@@ -66,6 +66,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
+| `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, cancellation and close lifecycle |
 
 This table is representative, not exhaustive — 78 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
@@ -87,6 +88,16 @@ For the persistent MCP transport:
 
 ```bash
 cargo test --locked --all-features --test mcp_http
+```
+
+For the Python native package, build in an active virtual environment and run
+its package-local tests:
+
+```bash
+maturin develop --manifest-path bindings/python/Cargo.toml --locked
+python -m pytest -q bindings/python/tests
+python -m compileall bindings/python/python/eggsearch
+pyright bindings/python/python/eggsearch bindings/python/examples
 ```
 
 For startup supervision rendering and policy:

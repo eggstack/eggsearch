@@ -1,0 +1,39 @@
+[build-system]
+requires = ["maturin==1.9.5"]
+build-backend = "maturin"
+
+[project]
+name = "eggsearch"
+version = "0.4.3"
+description = "Native asyncio bindings for the Eggsearch evidence engine"
+requires-python = ">=3.11,<3.15"
+license = "MIT"
+readme = "PYTHON_README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Rust",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.2", "pyright==1.1.414"]
+
+[project.urls]
+Homepage = "https://github.com/eggstack/eggsearch"
+Repository = "https://github.com/eggstack/eggsearch"
+Documentation = "https://github.com/eggstack/eggsearch/blob/main/docs/python-library.md"
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+python-source = "python"
+module-name = "eggsearch._native"
+bindings = "pyo3"
+features = []
+exclude = ["**/__pycache__/**", "**/*.pyc"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
