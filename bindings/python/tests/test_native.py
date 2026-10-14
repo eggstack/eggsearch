@@ -254,7 +254,7 @@ def test_mode_off_repo_search_returns_local_trusted_results(config_path, tmp_pat
     config = config_path.read_text(encoding="utf-8")
     config = config.replace(
         "enabled = false\nroots = []",
-        f'enabled = true\nroots = ["{workspace}"]',
+        f'enabled = true\nroots = ["{workspace.as_posix()}"]',
     )
     config_path.write_text(config, encoding="utf-8")
 
