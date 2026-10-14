@@ -619,10 +619,14 @@ mod tests {
         std::os::windows::fs::symlink_dir(outside.path(), dir.path().join("linkdir")).unwrap();
         let config = default_config();
         let result = safe_open_relative(dir.path(), "linkdir/leaf.txt", &config);
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(windows)]
         assert!(matches!(result, Err(SafeOpenError::SymlinkDetected(_))));
-        #[cfg(not(any(target_os = "linux", windows)))]
-        assert!(result.is_err());
+        #[cfg(unix)]
+        assert!(
+            result.is_err(),
+            "opened through symlink: size={:?}",
+            result.ok().map(|sf| sf.size)
+        );
     }
 
     #[test]
