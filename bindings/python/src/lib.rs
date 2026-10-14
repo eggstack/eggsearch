@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
+#[cfg(debug_assertions)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 use eggsearch::core::config::AppConfig;
@@ -23,6 +25,40 @@ create_exception!(_native, EggsearchError, pyo3::exceptions::PyException);
 static RUNTIME_INIT: OnceLock<()> = OnceLock::new();
 static IN_FLIGHT: LazyLock<Arc<Semaphore>> =
     LazyLock::new(|| Arc::new(Semaphore::new(MAX_IN_FLIGHT)));
+#[cfg(debug_assertions)]
+static TEST_GATE: LazyLock<TestGate> = LazyLock::new(TestGate::new);
+#[cfg(debug_assertions)]
+struct TestGate {
+    entered: AtomicUsize,
+    dropped: AtomicUsize,
+    release_count: AtomicUsize,
+    release: Notify,
+}
+#[cfg(debug_assertions)]
+impl TestGate {
+    fn new() -> Self {
+        Self {
+            entered: AtomicUsize::new(0),
+            dropped: AtomicUsize::new(0),
+            release_count: AtomicUsize::new(0),
+            release: Notify::new(),
+        }
+    }
+    fn reset(&self) {
+        self.entered.store(0, Ordering::SeqCst);
+        self.dropped.store(0, Ordering::SeqCst);
+        self.release_count.fetch_add(1, Ordering::SeqCst);
+        self.release.notify_waiters();
+    }
+}
+#[cfg(debug_assertions)]
+struct GateDropGuard;
+#[cfg(debug_assertions)]
+impl Drop for GateDropGuard {
+    fn drop(&mut self) {
+        TEST_GATE.dropped.fetch_add(1, Ordering::SeqCst);
+    }
+}
 
 fn initialize_runtime() {
     RUNTIME_INIT.get_or_init(|| {
@@ -121,27 +157,50 @@ struct PyAsyncEggsearch {
     state: Arc<ClientState>,
 }
 
+fn build_state(config: AppConfig) -> PyResult<Arc<ClientState>> {
+    let client = EggsearchClient::new(config).map_err(|error| {
+        PyValueError::new_err(format!("invalid Eggsearch configuration: {error}"))
+    })?;
+    Ok(Arc::new(ClientState {
+        client,
+        lifecycle: Mutex::new(Lifecycle::default()),
+        cancelled: CancellationToken::new(),
+        drained: Notify::new(),
+    }))
+}
+
+fn load_config_from_path(path: &PathBuf) -> PyResult<AppConfig> {
+    AppConfig::load(path)
+        .map_err(|error| PyValueError::new_err(format!("invalid Eggsearch configuration: {error}")))
+}
+
 #[pymethods]
 impl PyAsyncEggsearch {
     #[new]
     #[pyo3(signature = (config_path=None))]
     fn new(config_path: Option<PathBuf>) -> PyResult<Self> {
         let config = match config_path {
-            Some(path) => AppConfig::load(&path).map_err(|error| {
-                PyValueError::new_err(format!("invalid Eggsearch configuration: {error}"))
-            })?,
+            Some(path) => load_config_from_path(&path)?,
             None => AppConfig::default(),
         };
-        let client = EggsearchClient::new(config).map_err(|error| {
-            PyValueError::new_err(format!("invalid Eggsearch configuration: {error}"))
-        })?;
         Ok(Self {
-            state: Arc::new(ClientState {
-                client,
-                lifecycle: Mutex::new(Lifecycle::default()),
-                cancelled: CancellationToken::new(),
-                drained: Notify::new(),
-            }),
+            state: build_state(config)?,
+        })
+    }
+
+    #[staticmethod]
+    fn default_config_path() -> String {
+        eggsearch::core::config::default_config_path()
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[staticmethod]
+    fn from_default_config() -> PyResult<Self> {
+        let path = eggsearch::core::config::default_config_path();
+        let config = load_config_from_path(&path)?;
+        Ok(Self {
+            state: build_state(config)?,
         })
     }
 
@@ -213,6 +272,102 @@ impl PyAsyncEggsearch {
     fn tool_contracts(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let contracts = self.state.client.tool_contracts();
         json_to_python(py, &contracts).map(Bound::unbind)
+    }
+
+    #[cfg(debug_assertions)]
+    #[staticmethod]
+    fn _test_gate_reset() {
+        TEST_GATE.reset();
+    }
+
+    #[cfg(debug_assertions)]
+    #[staticmethod]
+    fn _test_gate_release() {
+        TEST_GATE.release_count.fetch_add(1, Ordering::SeqCst);
+        TEST_GATE.release.notify_waiters();
+    }
+
+    #[cfg(debug_assertions)]
+    #[staticmethod]
+    fn _test_gate_state(py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let snapshot = serde_json::json!({
+            "entered": TEST_GATE.entered.load(Ordering::SeqCst),
+            "dropped": TEST_GATE.dropped.load(Ordering::SeqCst),
+            "release_count": TEST_GATE.release_count.load(Ordering::SeqCst),
+            "permits_available": IN_FLIGHT.available_permits(),
+        });
+        json_to_python(py, &snapshot).map(Bound::unbind)
+    }
+
+    #[cfg(debug_assertions)]
+    fn _test_active_count(&self) -> usize {
+        self.state
+            .lifecycle
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .active
+    }
+
+    #[cfg(debug_assertions)]
+    fn _test_blocking_execute<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        initialize_runtime();
+        let active_call = self
+            .state
+            .register()
+            .map_err(|error| sdk_error(py, error))?;
+        let permit = IN_FLIGHT.clone().try_acquire_owned().map_err(|_| {
+            sdk_error(
+                py,
+                SdkError {
+                    code: "budget_invalid".into(),
+                    message: "native execution concurrency limit reached".into(),
+                    repair: None,
+                    data: None,
+                },
+            )
+        })?;
+        let state = self.state.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let _active_call = active_call;
+            let _permit: OwnedSemaphorePermit = permit;
+            let _gate_guard = GateDropGuard;
+            TEST_GATE.entered.fetch_add(1, Ordering::SeqCst);
+            let start = TEST_GATE.release_count.load(Ordering::SeqCst);
+            let result = std::panic::AssertUnwindSafe(async {
+                loop {
+                    tokio::select! {
+                        _ = state.cancelled.cancelled() => {
+                            return Err(SdkError {
+                                code: "client_closed".into(),
+                                message: "Eggsearch client closed while the operation was running"
+                                    .into(),
+                                repair: None,
+                                data: None,
+                            });
+                        }
+                        _ = TEST_GATE.release.notified() => {
+                            if TEST_GATE.release_count.load(Ordering::SeqCst) != start {
+                                return Ok(serde_json::json!({"gate": "released"}));
+                            }
+                        }
+                    }
+                }
+            })
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|_| {
+                Err(SdkError {
+                    code: "internal".into(),
+                    message: "internal native operation failure".into(),
+                    repair: None,
+                    data: None,
+                })
+            });
+            Python::attach(|py| match result {
+                Ok(value) => json_to_python(py, &value).map(Bound::unbind),
+                Err(error) => Err(sdk_error(py, error)),
+            })
+        })
     }
 }
 

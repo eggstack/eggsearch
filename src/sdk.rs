@@ -247,6 +247,76 @@ mod tests {
         }
     }
 
+    struct BlockingEngine {
+        entered: Arc<AtomicUsize>,
+        dropped: Arc<AtomicUsize>,
+        entered_notify: Arc<tokio::sync::Notify>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
+    struct BlockingGuard {
+        dropped: Arc<AtomicUsize>,
+    }
+
+    impl Drop for BlockingGuard {
+        fn drop(&mut self) {
+            self.dropped.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    impl SearchEngine for BlockingEngine {
+        fn name(&self) -> &'static str {
+            "duckduckgo"
+        }
+
+        fn search<'a>(
+            &'a self,
+            _request: &'a EngineSearchRequest,
+        ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            let entered = self.entered.clone();
+            let dropped = self.dropped.clone();
+            let entered_notify = self.entered_notify.clone();
+            let release = self.release.clone();
+            Box::pin(async move {
+                let _guard = BlockingGuard { dropped };
+                entered.fetch_add(1, Ordering::SeqCst);
+                entered_notify.notify_waiters();
+                release.notified().await;
+                Ok(Vec::new())
+            })
+        }
+    }
+
+    fn blocking_client() -> (
+        EggsearchClient,
+        Arc<AtomicUsize>,
+        Arc<AtomicUsize>,
+        Arc<tokio::sync::Notify>,
+        Arc<tokio::sync::Notify>,
+    ) {
+        let entered = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let entered_notify = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let mut config = AppConfig::default();
+        config.search.mode = Mode::Live;
+        config.local.enabled = false;
+        let adapter = MetadataSearchAdapter::from_engines(
+            vec![Arc::new(BlockingEngine {
+                entered: entered.clone(),
+                dropped: dropped.clone(),
+                entered_notify: entered_notify.clone(),
+                release: release.clone(),
+            })],
+            Duration::from_secs(2),
+        );
+        let state = ServerState::with_adapter(config, Arc::new(adapter));
+        let client = EggsearchClient {
+            state: Arc::new(state),
+        };
+        (client, entered, dropped, entered_notify, release)
+    }
+
     async fn assert_parity<F>(
         client: &EggsearchClient,
         name: &str,
@@ -383,6 +453,73 @@ mod tests {
             std::future::ready(run_build_evidence_bundle(decode(args).unwrap())),
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn dropping_sdk_execute_aborts_blocked_engine() {
+        let (client, entered, dropped, entered_notify, _release) = blocking_client();
+        let handle = tokio::spawn(async move {
+            client
+                .execute(
+                    "web_search",
+                    serde_json::json!({"query": "sdk cancellation"}),
+                )
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered_notify.notified())
+            .await
+            .unwrap();
+        assert_eq!(entered.load(Ordering::SeqCst), 1);
+        handle.abort();
+        let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while dropped.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn close_token_select_drops_blocked_engine() {
+        let (client, entered, dropped, entered_notify, _release) = blocking_client();
+        let token = tokio_util::sync::CancellationToken::new();
+        let canceller = token.clone();
+        let runner = tokio::spawn(async move {
+            tokio::select! {
+                _ = canceller.cancelled() => Err(SdkError::new(
+                    "client_closed",
+                    "Eggsearch client closed while the operation was running",
+                    None,
+                    None,
+                )),
+                result = client.execute(
+                    "web_search",
+                    serde_json::json!({"query": "sdk close race"}),
+                ) => result,
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(5), entered_notify.notified())
+            .await
+            .unwrap();
+        assert_eq!(entered.load(Ordering::SeqCst), 1);
+        token.cancel();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), runner)
+            .await
+            .unwrap()
+            .unwrap();
+        let error = outcome.unwrap_err();
+        assert_eq!(error.code, "client_closed");
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while dropped.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

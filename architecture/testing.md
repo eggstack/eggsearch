@@ -24,7 +24,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
 | `src/**/mod.rs` unit tests | Private-function coverage at the bottom of the source file |
-| `bindings/python/tests/test_native.py` | PyO3 asyncio consumer behavior, typed method delegation, bounded input conversion, cancellation and close lifecycle |
+| `bindings/python/tests/test_native.py` | PyO3 asyncio consumer behavior, typed method delegation, bounded input conversion, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, conversion-failure leak checks, sequential loop recovery, and default-config selection |
 
 ---
 

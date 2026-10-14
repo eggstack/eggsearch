@@ -9,8 +9,9 @@ Current handoff: M001's shared Rust facade and ten-operation parity are
 closed at `plans/closure/python-native-library/001-status.md`; M002's native
 asyncio bridge is closed at `plans/closure/python-native-library/002-status.md`;
 M003's Python API, types, examples, and semantic parity work is closed at
-`plans/closure/python-native-library/003-status.md`; M004 distribution
-qualification is active.
+`plans/closure/python-native-library/003-status.md`; M005 in-flight
+cancellation and default-config corrective is closing; M004 distribution
+qualification remains active and M006 exact-SHA closure is blocked on M005.
 
 ## Rust operation facade
 
@@ -39,6 +40,17 @@ in-flight calls at 32, and bounds JSON conversion to 1 MiB, 64 levels, and
 10,000 values. `aclose()` rejects new work, cancels active operations, and
 waits for their Rust futures to drop; Python task cancellation drops its
 corresponding future. The runtime intentionally remains process-scoped.
+
+`AsyncEggsearch()` preserves no-arg `AppConfig::default()` semantics.
+`AsyncEggsearch.from_default_config()` and `default_config_path()` use
+Rust-owned `eggsearch::core::config::default_config_path()` plus
+`AppConfig::load`, preserving explicit-path behavior and CLI missing-file
+fallback without reimplementing platform selection in Python. Cancellation
+after a started barrier is proven by a `src/sdk.rs` counted blocking engine
+plus a debug-only bridge gate (`_test_blocking_execute`, `_test_gate_state`,
+`_test_gate_reset`, `_test_gate_release`, `_test_active_count`) that shares the
+production `ActiveCall`, 32-permit, and close-token path; the gate is compiled
+out with `debug_assertions` off and never ships in release wheels.
 
 Milestone status and exact-candidate evidence live in
 `plans/registry.md` and `plans/closure/python-native-library/`. A compiled

@@ -38,6 +38,16 @@ class AsyncEggsearch:
             None if config_path is None else str(config_path)
         )
 
+    @classmethod
+    def from_default_config(cls) -> AsyncEggsearch:
+        instance = cls.__new__(cls)
+        instance._native = _NativeAsyncEggsearch.from_default_config()
+        return instance
+
+    @staticmethod
+    def default_config_path() -> str:
+        return str(_NativeAsyncEggsearch.default_config_path())
+
     async def __aenter__(self) -> AsyncEggsearch:
         return self
 
