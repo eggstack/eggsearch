@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: active (M001 closed; M002 active; M003-M004 blocked by predecessor closure)
+Status: active (M001-M002 closed; M003 active; M004 blocked by M003 and platform qualification)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -28,25 +28,25 @@ TypeScript, Node, C ABI, standalone C shim, WASM, universal CPython/PyPy support
 
 ## Baseline evidence
 
-`src/lib.rs` promises only MCP/CLI stability. `src/mcp/tools/mod.rs` exports the ten `run_*` functions; tools accept typed args and return structured `serde_json::Value` with `ToolError`, alongside one synchronous evidence bundler. `src/mcp/state.rs` constructs shared adapter/fetch/cache/local state from `AppConfig`. `src/mcp/projection.rs` has compact/standard/diagnostic projections. `Cargo.toml` describes one root library+binary with no PyO3 or maturin and no existing `bindings/python` package. `plans/registry.md` currently has no Python library workstream. Current `Cargo.toml` version 0.4.3 is source baseline, not proof of PyPI availability or publication.
+At the planning baseline, `src/lib.rs` promised only MCP/CLI stability, `src/mcp/tools/mod.rs` exported the ten `run_*` functions, `src/mcp/state.rs` constructed shared adapter/fetch/cache/local state from `AppConfig`, and `src/mcp/projection.rs` owned compact/standard/diagnostic projections. The baseline `Cargo.toml` had no PyO3 or maturin and no `bindings/python` package. Its version 0.4.3 is a source baseline, not proof of PyPI availability or publication.
 
 ## Dependency graph and milestones
 
 `M001 (infrastructure: shared SDK contract and parity)`
   -> hard closed
 `M002 (capability: native PyO3 asyncio execution and lifecycle)`
-  -> hard closed
+  -> closed at `plans/closure/python-native-library/002-status.md`
 `M003 (capability: ergonomic Python agent API, types, examples, semantic parity)`
-  -> hard closed
+  -> active
 `M004 (infrastructure + operational: wheel/sdist/release qualification)`
 
-Interfaces after M001 may inform parallel exploratory packaging, but the official M002-M004 handoff remains blocked until predecessor closure. No cross-repository or Mode-Off release blocker is waived: develop against current main and re-run the exact Mode-Off regressions, with separate operational gating for publication if existing immutable-release qualification remains blocked.
+M002 is closed and M003 is active. M004 remains gated by M003 closure and platform qualification. No cross-repository or Mode-Off release blocker is waived: re-run the exact Mode-Off regressions, with separate operational gating for publication if existing immutable-release qualification remains blocked.
 
 | Milestone | Class | Status | Plan | User-facing exit |
 |---|---|---|---|---|
 | M001 direct execution facade | infrastructure | **closed** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | Closure `plans/closure/python-native-library/001-status.md`; candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; ten handler parity cases, Mode-Off zero-dispatch counter, and `make check` passed |
-| M002 native asyncio bridge | capability | **active** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | M001 hard dependency closed; Python asyncio client invokes ten tools concurrently without MCP process, honors typed errors and shutdown |
-| M003 Python agent ergonomics and safety | capability | **blocked (hard: M002 closure)** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Typed, documented Python tool wrappers and representative working agent workflow |
+| M002 native asyncio bridge | capability | **closed** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | Closure `plans/closure/python-native-library/002-status.md`; candidate `2392e72178aa249445a64bd629caac8219353499`; ten-operation asyncio smoke, bounded conversion, cancellation and close |
+| M003 Python agent ergonomics and safety | capability | **active** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Typed, documented Python tool wrappers and representative working agent workflow |
 | M004 Python distribution and qualification | infrastructure | **blocked (hard: M003 closure; operational: publisher approval/platform qualification)** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Clean wheel/sdist installation and reproducible native consumer smoke on qualified targets |
 
 ## Cross-cutting design requirements
@@ -67,6 +67,6 @@ Interfaces after M001 may inform parallel exploratory packaging, but the officia
 
 ## Verification and closure
 
-Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001 is closed by `plans/closure/python-native-library/001-status.md`; M002 is now dependency-ready.
+Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001 and M002 are closed by their corresponding closure records; M003 is active.
 
 Do not declare Python availability merely because a PyO3 extension compiled; user-visible capability requires a real Python consumer smoke. Do not publish wheels until exact-SHA qualification and separate publisher approval. Branch and PR handoff is acceptable; do not merge planning into unrelated repository-hardening or Mode-Off release work.

@@ -7,7 +7,8 @@ operations. Its ownership boundary is registered in
 
 Current handoff: M001's shared Rust facade and ten-operation parity are
 closed at `plans/closure/python-native-library/001-status.md`; M002's native
-asyncio bridge is active.
+asyncio bridge is closed at `plans/closure/python-native-library/002-status.md`;
+M003's Python API, types, and semantic parity work is active.
 
 ## Rust operation facade
 
