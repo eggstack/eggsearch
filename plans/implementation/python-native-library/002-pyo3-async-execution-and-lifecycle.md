@@ -1,9 +1,9 @@
 # M002 — PyO3 Asyncio Execution and Lifecycle
 
-Status: blocked (hard dependency: M001 closed)
+Status: ready
 Primary class: capability
 Source: `plans/subsystems/python-native-library-roadmap.md` M002
-Planning baseline: `main` `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b`; rebase implementation evidence after M001 closure.
+Planning baseline: M001 SDK candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; M001 closure evidence is `plans/closure/python-native-library/001-status.md`.
 ADRs: `ADR-0001`, `ADR-0005`; long-term sections 1-4, 6-9 of `plans/000-long-term-specification.md`.
 
 ## Objective, readiness, non-goals

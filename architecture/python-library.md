@@ -5,6 +5,10 @@ operations. Its ownership boundary is registered in
 `plans/adrs/ADR-0005-python-native-library-boundary.md` and sequenced by
 `plans/subsystems/python-native-library-roadmap.md`.
 
+Current handoff: M001's shared Rust facade and ten-operation parity are
+closed at `plans/closure/python-native-library/001-status.md`; M002's native
+asyncio bridge is ready.
+
 ## Rust operation facade
 
 `src/sdk.rs` owns the narrow `EggsearchClient`, canonical `ToolName` mapping,

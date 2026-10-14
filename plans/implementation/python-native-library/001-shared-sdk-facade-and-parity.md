@@ -1,6 +1,6 @@
 # M001 — Shared SDK Facade and Ten-Tool Parity
 
-Status: ready
+Status: closed
 Primary class: infrastructure
 Source: `plans/subsystems/python-native-library-roadmap.md` M001
 Baseline: `main` `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo 0.4.3)

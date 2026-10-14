@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: active (M001 ready; M002-M004 blocked by predecessor closure)
+Status: active (M001 closed; M002 ready; M003-M004 blocked by predecessor closure)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -44,8 +44,8 @@ Interfaces after M001 may inform parallel exploratory packaging, but the officia
 
 | Milestone | Class | Status | Plan | User-facing exit |
 |---|---|---|---|---|
-| M001 direct execution facade | infrastructure | **ready** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | Ten canonical operations callable in-process by Rust; zero policy drift; no Python packaging claim |
-| M002 native asyncio bridge | capability | **blocked (hard: M001 closure)** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | Python asyncio client invokes ten tools concurrently without MCP process, honors typed errors and shutdown |
+| M001 direct execution facade | infrastructure | **closed** | `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md` | Closure `plans/closure/python-native-library/001-status.md`; candidate `5f686d02e15daa2c5db7ad6d889c06eaff3ceeee`; ten handler parity cases, Mode-Off zero-dispatch counter, and `make check` passed |
+| M002 native asyncio bridge | capability | **ready** | `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md` | M001 hard dependency closed; Python asyncio client invokes ten tools concurrently without MCP process, honors typed errors and shutdown |
 | M003 Python agent ergonomics and safety | capability | **blocked (hard: M002 closure)** | `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md` | Typed, documented Python tool wrappers and representative working agent workflow |
 | M004 Python distribution and qualification | infrastructure | **blocked (hard: M003 closure; operational: publisher approval/platform qualification)** | `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md` | Clean wheel/sdist installation and reproducible native consumer smoke on qualified targets |
 
@@ -67,6 +67,6 @@ Interfaces after M001 may inform parallel exploratory packaging, but the officia
 
 ## Verification and closure
 
-Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit.
+Each milestone adds deterministic no-network fixtures and the `make check` root gate; package milestones additionally use Python pytest/type checks and clean installation. Track contract parity for all ten tools plus failure/warning/Mode-Off cases, not only `web_search` happy-path. Run `cargo package --list`/`cargo publish --dry-run --locked` for root after packaging changes. Every milestone creates `plans/closure/python-native-library/NNN-status.md` with source SHA, completed evidence matrix, tests and outcomes, open findings, compatibility/security evidence and final status, and updates this roadmap + registry in the same closure commit. M001 is closed by `plans/closure/python-native-library/001-status.md`; M002 is now dependency-ready.
 
 Do not declare Python availability merely because a PyO3 extension compiled; user-visible capability requires a real Python consumer smoke. Do not publish wheels until exact-SHA qualification and separate publisher approval. Branch and PR handoff is acceptable; do not merge planning into unrelated repository-hardening or Mode-Off release work.
