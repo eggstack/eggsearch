@@ -1,6 +1,6 @@
 # Mode-Off Repository Locality — Corrective Roadmap
 
-Status: active (M001 closed; M002 and M003 blocked on hosted release qualification)
+Status: closed (M001-M003 closed)
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f` (2026-10-13)
 Primary class: invariant / security and runtime correctness
 
@@ -15,7 +15,7 @@ Historical predecessor: `plans/subsystems/codegg-legacy-search-parity-corrective
 
 Downstream reports:
 - CodeGG `plans/closure/search-eggsearch-pair-compatibility-corrective/001-status.md` (conditionally closed)
-- CodeGG `plans/implementation/search-eggsearch-pair-compatibility-corrective/002-v041-local-only-offline-dispatch-requalification.md` (blocked pending immutable corrected eggsearch release)
+- CodeGG `plans/implementation/search-eggsearch-pair-compatibility-corrective/002-v041-local-only-offline-dispatch-requalification.md` (upstream release v0.4.3 now available; downstream CodeGG paired qualification remains outstanding)
 - CodeGG `plans/implementation/search-eggsearch-legacy-retirement/002-builtin-search-backend-retirement.md` (do not delete the old provider backend until requalification)
 
 ## 1. Purpose
@@ -75,10 +75,10 @@ CodeGG legacy builtin backend retirement M002 (separate repo)
 | Milestone | Status | Plan | Exit evidence |
 |---|---|---|---|
 | M001 explicit remote permission and offline local repository correctness | **closed** | `plans/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md` | Closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; closure `plans/closure/mode-off-repository-locality-corrective/001-status.md`. Local match, empty-workspace/exact-error, opt-out, two provider counters, injected resolver counter, advisory skip, live routing, full `make check`, and docs pass. |
-| M003 non-publishing exact-SHA Eggpack qualifier | **blocked** | `plans/implementation/mode-off-repository-locality-corrective/003-prepublication-exact-sha-qualifier.md` | Implementation `fcb1fb5` is pushed with deterministic generation and local guards green. Hosted exact-SHA evidence requires the workflow to be available on the default branch. Closure `plans/closure/mode-off-repository-locality-corrective/003-status.md`. |
-| M002 patch publication and CodeGG compatibility handoff | **blocked** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | Candidate `5e7b853` and local gates are ready. M002 WP3 awaits the M003 hosted exact-SHA qualifier and then the immutable release evidence. No crate, tag, draft, or publication occurred. |
+| M003 non-publishing exact-SHA Eggpack qualifier | **closed** | `plans/implementation/mode-off-repository-locality-corrective/003-prepublication-exact-sha-qualifier.md` | Closed after hosted exact-SHA run `38476463235` passed all seven target builds, qualifications, consumer validators, required gate, and aggregate for candidate `5e7b853e7eebf29c58f84959805c8774279d7ea4`; closure `plans/closure/mode-off-repository-locality-corrective/003-status.md`. |
+| M002 patch publication and CodeGG compatibility handoff | **closed** | `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md` | Candidate `5e7b853` passed local gates and hosted exact-SHA qualification. Immutable crate `0.4.3`, tag `v0.4.3`, public 19-asset release, provenance, and release-backed zero-call evidence are recorded in `plans/closure/mode-off-repository-locality-corrective/002-status.md`. CodeGG C002 remains consumer-owned. |
 
-M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M003's implementation is pushed at `fcb1fb5`, but its hosted acceptance is blocked until the workflow is available on the default branch and completes against an exact SHA. M002 local candidate preparation is complete, but its hosted qualification and publication depend on M003. The CodeGG blocker remains open until immutable corrected upstream bytes are published and qualified.
+M001 closed at `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`; strict zero-dispatch evidence is recorded in its closure. M003 closed after hosted exact-SHA run `38476463235` qualified candidate `5e7b853e7eebf29c58f84959805c8774279d7ea4` on all seven targets with all required validation jobs passing. M002 closed after crate `0.4.3`, tag `v0.4.3`, the public 19-asset release, provenance, and release-backed zero-call evidence were verified. The remaining CodeGG C002 paired qualification and legacy backend retirement are consumer-owned.
 
 ## 5. Verification and authority
 
