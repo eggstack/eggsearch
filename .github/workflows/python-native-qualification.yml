@@ -161,7 +161,7 @@ jobs:
           "$RUNNER_TEMP/runtime-venv/bin/python" -m pip install pytest==8.4.2
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/runtime-venv/bin/python" -m pytest -q "$source_dir/bindings/python/tests"
-          "$RUNNER_TEMP/runtime-venv/bin/python" -c "import eggsearch; from importlib.metadata import distribution; assert len(eggsearch.tool_names()) == 10; assert distribution('eggsearch').version == '0.4.3'"
+          "$RUNNER_TEMP/runtime-venv/bin/python" -c "import eggsearch; from importlib.metadata import distribution; assert len(eggsearch.tool_names()) == 10; assert distribution('eggsearch').version == '0.4.4'"
           sha256sum "$GITHUB_WORKSPACE"/dist/* "$GITHUB_WORKSPACE"/extracted-wheel/* | tee "$GITHUB_WORKSPACE/dist/SHA256SUMS"
           cat "$GITHUB_WORKSPACE/dist/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

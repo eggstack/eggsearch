@@ -95,14 +95,26 @@ pub async fn run_repo_map(
     state: Arc<ServerState>,
     args: RepoMapArgs,
 ) -> Result<serde_json::Value, ToolError> {
+    run_repo_map_with_host_scope(state, args, None).await
+}
+
+pub async fn run_repo_map_with_host_scope(
+    state: Arc<ServerState>,
+    args: RepoMapArgs,
+    host_local_scope: Option<serde_json::Value>,
+) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_metadata::CodeHost;
     use crate::core::repo_map::RepoMapRequest;
+
+    let local_view = state
+        .local_workspace_view(host_local_scope.as_ref())
+        .map_err(ToolError::Validation)?;
 
     // Permit a local-only path when the local backend is enabled, even in
     // off mode, so air-gapped operators can inspect a configured local
     // checkout without enabling live metasearch.
-    let local_only_path = matches!(live_allowed(state.config.search.mode), Policy::Deny)
-        && state.local_backend.is_some();
+    let local_only_path =
+        matches!(live_allowed(state.config.search.mode), Policy::Deny) && local_view.is_enabled();
 
     if matches!(live_allowed(state.config.search.mode), Policy::Deny) && !local_only_path {
         return Err(ToolError::Validation(live_search_denied_message(
@@ -234,9 +246,9 @@ pub async fn run_repo_map(
 
     // Discover local checkout for the requested repo
     let mut local_checkout_root: Option<std::path::PathBuf> = None;
-    if let Some(backend) = state.local_backend.as_deref() {
+    if let Some(backend) = local_view.backend() {
         if backend.is_enabled() {
-            let inventory = state.local_inventory().await;
+            let inventory = local_view.inventory().await;
             let matched = crate::meta::local_inventory::match_local_repo(
                 &inventory,
                 req.host.as_ref(),
@@ -296,7 +308,10 @@ pub async fn run_repo_map(
         crate::meta::repo_mapper::populate_structure_from_local_checkout(
             &mut response,
             root,
-            &state.config.local,
+            local_view
+                .backend()
+                .map(|backend| backend.config())
+                .unwrap_or(&state.config.local),
         );
     }
 

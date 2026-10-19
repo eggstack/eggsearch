@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "eggsearch"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -620,7 +620,7 @@ dependencies = [
 
 [[package]]
 name = "eggsearch-python"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "eggsearch",
  "futures",

@@ -8,15 +8,16 @@ use rmcp::model::{
     CallToolResult, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParams,
     ServerCapabilities, ServerInfo,
 };
-use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler};
+use rmcp::service::RequestContext;
+use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
 
 use crate::mcp::state::ServerState;
 use crate::mcp::tools::{
     map_tool_result, run_batch_fetch, run_build_evidence_bundle, run_provider_status_async,
-    run_repo_fetch, run_repo_map, run_repo_search, run_research_search, run_security_search,
-    run_web_fetch, run_web_search, BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs,
-    RepoFetchArgs, RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs,
-    WebFetchArgs, WebSearchArgs,
+    run_repo_fetch_with_host_scope, run_repo_map_with_host_scope, run_repo_search_with_host_scope,
+    run_research_search, run_security_search, run_web_fetch, run_web_search, BatchFetchArgs,
+    EvidenceBundleArgs, ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, RepoSearchArgs,
+    ResearchSearchArgs, SecuritySearchArgs, WebFetchArgs, WebSearchArgs,
 };
 
 #[derive(Clone)]
@@ -95,10 +96,12 @@ impl EggsearchServer {
     )]
     async fn repo_search(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RepoSearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        map_tool_result(run_repo_search(state, args).await)
+        let host_scope = context.meta.0 .0.get("codegg/host-local-scope").cloned();
+        map_tool_result(run_repo_search_with_host_scope(state, args, host_scope).await)
     }
 
     #[tool(
@@ -121,10 +124,12 @@ impl EggsearchServer {
     )]
     async fn repo_fetch(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RepoFetchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        map_tool_result(run_repo_fetch(state, args).await)
+        let host_scope = context.meta.0 .0.get("codegg/host-local-scope").cloned();
+        map_tool_result(run_repo_fetch_with_host_scope(state, args, host_scope).await)
     }
 
     #[tool(
@@ -173,10 +178,12 @@ impl EggsearchServer {
     )]
     async fn repo_map(
         &self,
+        context: RequestContext<RoleServer>,
         Parameters(args): Parameters<RepoMapArgs>,
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
-        map_tool_result(run_repo_map(state, args).await)
+        let host_scope = context.meta.0 .0.get("codegg/host-local-scope").cloned();
+        map_tool_result(run_repo_map_with_host_scope(state, args, host_scope).await)
     }
 
     #[tool(

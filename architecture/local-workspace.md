@@ -7,6 +7,18 @@
 
 ## Overview
 
+CodeGG-managed Eggsearch 0.4.4+ can receive an authenticated private request
+scope over stdio. For each repository tool call, CodeGG supplies one
+authorized workspace root or an explicit `root: null` local-disabled scope.
+Eggsearch authenticates that metadata with the per-process
+`CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN`; missing or invalid authentication is an
+error and never falls back to configured roots. The selected backend and
+inventory cache are isolated by canonical root and full indexing configuration
+in a bounded eight-entry in-memory LRU. Standalone calls with no host metadata
+continue to use `[local].roots`. The metadata is not part of a model-facing
+tool schema. This private extension is for a trusted locally spawned CodeGG
+child only; it does not establish authority for HTTP or remote MCP clients.
+
 The local workspace backend searches operator-configured filesystem roots
 without cloning or indexing services. Each call ensures a cached inventory,
 selects a bounded deterministic candidate set, reads files through
@@ -214,6 +226,14 @@ manifest-derived `packages` (`manifest_ecosystem()` recognizes
 capped `top_symbols`, heuristic `test_relationships`, CI/Dockerfile/Makefile
 `build_configs`, and `structure_truncated` on any cap breach. Caps come from
 the `[local]` budgets; the scan never executes workspace code.
+
+Local `repo_fetch` validates the requested path, then reads it with
+`safe_read_file()` relative to the selected workspace root; it never reopens
+the canonicalized pathname. Local `repo_map` structure enrichment uses the
+same bounded opener for manifest, source, and test contents. Its structural
+walk skips symlink entries even when local search permits following symlinks,
+so map enrichment does not enumerate or read a linked tree outside the
+workspace.
 
 ---
 

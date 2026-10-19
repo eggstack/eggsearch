@@ -93,6 +93,14 @@ pub async fn run_repo_fetch(
     state: Arc<ServerState>,
     args: RepoFetchArgs,
 ) -> Result<serde_json::Value, ToolError> {
+    run_repo_fetch_with_host_scope(state, args, None).await
+}
+
+pub async fn run_repo_fetch_with_host_scope(
+    state: Arc<ServerState>,
+    args: RepoFetchArgs,
+    host_local_scope: Option<serde_json::Value>,
+) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_evidence::infer_source_role;
     use crate::core::code_metadata::CodeHost;
     use crate::core::fetch::ExtractMode;
@@ -103,20 +111,29 @@ pub async fn run_repo_fetch(
         RepoFetchRequest, RepoFetchResponse, RepoLocator,
     };
 
+    let local_view = state
+        .local_workspace_view(host_local_scope.as_ref())
+        .map_err(ToolError::Validation)?;
+
     // --- workspace:// local file fetch (bypasses fetch policy) ---
     if let Some(ref h) = args.host {
         if h.to_lowercase() == "workspace" {
             let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
-            let value = run_workspace_fetch(state, args).await?;
+            let value = run_workspace_fetch(state, args, local_view).await?;
             return Ok(crate::mcp::projection::project("repo_fetch", value, detail));
         }
     }
 
     // --- prefer_local: resolve to local workspace when enabled ---
     if args.prefer_local.unwrap_or(false) {
-        if let Some(backend) = state.local_backend.as_deref() {
+        if host_local_scope.is_some() && !local_view.is_enabled() {
+            return Err(ToolError::Validation(
+                "local repository fetch was requested, but the authorized host scope has no local workspace".to_string(),
+            ));
+        }
+        if let Some(backend) = local_view.backend() {
             if backend.is_enabled() {
-                let inventory = state.local_inventory().await;
+                let inventory = local_view.inventory().await;
                 let parsed_host = parse_code_host_arg(args.host.as_deref())?;
                 let matched = crate::meta::local_inventory::match_local_repo(
                     &inventory,
@@ -150,8 +167,13 @@ pub async fn run_repo_fetch(
                         prefer_local: None,
                         response_detail: None,
                     };
-                    let value = run_workspace_fetch(state, ws_args).await?;
+                    let value = run_workspace_fetch(state, ws_args, local_view).await?;
                     return Ok(crate::mcp::projection::project("repo_fetch", value, detail));
+                }
+                if host_local_scope.is_some() {
+                    return Err(ToolError::Validation(
+                        "local repository fetch was requested, but no matching repository exists in the authorized workspace".to_string(),
+                    ));
                 }
             }
         }
@@ -598,6 +620,7 @@ pub async fn run_repo_fetch(
 async fn run_workspace_fetch(
     state: Arc<ServerState>,
     args: RepoFetchArgs,
+    local_view: Arc<crate::mcp::state::LocalWorkspaceView>,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_evidence::infer_source_role;
     use crate::core::local::validate_local_fetch_path;
@@ -606,7 +629,7 @@ async fn run_workspace_fetch(
     };
     use crate::core::sanitize::TrustMarkers;
 
-    let backend = state.local_backend.as_ref().ok_or_else(|| {
+    let backend = local_view.backend().ok_or_else(|| {
         ToolError::Validation("local workspace search is not enabled".to_string())
     })?;
 
@@ -669,14 +692,27 @@ async fn run_workspace_fetch(
     })?;
 
     // Use centralized path validation for traversal, binary, symlink, and containment checks
-    let canonical = validate_local_fetch_path(root_path, &relative_path, backend.config())
+    validate_local_fetch_path(root_path, &relative_path, backend.config())
         .map_err(|e| ToolError::Validation(e.to_string()))?;
 
-    // Read file content (off the runtime thread)
-    let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&canonical))
-        .await
-        .map_err(|e| ToolError::internal(format!("failed to join read task: {e}")))?
-        .map_err(|e| ToolError::internal(format!("failed to read file: {e}")))?;
+    let root_path = root_path.clone();
+    let relative_path_for_read = relative_path.clone();
+    let local_config = backend.config().clone();
+    let max_file_bytes = local_config.max_file_bytes;
+    let content = tokio::task::spawn_blocking(move || {
+        let bytes = crate::meta::safe_open::safe_read_file(
+            &root_path,
+            &relative_path_for_read,
+            &local_config,
+            max_file_bytes,
+        )
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+        String::from_utf8(bytes)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+    })
+    .await
+    .map_err(|e| ToolError::internal(format!("failed to join read task: {e}")))?
+    .map_err(|e| ToolError::internal(format!("failed to read file: {e}")))?;
 
     let all_lines: Vec<String> = content.lines().map(String::from).collect();
     let total_lines = if all_lines.is_empty() {

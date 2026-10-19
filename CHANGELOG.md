@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-19
+
+### Added
+
+- CodeGG-managed stdio requests can carry authenticated per-call local
+  workspace scope for `repo_search`, `repo_fetch`, and `repo_map`. Each
+  canonical root and indexing configuration gets an isolated bounded
+  in-memory backend/inventory view. Invalid host metadata fails closed and
+  never falls back to startup-configured roots; standalone requests without
+  host metadata retain existing behavior.
+
+### Fixed
+
+- Local `repo_fetch` reads through the bounded descriptor-relative opener
+  after path validation instead of reopening the canonical pathname. Local
+  `repo_map` enrichment uses the same bounded safe reader for manifests,
+  source files, and test files, and skips symlinked entries even when local
+  search is configured to follow symlinks.
+
 ## [0.4.3] - 2026-10-13
 
 ### Fixed

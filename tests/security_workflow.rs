@@ -801,30 +801,15 @@ mod security_context_safety {
         };
 
         let backend = LocalWorkspaceBackend::new(cfg.local.clone()).expect("backend");
-        let state = Arc::new(ServerState {
-            config: Arc::new(cfg),
-            adapter: Arc::new(MetadataSearchAdapter::from_engines(
+        let mut state = ServerState::with_adapter(
+            cfg,
+            Arc::new(MetadataSearchAdapter::from_engines(
                 mock_engines(vec![]),
                 Duration::from_secs(5),
             )),
-            fetch_client: None,
-            origin_controller: None,
-            fetch_cache: None,
-            kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
-                eggfetch_core::Client::new(),
-            )),
-            local_backend: Some(Arc::new(backend)),
-            local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
-            #[cfg(feature = "browser")]
-            profile_manager: None,
-            #[cfg(feature = "browser")]
-            browser_lifecycle: None,
-            #[cfg(feature = "browser")]
-            browser_global_semaphore: None,
-            #[cfg(feature = "browser")]
-            browser_discovery_state:
-                eggsearch::fetch::browser::types::BrowserDiscoveryState::NotFound,
-        });
+        );
+        state.local_backend = Some(Arc::new(backend));
+        let state = Arc::new(state);
 
         let first = state.local_inventory().await;
         let second = state.local_inventory().await;
@@ -866,30 +851,15 @@ mod security_context_safety {
         };
         let backend = LocalWorkspaceBackend::new(cfg.local.clone()).expect("backend");
 
-        let state = Arc::new(ServerState {
-            config: Arc::new(cfg),
-            adapter: Arc::new(MetadataSearchAdapter::from_engines(
+        let mut state = ServerState::with_adapter(
+            cfg,
+            Arc::new(MetadataSearchAdapter::from_engines(
                 mock_engines(vec![]),
                 Duration::from_secs(5),
             )),
-            fetch_client: None,
-            origin_controller: None,
-            fetch_cache: None,
-            kev_client: Arc::new(eggsearch::meta::engines::kev::KevClient::new(
-                eggfetch_core::Client::new(),
-            )),
-            local_backend: Some(Arc::new(backend)),
-            local_inventory_cache: Arc::new(std::sync::Mutex::new(None)),
-            #[cfg(feature = "browser")]
-            profile_manager: None,
-            #[cfg(feature = "browser")]
-            browser_lifecycle: None,
-            #[cfg(feature = "browser")]
-            browser_global_semaphore: None,
-            #[cfg(feature = "browser")]
-            browser_discovery_state:
-                eggsearch::fetch::browser::types::BrowserDiscoveryState::NotFound,
-        });
+        );
+        state.local_backend = Some(Arc::new(backend));
+        let state = Arc::new(state);
         let inventory = state.local_inventory().await;
         let names: Vec<&str> = inventory.iter().map(|r| r.root_name.as_str()).collect();
         assert!(

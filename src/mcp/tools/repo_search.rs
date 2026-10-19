@@ -121,15 +121,23 @@ pub async fn run_repo_search(
     state: Arc<ServerState>,
     args: RepoSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
+    run_repo_search_with_host_scope(state, args, None).await
+}
+
+pub async fn run_repo_search_with_host_scope(
+    state: Arc<ServerState>,
+    args: RepoSearchArgs,
+    host_local_scope: Option<serde_json::Value>,
+) -> Result<serde_json::Value, ToolError> {
     use crate::core::repo_search::RepoSearchRequest;
 
+    let local_view = state
+        .local_workspace_view(host_local_scope.as_ref())
+        .map_err(ToolError::Validation)?;
+
     let remote_denied = matches!(live_allowed(state.config.search.mode), Policy::Deny);
-    let local_only_path = remote_denied
-        && state
-            .local_backend
-            .as_ref()
-            .is_some_and(|backend| backend.is_enabled())
-        && args.include_local != Some(false);
+    let local_only_path =
+        remote_denied && local_view.is_enabled() && args.include_local != Some(false);
 
     if remote_denied && !local_only_path {
         return Err(ToolError::Validation(live_search_denied_message(
@@ -324,14 +332,19 @@ pub async fn run_repo_search(
         req.providers = effective_providers;
     }
 
-    let local_inventory = state.local_inventory().await;
+    if remote_denied && !local_view.is_enabled() {
+        return Err(ToolError::Validation(
+            "local workspace retrieval is required by the active local-only policy, but no authorized local scope is available".to_string(),
+        ));
+    }
+    let local_inventory = local_view.inventory().await;
     let mut response = state
         .adapter
         .repo_search_with_remote_execution(
             &req,
             effective_max,
             state.config.search.max_results_cap,
-            state.local_backend.as_deref(),
+            local_view.backend(),
             Some(&local_inventory),
             if local_only_path {
                 crate::meta::adapter::RepoRemoteExecution::Denied
