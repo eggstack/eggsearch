@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "eggsearch"
-version = "0.4.3"
+version = "0.4.4"
 description = "Native asyncio bindings for the Eggsearch evidence engine"
 requires-python = ">=3.11,<3.15"
 license = "MIT"
