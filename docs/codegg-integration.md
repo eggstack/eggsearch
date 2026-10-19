@@ -1081,6 +1081,17 @@ Step 4: Bundle with trust markers from both local and remote
 
 ## Trust Boundary Rules
 
+CodeGG 0.4.4 and newer use a private stdio extension for local repository
+retrieval. CodeGG starts one child with a fresh per-process
+`CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN`, then places an authenticated workspace
+scope in MCP request metadata for each `repo_search`, `repo_fetch`, and
+`repo_map` call. A null root means local retrieval is disabled for that call.
+Eggsearch rejects malformed or unauthenticated scope metadata and does not
+fall back to its startup roots. Do not expose the scope key through a model
+tool schema or reuse this extension over an untrusted HTTP/MCP connection.
+Standalone Eggsearch requests that carry no host scope keep their configured
+local-root behavior.
+
 ### Trust Levels
 
 | Level | Meaning | Source |

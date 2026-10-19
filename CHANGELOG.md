@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-19
+
+### Added
+
+- CodeGG-managed stdio requests can carry authenticated per-call local
+  workspace scope for `repo_search`, `repo_fetch`, and `repo_map`. Each
+  canonical root and indexing configuration gets an isolated bounded
+  in-memory backend/inventory view. Invalid host metadata fails closed and
+  never falls back to startup-configured roots; standalone requests without
+  host metadata retain existing behavior.
+
 ## [0.4.3] - 2026-10-13
 
 ### Fixed

@@ -1,8 +1,11 @@
 //! Server state: shared state passed to every tool call.
 
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use serde::Deserialize;
 use tracing;
 
 use crate::core::config::AppConfig;
@@ -30,6 +33,120 @@ pub struct LocalInventoryCache {
     pub fetched_at: Instant,
 }
 
+/// Host-injected scope carried only on a CodeGG-managed local MCP process.
+/// The request field is hidden from the generated tool schema; this token
+/// authenticates the private transport instead of treating that omission as
+/// an authorization boundary.
+#[derive(Clone, Deserialize, schemars::JsonSchema)]
+pub struct HostLocalScope {
+    pub root: Option<PathBuf>,
+    pub token: String,
+}
+
+impl std::fmt::Debug for HostLocalScope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostLocalScope")
+            .field("root", &self.root)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
+const HOST_LOCAL_SCOPE_TOKEN_ENV: &str = "CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN";
+const HOST_LOCAL_BACKEND_CACHE_CAPACITY: usize = 8;
+
+/// Request-local view over a local backend and its root-specific inventory
+/// cache. Standalone requests reuse the startup-configured view; authenticated
+/// host-scoped requests use an isolated bounded-cache entry.
+#[derive(Clone)]
+pub struct LocalWorkspaceView {
+    backend: Option<Arc<LocalWorkspaceBackend>>,
+    inventory_cache: Arc<Mutex<Option<LocalInventoryCache>>>,
+}
+
+impl LocalWorkspaceView {
+    pub fn backend(&self) -> Option<&LocalWorkspaceBackend> {
+        self.backend.as_deref()
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.backend()
+            .is_some_and(LocalWorkspaceBackend::is_enabled)
+    }
+
+    pub async fn inventory(&self) -> Vec<LocalRepoIdentity> {
+        {
+            if let Ok(cache) = self.inventory_cache.lock() {
+                if let Some(snapshot) = cache.as_ref() {
+                    if snapshot.fetched_at.elapsed() < LOCAL_INVENTORY_CACHE_TTL {
+                        return snapshot.inventory.clone();
+                    }
+                }
+            }
+        }
+
+        let backend = match self.backend.as_deref() {
+            Some(backend) if backend.is_enabled() => backend,
+            _ => return Vec::new(),
+        };
+        let roots = backend.roots();
+        let mut local_config = backend.config().clone();
+        local_config.enabled = true;
+        let roots_for_walk: Vec<PathBuf> = roots.iter().map(|(_, path)| path.clone()).collect();
+        let inventory = match tokio::task::spawn_blocking(move || {
+            let mut config = local_config;
+            config.roots = roots_for_walk;
+            discover_local_repos(&config, 2)
+        })
+        .await
+        {
+            Ok(inventory) => inventory,
+            Err(error) => {
+                tracing::error!(%error, "local repository inventory task failed");
+                return Vec::new();
+            }
+        };
+        if let Ok(mut cache) = self.inventory_cache.lock() {
+            *cache = Some(LocalInventoryCache {
+                inventory: inventory.clone(),
+                fetched_at: Instant::now(),
+            });
+        }
+        inventory
+    }
+}
+
+#[derive(Default)]
+struct HostScopedLocalBackendCache {
+    entries: Option<lru::LruCache<String, Arc<LocalWorkspaceView>>>,
+}
+
+impl HostScopedLocalBackendCache {
+    fn get_or_insert(
+        &mut self,
+        key: String,
+        config: crate::core::local::LocalConfig,
+    ) -> Result<Arc<LocalWorkspaceView>, String> {
+        let entries = self.entries.get_or_insert_with(|| {
+            lru::LruCache::new(
+                NonZeroUsize::new(HOST_LOCAL_BACKEND_CACHE_CAPACITY)
+                    .expect("non-zero local backend cache capacity"),
+            )
+        });
+        if let Some(view) = entries.get(&key) {
+            return Ok(view.clone());
+        }
+        let backend = LocalWorkspaceBackend::new(config)
+            .map_err(|error| format!("host-scoped local workspace is unavailable: {error}"))?;
+        let view = Arc::new(LocalWorkspaceView {
+            backend: Some(Arc::new(backend)),
+            inventory_cache: Arc::new(Mutex::new(None)),
+        });
+        entries.put(key, view.clone());
+        Ok(view)
+    }
+}
+
 /// Shared state for the MCP server. Cheap to clone (all fields are Arc).
 #[derive(Clone)]
 pub struct ServerState {
@@ -54,6 +171,9 @@ pub struct ServerState {
     /// call. Public so tests can construct `ServerState` instances
     /// with custom local-backend configurations.
     pub local_inventory_cache: Arc<Mutex<Option<LocalInventoryCache>>>,
+    /// Bounded cache of host-authorized one-root local backend views. This
+    /// contains indexes only; host authorization is checked for every call.
+    host_scoped_local_backends: Arc<Mutex<HostScopedLocalBackendCache>>,
     /// Browser profile manager. `None` when browser feature is not
     /// compiled in or when persistent profiles are disabled.
     #[cfg(feature = "browser")]
@@ -316,6 +436,9 @@ impl ServerState {
             kev_client,
             local_backend,
             local_inventory_cache: Arc::new(Mutex::new(None)),
+            host_scoped_local_backends: Arc::new(
+                Mutex::new(HostScopedLocalBackendCache::default()),
+            ),
             #[cfg(feature = "browser")]
             profile_manager,
             #[cfg(feature = "browser")]
@@ -382,6 +505,9 @@ impl ServerState {
             kev_client,
             local_backend: None,
             local_inventory_cache: Arc::new(Mutex::new(None)),
+            host_scoped_local_backends: Arc::new(
+                Mutex::new(HostScopedLocalBackendCache::default()),
+            ),
             #[cfg(feature = "browser")]
             profile_manager: None,
             #[cfg(feature = "browser")]
@@ -423,49 +549,64 @@ impl ServerState {
     /// task to keep the async runtime responsive; the cache keeps the
     /// cost bounded across repeated tool calls.
     pub async fn local_inventory(&self) -> Vec<LocalRepoIdentity> {
-        {
-            if let Ok(cache) = self.local_inventory_cache.lock() {
-                if let Some(snapshot) = cache.as_ref() {
-                    if snapshot.fetched_at.elapsed() < LOCAL_INVENTORY_CACHE_TTL {
-                        return snapshot.inventory.clone();
-                    }
-                }
-            }
+        match self.local_workspace_view(None) {
+            Ok(view) => view.inventory().await,
+            Err(_) => Vec::new(),
         }
+    }
 
-        let backend = match self.local_backend.as_deref() {
-            Some(b) if b.is_enabled() => b,
-            _ => return Vec::new(),
+    /// Resolve an authenticated request-local local-workspace view. `None`
+    /// preserves standalone Eggsearch's startup-configured roots. A present
+    /// but invalid host scope fails closed and never falls back to those roots.
+    pub fn local_workspace_view(
+        &self,
+        host_scope: Option<&serde_json::Value>,
+    ) -> Result<Arc<LocalWorkspaceView>, String> {
+        let Some(host_scope_value) = host_scope else {
+            return Ok(Arc::new(LocalWorkspaceView {
+                backend: self.local_backend.clone(),
+                inventory_cache: self.local_inventory_cache.clone(),
+            }));
         };
 
-        let roots = backend.roots();
-        let mut local_config = backend.config().clone();
-        local_config.enabled = true;
-        let roots_for_walk: Vec<std::path::PathBuf> =
-            roots.iter().map(|(_, p)| p.clone()).collect();
+        let host_scope: HostLocalScope = serde_json::from_value(host_scope_value.clone())
+            .map_err(|_| "host-scoped local retrieval metadata is malformed".to_string())?;
 
-        let inventory = match tokio::task::spawn_blocking(move || {
-            let mut cfg = local_config;
-            cfg.roots = roots_for_walk;
-            discover_local_repos(&cfg, 2)
-        })
-        .await
-        {
-            Ok(inventory) => inventory,
-            Err(error) => {
-                tracing::error!(%error, "local repository inventory task failed");
-                return Vec::new();
-            }
-        };
-
-        if let Ok(mut cache) = self.local_inventory_cache.lock() {
-            *cache = Some(LocalInventoryCache {
-                inventory: inventory.clone(),
-                fetched_at: Instant::now(),
-            });
+        let expected = std::env::var(HOST_LOCAL_SCOPE_TOKEN_ENV).map_err(|_| {
+            "host-scoped local retrieval is unavailable on this Eggsearch process".to_string()
+        })?;
+        if !constant_time_eq(expected.as_bytes(), host_scope.token.as_bytes()) {
+            return Err("host-scoped local retrieval request authentication failed".to_string());
         }
-
-        inventory
+        let Some(root) = host_scope.root.as_ref() else {
+            return Ok(Arc::new(LocalWorkspaceView {
+                backend: None,
+                inventory_cache: Arc::new(Mutex::new(None)),
+            }));
+        };
+        if !self.config.local.enabled {
+            return Ok(Arc::new(LocalWorkspaceView {
+                backend: None,
+                inventory_cache: Arc::new(Mutex::new(None)),
+            }));
+        }
+        let canonical_root = root
+            .canonicalize()
+            .map_err(|error| format!("host-scoped local workspace root is unavailable: {error}"))?;
+        if !canonical_root.is_dir() {
+            return Err("host-scoped local workspace root is not a directory".to_string());
+        }
+        let mut config = self.config.local.clone();
+        config.enabled = true;
+        config.roots = vec![canonical_root];
+        let fingerprint = serde_json::to_vec(&config)
+            .map_err(|error| format!("cannot fingerprint local workspace config: {error}"))?;
+        use sha2::{Digest, Sha256};
+        let key = format!("{:x}", Sha256::digest(fingerprint));
+        self.host_scoped_local_backends
+            .lock()
+            .map_err(|_| "host-scoped local backend cache is unavailable".to_string())?
+            .get_or_insert(key, config)
     }
 
     /// Invalidate the cached local inventory. Useful for tests and for
@@ -475,6 +616,18 @@ impl ServerState {
             *cache = None;
         }
     }
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let max_len = left.len().max(right.len());
+    let mut difference = left.len() ^ right.len();
+    for index in 0..max_len {
+        difference |= usize::from(
+            left.get(index).copied().unwrap_or_default()
+                ^ right.get(index).copied().unwrap_or_default(),
+        );
+    }
+    difference == 0
 }
 
 #[cfg(test)]
@@ -504,5 +657,51 @@ mod tests {
             .provider_ids()
             .iter()
             .any(|id| id == "brave_api"));
+    }
+
+    #[test]
+    fn host_scopes_authenticate_and_cache_distinct_roots() {
+        let first = tempfile::tempdir().expect("first root");
+        let second = tempfile::tempdir().expect("second root");
+        let token = format!("test-{}", std::process::id());
+        std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, &token);
+        let mut config = AppConfig::default();
+        config.local.enabled = true;
+        config.local.roots = vec![first.path().to_path_buf()];
+        let state = ServerState::build(config).expect("state builds");
+
+        let scope =
+            |root: &std::path::Path, token: &str| serde_json::json!({"root": root, "token": token});
+        let first_view = state
+            .local_workspace_view(Some(&scope(first.path(), &token)))
+            .expect("authorized first root");
+        let second_view = state
+            .local_workspace_view(Some(&scope(second.path(), &token)))
+            .expect("authorized second root");
+        assert_eq!(first_view.backend().unwrap().roots()[0].1, first.path());
+        assert_eq!(second_view.backend().unwrap().roots()[0].1, second.path());
+        assert!(!Arc::ptr_eq(&first_view, &second_view));
+
+        let disabled = state
+            .local_workspace_view(Some(&serde_json::json!({"root": null, "token": token})))
+            .expect("authenticated explicit disabled scope");
+        assert!(
+            !disabled.is_enabled(),
+            "null scope must not fall back to configured roots"
+        );
+
+        let forged = state.local_workspace_view(Some(&scope(second.path(), "forged")));
+        assert!(forged.is_err());
+        let malformed =
+            state.local_workspace_view(Some(&serde_json::json!({"root": second.path()})));
+        assert!(malformed.is_err());
+        std::env::remove_var(HOST_LOCAL_SCOPE_TOKEN_ENV);
+    }
+
+    #[test]
+    fn host_scope_token_comparison_checks_length_and_contents() {
+        assert!(constant_time_eq(b"same-token", b"same-token"));
+        assert!(!constant_time_eq(b"same-token", b"same-token-x"));
+        assert!(!constant_time_eq(b"same-token", b"other-token"));
     }
 }
