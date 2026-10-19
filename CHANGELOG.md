@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never falls back to startup-configured roots; standalone requests without
   host metadata retain existing behavior.
 
+### Fixed
+
+- Local `repo_fetch` reads through the bounded descriptor-relative opener
+  after path validation instead of reopening the canonical pathname. Local
+  `repo_map` enrichment uses the same bounded safe reader for manifests,
+  source files, and test files, and skips symlinked entries even when local
+  search is configured to follow symlinks.
+
 ## [0.4.3] - 2026-10-13
 
 ### Fixed

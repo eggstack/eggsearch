@@ -227,6 +227,14 @@ capped `top_symbols`, heuristic `test_relationships`, CI/Dockerfile/Makefile
 `build_configs`, and `structure_truncated` on any cap breach. Caps come from
 the `[local]` budgets; the scan never executes workspace code.
 
+Local `repo_fetch` validates the requested path, then reads it with
+`safe_read_file()` relative to the selected workspace root; it never reopens
+the canonicalized pathname. Local `repo_map` structure enrichment uses the
+same bounded opener for manifest, source, and test contents. Its structural
+walk skips symlink entries even when local search permits following symlinks,
+so map enrichment does not enumerate or read a linked tree outside the
+workspace.
+
 ---
 
 ## Cache Identity and Local Gating

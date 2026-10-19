@@ -534,11 +534,23 @@ fn manifest_ecosystem(file_name: &str) -> Option<(&'static str, &'static str)> {
     }
 }
 
-fn parse_package_name(root: &Path, relative: &str, ecosystem: &str) -> Option<String> {
-    let bytes = std::fs::read(root.join(relative)).ok()?;
-    if bytes.len() > STRUCTURE_MANIFEST_READ_CAP {
-        return None;
-    }
+fn read_structure_file(
+    root: &Path,
+    relative: &str,
+    config: &LocalConfig,
+    cap: usize,
+) -> Option<Vec<u8>> {
+    crate::meta::safe_open::safe_read_file(root, relative, config, cap.min(config.max_file_bytes))
+        .ok()
+}
+
+fn parse_package_name(
+    root: &Path,
+    relative: &str,
+    ecosystem: &str,
+    config: &LocalConfig,
+) -> Option<String> {
+    let bytes = read_structure_file(root, relative, config, STRUCTURE_MANIFEST_READ_CAP)?;
     let text = String::from_utf8_lossy(&bytes);
     match ecosystem {
         "rust" => {
@@ -644,14 +656,15 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
                 continue;
             }
             let path = entry.path();
-            if !config.follow_symlinks {
-                if let Ok(meta) = std::fs::symlink_metadata(&path) {
-                    if meta.file_type().is_symlink() {
-                        continue;
-                    }
-                }
+            let metadata = match std::fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            let file_type = metadata.file_type();
+            if file_type.is_symlink() {
+                continue;
             }
-            if path.is_dir() {
+            if file_type.is_dir() {
                 if depth < STRUCTURE_SCAN_DEPTH {
                     stack.push((path, depth + 1));
                 } else {
@@ -659,7 +672,7 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
                 }
                 continue;
             }
-            if !path.is_file() {
+            if !file_type.is_file() {
                 continue;
             }
             let relative = match path.strip_prefix(root) {
@@ -669,7 +682,7 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
             if is_binary_extension(&name) {
                 continue;
             }
-            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let size = metadata.len();
             if size > config.max_file_bytes as u64 {
                 continue;
             }
@@ -701,7 +714,7 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
         let file_name = file.relative.rsplit('/').next().unwrap_or(&file.relative);
         if manifest_ecosystem(file_name).is_some() {
             let (ecosystem, _) = manifest_ecosystem(file_name).unwrap_or(("other", "other"));
-            let name = parse_package_name(root, &file.relative, ecosystem);
+            let name = parse_package_name(root, &file.relative, ecosystem, config);
             packages.push(RepoPackageSummary {
                 path: file.relative.clone(),
                 ecosystem: ecosystem.to_string(),
@@ -789,9 +802,10 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
             continue;
         }
         parsed += 1;
-        let bytes = match std::fs::read(root.join(&file.relative)) {
-            Ok(b) => b,
-            Err(_) => continue,
+        let bytes = match read_structure_file(root, &file.relative, config, config.max_parse_bytes)
+        {
+            Some(bytes) => bytes,
+            None => continue,
         };
         if bytes.len() > config.max_parse_bytes {
             truncated = true;
@@ -897,13 +911,13 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
         .collect();
     let mut test_texts: HashMap<String, String> = HashMap::new();
     for test_path in &test_files {
-        if let Ok(bytes) = std::fs::read(root.join(test_path)) {
-            if bytes.len() <= STRUCTURE_MANIFEST_READ_CAP {
-                test_texts.insert(
-                    test_path.clone(),
-                    String::from_utf8_lossy(&bytes).to_string(),
-                );
-            }
+        if let Some(bytes) =
+            read_structure_file(root, test_path, config, STRUCTURE_MANIFEST_READ_CAP)
+        {
+            test_texts.insert(
+                test_path.clone(),
+                String::from_utf8_lossy(&bytes).to_string(),
+            );
         }
     }
     let symbol_names: HashMap<String, Vec<String>> =
@@ -1234,5 +1248,60 @@ mod tests {
         let json = serde_json::to_string(&sub).unwrap();
         let parsed: RepoMapSearchSubquery = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, sub);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_structure_skips_symlinked_files_and_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(outside.path().join("src")).unwrap();
+        std::fs::write(
+            outside.path().join("Cargo.toml"),
+            "[package]\nname = \"outside-secret\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            outside.path().join("src/lib.rs"),
+            "pub fn outside_secret_symbol() {}\n",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("Cargo.toml"),
+            root.path().join("Cargo.toml"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(outside.path().join("src"), root.path().join("src")).unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            follow_symlinks: true,
+            ..LocalConfig::default()
+        };
+        let structure = build_local_structure(root.path(), &config);
+
+        assert!(structure.packages.is_empty());
+        assert!(structure.top_symbols.is_empty());
+        assert!(structure.test_relationships.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn structure_file_reader_rejects_symlink_escape_even_when_following_is_enabled() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.rs"), "secret contents").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.rs"),
+            root.path().join("link.rs"),
+        )
+        .unwrap();
+
+        let config = LocalConfig {
+            enabled: true,
+            follow_symlinks: true,
+            ..LocalConfig::default()
+        };
+        assert!(read_structure_file(root.path(), "link.rs", &config, 1024).is_none());
     }
 }

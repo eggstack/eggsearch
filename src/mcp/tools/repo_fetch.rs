@@ -692,14 +692,27 @@ async fn run_workspace_fetch(
     })?;
 
     // Use centralized path validation for traversal, binary, symlink, and containment checks
-    let canonical = validate_local_fetch_path(root_path, &relative_path, backend.config())
+    validate_local_fetch_path(root_path, &relative_path, backend.config())
         .map_err(|e| ToolError::Validation(e.to_string()))?;
 
-    // Read file content (off the runtime thread)
-    let content = tokio::task::spawn_blocking(move || std::fs::read_to_string(&canonical))
-        .await
-        .map_err(|e| ToolError::internal(format!("failed to join read task: {e}")))?
-        .map_err(|e| ToolError::internal(format!("failed to read file: {e}")))?;
+    let root_path = root_path.clone();
+    let relative_path_for_read = relative_path.clone();
+    let local_config = backend.config().clone();
+    let max_file_bytes = local_config.max_file_bytes;
+    let content = tokio::task::spawn_blocking(move || {
+        let bytes = crate::meta::safe_open::safe_read_file(
+            &root_path,
+            &relative_path_for_read,
+            &local_config,
+            max_file_bytes,
+        )
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+        String::from_utf8(bytes)
+            .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+    })
+    .await
+    .map_err(|e| ToolError::internal(format!("failed to join read task: {e}")))?
+    .map_err(|e| ToolError::internal(format!("failed to read file: {e}")))?;
 
     let all_lines: Vec<String> = content.lines().map(String::from).collect();
     let total_lines = if all_lines.is_empty() {
