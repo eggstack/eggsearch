@@ -664,6 +664,7 @@ mod tests {
         let first = tempfile::tempdir().expect("first root");
         let second = tempfile::tempdir().expect("second root");
         let token = format!("test-{}", std::process::id());
+        let previous_token = std::env::var_os(HOST_LOCAL_SCOPE_TOKEN_ENV);
         std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, &token);
         let mut config = AppConfig::default();
         config.local.enabled = true;
@@ -678,9 +679,13 @@ mod tests {
         let second_view = state
             .local_workspace_view(Some(&scope(second.path(), &token)))
             .expect("authorized second root");
+        let first_warm = state
+            .local_workspace_view(Some(&scope(first.path(), &token)))
+            .expect("warm authorized first root");
         assert_eq!(first_view.backend().unwrap().roots()[0].1, first.path());
         assert_eq!(second_view.backend().unwrap().roots()[0].1, second.path());
         assert!(!Arc::ptr_eq(&first_view, &second_view));
+        assert!(Arc::ptr_eq(&first_view, &first_warm));
 
         let disabled = state
             .local_workspace_view(Some(&serde_json::json!({"root": null, "token": token})))
@@ -695,7 +700,23 @@ mod tests {
         let malformed =
             state.local_workspace_view(Some(&serde_json::json!({"root": second.path()})));
         assert!(malformed.is_err());
+        std::fs::remove_dir_all(second.path()).expect("remove host-scoped workspace");
+        assert!(
+            state
+                .local_workspace_view(Some(&scope(second.path(), &token)))
+                .is_err(),
+            "removed workspace must fail rather than use a cached or static root"
+        );
         std::env::remove_var(HOST_LOCAL_SCOPE_TOKEN_ENV);
+        assert!(
+            state
+                .local_workspace_view(Some(&scope(first.path(), &token)))
+                .is_err(),
+            "missing process token must reject host metadata"
+        );
+        if let Some(previous_token) = previous_token {
+            std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, previous_token);
+        }
     }
 
     #[test]
