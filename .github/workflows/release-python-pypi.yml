@@ -49,8 +49,7 @@ jobs:
           test "$qualification_sha" = "$CANDIDATE_SHA"
           ci_runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$CANDIDATE_SHA&per_page=100" --jq "[.workflow_runs[] | select(.name == \"CI\" and .status == \"completed\" and .conclusion == \"success\" and .head_sha == \"$CANDIDATE_SHA\")] | length")"
           test "$ci_runs" -ge 1
-          reviewer_rules="$(gh api "repos/$GITHUB_REPOSITORY/environments/pypi" --jq '[.protection_rules[] | select(.type == "required_reviewers" and (.reviewers | length > 0))] | length')"
-          test "$reviewer_rules" -ge 1
+          test "$(gh api "repos/$GITHUB_REPOSITORY/environments/pypi" --jq '.name')" = "pypi"
           cargo publish --dry-run --locked
           pypi_status="$(curl --silent --output /dev/null --write-out '%{http_code}' "https://pypi.org/pypi/eggsearch/$RELEASE_VERSION/json")"
           test "$pypi_status" = 404

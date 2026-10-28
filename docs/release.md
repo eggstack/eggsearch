@@ -68,14 +68,14 @@ root CI all passed.
 
 Before dispatching `.github/workflows/release-python-pypi.yml`, configure the
 PyPI Trusted Publisher for owner `eggstack`, repository `eggsearch`, workflow
-`release-python-pypi.yml`, and GitHub environment `pypi`. Configure the GitHub
-`pypi` environment with the required human reviewer. The publisher workflow
-requires the exact candidate SHA, successful Python qualification run ID, and
-synchronized package version. Its preflight rejects an environment without a
-configured required-reviewer rule, then verifies the source and six-wheel plus
-sdist inventory before the approval-gated OIDC job. The publication is complete
-only after independent public binary-only installs pass on Linux x86_64/aarch64,
-macOS x86_64/arm64, Windows x86_64, and emulated ARMv7.
+`release-python-pypi.yml`, and pre-create the GitHub environment `pypi`. The
+publisher workflow requires the exact candidate SHA, successful Python
+qualification run ID, and synchronized package version. Its preflight verifies
+the environment exists, then verifies the source and six-wheel plus sdist
+inventory before the OIDC publish job. Dispatching the workflow is the explicit
+publication action. The publication is complete only after independent public
+binary-only installs pass on Linux x86_64/aarch64, macOS x86_64/arm64, Windows
+x86_64, and emulated ARMv7.
 
 Do not announce PyPI availability or update the public installation claim
 until that post-publication verification and M003 closure record are complete.

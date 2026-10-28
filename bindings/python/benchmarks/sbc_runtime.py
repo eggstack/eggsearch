@@ -18,7 +18,7 @@ from pathlib import Path
 from zipfile import ZipFile
 from resource import getrusage, RUSAGE_SELF
 
-from eggsearch import AsyncEggsearch, tool_names
+from eggsearch import AsyncEggsearch, EggsearchError, tool_names
 
 
 def percentile(values, fraction):
@@ -163,9 +163,21 @@ async def timed_search(client, index):
     started = time.perf_counter_ns()
     result = await client.repo_search(query=f"retry fixture {index}", include_local=True)
     elapsed = (time.perf_counter_ns() - started) / 1_000_000
-    if "groups" not in result:
-        raise RuntimeError("local Mode-Off search returned no groups field")
+    local_cards(result)
     return elapsed
+
+
+def local_cards(result):
+    if not isinstance(result.get("groups"), list):
+        raise RuntimeError("local Mode-Off search returned no groups field")
+    cards = [
+        card
+        for group in result["groups"]
+        for card in group.get("results", [])
+    ]
+    if not cards or any(card.get("trust") != "local_trusted" for card in cards):
+        raise RuntimeError("Mode-Off smoke did not return only trusted local results")
+    return cards
 
 
 async def sequential_event_loop_sample(config, index):
@@ -182,6 +194,7 @@ async def run_benchmarks(config, repeats):
     default_client = AsyncEggsearch()
     results["default_client_init_ms"] = (time.perf_counter_ns() - default_started) / 1_000_000
     await default_client.aclose()
+    results["memory"]["after_default_client_close"] = memory_snapshot()
     explicit_started = time.perf_counter_ns()
     client = AsyncEggsearch(str(config))
     results["explicit_mode_off_client_init_ms"] = (time.perf_counter_ns() - explicit_started) / 1_000_000
@@ -189,6 +202,19 @@ async def run_benchmarks(config, repeats):
     await timed_search(client, 0)
     results["first_operation_ms"] = (time.perf_counter_ns() - initialization_started) / 1_000_000
     results["memory"]["initialized"] = memory_snapshot()
+    validation_started = time.perf_counter_ns()
+    try:
+        await client.web_search(query="")
+    except EggsearchError as error:
+        if not error.code:
+            raise RuntimeError("malformed-input error did not include a code") from error
+        results["malformed_input"] = {
+            "rejected": True,
+            "error_code": error.code,
+            "elapsed_ms": (time.perf_counter_ns() - validation_started) / 1_000_000,
+        }
+    else:
+        raise RuntimeError("malformed empty query was not rejected")
 
     for concurrency in (1, 2, 4, 8, 16, 32):
         operations = max(repeats, concurrency)
@@ -207,13 +233,12 @@ async def run_benchmarks(config, repeats):
         max_per_group=100,
         response_detail="diagnostic",
     )
+    heavy_cards = local_cards(heavy_result)
     results["heavy_output"] = {
         "elapsed_ms": (time.perf_counter_ns() - heavy_started) / 1_000_000,
         "serialized_bytes": len(json.dumps(heavy_result, separators=(",", ":")).encode()),
-        "group_count": len(heavy_result.get("groups", [])),
-        "result_count": sum(
-            len(group.get("results", [])) for group in heavy_result.get("groups", [])
-        ),
+        "group_count": len(heavy_result["groups"]),
+        "result_count": len(heavy_cards),
         "requested_max_results": 100,
     }
 
@@ -344,6 +369,9 @@ def main():
         )
 
     libc_name, libc_version = platform.libc_ver()
+    available_tools = tool_names()
+    if len(available_tools) != 10 or len(set(available_tools)) != 10:
+        raise SystemExit("installed package did not expose ten unique tool names")
     result = {
         "package_version": installed.version,
         "wheel": str(args.wheel),
@@ -355,7 +383,8 @@ def main():
         "platform": platform.platform(),
         "libc": {"name": libc_name, "version": libc_version},
         "system": system_snapshot(installed),
-        "tool_count": len(tool_names()),
+        "tool_count": len(available_tools),
+        "tool_names": available_tools,
         "cold_import_ms": cold_import_ms(),
         "wheel_bytes": args.wheel.stat().st_size,
         "usage": {"user_cpu_seconds": getrusage(RUSAGE_SELF).ru_utime, "system_cpu_seconds": getrusage(RUSAGE_SELF).ru_stime},

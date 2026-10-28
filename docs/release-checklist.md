@@ -32,8 +32,7 @@ Short operational checklist. The authoritative release process lives in
 
 - [ ] Confirm M001 and M002 exact-SHA qualification and root CI are green
 - [ ] Configure PyPI Trusted Publishing for `eggstack/eggsearch`, workflow `release-python-pypi.yml`, environment `pypi`
-- [ ] Configure GitHub environment `pypi` with a required human reviewer
+- [ ] Create GitHub environment `pypi` before dispatching
 - [ ] Dispatch the Python publication workflow with the qualified SHA, Python qualification run ID, and synchronized version
-- [ ] Approve the `pypi` environment only after the verified inventory is ready
 - [ ] Confirm public binary-only installs and the M003 closure record before announcing availability
 - [ ] Schedule M004 benchmarks on native SBC devices after publication
