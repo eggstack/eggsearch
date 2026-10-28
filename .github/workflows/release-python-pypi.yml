@@ -80,7 +80,7 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Human-approved PyPI publication
+    name: Manually dispatched PyPI publication
     needs: verify-candidate
     runs-on: ubuntu-24.04
     environment:
