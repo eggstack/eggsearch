@@ -1,6 +1,6 @@
 # Python PyPI Distribution and Prebuilt SBC Wheels Roadmap
 
-Status: active (M001/M002/M003 active; M004 blocked on first PyPI publication and native-device access)
+Status: active (M001/M002 closed; M003 active; M004 blocked on first PyPI publication and native-device access)
 Primary outcome: publish the existing in-process `eggsearch` Python package promptly, with CPython 3.11–3.15 and broad precompiled platform wheels, explicitly experimental SBC support, then perform hardware benchmarking **after publication**.
 Planning baseline: `main` `13fcac0b7ac0125d38e4e9775ebe1d62028fda72` (2026-10-28; root/binding/pyproject 0.4.4). Refresh the baseline at execution.
 Authority: user confirmed the `eggsearch` PyPI project name is available by manual check and requested a release-first sequence without compiling on SBCs.
@@ -37,12 +37,12 @@ The term *experimental SBC support* covers hardware-model/runtime/footprint unce
 
 | Milestone | Class | Status | Dependencies | Release-facing exit |
 |---|---|---|---|---|
-| M001 Python 3.15 and binding toolchain qualification | active | hard: historical Python M008 closed | `abi3-py311` wheel installs on CPython 3.11–3.15 across the five established platforms; matching PyO3/async and Maturin versions, metadata, tests, sdist and audits qualified on an exact SHA. Hosted exact-SHA run remains required. |
-| M002 hosted ARMv7 and Linux wheel expansion | active | interface: M001 keeps `abi3-py311` stable; operational integration before M003 | A publishable ARMv7 hard-float manylinux wheel, hosted/emulated install/import/representative operations, tags and ELF audit; no SBC compilation. `manylinux_2_28_armv7l` is the execution target. Supplemental musllinux wheels are explicitly deferred from the first inventory; no musl support is claimed. |
-| M003 controlled PyPI first publication | active (publication gated) | interface: established M001/M002 artifact contracts; operational: M001/M002 qualification and exact candidate | Trusted Publisher configured; exact-SHA wheel/sdist set passes audits and clean consumers; operator publishes `eggsearch` to PyPI and independently verifies public binary-only installs. Workflow implementation is ready; repository/PyPI setup and hosted qualification remain. |
+| M001 Python 3.15 and binding toolchain qualification | closed | hard: historical Python M008 closed | Closed at `1135608af5d625cd72db6704adf3bcabd1a58ab1`; exact-SHA qualification run `40729011504` passed all 25 CPython 3.11–3.15 cells across the five existing platform families. Closure: `plans/closure/python-pypi-distribution/001-status.md`. |
+| M002 hosted ARMv7 and Linux wheel expansion | closed | interface: M001 keeps `abi3-py311` stable; operational integration before M003 | Closed at `1135608af5d625cd72db6704adf3bcabd1a58ab1`; hosted ARMv7 hard-float build, ELF audit and CPython 3.11/3.15 QEMU installs passed in run `40729011504`. No SBC compilation; optional musllinux remains deferred. Closure: `plans/closure/python-pypi-distribution/002-status.md`. |
+| M003 controlled PyPI first publication | active (publication gated) | interface: established M001/M002 artifact contracts; operational: M001/M002 qualification and exact candidate | Trusted Publisher configured; exact-SHA wheel/sdist set passes audits and clean consumers; operator publishes `eggsearch` to PyPI and independently verifies public binary-only installs. Workflow and exact-SHA artifacts are ready; PyPI Trusted Publisher and GitHub `pypi` approval environment setup remain. |
 | M004 post-publication SBC benchmarking and tuning decision | blocked | operational: successful M003 publication and native ARMv7/aarch64 device access | Native SBC installed-wheel benchmarks for memory, latency and concurrency; no source compilation; evidence-based recommendations/patch release only if needed. The standard-library harness is prepared. |
 
-M001, M002 and the M003 *workflow implementation* may proceed in parallel against the fixed interface and artifact contract. The **M003 publish action** cannot run until M001/M002 exact-release-candidate acceptance gates pass. M004 benchmarking is deliberately scheduled **after** publication; a device not immediately available is not a retroactive blocker for M003.
+M001 and M002 are closed against the exact release candidate; the M003 workflow implementation is ready. The **M003 publish action** is gated on maintainer configuration of the PyPI Trusted Publisher and the GitHub `pypi` approval environment. M004 benchmarking is deliberately scheduled **after** publication; a device not immediately available is not a retroactive blocker for M003.
 
 Implementation handoffs: `plans/implementation/python-pypi-distribution/001-python315-toolchain-and-abi3.md` through `004-post-publication-sbc-benchmarking.md`. Closure records go to `plans/closure/python-pypi-distribution/NNN-status.md`. Keep the registry aligned.
 

@@ -1,9 +1,9 @@
 # M001 — Python 3.15, PyO3 Toolchain and Stable-ABI Qualification
 
-Status: active
+Status: closed
 Primary class: infrastructure
 Source: `plans/subsystems/python-pypi-distribution-roadmap.md` M001.
-Execution baseline refreshed: branch `plan/python-pypi-prebuilt-arm-release-20261028` at `62db213179100109e532d9be43a81b1df054dcde`, Eggsearch 0.4.4. Candidate SHA will be recorded after implementation is committed.
+Execution candidate: branch `plan/python-pypi-prebuilt-arm-release-20261028`, SHA `1135608af5d625cd72db6704adf3bcabd1a58ab1`, Eggsearch 0.4.4.
 Hard dependency: closed Python native M008 (`plans/closure/python-native-library/008-status.md`); interface guarantee: `abi3-py311` and ten-tool SDK contract.
 Authority: accepted ADR-0005; long-term specification §§6–9 and `plans/003-planning-process.md`.
 
@@ -13,7 +13,7 @@ Qualify normal CPython 3.11–3.15 on the current five platform families and rem
 
 Upstream candidate versions verified as available on 2026-10-28: PyO3 0.30.1, `pyo3-async-runtimes` 0.30.0, Maturin 1.15.0. These are **starting candidates, not forced upgrades**: check current lockfile resolution, Rust 1.89 compatibility and `future_into_py` cancellation behavior before pinning, and select the smallest coherent set proven by tests.
 
-Execution selected that coherent version set. The binding compiles with Rust 1.89.0; the release wheel suite passes 23 tests with six expected debug-gate skips; local `maturin develop` passes 28 tests with one skip, including in-flight cancellation and close. Extracted sdist rebuild from the sdist root succeeds with Cargo offline. Both Cargo dependency graphs pass `cargo deny` after updating `webpki-roots` to 1.0.10, `rustls-webpki` to 0.103.16, and Tokio to 1.53.3; the pinned Python build/audit environment reports no known vulnerabilities. The five-platform × five-interpreter hosted matrix has not yet run on a final candidate SHA and remains an open closure requirement.
+Execution selected that coherent version set. The binding compiles with Rust 1.89.0; the release wheel suite passes 23 tests with six expected debug-gate skips; local `maturin develop` passes 28 tests with one skip, including in-flight cancellation and close. Extracted sdist rebuild from the sdist root succeeds with Cargo offline. Both Cargo dependency graphs pass `cargo deny` after updating `webpki-roots` to 1.0.10, `rustls-webpki` to 0.103.16, and Tokio to 1.53.3; the pinned Python build/audit environment reports no known vulnerabilities. Hosted qualification run `40729011504` passed all 25 CPython 3.11–3.15 smoke cells on the five native platform families at the exact candidate SHA. The complete M001 evidence is recorded in `plans/closure/python-pypi-distribution/001-status.md`.
 
 ## Non-goals / preserved contracts
 
