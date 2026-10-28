@@ -8,6 +8,7 @@ version = "0.4.4"
 description = "Native asyncio bindings for the Eggsearch evidence engine"
 requires-python = ">=3.11,<3.16"
 license = "MIT"
+license-files = ["LICENSE-PYTHON"]
 readme = "PYTHON_README.md"
 classifiers = [
     "Programming Language :: Python :: 3",

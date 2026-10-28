@@ -91,7 +91,7 @@ def main():
                 f"{dist_info_prefix}METADATA",
                 f"{dist_info_prefix}WHEEL",
                 f"{dist_info_prefix}RECORD",
-                f"{dist_info_prefix}licenses/LICENSE",
+                f"{dist_info_prefix}licenses/LICENSE-PYTHON",
             }
             if not required_dist_info.issubset(dist_info_files):
                 raise SystemExit(f"missing license or wheel metadata in {wheel.name}")
