@@ -3,7 +3,7 @@
 Status: blocked (operational: M003 first PyPI publication must succeed)
 Primary class: polish
 Source: `plans/subsystems/python-pypi-distribution-roadmap.md` M004.
-Baseline: `main@13fcac0b7ac0125d38e4e9775ebe1d62028fda72` used for planning; benchmarking must pin the **published** `eggsearch` Python version and its installed wheel hashes.
+Planning baseline: `main@13fcac0b7ac0125d38e4e9775ebe1d62028fda72`. A standard-library benchmark harness is prepared at `bindings/python/benchmarks/sbc_runtime.py`; it verifies the installed native extension against the public PyPI pip-report and wheel digest, uses local Mode-Off and loopback-only fetch fixtures, and records repeated sequential asyncio event loops. Actual execution must pin the **published** `eggsearch` Python version and its installed wheel hashes.
 Authority: ADR-0005, `architecture/python-library.md`, historical Python M002/M005 lifecycle guarantees and M003 release closure.
 Primary rule: **publish first; measure on SBCs later; never compile Eggsearch or its wheel on the device.**
 

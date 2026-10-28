@@ -57,6 +57,29 @@ same commit. Do not dispatch the release producer until the matching crate
 version is visible on crates.io. See `architecture/packaging.md` for the live
 producer contract.
 
+## Python package publication
+
+The native Python distribution has its own release path and does not use root
+Rust tags, crates.io publication, Eggpack, or the 19-asset binary inventory.
+The controlling workstream is `plans/subsystems/python-pypi-distribution-roadmap.md`.
+Its first publication must use the exact candidate SHA whose five-platform,
+25-cell interpreter matrix, ARMv7 emulated install, source rebuild, audits, and
+root CI all passed.
+
+Before dispatching `.github/workflows/release-python-pypi.yml`, configure the
+PyPI Trusted Publisher for owner `eggstack`, repository `eggsearch`, workflow
+`release-python-pypi.yml`, and GitHub environment `pypi`. Configure the GitHub
+`pypi` environment with the required human reviewer. The publisher workflow
+requires the exact candidate SHA, successful Python qualification run ID, and
+synchronized package version. It verifies the source and six-wheel plus sdist
+inventory before the approval-gated OIDC job. The publication is complete only
+after independent public binary-only installs pass on Linux x86_64/aarch64,
+macOS x86_64/arm64, Windows x86_64, and emulated ARMv7.
+
+Do not announce PyPI availability or update the public installation claim
+until that post-publication verification and M003 closure record are complete.
+Physical SBC measurements belong to M004 and happen after the initial release.
+
 ## Publication and binary release
 
 ```bash

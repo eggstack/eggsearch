@@ -27,3 +27,13 @@ Short operational checklist. The authoritative release process lives in
 - [ ] Confirm the Eggpack-generated `Eggpack candidate builds` workflow creates a complete draft release
 - [ ] Review binary checksums and publish the draft release manually
 - [ ] Verify the published release has exactly 19 assets (7 executables, 7 `.sha256` sidecars, `install.sh`, `install.ps1`, `release-manifest.json`, `install-exact.sh`, `install-exact.ps1`) and run external Unix/Windows installer smoke
+
+## Separate Python package publication
+
+- [ ] Confirm M001 and M002 exact-SHA qualification and root CI are green
+- [ ] Configure PyPI Trusted Publishing for `eggstack/eggsearch`, workflow `release-python-pypi.yml`, environment `pypi`
+- [ ] Configure GitHub environment `pypi` with a required human reviewer
+- [ ] Dispatch the Python publication workflow with the qualified SHA, Python qualification run ID, and synchronized version
+- [ ] Approve the `pypi` environment only after the verified inventory is ready
+- [ ] Confirm public binary-only installs and the M003 closure record before announcing availability
+- [ ] Schedule M004 benchmarks on native SBC devices after publication

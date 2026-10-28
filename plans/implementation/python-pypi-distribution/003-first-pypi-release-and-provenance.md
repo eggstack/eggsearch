@@ -1,9 +1,9 @@
 # M003 — First Controlled PyPI Publication and Installed-Wheel Provenance
 
-Status: ready (workflow can be implemented now; upload blocked on M001/M002 qualification)
+Status: active (workflow implemented; upload blocked on hosted M001/M002 qualification and maintainer PyPI setup)
 Primary class: capability
 Source: `plans/subsystems/python-pypi-distribution-roadmap.md` M003.
-Baseline: `main@13fcac0b7ac0125d38e4e9775ebe1d62028fda72` (root/binding 0.4.4); recheck commit and chosen version when executing.
+Execution baseline refreshed: branch `plan/python-pypi-prebuilt-arm-release-20261028` at `62db213179100109e532d9be43a81b1df054dcde` (root/binding 0.4.4); record final candidate SHA and chosen version before dispatch.
 Dependencies: interface — M001 `abi3-py311` / Python 3.15 metadata, M002 platform artifact contract; operational **publish blockers** — M001 and M002 closed on the exact candidate, clean audits, preflight owner/metadata validation, and GitHub environment approval. Historical binding M008 is closed, but cannot qualify newer bytes.
 Authorities: ADR-0005, `plans/003-planning-process.md`, `docs/release.md` (Rust/Eggpack release is separate), `plans/closure/python-native-library/008-status.md`.
 User direction: the `eggsearch` PyPI name has been manually checked as available; proceed with first public distribution after the stated gates. No need to wait for post-publication SBC benchmarks.
@@ -13,6 +13,8 @@ User direction: the `eggsearch` PyPI name has been manually checked as available
 Publish the first `eggsearch` Python wheel+sdist inventory to PyPI, allowing `pip`/`uv` consumers to install **prebuilt** artifacts for the stated supported platforms including experimental ARMv7 SBC. Protect immutability, exact-source provenance, architectural tag honesty, dependency integrity, and human approval. A published wheel and independently successful binary-only PyPI install, not a passing build, establish the user-visible capability.
 
 Current `bindings/python` is unpublished, `pyproject.toml` / Cargo manifests use version 0.4.4, and `.github/workflows/python-native-qualification.yml` is nonpublishing. Historical M008 candidate `067468a` qualified 0.4.3 with five wheels, 20 interpreter smokes, sdist rebuild and audit; new release bytes must be requalified. The root Rust publication sequence is controlled by Eggpack and remains unchanged.
+
+Execution added `.github/workflows/release-python-pypi.yml`. It accepts an exact candidate SHA, successful qualification run ID, and synchronized version; checks exact-SHA root CI and Python qualification; downloads only that run's artifacts; verifies the six-wheel-plus-sdist inventory and hashes; and publishes only through the `pypi` environment with OIDC permission scoped to the publish job. Post-publication binary-only consumer jobs cover five native platforms and emulated ARMv7. No hosted run or publication has been initiated.
 
 ## Non-goals and invariant boundaries
 

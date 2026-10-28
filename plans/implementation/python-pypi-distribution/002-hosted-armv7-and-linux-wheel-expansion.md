@@ -1,9 +1,9 @@
 # M002 — Hosted ARMv7 and Broad Linux Prebuilt Wheels, Experimental SBC Support
 
-Status: ready
+Status: active
 Primary class: infrastructure
 Source: `plans/subsystems/python-pypi-distribution-roadmap.md` M002.
-Baseline: `main@13fcac0b7ac0125d38e4e9775ebe1d62028fda72`, root/binding 0.4.4; inspect current CI on execution.
+Execution baseline refreshed: branch `plan/python-pypi-prebuilt-arm-release-20261028` at `62db213179100109e532d9be43a81b1df054dcde`, root/binding 0.4.4.
 Interface dependency: M001 preserves CPython `abi3-py311` and the Rust 1.89 SDK; implement build support in parallel, then integrate exact candidate for M003. Operational dependency: first PyPI release needs passing required wheel qualifications.
 Authority: ADR-0005, `plans/003-planning-process.md`, Python M004/M008 historical closure, and `architecture/python-library.md`.
 
@@ -11,13 +11,19 @@ Authority: ADR-0005, `plans/003-planning-process.md`, Python M004/M008 historica
 
 Produce an **installable precompiled ARMv7 hard-float wheel** for SBC-class 32-bit Linux without ever compiling the package on a Raspberry Pi, Le Potato, or other resource-constrained board. Expand Linux platform coverage with additional prebuilt wheels when qualified. Document SBC support as **experimental** until post-publication physical-device benchmarking. Existing Python workflow builds `manylinux2014` x86_64/aarch64, macOS Intel/ARM64 and Windows x86_64, all stable ABI; no ARMv7/musllinux wheels today.
 
+Execution selects `ghcr.io/rust-cross/manylinux_2_28-cross@sha256:b1f069c62f7744faa6db5f1ab28b11d59f72e161d8f03f6b0a388fe1cecc065d` and requires the generated wheel to retain its `manylinux_2_28_armv7l` tag after Maturin's audit. This is a broader glibc compatibility floor than the original 2.31 candidate. The independent install smoke runs in `quay.io/pypa/manylinux_2_31_armv7l@sha256:ff4a72812594311c071eebce43efcaa9061bd1205649d864c1054d4e56e6bdae` under QEMU. The pinned runtime image config declares Linux ARM. If either image or tag behavior differs, stop and update the decision with observed evidence before publication.
+
+The workflow now has a separate ARMv7 cross-build artifact, a `readelf` audit of ELF class, EABI, hard-float attributes, dynamic dependencies and maximum GLIBC symbol version, and QEMU installed-wheel jobs under CPython 3.11 and 3.15. The release verifier requires the six mandatory platform families and checks that the audit record accompanies the exact qualification artifacts. The image digests were checked against their registries on 2026-10-28. Hosted build/audit/emulated install evidence remains pending; no physical SBC build or benchmark has been performed.
+
 Upstream PyPA `manylinux_2_31_armv7l` image (`quay.io/pypa/manylinux_2_31_armv7l`) supports a Linux glibc 2.31 baseline and the `armv7l` platform tag. PyPA `musllinux_1_2` images exist for x86_64/aarch64/armv7l. These are *build infrastructure candidates*, not proof that the project or its Rust dependencies link on ARMv7. Choose an audited and reproducible CI recipe (hosted QEMU/binfmt running the proper image, or true cross-compile plus QEMU consumer smoke), with all command details and image digests recorded.
 
 ## Mandatory and optional targets
 
-Mandatory for first publication: keep the five existing wheel families and add `armv7-unknown-linux-gnueabihf` producing a Python `cp311-abi3-manylinux_2_31_armv7l`-compatible wheel, with exact tag determined by audit. Its floor is glibc 2.31, **not** manylinux2014 and not all 32-bit Linux; does not include ARMv6, soft-float, Android, or Alpine/musl. Existing Linux aarch64 covers 64-bit SBC systems only if distribution/libc baseline matches.
+Mandatory for first publication: keep the five existing wheel families and add `armv7-unknown-linux-gnueabihf` producing a Python `cp311-abi3-manylinux_2_28_armv7l`-compatible wheel, with exact tag determined by audit. Its floor is glibc 2.28, **not** manylinux2014 and not all 32-bit Linux; does not include ARMv6, soft-float, Android, or Alpine/musl. The independent install test runs under the official manylinux 2.31 ARMv7 userland. Existing Linux aarch64 covers 64-bit SBC systems only if distribution/libc baseline matches.
 
 Preferred additional builds: `musllinux_1_2_x86_64`, `musllinux_1_2_aarch64`. Optional/conditionally deferred: `musllinux_1_2_armv7l`, `manylinux2014_i686`. Record explicit decision/evidence for any supplemental platform deferred so the release documentation names only actual wheels; inability to add optional targets must not delay a green mandatory release.
+
+Execution decision: defer both preferred musllinux wheels from the first inventory. The release verifier and consumer workflow are scoped to the six mandatory platform families; no musllinux compatibility is claimed. This keeps the first publication focused on the required CPython ABI matrix and ARMv7 hard-float gate. Revisit musllinux in a separately qualified expansion after M003 if hosted builds and matching consumer environments are available.
 
 ## Non-goals / invariants
 

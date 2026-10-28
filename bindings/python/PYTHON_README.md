@@ -5,12 +5,12 @@ fetch, repository, security, research, diagnostic, and evidence operations.
 It calls the shared Rust SDK in-process and does not start the MCP server.
 
 This package is not published to PyPI. To build and install it locally, use
-Rust 1.89, CPython 3.11–3.14, and an active virtual environment:
+Rust 1.89, CPython 3.11–3.15, and an active virtual environment:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e 'bindings/python[dev]' maturin==1.9.5
+python -m pip install -e 'bindings/python[dev]' maturin==1.15.0
 maturin develop --manifest-path bindings/python/Cargo.toml --locked
 python -m pytest -q bindings/python/tests
 pyright bindings/python/python/eggsearch bindings/python/examples
