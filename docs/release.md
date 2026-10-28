@@ -79,7 +79,9 @@ inventory, then publishes with OIDC. Explicit workflow dispatch is the release
 action; a required environment reviewer is not configured.
 
 Public install instructions are in `README.md` and `docs/python-library.md`.
-ARMv7 support remains experimental until M004 provides physical-board evidence.
+The published aarch64 wheel has passed native smoke and benchmarking; results
+are recorded in `plans/closure/python-pypi-distribution/004-status.md`. ARMv7
+support remains experimental until physical 32-bit board evidence is gathered.
 Physical SBC measurements happen after publication and do not block a future
 Python release unless they reveal a compatibility defect.
 

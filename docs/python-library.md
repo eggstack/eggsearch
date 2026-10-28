@@ -169,9 +169,13 @@ and remove with `python -m pip uninstall eggsearch`.
 
 ## Post-publication SBC benchmark
 
-M004 runs only on native ARMv7 or aarch64 SBC hardware after publication. Install
-the exact public wheel with `--only-binary=:all:`, then run the standard-library
-harness outside the repository checkout:
+M004's native aarch64 smoke and benchmark passed on a Libre Computer
+AML-S905X-CC. Results and the raw JSON are in
+`plans/closure/python-pypi-distribution/004-status.md` and
+`plans/closure/python-pypi-distribution/004-aarch64.json`. ARMv7 physical
+testing is deferred; keep that wheel experimental. To reproduce the aarch64
+run, install the exact public wheel with
+`--only-binary=:all:`, then run the standard-library harness:
 
 ```bash
 python -m pip download --only-binary=:all: --no-deps --dest wheelhouse eggsearch==0.4.4

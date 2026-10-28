@@ -1,6 +1,6 @@
 # Python PyPI Distribution and Prebuilt SBC Wheels Roadmap
 
-Status: active (M001–M003 closed; M004 blocked on native-device access)
+Status: active (M001–M003 closed; M004 blocked on native ARMv7 32-bit evidence)
 Primary outcome: publish the existing in-process `eggsearch` Python package promptly, with CPython 3.11–3.15 and broad precompiled platform wheels, explicitly experimental SBC support, then perform hardware benchmarking **after publication**.
 Planning baseline: `main` `13fcac0b7ac0125d38e4e9775ebe1d62028fda72` (2026-10-28; root/binding/pyproject 0.4.4). Refresh the baseline at execution.
 Authority: user confirmed the `eggsearch` PyPI project name is available by manual check and requested a release-first sequence without compiling on SBCs.
@@ -40,9 +40,9 @@ The term *experimental SBC support* covers hardware-model/runtime/footprint unce
 | M001 Python 3.15 and binding toolchain qualification | closed | hard: historical Python M008 closed | Closed at `1135608af5d625cd72db6704adf3bcabd1a58ab1`; exact-SHA qualification run `40729011504` passed all 25 CPython 3.11–3.15 cells across the five existing platform families. Closure: `plans/closure/python-pypi-distribution/001-status.md`. |
 | M002 hosted ARMv7 and Linux wheel expansion | closed | interface: M001 keeps `abi3-py311` stable; operational integration before M003 | Closed at `1135608af5d625cd72db6704adf3bcabd1a58ab1`; hosted ARMv7 hard-float build, ELF audit and CPython 3.11/3.15 QEMU installs passed in run `40729011504`. No SBC compilation; optional musllinux remains deferred. Closure: `plans/closure/python-pypi-distribution/002-status.md`. |
 | M003 controlled PyPI first publication | closed | interface: established M001/M002 artifact contracts; operational: M001/M002 qualification and exact candidate | Published `eggsearch==0.4.4` from candidate `1135608af5d625cd72db6704adf3bcabd1a58ab1`; workflow `40742653291` passed source/artifact verification, OIDC upload, and public binary-only installs on five native families plus emulated ARMv7. Closure: `plans/closure/python-pypi-distribution/003-status.md`. |
-| M004 post-publication SBC benchmarking and tuning decision | blocked | operational: native ARMv7/aarch64 device access | Benchmark the public 0.4.4 wheels on native SBCs; no source compilation; evidence-based recommendations/patch release only if needed. The standard-library harness is prepared. |
+| M004 post-publication SBC benchmarking and tuning decision | blocked | operational: native ARMv7 32-bit runtime evidence | The published 0.4.4 aarch64 wheel passed native installed-wheel smoke and benchmark on a Libre Computer AML-S905X-CC. Full measurements are in `plans/closure/python-pypi-distribution/004-status.md` and `004-aarch64.json`. The maintainer deferred ARMv7 physical testing; keep that wheel experimental. |
 
-M001–M003 are closed. The first public release was manually dispatched through the configured PyPI Trusted Publisher and pre-created GitHub `pypi` environment; the maintainer directed that no required reviewer be used. M004 benchmarking is deliberately scheduled **after** publication; lack of native hardware access blocks only M004 and does not affect M003 closure.
+M001–M003 are closed. The first public release was manually dispatched through the configured PyPI Trusted Publisher and pre-created GitHub `pypi` environment; the maintainer directed that no required reviewer be used. M004 is post-publication. Its native aarch64 sample is complete; ARMv7 32-bit physical benchmarking is deferred by the maintainer and remains the only M004 blocker. Keep ARMv7 support experimental until that evidence exists.
 
 Implementation handoffs: `plans/implementation/python-pypi-distribution/001-python315-toolchain-and-abi3.md` through `004-post-publication-sbc-benchmarking.md`. Closure records go to `plans/closure/python-pypi-distribution/NNN-status.md`. Keep the registry aligned.
 
