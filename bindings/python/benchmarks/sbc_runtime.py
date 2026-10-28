@@ -20,6 +20,9 @@ from resource import getrusage, RUSAGE_SELF
 
 from eggsearch import AsyncEggsearch, EggsearchError, tool_names
 
+QUALIFIED_VERSION = "0.4.4"
+QUALIFIED_SOURCE_SHA = "1135608af5d625cd72db6704adf3bcabd1a58ab1"
+
 
 def percentile(values, fraction):
     ordered = sorted(values)
@@ -311,11 +314,14 @@ def run_sequential_event_loop_benchmark(config, repeats):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
+    parser.add_argument("--source-sha", required=True)
     parser.add_argument("--repeats", type=int, default=40)
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--pip-report", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=Path("sbc-runtime.json"))
     args = parser.parse_args()
+    if args.version != QUALIFIED_VERSION or args.source_sha != QUALIFIED_SOURCE_SHA:
+        raise SystemExit("version or source SHA does not match the M003-qualified PyPI candidate")
     installed = distribution("eggsearch")
     if installed.version != args.version:
         raise SystemExit(f"installed eggsearch {installed.version} does not match {args.version}")
@@ -374,6 +380,7 @@ def main():
         raise SystemExit("installed package did not expose ten unique tool names")
     result = {
         "package_version": installed.version,
+        "qualified_source_sha": args.source_sha,
         "wheel": str(args.wheel),
         "wheel_sha256": wheel_sha256,
         "pypi_wheel_url": download["url"],

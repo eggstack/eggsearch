@@ -62,24 +62,26 @@ producer contract.
 The native Python distribution has its own release path and does not use root
 Rust tags, crates.io publication, Eggpack, or the 19-asset binary inventory.
 The controlling workstream is `plans/subsystems/python-pypi-distribution-roadmap.md`.
-Its first publication must use the exact candidate SHA whose five-platform,
-25-cell interpreter matrix, ARMv7 emulated install, source rebuild, audits, and
-root CI all passed.
+The first publication completed on 2026-10-28 as `eggsearch==0.4.4` from
+qualified source `1135608af5d625cd72db6704adf3bcabd1a58ab1`. Publication run
+`40742653291` verified the exact source and wheelhouse, published through
+Trusted Publishing, and passed public binary-only installs on five native
+platform families plus emulated ARMv7. See
+`plans/closure/python-pypi-distribution/003-status.md` for the inventory and
+evidence.
 
-Before dispatching `.github/workflows/release-python-pypi.yml`, configure the
-PyPI Trusted Publisher for owner `eggstack`, repository `eggsearch`, workflow
-`release-python-pypi.yml`, and pre-create the GitHub environment `pypi`. The
-publisher workflow requires the exact candidate SHA, successful Python
-qualification run ID, and synchronized package version. Its preflight verifies
-the environment exists, then verifies the source and six-wheel plus sdist
-inventory before the OIDC publish job. Dispatching the workflow is the explicit
-publication action. The publication is complete only after independent public
-binary-only installs pass on Linux x86_64/aarch64, macOS x86_64/arm64, Windows
-x86_64, and emulated ARMv7.
+For future Python releases, configure the PyPI Trusted Publisher for owner
+`eggstack`, repository `eggsearch`, workflow `release-python-pypi.yml`, and
+pre-create the GitHub environment `pypi`. The workflow takes the exact candidate
+SHA, successful Python qualification run ID, and synchronized package version.
+It verifies the environment exists, checks the qualified source and artifact
+inventory, then publishes with OIDC. Explicit workflow dispatch is the release
+action; a required environment reviewer is not configured.
 
-Do not announce PyPI availability or update the public installation claim
-until that post-publication verification and M003 closure record are complete.
-Physical SBC measurements belong to M004 and happen after the initial release.
+Public install instructions are in `README.md` and `docs/python-library.md`.
+ARMv7 support remains experimental until M004 provides physical-board evidence.
+Physical SBC measurements happen after publication and do not block a future
+Python release unless they reveal a compatibility defect.
 
 ## Publication and binary release
 

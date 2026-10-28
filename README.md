@@ -27,6 +27,19 @@ Pin a version, or install from source with `cargo install eggsearch --locked`. T
 installer verifies a SHA-256 checksum and the version, and never elevates — see
 [Installation](docs/installation.md) for targets and fallback rules.
 
+Install the native asyncio Python package separately:
+
+```bash
+python -m pip install eggsearch
+```
+
+On ARMv7 SBCs, require a prebuilt wheel so unsupported targets fail without
+attempting a source build:
+
+```bash
+python -m pip install --only-binary=:all: eggsearch
+```
+
 ## Quickstart
 
 ```bash
@@ -147,9 +160,9 @@ See [Safety](docs/safety.md) and [Threat model](docs/threat-model.md).
 [CodeGG harness integration](docs/codegg-integration.md) ·
 [Test inventory](docs/test-inventory.md)
 
-The in-process asyncio Python package is under `bindings/python` and is not
-published yet. See the [Python library guide](docs/python-library.md) for
-local build instructions and current support limits.
+The in-process asyncio Python package is published separately on PyPI. See the
+[Python library guide](docs/python-library.md) for its API, platform limits,
+and experimental ARMv7 SBC support.
 
 ## Build
 

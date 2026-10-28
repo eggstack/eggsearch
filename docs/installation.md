@@ -1,12 +1,31 @@
 # Installation
 
+## Python package
+
+The in-process native Python package is published separately from the Rust
+crate and executable assets. Install it on a supported host with:
+
+```bash
+python -m pip install eggsearch
+```
+
+On ARMv7 or another SBC, require a prebuilt compatible wheel so an unsupported
+host fails without compiling the source distribution:
+
+```bash
+python -m pip install --only-binary=:all: eggsearch
+```
+
+The published package supports CPython 3.11–3.15. Linux x86-64 and aarch64
+wheels use manylinux2014 (glibc 2.17); the experimental ARMv7 hard-float wheel
+requires glibc 2.28 or newer. macOS x86-64/arm64 and Windows x86-64 wheels are
+also available. See the [Python library guide](python-library.md) for API and
+platform details. ARMv7 remains experimental pending physical SBC measurements.
+
 ## Install from the published binary release
 
-The `v0.4.3` release candidate is prepared to carry the Mode-Off local
-repository dispatch fix. Until it is published, `v0.4.2` remains the latest
-published release. `v0.3.9` was the first binary-enabled release and `v0.4.0`
-is crate + tag only, with no published binaries. Once published, install the
-host-matched executable with the reviewed release installer:
+The Rust executable release is separate from the Python package. Install the
+host-matched executable with the release installer:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
@@ -18,7 +37,7 @@ PowerShell:
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
 ```
 
-Pin a published binary version when reproducibility matters:
+Pin a published executable version when reproducibility matters:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.4.3

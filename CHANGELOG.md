@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source files, and test files, and skips symlinked entries even when local
   search is configured to follow symlinks.
 
+### Python distribution
+
+- The native Python package was separately published to PyPI as
+  `eggsearch==0.4.4` on 2026-10-28, with CPython 3.11–3.15 ABI3 wheels for
+  Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64, and experimental
+  ARMv7 hard-float Linux.
+
 ## [0.4.3] - 2026-10-13
 
 ### Fixed
