@@ -1,6 +1,8 @@
 # eggsearch
 
 [![Crates.io](https://img.shields.io/crates/v/eggsearch.svg)](https://crates.io/crates/eggsearch)
+[![PyPI](https://img.shields.io/pypi/v/eggsearch.svg)](https://pypi.org/project/eggsearch/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/eggsearch?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/eggsearch)
 [![docs.rs](https://docs.rs/eggsearch/badge.svg)](https://docs.rs/eggsearch)
 [![License](https://img.shields.io/crates/l/eggsearch.svg)](LICENSE)
 [![Downloads](https://img.shields.io/crates/d/eggsearch.svg)](https://crates.io/crates/eggsearch)

@@ -78,6 +78,10 @@ It verifies the environment exists, checks the qualified source and artifact
 inventory, then publishes with OIDC. Explicit workflow dispatch is the release
 action; a required environment reviewer is not configured.
 
+PyPI's long description is embedded from `bindings/python/PYTHON_README.md`,
+which mirrors the root `README.md`. Updating that source changes the description
+on the next version upload; an existing PyPI release cannot be overwritten.
+
 Public install instructions are in `README.md` and `docs/python-library.md`.
 The published aarch64 wheel has passed native smoke and benchmarking; results
 are recorded in `plans/closure/python-pypi-distribution/004-status.md`. ARMv7

@@ -1,6 +1,6 @@
 # Python Native Library Roadmap
 
-Status: closed (M001-M008 closed; unpublished by design, publication separately authorized)
+Status: closed (M001-M008 closed; PyPI publication completed separately as `eggsearch==0.4.4`)
 Planning baseline: `eggstack/eggsearch` `main` at `f386b07d7adaa06bbb4a51a9d7e2eecf971c238b` (2026-10-13, Cargo package version 0.4.3)
 Primary outcome: in-process async Python library consumable by coding and research agents.
 
@@ -49,7 +49,7 @@ At the planning baseline, `src/lib.rs` promised only MCP/CLI stability, `src/mcp
 `M008 (invariant: rustls advisory remediation and Windows symlink-containment re-qualification)`
   -> closed at `plans/closure/python-native-library/008-status.md`
 
-M001-M008 are closed. M004/M006/M007 closed at `faa1da2` (run `38617598636`); M008 then resolved the two residuals those closures named — upstream rustls advisories RUSTSEC-2026-0346–0349 and the non-unix symlink-following gap — and re-qualified the repair candidate `067468a` in fully-green run `38641009246`, reconciled in `008-status.md` without amending the earlier records. No cross-repository or Mode-Off release blocker is waived. Publication remains separately authorized.
+M001-M008 are closed. M004/M006/M007 closed at `faa1da2` (run `38617598636`); M008 then resolved the two residuals those closures named — upstream rustls advisories RUSTSEC-2026-0346–0349 and the non-unix symlink-following gap — and re-qualified the repair candidate `067468a` in fully-green run `38641009246`, reconciled in `008-status.md` without amending the earlier records. No cross-repository or Mode-Off release blocker is waived. PyPI publication was subsequently completed as `eggsearch==0.4.4` under the separate `python-pypi-distribution` workstream.
 
 | Milestone | Class | Status | Plan | User-facing exit |
 |---|---|---|---|---|
