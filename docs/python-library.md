@@ -7,13 +7,13 @@ server, or listener. The package is an independent PyO3 extension under
 
 ## Build and use locally
 
-Use Rust 1.89, CPython 3.11–3.14, and a virtual environment. From the
+Use Rust 1.89, CPython 3.11–3.15, and a virtual environment. From the
 repository root:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e 'bindings/python[dev]' maturin==1.9.5
+python -m pip install -e 'bindings/python[dev]' maturin==1.15.0
 maturin develop --manifest-path bindings/python/Cargo.toml --locked
 python -m pytest -q bindings/python/tests
 pyright bindings/python/python/eggsearch bindings/python/examples
@@ -121,15 +121,32 @@ remote source text uses `external_untrusted`. Preserve the `trust` and
 
 ## Compatibility and features
 
-The binding enables PyO3's `abi3-py311` stable ABI, targeting CPython 3.11 and
-newer. M004 qualifies the same platform wheel on CPython 3.11, 3.12, 3.13, and
-3.14. Linux wheels use the manylinux2014 baseline; native targets are Linux
-x86_64 and aarch64, macOS x86_64 and arm64, and Windows x86_64. CI builds on
-each target and installs each exact wheel on all four interpreters without
-installing Rust in the consumer job. This support statement is conditional on
-the corresponding M004 workflow jobs passing for the released candidate.
+The binding enables PyO3's `abi3-py311` stable ABI, targeting GIL-enabled
+CPython 3.11 and newer. The active PyPI distribution qualification targets
+CPython 3.11 through 3.15 on each supported platform; only candidates that pass
+the exact 25-cell workflow matrix qualify. Linux wheels use the manylinux2014
+baseline; native targets are Linux x86_64 and aarch64, macOS x86_64 and arm64,
+and Windows x86_64. CI builds on each target and installs each exact wheel on
+all five interpreters without installing Rust in the consumer job. These
+claims remain conditional on the corresponding exact-candidate jobs passing.
 
-PyPy, free-threaded CPython, ARMv7, and Windows ARM64 are not claimed. The
+PyPy, free-threaded CPython, and Windows ARM64 are not claimed. ARMv7 is
+planned as experimental SBC support only after its separate build and emulated
+installed-wheel qualification passes. The release candidate uses a pinned
+manylinux cross toolchain and targets the `manylinux_2_28_armv7l` compatibility
+tag; its glibc floor and hard-float ABI must pass artifact audit and emulated
+installation before publication. That support is limited to ARMv7 hard-float
+Linux with glibc 2.28 or newer. ARMv6, soft-float, Windows ARM64, and Alpine or
+other musl systems are not included. After the first release appears on PyPI,
+SBC users must require a wheel so pip fails on an unsupported target instead
+of trying to compile from source:
+
+```bash
+python -m pip install --only-binary=:all: eggsearch
+```
+
+Do not build the source distribution on an SBC. The source distribution is a
+developer fallback for environments outside the published wheel matrix. The
 extension package enables no optional Rust `browser`, `egress`, or `pdf`
 features. The native library uses the same Eggsearch configuration, provider
 credential environment variables, bounded operations, sanitization, and trust
@@ -140,9 +157,35 @@ An sdist build requires Rust 1.89, a C toolchain, and the Cargo dependencies in
 `bindings/python/Cargo.lock`. It can build offline when those locked crate
 sources are already in Cargo's local cache; a fresh build must be able to fetch
 them from Cargo registries. Native wheels avoid those build requirements at
-install and runtime. After a separately authorized publication,
-upgrade with `python -m pip install --upgrade eggsearch` and remove with
+install and runtime. After the M003 first publication is verified, upgrade
+with `python -m pip install --upgrade eggsearch` and remove with
 `python -m pip uninstall eggsearch`.
+
+## Post-publication SBC benchmark
+
+M004 runs only on native ARMv7 or aarch64 SBC hardware after publication. Install
+the exact public wheel with `--only-binary=:all:`, then run the standard-library
+harness outside the repository checkout:
+
+```bash
+python -m pip install --only-binary=:all: --report install-report.json eggsearch==VERSION
+python -m pip download --only-binary=:all: --no-deps --dest wheelhouse eggsearch==VERSION
+python /path/to/eggsearch/bindings/python/scripts/smoke_installed_wheel.py
+python /path/to/eggsearch/bindings/python/benchmarks/sbc_runtime.py \
+  --version VERSION --wheel /path/to/wheelhouse/eggsearch-*.whl \
+  --pip-report install-report.json
+```
+
+The harness verifies that the wheel matches the public PyPI URL and SHA-256 in
+the pip install report, including the installed native extension. It uses a
+local Mode-Off search fixture and a loopback-only fetch fixture. It records cold
+import, first operation, repeated sequential event loops, search latency at
+1–32 concurrent calls, fetch latency and output near configured character
+bounds, cancellation and close, memory, thread and descriptor counts, wheel
+size, OS, CPU, RAM, libc, storage, and available thermal or throttling
+information. It performs no wheel build and calls no remote providers. Keep
+the JSON output with the exact published wheel hash and hardware inventory for
+the M004 closure record.
 
 See [Tool Matrix](tool-matrix.md), [Agent Workflows](agent-workflows.md), and
 [Python Library Architecture](../architecture/python-library.md) for tool
