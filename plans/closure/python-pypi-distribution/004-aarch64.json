@@ -1,0 +1,259 @@
+{
+  "package_version": "0.4.4",
+  "qualified_source_sha": "1135608af5d625cd72db6704adf3bcabd1a58ab1",
+  "wheel": "/tmp/eggsearch-m004-aarch64/wheelhouse/eggsearch-0.4.4-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+  "wheel_sha256": "840e8689a9ec52d26e480f3946e8a389ad0bdab816940681a1431b2faea52ccb",
+  "pypi_wheel_url": "https://files.pythonhosted.org/packages/04/9b/30994abf253eb21b308978eeabd1f01e1c21496a0c39636faf5e0f7b4311/eggsearch-0.4.4-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+  "pip_report_sha256": "840e8689a9ec52d26e480f3946e8a389ad0bdab816940681a1431b2faea52ccb",
+  "python": "3.11.17 (main, Oct  1 2026, 15:41:06) [GCC 11.4.0]",
+  "machine": "aarch64",
+  "platform": "Linux-6.1.54-10001-gd517e36a604d-aarch64-with-glibc2.35",
+  "libc": {
+    "name": "glibc",
+    "version": "2.35"
+  },
+  "system": {
+    "uname": {
+      "system": "Linux",
+      "node": "i2p-20",
+      "release": "6.1.54-10001-gd517e36a604d",
+      "version": "#1 SMP PREEMPT_DYNAMIC Fri Sep 22 22:11:56 EDT 2023",
+      "machine": "aarch64",
+      "processor": "aarch64"
+    },
+    "cpu_count": 4,
+    "libc": [
+      "glibc",
+      "2.35"
+    ],
+    "filesystem_total_bytes": 31645478912,
+    "filesystem_free_bytes": 15876145152,
+    "installed_package_bytes": 25540327,
+    "os_release": "PRETTY_NAME=\"Ubuntu 22.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"22.04\"\nVERSION=\"22.04.5 LTS (Jammy Jellyfish)\"\nVERSION_CODENAME=jammy\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=jammy\n",
+    "memory_info": "MemTotal:         965688 kB\nMemFree:          116632 kB\nMemAvailable:     404748 kB\nBuffers:              24 kB\nCached:           344208 kB\nSwapCached:        54580 kB\nActive:           206112 kB\nInactive:         227380 kB\nActive(anon):      32476 kB\nInactive(anon):    73120 kB\nActive(file):     173636 kB\nInactive(file):   154260 kB\nUnevictable:       36692 kB\nMlocked:           36692 kB\nSwapTotal:       1048572 kB\nSwapFree:         686384 kB\nZswap:            152128 kB\nZswapped:         357340 kB\nDirty:               764 kB\nWriteback:             0 kB\nAnonPages:        125152 kB\nMapped:            99152 kB\nShmem:               152 kB\nKReclaimable:      44344 kB\nSlab:             159916 kB\nSReclaimable:      44344 kB\nSUnreclaim:       115572 kB\nKernelStack:        4720 kB\nPageTables:         5696 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:     1531416 kB\nCommitted_AS:    1291432 kB\nVmallocTotal:   133143592960 kB\nVmallocUsed:       33536 kB\nVmallocChunk:          0 kB\nPercpu:             1520 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:     12288 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nCmaTotal:         210944 kB\nCmaFree:           58896 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\n",
+    "cpu_info": "processor\t: 0\nBogoMIPS\t: 48.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x0\nCPU part\t: 0xd03\nCPU revision\t: 4\n\nprocessor\t: 1\nBogoMIPS\t: 48.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x0\nCPU part\t: 0xd03\nCPU revision\t: 4\n\nprocessor\t: 2\nBogoMIPS\t: 48.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x0\nCPU part\t: 0xd03\nCPU revision\t: 4\n\nprocessor\t: 3\nBogoMIPS\t: 48.00\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU variant\t: 0x0\nCPU part\t: 0xd03\nCPU revision\t: 4\n\n",
+    "swap_info": "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/swapfile                               file\t\t1048572\t\t362188\t\t-2\n",
+    "memory_available_kib": 404748,
+    "device_model": "Libre Computer AML-S905X-CC",
+    "thermal_zones": {
+      "temp": "40000"
+    },
+    "cpu_frequency_khz": {
+      "cpu3": "500000",
+      "cpu1": "667000",
+      "cpu2": "667000",
+      "cpu0": "667000"
+    }
+  },
+  "tool_count": 10,
+  "tool_names": [
+    "batch_fetch",
+    "build_evidence_bundle",
+    "provider_status",
+    "repo_fetch",
+    "repo_map",
+    "repo_search",
+    "research_search",
+    "security_search",
+    "web_fetch",
+    "web_search"
+  ],
+  "cold_import_ms": 293.778042,
+  "wheel_bytes": 9252055,
+  "usage": {
+    "user_cpu_seconds": 7.078295,
+    "system_cpu_seconds": 2.969801
+  },
+  "measurements": {
+    "search": {
+      "1": {
+        "count": 20,
+        "median_ms": 25.830904,
+        "p95_ms": 27.502644,
+        "min_ms": 20.743516,
+        "max_ms": 28.567581
+      },
+      "2": {
+        "count": 20,
+        "median_ms": 22.260545,
+        "p95_ms": 27.719148,
+        "min_ms": 18.795563,
+        "max_ms": 28.519746
+      },
+      "4": {
+        "count": 20,
+        "median_ms": 21.1455035,
+        "p95_ms": 23.530277,
+        "min_ms": 19.023568,
+        "max_ms": 24.340001
+      },
+      "8": {
+        "count": 20,
+        "median_ms": 31.3088615,
+        "p95_ms": 39.847168,
+        "min_ms": 21.232692,
+        "max_ms": 39.855377
+      },
+      "16": {
+        "count": 20,
+        "median_ms": 68.8331115,
+        "p95_ms": 83.701662,
+        "min_ms": 20.933228,
+        "max_ms": 83.798164
+      },
+      "32": {
+        "count": 32,
+        "median_ms": 164.9237785,
+        "p95_ms": 199.186466,
+        "min_ms": 113.069384,
+        "max_ms": 203.861472
+      }
+    },
+    "cancellation": {
+      "cancel_32_and_drain_ms": {
+        "count": 20,
+        "median_ms": 8.4892225,
+        "p95_ms": 21.762369,
+        "min_ms": 1.076728,
+        "max_ms": 29.986525
+      },
+      "post_cancel_recovery_ms": 495.657519
+    },
+    "memory": {
+      "before": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "28936 kB",
+        "threads": "1",
+        "rss": "28940 kB",
+        "pss": "25259 kB",
+        "open_fds": 7
+      },
+      "after_default_client_close": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "32228 kB",
+        "threads": "6",
+        "rss": "33068 kB",
+        "pss": "29387 kB",
+        "open_fds": 13
+      },
+      "initialized": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "38672 kB",
+        "threads": "6",
+        "rss": "38892 kB",
+        "pss": "35034 kB",
+        "open_fds": 13
+      },
+      "after_1": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "38740 kB",
+        "threads": "6",
+        "rss": "39080 kB",
+        "pss": "35222 kB",
+        "open_fds": 13
+      },
+      "after_2": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "39348 kB",
+        "threads": "7",
+        "rss": "39824 kB",
+        "pss": "35965 kB",
+        "open_fds": 13
+      },
+      "after_4": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "40432 kB",
+        "threads": "9",
+        "rss": "41280 kB",
+        "pss": "37421 kB",
+        "open_fds": 13
+      },
+      "after_8": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "41092 kB",
+        "threads": "13",
+        "rss": "41928 kB",
+        "pss": "38069 kB",
+        "open_fds": 13
+      },
+      "after_16": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "42124 kB",
+        "threads": "13",
+        "rss": "42612 kB",
+        "pss": "38753 kB",
+        "open_fds": 13
+      },
+      "after_32": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "44108 kB",
+        "threads": "13",
+        "rss": "44596 kB",
+        "pss": "40725 kB",
+        "open_fds": 13
+      },
+      "after_fetch": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "45172 kB",
+        "threads": "13",
+        "rss": "45980 kB",
+        "pss": "42034 kB",
+        "open_fds": 13
+      },
+      "after_close": {
+        "max_rss_kib": 86812,
+        "vmhwm": "86812 kB",
+        "vmrss": "46956 kB",
+        "threads": "13",
+        "rss": "47716 kB",
+        "pss": "43770 kB",
+        "open_fds": 13
+      }
+    },
+    "default_client_init_ms": 1.204607,
+    "explicit_mode_off_client_init_ms": 1.042687,
+    "first_operation_ms": 107.988538,
+    "malformed_input": {
+      "rejected": true,
+      "error_code": "capability_unavailable",
+      "elapsed_ms": 1.90112
+    },
+    "heavy_output": {
+      "elapsed_ms": 25.414813,
+      "serialized_bytes": 90968,
+      "group_count": 1,
+      "result_count": 50,
+      "requested_max_results": 100
+    },
+    "fetch": {
+      "count": 20,
+      "median_ms": 14.2886655,
+      "p95_ms": 19.78404,
+      "min_ms": 12.409692,
+      "max_ms": 23.429443,
+      "serialized_bytes": 37698,
+      "text_chars": 12000,
+      "requested_max_chars": 12000,
+      "tracemalloc_peak_bytes": 49489,
+      "fixture_scope": "loopback-only"
+    },
+    "client_close_ms": 1.058645,
+    "sequential_asyncio_run_loop_ms": {
+      "count": 20,
+      "median_ms": 122.5779375,
+      "p95_ms": 136.501325,
+      "min_ms": 96.173106,
+      "max_ms": 138.680325
+    }
+  }
+}

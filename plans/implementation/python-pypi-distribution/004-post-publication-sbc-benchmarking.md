@@ -1,9 +1,9 @@
 # M004 — Post-Publication SBC Runtime Benchmarking and Resource Policy
 
-Status: blocked (operational: native aarch64 and ARMv7 SBC device access is unavailable)
+Status: blocked (operational: native ARMv7 32-bit runtime evidence is deferred by the maintainer)
 Primary class: polish
 Source: `plans/subsystems/python-pypi-distribution-roadmap.md` M004.
-Planning baseline: `main@13fcac0b7ac0125d38e4e9775ebe1d62028fda72`. M003 published `eggsearch==0.4.4`; its M003 closure records exact wheel identities and emulated ARMv7 installation. A standard-library benchmark harness is prepared at `bindings/python/benchmarks/sbc_runtime.py`; it verifies the installed native extension against the public PyPI pip-report and wheel digest, requires ten unique tool names, validates trusted local Mode-Off search results and malformed-input rejection, uses a loopback-only fetch fixture, and records repeated sequential asyncio event loops. Actual execution must pin the published version and installed wheel hashes. Physical device access is the sole remaining operational blocker.
+Planning baseline: `main@13fcac0b7ac0125d38e4e9775ebe1d62028fda72`. M003 published `eggsearch==0.4.4`; its M003 closure records exact wheel identities and emulated ARMv7 installation. A standard-library benchmark harness is prepared at `bindings/python/benchmarks/sbc_runtime.py`; it verifies the installed native extension against the public PyPI pip-report and wheel digest, requires ten unique tool names, validates trusted local Mode-Off search results and malformed-input rejection, uses a loopback-only fetch fixture, and records repeated sequential asyncio event loops. The native aarch64 run is complete and recorded in `plans/closure/python-pypi-distribution/004-status.md` with raw output in `004-aarch64.json`. The maintainer directed that ARMv7 benchmarking stop for now; its native 32-bit evidence is the sole remaining operational blocker.
 Authority: ADR-0005, `architecture/python-library.md`, historical Python M002/M005 lifecycle guarantees and M003 release closure.
 Primary rule: **publish first; measure on SBCs later; never compile Eggsearch or its wheel on the device.**
 

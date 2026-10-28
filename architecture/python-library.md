@@ -23,9 +23,11 @@ A separate PyPI distribution workstream (not a reopening of M001–M008) is
 registered at `plans/subsystems/python-pypi-distribution-roadmap.md`. M003
 published `eggsearch==0.4.4` with CPython 3.11–3.15 ABI3 support and hosted
 prebuilt ARMv7 wheels. M004 covers **post-publication** physical-SBC
-benchmarking. No device-local source build or native SBC benchmark was a
-first-release prerequisite; ARMv7 installs use the published prebuilt wheel
-and remain experimental pending hardware evidence.
+benchmarking. The published aarch64 wheel passed native device smoke and
+benchmarking on a Libre Computer AML-S905X-CC. No device-local source build or
+native SBC benchmark was a first-release prerequisite; the ARMv7 wheel remains
+experimental because physical 32-bit board evidence is deferred. See
+`plans/closure/python-pypi-distribution/004-status.md`.
 
 
 ## Rust operation facade
@@ -83,8 +85,8 @@ rebuild uses the binding and root Cargo manifests from clean extraction; it can
 build offline with locked crates already cached, otherwise Cargo registry
 access is required. PyPy, free-threaded CPython, and Windows ARM64 are outside
 the support matrix. ARMv7 has an experimental `manylinux_2_28_armv7l`
-hard-float wheel with emulated public installation; physical hardware evidence
-is pending through M004.
+hard-float wheel with emulated public installation; native ARMv7 32-bit
+hardware evidence is pending through M004.
 
 The public Python `AsyncEggsearch` wrapper adds `async with`, `aclose()`, and
 the ten named keyword methods over the generic native `execute` call. Request

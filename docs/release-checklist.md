@@ -35,7 +35,8 @@ Short operational checklist. The authoritative release process lives in
 - [x] Create GitHub environment `pypi` before dispatching; no required reviewer was configured per maintainer direction
 - [x] Dispatch run `40742653291` with the qualified SHA, Python qualification run `40729011504`, and version `0.4.4`
 - [x] Confirm public binary-only installs on five native platforms and emulated ARMv7; see `plans/closure/python-pypi-distribution/003-status.md`
-- [ ] Run M004 benchmarks on native aarch64 and ARMv7 SBC devices after publication
+- [x] Run M004 installed-wheel smoke and benchmark on native aarch64; see `plans/closure/python-pypi-distribution/004-status.md`
+- [ ] Run a physical ARMv7 32-bit benchmark; maintainer deferred this line, so ARMv7 stays experimental
 
 ## Future Python package publications
 
