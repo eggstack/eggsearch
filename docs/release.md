@@ -71,9 +71,10 @@ PyPI Trusted Publisher for owner `eggstack`, repository `eggsearch`, workflow
 `release-python-pypi.yml`, and GitHub environment `pypi`. Configure the GitHub
 `pypi` environment with the required human reviewer. The publisher workflow
 requires the exact candidate SHA, successful Python qualification run ID, and
-synchronized package version. It verifies the source and six-wheel plus sdist
-inventory before the approval-gated OIDC job. The publication is complete only
-after independent public binary-only installs pass on Linux x86_64/aarch64,
+synchronized package version. Its preflight rejects an environment without a
+configured required-reviewer rule, then verifies the source and six-wheel plus
+sdist inventory before the approval-gated OIDC job. The publication is complete
+only after independent public binary-only installs pass on Linux x86_64/aarch64,
 macOS x86_64/arm64, Windows x86_64, and emulated ARMv7.
 
 Do not announce PyPI availability or update the public installation claim
