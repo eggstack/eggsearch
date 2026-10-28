@@ -4,8 +4,21 @@ The native package exposes an asyncio client for Eggsearch's ten search,
 fetch, repository, security, research, diagnostic, and evidence operations.
 It calls the shared Rust SDK in-process and does not start the MCP server.
 
-This package is not published to PyPI. To build and install it locally, use
-Rust 1.89, CPython 3.11–3.15, and an active virtual environment:
+Install the published package with pip:
+
+```bash
+python -m pip install eggsearch
+```
+
+ARMv7 SBC support is experimental; require a prebuilt wheel and do not build
+the source distribution on-device:
+
+```bash
+python -m pip install --only-binary=:all: eggsearch
+```
+
+To build and install from this checkout for development, use Rust 1.89,
+CPython 3.11–3.15, and an active virtual environment:
 
 ```bash
 python -m venv .venv

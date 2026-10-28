@@ -19,13 +19,13 @@ superseded as the qualification basis by M008 advisory remediation and
 symlink containment at `plans/closure/python-native-library/008-status.md`
 (candidate `067468a`, fully-green run `38641009246`).
 
-A separate **active PyPI distribution workstream** (not a reopening of M001–M008)
-is registered at `plans/subsystems/python-pypi-distribution-roadmap.md`.
-It prepares CPython 3.11–3.15 ABI3 support, hosted prebuilt ARMv7/SBC wheels,
-first controlled PyPI publication, and **post-publication** physical-SBC
-benchmarking. No device-local source build or native SBC benchmark is a
-first-release prerequisite; compatible SBC installs must use the published
-prebuilt wheel and are labeled experimental pending hardware evidence.
+A separate PyPI distribution workstream (not a reopening of M001–M008) is
+registered at `plans/subsystems/python-pypi-distribution-roadmap.md`. M003
+published `eggsearch==0.4.4` with CPython 3.11–3.15 ABI3 support and hosted
+prebuilt ARMv7 wheels. M004 covers **post-publication** physical-SBC
+benchmarking. No device-local source build or native SBC benchmark was a
+first-release prerequisite; ARMv7 installs use the published prebuilt wheel
+and remain experimental pending hardware evidence.
 
 
 ## Rust operation facade
@@ -70,19 +70,21 @@ out with `debug_assertions` off and never ships in release wheels.
 Milestone status and exact-candidate evidence live in
 `plans/registry.md` and `plans/closure/python-native-library/`. A compiled
 extension alone is not evidence of a supported Python consumer. Wheel support
-is limited to targets with native install and runtime qualification, and
-publication requires separate authorization.
+is limited to targets with native install and runtime qualification. Python
+publication is separate from Rust crate and Eggpack binary releases and uses
+the manually dispatched OIDC workflow.
 
-The active PyPI distribution candidate uses PyO3's `abi3-py311` stable ABI.
-Its release matrix builds a manylinux2014 Linux x86_64/aarch64 wheel, macOS
-x86_64/arm64 wheels, and a Windows x86_64 wheel, then installs each exact
-artifact on CPython 3.11–3.15 in separate consumer jobs. These platform claims
-remain conditional on the matching exact-candidate matrix jobs passing. An sdist
+The published PyPI distribution uses PyO3's `abi3-py311` stable ABI. Its
+release matrix built a manylinux2014 Linux x86_64/aarch64 wheel, macOS
+x86_64/arm64 wheels, a Windows x86_64 wheel, and an experimental ARMv7
+hard-float wheel; all six passed exact-candidate qualification and public
+binary-only consumer installs. An sdist
 rebuild uses the binding and root Cargo manifests from clean extraction; it can
 build offline with locked crates already cached, otherwise Cargo registry
 access is required. PyPy, free-threaded CPython, and Windows ARM64 are outside
-the support matrix. ARMv7 requires its separate experimental wheel and
-emulated installed-wheel qualification before it may be listed as supported.
+the support matrix. ARMv7 has an experimental `manylinux_2_28_armv7l`
+hard-float wheel with emulated public installation; physical hardware evidence
+is pending through M004.
 
 The public Python `AsyncEggsearch` wrapper adds `async with`, `aclose()`, and
 the ten named keyword methods over the generic native `execute` call. Request

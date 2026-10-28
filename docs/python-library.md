@@ -3,7 +3,19 @@
 The native Python package wraps the same Rust SDK operations used by Eggsearch's
 MCP tools. It runs in-process and does not launch an Eggsearch executable, MCP
 server, or listener. The package is an independent PyO3 extension under
-`bindings/python`; it is not published to PyPI yet.
+`bindings/python` and is published separately from the Rust crate and binaries.
+
+Install it from PyPI:
+
+```bash
+python -m pip install eggsearch
+```
+
+On ARMv7 SBCs, require a compatible prebuilt wheel:
+
+```bash
+python -m pip install --only-binary=:all: eggsearch
+```
 
 ## Build and use locally
 
@@ -19,12 +31,10 @@ python -m pytest -q bindings/python/tests
 pyright bindings/python/python/eggsearch bindings/python/examples
 ```
 
-No Python runtime dependencies are required. The candidate distribution and
-import name are both `eggsearch`, and the Python package version tracks the root
-Eggsearch version as a starting point for synchronized candidate artifacts.
-PyPI's project JSON endpoint returned 404 for `eggsearch` on 2026-10-14. The
-package remains unpublished, and name availability must be rechecked
-immediately before any separately authorized publication.
+No Python runtime dependencies are required. The distribution and import name
+are both `eggsearch`. The first public Python distribution is version 0.4.4;
+Python package publication is a separate release from the Rust crate and
+Eggpack binary assets.
 
 ## Client API
 
@@ -122,24 +132,21 @@ remote source text uses `external_untrusted`. Preserve the `trust` and
 ## Compatibility and features
 
 The binding enables PyO3's `abi3-py311` stable ABI, targeting GIL-enabled
-CPython 3.11 and newer. The active PyPI distribution qualification targets
-CPython 3.11 through 3.15 on each supported platform; only candidates that pass
-the exact 25-cell workflow matrix qualify. Linux wheels use the manylinux2014
-baseline; native targets are Linux x86_64 and aarch64, macOS x86_64 and arm64,
-and Windows x86_64. CI builds on each target and installs each exact wheel on
-all five interpreters without installing Rust in the consumer job. These
-claims remain conditional on the corresponding exact-candidate jobs passing.
+CPython 3.11 and newer. Version 0.4.4 passed the exact 25-cell CPython
+3.11–3.15 workflow matrix and public binary-only consumer installs. Linux wheels
+use the manylinux2014 baseline; native targets are Linux x86_64 and aarch64,
+macOS x86_64 and arm64, and Windows x86_64. CI builds on each target and
+installs each exact wheel on all five interpreters without source builds in the
+consumer job. The exact candidate and public-consumer evidence is recorded in
+the M003 closure.
 
-PyPy, free-threaded CPython, and Windows ARM64 are not claimed. ARMv7 is
-planned as experimental SBC support only after its separate build and emulated
-installed-wheel qualification passes. The release candidate uses a pinned
-manylinux cross toolchain and targets the `manylinux_2_28_armv7l` compatibility
-tag; its glibc floor and hard-float ABI must pass artifact audit and emulated
-installation before publication. That support is limited to ARMv7 hard-float
-Linux with glibc 2.28 or newer. ARMv6, soft-float, Windows ARM64, and Alpine or
-other musl systems are not included. After the first release appears on PyPI,
-SBC users must require a wheel so pip fails on an unsupported target instead
-of trying to compile from source:
+PyPy, free-threaded CPython, and Windows ARM64 are not claimed. ARMv7 support is
+experimental SBC support, qualified by a `manylinux_2_28_armv7l` hard-float
+wheel, an ELF audit, and emulated public installation. It supports ARMv7
+hard-float Linux with glibc 2.28 or newer; physical board compatibility and
+performance remain unmeasured. ARMv6, soft-float, Windows ARM64, and Alpine or
+other musl systems are not included. SBC users must require a wheel so pip fails
+on an unsupported target instead of trying to compile from source:
 
 ```bash
 python -m pip install --only-binary=:all: eggsearch
@@ -157,9 +164,8 @@ An sdist build requires Rust 1.89, a C toolchain, and the Cargo dependencies in
 `bindings/python/Cargo.lock`. It can build offline when those locked crate
 sources are already in Cargo's local cache; a fresh build must be able to fetch
 them from Cargo registries. Native wheels avoid those build requirements at
-install and runtime. After the M003 first publication is verified, upgrade
-with `python -m pip install --upgrade eggsearch` and remove with
-`python -m pip uninstall eggsearch`.
+install and runtime. Upgrade with `python -m pip install --upgrade eggsearch`
+and remove with `python -m pip uninstall eggsearch`.
 
 ## Post-publication SBC benchmark
 
@@ -168,12 +174,13 @@ the exact public wheel with `--only-binary=:all:`, then run the standard-library
 harness outside the repository checkout:
 
 ```bash
-python -m pip install --only-binary=:all: --report install-report.json eggsearch==VERSION
-python -m pip download --only-binary=:all: --no-deps --dest wheelhouse eggsearch==VERSION
+python -m pip download --only-binary=:all: --no-deps --dest wheelhouse eggsearch==0.4.4
+python -m pip install --only-binary=:all: --no-deps --report install-report.json eggsearch==0.4.4
 python /path/to/eggsearch/bindings/python/scripts/smoke_installed_wheel.py
 python /path/to/eggsearch/bindings/python/benchmarks/sbc_runtime.py \
-  --version VERSION --wheel /path/to/wheelhouse/eggsearch-*.whl \
-  --pip-report install-report.json
+  --version 0.4.4 --source-sha 1135608af5d625cd72db6704adf3bcabd1a58ab1 \
+  --wheel /path/to/wheelhouse/eggsearch-0.4.4-*.whl \
+  --pip-report install-report.json --output sbc-runtime.json
 ```
 
 The harness verifies that the wheel matches the public PyPI URL and SHA-256 in
