@@ -19,6 +19,15 @@ superseded as the qualification basis by M008 advisory remediation and
 symlink containment at `plans/closure/python-native-library/008-status.md`
 (candidate `067468a`, fully-green run `38641009246`).
 
+A separate **active PyPI distribution workstream** (not a reopening of M001–M008)
+is registered at `plans/subsystems/python-pypi-distribution-roadmap.md`.
+It prepares CPython 3.11–3.15 ABI3 support, hosted prebuilt ARMv7/SBC wheels,
+first controlled PyPI publication, and **post-publication** physical-SBC
+benchmarking. No device-local source build or native SBC benchmark is a
+first-release prerequisite; compatible SBC installs must use the published
+prebuilt wheel and are labeled experimental pending hardware evidence.
+
+
 ## Rust operation facade
 
 `src/sdk.rs` owns the narrow `EggsearchClient`, canonical `ToolName` mapping,
