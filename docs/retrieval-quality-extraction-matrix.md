@@ -13,6 +13,8 @@ This report records the source-build comparison for M002. The offline tests use 
 
 Feature fingerprints are the four exact Cargo feature sets above. The combined build's `--version` startup was below the 0.01 s resolution of `/usr/bin/time`, with 6,912 KiB maximum RSS for that short CLI process. This is a version-command observation, not a cold fetch or browser-startup measurement. Size figures are stripped release executables on this Linux x86_64 host; they do not include Chrome or external extensions.
 
+Optional dependency versions resolved by `Cargo.lock`: `lopdf 0.42.0` and `chromiumoxide 0.9.1`.
+
 ## Controlled case classification
 
 | Case | HTTP only | PDF | Browser | PDF + browser |

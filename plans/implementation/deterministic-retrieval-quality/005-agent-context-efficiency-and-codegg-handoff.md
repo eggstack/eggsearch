@@ -1,6 +1,6 @@
 # M005 — Agent Context Efficiency and CodeGG Consumer Handoff
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M005
 Primary class: capability/infrastructure (Eggsearch contract; CodeGG adoption consumer-owned)
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
@@ -39,3 +39,7 @@ No new public tool, no breaking schema, no LLM in Eggsearch, no mandatory token 
 ## Acceptance and closure
 
 Provide an exact-SHA before/after per-task artifact containing context/round-trip/quality metrics, preserved trust and failure states, and a clear CodeGG integration contract. Existing default backwards compatibility and optional features remain intact. A CodeGG consumer implementation cannot be marked complete solely from Eggsearch work; record its status separately. Stop if proposal requires a model in Eggsearch, exposes secrets, makes auth/scope weaker, hides callable tools, or suppresses important evidence in compact mode. Closure `plans/closure/deterministic-retrieval-quality/005-status.md` includes measurements, changed/unchanged contract fingerprint and consumer handoff.
+
+## Outcome
+
+Closed against candidate `5c1f0d2c846456d5cf8bdb9afb015123ca479034`. The per-case M001 host simulation records serialized JSON bytes, retained fixture results, failure/absence signals, estimated tokens and deterministic tool-call counts for diagnostic, standard and compact modes. No public tool, schema, default projection, or host orchestration behavior changed. CodeGG consumer acceptance is handed off in `docs/retrieval-quality-codegg-handoff.md` and remains consumer-owned.
