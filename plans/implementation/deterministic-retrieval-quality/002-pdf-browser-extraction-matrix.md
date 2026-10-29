@@ -1,11 +1,11 @@
 # M002 — Optional PDF and Browser Extraction Comparison Matrix
 
-Status: blocked on M001 baseline contract
+Status: ready
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M002
 Primary class: infrastructure; feature-specific capability evaluation
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
 References: `plans/000-long-term-specification.md` ``4, 6-9; ADR-0002, ADR-0006; `docs/features.md`; `architecture/fetch.md`; `architecture/hardening.md`.
-Dependencies: hard M001; operational system Chrome/Chromium for real browser test. Upstream chromiumoxide dependency cleanup in repository-hardening M006 is independent and **not a blocker** for testing existing browser functionality.
+Dependencies: hard M001 (closed at `310611b733c2067ddeab184618156ef072934a6e`); operational system Chrome/Chromium for real browser test. Upstream chromiumoxide dependency cleanup in repository-hardening M006 is independent and **not a blocker** for testing existing browser functionality.
 
 ## Objective
 

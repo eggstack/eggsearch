@@ -1,11 +1,11 @@
 # M005 — Agent Context Efficiency and CodeGG Consumer Handoff
 
-Status: blocked on M001 baseline contract
+Status: ready
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M005
 Primary class: capability/infrastructure (Eggsearch contract; CodeGG adoption consumer-owned)
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
 References: `plans/000-long-term-specification.md` ``1-4, 7-9; ADR-0001, ADR-0005 and ADR-0006; `docs/tool-matrix.md`; `architecture/codegg-contract.md`; `docs/codegg-integration.md`.
-Dependencies: hard M001; interface: closed MCP tool-surface consolidation M001-M007 and established CodeGG progressive-disclosure/tool-hydration protocol (confirm current downstream implementation before proposing consumer changes). Soft M004 for relevance improvements.
+Dependencies: hard M001 (closed at `310611b733c2067ddeab184618156ef072934a6e`); interface: closed MCP tool-surface consolidation M001-M007 and established CodeGG progressive-disclosure/tool-hydration protocol (confirm current downstream implementation before proposing consumer changes). Soft M004 for relevance improvements.
 
 ## Objective
 

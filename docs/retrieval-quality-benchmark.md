@@ -45,7 +45,7 @@ must not be reported as a measured Eggsearch quality baseline.
 
 ### Frozen synthetic evaluator baseline
 
-M001 candidate SHA: `df78a9e9ff2898bbf0a6ae3eb0321cd9e655eb64`.
+M001 candidate SHA: `310611b733c2067ddeab184618156ef072934a6e`.
 Pre-M001 production baseline SHA: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`.
 Corpus: `retrieval-quality-v1`, fingerprint `fnv1a64:b882ce3d844e8ace`.
 Evaluator: `retrieval-quality-evaluator-v1`, schema version 1, mock feature.

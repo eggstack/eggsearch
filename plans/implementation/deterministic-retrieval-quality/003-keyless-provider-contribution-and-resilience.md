@@ -1,11 +1,11 @@
 # M003 — Keyless Provider Contribution, Fault Isolation and Bounded Routing
 
-Status: blocked on M001 baseline contract
+Status: ready
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M003
 Primary class: infrastructure; capability only if measured routing improvement lands
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
 References: `plans/000-long-term-specification.md` ``3, 5, 7-9; ADR-0006; `architecture/engines.md`; `src/meta/dispatch/`; `src/meta/provider_diagnostics.rs`.
-Dependencies: hard M001; no paid provider or external service hard prerequisite.
+Dependencies: hard M001 (closed at `310611b733c2067ddeab184618156ef072934a6e`); no paid provider or external service hard prerequisite.
 
 ## Objective
 

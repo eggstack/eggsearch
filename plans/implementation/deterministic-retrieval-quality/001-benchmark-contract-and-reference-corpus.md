@@ -1,6 +1,6 @@
 # M001 — Comparative Retrieval Benchmark Contract and Gold Corpus
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M001
 Primary class: infrastructure
 Baseline: `eggstack/eggsearch@7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
@@ -10,6 +10,8 @@ Dependencies: no open hard/interface prerequisites. Prior tool-surface M006 (too
 ## Objective
 
 Create a benchmark **of retrieval quality**, not tool selection. Ship a deterministic offline evaluator, a rights-safe gold dataset, and a strictly opt-in live observation runner that can compare keyless Eggsearch, credentialed Eggsearch, SearXNG, and direct supported providers without requiring external inference or billing for regular tests. Establish an immutable reference baseline before M002-M005 changes.
+
+Closure evidence: `plans/closure/deterministic-retrieval-quality/001-status.md`.
 
 ## Current evidence
 

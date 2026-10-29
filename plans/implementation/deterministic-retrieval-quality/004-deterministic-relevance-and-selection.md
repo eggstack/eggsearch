@@ -1,11 +1,11 @@
 # M004 — Deterministic Relevance, Passage Selection and Ranking Experiments
 
-Status: blocked on M001 baseline contract
+Status: ready
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M004
 Primary class: capability if measured lift is accepted; otherwise infrastructure evaluation
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
 References: `plans/000-long-term-specification.md` ``3, 4, 7-9; ADR-0001 and ADR-0006; `architecture/core.md`; `architecture/local-workspace.md`; `src/meta/fetch_ranking.rs`; `src/core/focus.rs`.
-Dependencies: hard M001; soft M002 (feature-extraction quality) and M003 (marginal provider observations). No LSP/CodeGG changes are prerequisites.
+Dependencies: hard M001 (closed at `310611b733c2067ddeab184618156ef072934a6e`); soft M002 (feature-extraction quality) and M003 (marginal provider observations). No LSP/CodeGG changes are prerequisites.
 
 ## Objective
 
