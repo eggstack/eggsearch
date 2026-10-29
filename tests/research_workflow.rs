@@ -5609,6 +5609,7 @@ async fn batch_fetch_empty_items_returns_validation_error() {
     );
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
 async fn batch_fetch_disabled_by_policy_returns_error() {
     let state = fetch_disabled_state();

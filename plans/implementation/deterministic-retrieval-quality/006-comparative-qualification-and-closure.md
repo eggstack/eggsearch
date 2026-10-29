@@ -1,6 +1,6 @@
 # M006 — Cross-Variant Comparative Qualification, Findings and Closure
 
-Status: blocked on M002-M005
+Status: active (integrated operational qualification and closure)
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M006
 Primary class: infrastructure and polish
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b` (rebase exact candidate before qualification)

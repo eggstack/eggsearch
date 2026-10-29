@@ -883,7 +883,8 @@ async fn retrieval_quality_live_observation() {
         .await;
         let elapsed_ms = started.elapsed().as_millis();
         latencies.push(elapsed_ms);
-        let failed = response.is_err();
+        let tool_error_code = response.as_ref().err().map(|error| error.code().as_str());
+        let failed = tool_error_code.is_some();
         let payload =
             response.unwrap_or_else(|error| serde_json::json!({"error": error.to_string()}));
         let bytes = serde_json::to_vec(&payload).expect("response serializes");
@@ -924,6 +925,22 @@ async fn retrieval_quality_live_observation() {
             .map(Vec::as_slice)
             .unwrap_or_default();
         let result_count = result_items.len();
+        let source_hashes = result_items
+            .iter()
+            .filter_map(|item| item["url"].as_str())
+            .map(canonical_url)
+            .map(|url| fingerprint(url.as_bytes()))
+            .collect::<Vec<_>>();
+        let source_contributions = result_items
+            .iter()
+            .filter_map(|item| {
+                let url = item["url"].as_str()?;
+                Some(serde_json::json!({
+                    "source_hash": fingerprint(canonical_url(url).as_bytes()),
+                    "providers": item["providers"]
+                }))
+            })
+            .collect::<Vec<_>>();
         let unique_sources = result_items
             .iter()
             .filter_map(|item| item["url"].as_str())
@@ -936,17 +953,45 @@ async fn retrieval_quality_live_observation() {
                 .iter()
                 .any(|gold| matches_case_document(case, gold, result))
         });
+        let matched_relevant_documents = observed
+            .results
+            .iter()
+            .flat_map(|result| {
+                observed
+                    .relevant_documents
+                    .iter()
+                    .filter(move |gold| matches_case_document(case, gold, result))
+                    .map(|gold| gold.id.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        let provider_failures = payload["providers_failed"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|failure| {
+                serde_json::json!({
+                    "id": failure["id"],
+                    "error_class": failure["error_class"]
+                })
+            })
+            .collect::<Vec<_>>();
         records.push(serde_json::json!({
             "case_id": case.id,
             "providers": provider_ids,
+            "providers_queried": payload["providers_queried"],
+            "tool_error_code": tool_error_code,
             "elapsed_ms": elapsed_ms,
             "attempt_count": attempt_count,
             "retry_count": null,
             "provider_failure_count": provider_failure_count,
+            "provider_failures": provider_failures,
             "timeout_count": payload["retrieval_summary"]["timed_out_count"],
             "deadline_interrupted_count": payload["retrieval_summary"]["deadline_interrupted_count"],
             "result_count": result_count,
             "unique_source_count": unique_sources,
+            "canonical_source_hashes": source_hashes,
+            "source_contributions": source_contributions,
+            "matched_relevant_document_ids": matched_relevant_documents,
             "first_useful_evidence_latency_ms": if useful_evidence {Some(elapsed_ms)} else {None::<u128>},
             "response_bytes": bytes.len(),
             "estimated_tokens_from_response_bytes": bytes.len().div_ceil(4),

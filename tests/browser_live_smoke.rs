@@ -48,6 +48,41 @@ async fn browser_live_smoke_basic_page() {
 
 #[tokio::test]
 #[ignore]
+async fn browser_live_smoke_javascript_rendered_fixture() {
+    let discovery_state = discover_browser(None);
+    let discovery = discovery_state.discovery().cloned();
+    let Some(discovery) = discovery else {
+        panic!("a configured Chrome or Chromium executable is required");
+    };
+
+    let config = BrowserConfig {
+        enabled: true,
+        startup_timeout_ms: 15_000,
+        navigation_timeout_ms: 20_000,
+        post_load_wait_ms: 2_000,
+        ..Default::default()
+    };
+    let lifecycle = Arc::new(BrowserLifecycle::new(Some(discovery), config.clone()));
+    let result = browser_fetch(
+        &lifecycle,
+        "https://scrapifydatalabs.com/playground/js-rendered",
+        &config,
+        false,
+    )
+    .await;
+    let response = result.expect("public JavaScript-rendered fixture loads");
+    assert_eq!(
+        response.response.transport,
+        eggsearch::fetch::browser::types::FetchTransportKind::Browser
+    );
+    let body = String::from_utf8_lossy(&response.response.body);
+    assert!(body.contains("product-card"));
+    assert!(body.contains("data-ready"));
+    lifecycle.close().await;
+}
+
+#[tokio::test]
+#[ignore]
 async fn browser_live_smoke_blocks_private_network() {
     let config = BrowserConfig::default();
     let lifecycle = Arc::new(BrowserLifecycle::new(None, config.clone()));

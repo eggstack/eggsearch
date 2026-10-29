@@ -1,3 +1,5 @@
+#![cfg(feature = "mock")]
+
 //! Focused batch evidence retrieval contract.
 //!
 //! Regression provenance: phase-14 retrieval-ergonomics workstream.
