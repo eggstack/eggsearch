@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "provenance": "Original synthetic provider assignment for deterministic evaluator qualification; no upstream observations are represented.",
+  "task": {
+    "id": "generic-web-provider-overlap-001",
+    "category": "generic_web",
+    "query": "compare bounded response compression guidance",
+    "relevant_documents": ["compression-guide", "compression-configuration", "compression-protocol"]
+  },
+  "providers": [
+    {"id": "duckduckgo", "outcome": "success", "documents": ["compression-guide", "unjudged-rust-guide"]},
+    {"id": "startpage", "outcome": "success", "documents": ["compression-guide", "compression-configuration"]},
+    {"id": "yahoo", "outcome": "success", "documents": ["compression-protocol", "compression-configuration"]},
+    {"id": "brave_html", "outcome": "not_selected", "documents": []},
+    {"id": "mojeek", "outcome": "not_selected", "documents": []},
+    {"id": "searxng", "outcome": "not_configured", "documents": []}
+  ]
+}

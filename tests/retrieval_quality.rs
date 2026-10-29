@@ -6,6 +6,8 @@ const CORPUS: &str = include_str!("fixtures/retrieval_quality/cases.json");
 const K: usize = 5;
 const PASSAGE_BUDGET_CHARS: usize = 1200;
 const EVALUATOR_REVISION: &str = "retrieval-quality-evaluator-v1";
+const PROVIDER_SCENARIO: &str =
+    include_str!("fixtures/retrieval_quality/provider_contribution.json");
 
 #[derive(Debug, Deserialize)]
 struct Corpus {
@@ -493,6 +495,104 @@ fn retrieval_quality_corpus_and_metrics_are_reproducible() {
             held_out
         ))
         .unwrap()
+    );
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderScenario {
+    schema_version: u32,
+    provenance: String,
+    task: ProviderTask,
+    providers: Vec<ProviderEnvelope>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderTask {
+    id: String,
+    category: String,
+    query: String,
+    relevant_documents: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderEnvelope {
+    id: String,
+    outcome: String,
+    documents: Vec<String>,
+}
+
+#[test]
+fn synthetic_provider_contribution_and_overlap_are_reproducible() {
+    let scenario: ProviderScenario = serde_json::from_str(PROVIDER_SCENARIO).unwrap();
+    assert_eq!(scenario.schema_version, 1);
+    assert!(scenario.provenance.contains("synthetic"));
+    assert_eq!(scenario.task.id, "generic-web-provider-overlap-001");
+    assert_eq!(scenario.task.category, "generic_web");
+    assert!(!scenario.task.query.is_empty());
+    let relevant: HashSet<&str> = scenario
+        .task
+        .relevant_documents
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let mut individual_hits = BTreeMap::new();
+    let mut combined = HashSet::new();
+    for provider in scenario.providers.iter().filter(|p| p.outcome == "success") {
+        let hits: HashSet<&str> = provider
+            .documents
+            .iter()
+            .map(String::as_str)
+            .filter(|id| relevant.contains(id))
+            .collect();
+        individual_hits.insert(provider.id.as_str(), hits.len());
+        combined.extend(hits);
+    }
+    assert_eq!(individual_hits.get("duckduckgo"), Some(&1));
+    assert_eq!(individual_hits.get("startpage"), Some(&2));
+    assert_eq!(individual_hits.get("yahoo"), Some(&2));
+    assert_eq!(combined.len(), 3);
+    assert_eq!(combined.len() as f64 / relevant.len() as f64, 1.0);
+    let provider_hits: Vec<HashSet<&str>> = scenario
+        .providers
+        .iter()
+        .filter(|p| p.outcome == "success")
+        .map(|provider| {
+            provider
+                .documents
+                .iter()
+                .map(String::as_str)
+                .filter(|id| relevant.contains(id))
+                .collect()
+        })
+        .collect();
+    let overlap: HashSet<&str> = provider_hits
+        .iter()
+        .flat_map(|hits| hits.iter().copied())
+        .filter(|id| {
+            provider_hits
+                .iter()
+                .filter(|hits| hits.contains(id))
+                .count()
+                > 1
+        })
+        .collect();
+    assert_eq!(overlap.len(), 2);
+    let selected: Vec<&str> = scenario
+        .providers
+        .iter()
+        .filter(|p| p.outcome == "success")
+        .map(|p| p.id.as_str())
+        .collect();
+    assert_eq!(selected, ["duckduckgo", "startpage", "yahoo"]);
+    println!(
+        "provider-contribution-fixture task={} category={} providers={:?} individual_relevant_hits={:?} combined_recall={}/{} overlap_relevant_documents={} upstream_observation=false",
+        scenario.task.id,
+        scenario.task.category,
+        selected,
+        individual_hits,
+        combined.len(),
+        relevant.len(),
+        overlap.len()
     );
 }
 
