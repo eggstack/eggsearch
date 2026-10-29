@@ -117,6 +117,22 @@ report. Do not commit raw upstream content. A 429, timeout, provider error, or
 zero-result outcome is an observed provider outcome and never evidence of
 expected absence.
 
+## External independently judged cohort
+
+The separate M007 corrective adds 300 SciFact test claims and 339 published
+positive evidence judgments in
+`tests/fixtures/retrieval_quality/scifact_test_queries.jsonl` and
+`tests/fixtures/retrieval_quality/scifact_test_qrels.jsonl`, with query and
+paper-title attribution and no abstract text. Its bounded, opt-in repeated
+runner is `scripts/run_retrieval_quality_external_live.py`. It reports title
+matched hit@k/recall over known positive judgments and leaves unjudged results
+out of precision claims. Successful zero-result trials count as misses;
+provider errors and timeouts remain separate outcomes. The first small repeated
+DuckDuckGo cohort and the current SearXNG/provider limitations are recorded in
+`docs/retrieval-quality-external-live.md`; they are not a broad quality ranking.
+This is a new follow-up to closed M006, not a reinterpretation of its synthetic
+contract corpus or historical comparison.
+
 ## Handoff contract
 
 M002–M005 can add versioned cases and separate recorded envelopes only when

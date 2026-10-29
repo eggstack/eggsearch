@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "source_sha": "92b0a27737e21fb42cdcf8a984cab6a04931121f",
+  "observed_at_utc": "2026-10-29T20:54Z",
+  "query_id": "rfc_9110_404_410",
+  "request_count": 2,
+  "instances_source": "https://searx.space/",
+  "attempts": [
+    {
+      "instance": "https://search.jeremyh.xyz",
+      "instance_directory_version": "2026.10.28+c360868e5",
+      "outcome": "parse_error",
+      "detail": "Eggsearch received a successful HTTP response, but its body was not JSON"
+    },
+    {
+      "instance": "https://searx.ononoki.org",
+      "instance_directory_version": "2026.10.29+cff884f98",
+      "outcome": "rate_limited",
+      "http_status": 429
+    }
+  ],
+  "local_container_runtimes": {
+    "docker": "not installed",
+    "podman": "not installed"
+  },
+  "classification": "blocked attempts only; no SearXNG quality baseline"
+}

@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "source_sha": "92b0a27737e21fb42cdcf8a984cab6a04931121f",
+  "observed_at_utc": "2026-10-29T20:50Z",
+  "host": "local macOS host",
+  "feature_arm": "installed target/debug/eggsearch 0.4.4; exact binary SHA in CodeGG consumer closure",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "max_results": 5,
+  "timeout_seconds_per_process": 18,
+  "providers": [
+    "duckduckgo",
+    "startpage",
+    "yahoo"
+  ],
+  "provider_query_attempts": 12,
+  "query_ids": [
+    "rfc_9110_404_410",
+    "tokio_mutex"
+  ],
+  "repetitions_per_provider_query": 2,
+  "sensitive_or_source_content_included": false,
+  "rows": [
+    {
+      "provider": "duckduckgo",
+      "case_id": "rfc_9110_404_410",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 5,
+      "result_hosts": [
+        "errorcodedecoder.com",
+        "www.greenbytes.de",
+        "www.iana.org",
+        "www.ietf.org",
+        "www.rfc-editor.org"
+      ],
+      "raw_response_sha256": "b6f54558eac66e6d6464e3465a8c3000c731f2a49706e07c8e866935c06b496e"
+    },
+    {
+      "provider": "duckduckgo",
+      "case_id": "rfc_9110_404_410",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 5,
+      "result_hosts": [
+        "errorcodedecoder.com",
+        "www.greenbytes.de",
+        "www.iana.org",
+        "www.ietf.org",
+        "www.rfc-editor.org"
+      ],
+      "raw_response_sha256": "4af2345373a338d1abb3cd472ab7c329c3ea932ae8b1ed38065c3a0690ca14b7"
+    },
+    {
+      "provider": "duckduckgo",
+      "case_id": "tokio_mutex",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 5,
+      "result_hosts": [
+        "doc.rust-lang.org",
+        "docs.rs",
+        "stackoverflow.com",
+        "www.rustfaq.org"
+      ],
+      "raw_response_sha256": "57d8fd89c48b550615380517f16d6cb76be642b5d3af1c3a2378e94f52f6baa9"
+    },
+    {
+      "provider": "duckduckgo",
+      "case_id": "tokio_mutex",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 5,
+      "result_hosts": [
+        "docs.rs",
+        "github.com",
+        "stackoverflow.com",
+        "www.rustfaq.org"
+      ],
+      "raw_response_sha256": "77c8727f6f6fdbf317bc952ffde5bc16e204e44a3286594a0ba1192b16dff2d8"
+    },
+    {
+      "provider": "startpage",
+      "case_id": "rfc_9110_404_410",
+      "repetition": 1,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "0ab589b3d46be60095a56e16d40128cbb8e842eebbba132f1fa5a38328ee068a"
+    },
+    {
+      "provider": "startpage",
+      "case_id": "rfc_9110_404_410",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "0ab589b3d46be60095a56e16d40128cbb8e842eebbba132f1fa5a38328ee068a"
+    },
+    {
+      "provider": "startpage",
+      "case_id": "tokio_mutex",
+      "repetition": 1,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "a9dfdea3509081642312e60c3d6203243b62f057cd2820f6bb1537a0eb6bbd3e"
+    },
+    {
+      "provider": "startpage",
+      "case_id": "tokio_mutex",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "warnings": [],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "a9dfdea3509081642312e60c3d6203243b62f057cd2820f6bb1537a0eb6bbd3e"
+    },
+    {
+      "provider": "yahoo",
+      "case_id": "rfc_9110_404_410",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "error_class": "http_status",
+          "id": "yahoo"
+        }
+      ],
+      "warnings": [
+        "[yahoo]"
+      ],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "d96e5bcf415d9641f2b1b56217b0dc7ea198dadefcc6574aa0cba99b992e9fc4"
+    },
+    {
+      "provider": "yahoo",
+      "case_id": "rfc_9110_404_410",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "error_class": "http_status",
+          "id": "yahoo"
+        }
+      ],
+      "warnings": [
+        "[yahoo]"
+      ],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "d96e5bcf415d9641f2b1b56217b0dc7ea198dadefcc6574aa0cba99b992e9fc4"
+    },
+    {
+      "provider": "yahoo",
+      "case_id": "tokio_mutex",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "error_class": "http_status",
+          "id": "yahoo"
+        }
+      ],
+      "warnings": [
+        "[yahoo]"
+      ],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "933fc87f601a1a752d5d366bb7e6ca2b32907d4429ad5414a0323666ff19800e"
+    },
+    {
+      "provider": "yahoo",
+      "case_id": "tokio_mutex",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "error_class": "http_status",
+          "id": "yahoo"
+        }
+      ],
+      "warnings": [
+        "[yahoo]"
+      ],
+      "result_count": 0,
+      "result_hosts": [],
+      "raw_response_sha256": "933fc87f601a1a752d5d366bb7e6ca2b32907d4429ad5414a0323666ff19800e"
+    }
+  ],
+  "binary_sha256": "24ab65f3a71dbb36dee85fa415e07edd13b031d6bf0a2934fe7b700d025d0cb2"
+}
