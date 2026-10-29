@@ -1,11 +1,13 @@
 # M011 — macOS Symlink Containment and Test Portability Corrective
 
-Status: ready
+Status: closed
 Source roadmap: `plans/subsystems/repository-hardening-roadmap.md`
-Corrects: deterministic-retrieval-quality M006, conditionally closed at
+Corrects: deterministic-retrieval-quality M006, originally conditionally closed at
 `plans/closure/deterministic-retrieval-quality/006-status.md`
 Primary class: security and portability corrective
 Baseline: `10b06ab76434983cd9942e81bf2090fc9d6e31cc`
+Implementation: `99316f31caf37ad2165cd5e822316942faf20c6f`
+Closure: `plans/closure/repository-hardening/011-status.md`
 
 ## Objective
 

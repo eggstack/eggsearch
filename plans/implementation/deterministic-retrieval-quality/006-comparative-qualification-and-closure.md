@@ -1,6 +1,6 @@
 # M006 — Cross-Variant Comparative Qualification, Findings and Closure
 
-Status: conditionally closed (comparative evidence complete; macOS canonical gate corrective outstanding)
+Status: closed
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M006
 Primary class: infrastructure and polish
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b` (rebase exact candidate before qualification)
@@ -30,6 +30,6 @@ Publish a defensible, reproducible record of whether Eggsearch's deterministic m
 
 ## Acceptance criteria, blockers and report
 
-Publish `docs/retrieval-quality-comparison.md`, dataset/method version, per-category metrics, full feature-arm status, resource tradeoffs and clearly separated economic/latency costs. Provide exact commit/test logs and live trial time windows. Report what was actually observed; make no unsupported universal superiority claims. The report and closure record are complete for candidate `10b06ab76434983cd9942e81bf2090fc9d6e31cc`; `make check` is red on two macOS tests, one exposing an outside-root symlink traversal when following is enabled. This residual remains conditional under the separately registered repository-hardening M011 corrective. No ranking or provider change was justified.
+Publish `docs/retrieval-quality-comparison.md`, dataset/method version, per-category metrics, full feature-arm status, resource tradeoffs and clearly separated economic/latency costs. Provide exact commit/test logs and live trial time windows. Report what was actually observed; make no unsupported universal superiority claims. The comparative evidence is from candidate `10b06ab76434983cd9942e81bf2090fc9d6e31cc`; the discovered macOS symlink containment and root-path test failures were corrected and qualified at `99316f31caf37ad2165cd5e822316942faf20c6f` under repository-hardening M011. The corrected candidate passes `make check`. No ranking or provider change was justified.
 
 Stop on attempts to require inference, remove keyless HTML engines, strip PDF/browser support, bypass challenge protections, add automatic paid calls, silently alter the ten tools/CodeGG policy or weaken published release compatibility. The terminal closure record `plans/closure/deterministic-retrieval-quality/006-status.md` must include requirement-to-evidence table, commands and outcomes, release compatibility, critical/medium/low residuals, recommendation, and handoff of any independent cross-repo work.

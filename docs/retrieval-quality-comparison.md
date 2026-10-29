@@ -1,11 +1,12 @@
 # Retrieval Quality and Comparative Qualification
 
-This report closes the M006 comparison work at candidate
-`10b06ab76434983cd9942e81bf2090fc9d6e31cc`. It records controlled fixture
+This report records M006 comparative evidence from candidate
+`10b06ab76434983cd9942e81bf2090fc9d6e31cc`. It includes controlled fixture
 results, optional live observations, feature builds, browser execution, and the
-platform qualification outcome. M006 is conditionally closed because the
-canonical all-feature test gate fails on this macOS host; the failures and
-corrective handoff are recorded below.
+platform qualification outcome. The initial candidate exposed two macOS test
+failures; repository-hardening M011 corrected and requalified them at candidate
+`99316f31caf37ad2165cd5e822316942faf20c6f`. M006 is fully closed with that
+corrective evidence.
 
 ## Method and scope
 
@@ -106,7 +107,7 @@ Passed on exact candidate `10b06ab76434983cd9942e81bf2090fc9d6e31cc`:
 - Two bounded keyless live provider trials completed; no paid requests were
   enabled.
 
-The canonical `make check` did not pass on this macOS host. Across no-default,
+The initial candidate's canonical `make check` did not pass on this macOS host. Across no-default,
 PDF, browser, combined-feature and all-feature test runs, 3,348–3,484 tests
 passed and the same two tests failed:
 
@@ -118,10 +119,13 @@ passed and the same two tests failed:
    macOS when symlink following was enabled. This is a safety-boundary failure
    requiring corrective implementation and regression evidence.
 
-The repository-hardening corrective plan is registered as M011. Until that
-plan resolves the symlink containment failure and makes the path assertion
-portable, the macOS canonical gate remains red. No production change was made
-to work around or suppress either failure in M006.
+M011 added an early `SafeSymlinkFollowingUnsupported` return on non-Linux Unix
+when following is requested, and the root-scoping test now compares canonical
+filesystem paths. See `plans/closure/repository-hardening/011-status.md` for
+the corrected candidate and verification. The corrected candidate's
+`make check` passed with 3,486 all-feature tests, and the local filesystem
+suite passed under default, PDF, browser, and combined PDF/browser feature
+arms. No ranking or provider-routing behavior changed.
 
 ## Compatibility, costs and limitations
 
@@ -133,7 +137,8 @@ practice page. RSS is for the test command. No paired resource benchmark,
 independent live relevance corpus, paid-provider comparison, or cross-OS green
 canonical gate is claimed.
 
-The M006 result is conditional: the comparative record and exact-candidate
-qualification are complete, while the named macOS repository-hardening
-corrective remains outstanding. No downstream consumer implementation or
-release handoff is required by this no-production-change result.
+M006 is closed. Its diagnostic limitations remain: no independent live gold
+set, paid-provider comparison, configured SearXNG instance, paired extraction
+quality benchmark, or isolated Chrome RSS measurement was produced. No
+downstream consumer implementation or release handoff is required by this
+no-ranking-change result.

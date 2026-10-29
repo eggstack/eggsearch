@@ -1,12 +1,14 @@
 # M006 Comparative Qualification and Closure — Status
 
-Status: conditionally closed (comparative evidence complete; macOS canonical gate has a registered corrective)
+Status: closed
 
 Source plan: `plans/implementation/deterministic-retrieval-quality/006-comparative-qualification-and-closure.md`
 
 Roadmap: `plans/subsystems/deterministic-retrieval-quality-roadmap.md`
 
 Implementation candidate: `10b06ab76434983cd9942e81bf2090fc9d6e31cc`
+
+Corrective qualification candidate: `99316f31caf37ad2165cd5e822316942faf20c6f` (repository-hardening M011)
 
 Report: `docs/retrieval-quality-comparison.md`
 
@@ -19,7 +21,7 @@ Report: `docs/retrieval-quality-comparison.md`
 | Exercise real configured browser rendering | Three ignored JS-rendering smoke runs against a public practice page; each verified inserted DOM content through browser transport | Complete as runtime smoke; not a quality corpus or rights-cleared fixture |
 | Observe bounded keyless live contribution and failures | Two trials, three keyless sources, three cases, max 18 provider-query attempts total, zero billable requests; per-source outcomes recorded | Complete as diagnostic observation; zero judged live relevance hits, so no superiority claim |
 | Reconcile docs and installed compatibility | Python 3.15 matrix and release-version claims corrected in candidate; default CLI and PyPI 0.4.4 wheel smoke passed | Complete; no publication or API change |
-| Run exact-candidate canonical and focused gates | Formatting, clippy, benchmark, docs, packaging, evaluator and focused suites passed; `make check` and all feature suites hit the same two macOS failures | Conditional; corrective M011 registered |
+| Run exact-candidate canonical and focused gates | Candidate `10b06ab` exposed two macOS failures; M011 fixed them and candidate `99316f3` passed `make check`, docs check, and focused feature-arm suites | Complete; see M011 closure |
 
 ## Verification
 
@@ -41,7 +43,7 @@ Passed on `10b06ab76434983cd9942e81bf2090fc9d6e31cc`:
 - Default, PDF, browser and combined release builds; installed CLI and isolated
   Python wheel smoke passed without API keys.
 
-`make check` failed in the library test phase. Direct feature-matrix runs
+On the original comparative candidate `10b06ab76434983cd9942e81bf2090fc9d6e31cc`, `make check` failed in the library test phase. Direct feature-matrix runs
 `cargo test --locked --no-default-features`,
 `cargo test --locked --features pdf`,
 `cargo test --locked --features browser`,
@@ -54,14 +56,13 @@ The passing test counts were 3,348, 3,405, 3,426, 3,483 and 3,484 respectively:
    alias.
 2. `meta::repo_mapper::tests::structure_file_reader_rejects_symlink_escape_even_when_following_is_enabled`:
    an outside-root symlink was followed on macOS when following was enabled.
-   This is a **high residual** because it violates the expected workspace
-   containment boundary. It requires a corrective implementation and
-   regression test before the macOS gate is green.
+   This was a **high-severity finding** because it violated the expected
+   workspace containment boundary. M011 corrected it and added typed
+   regression coverage before the macOS gate passed.
 
-The corrective is registered in
-`plans/implementation/repository-hardening/011-macos-symlink-containment-and-test-portability.md`.
-It owns the safety repair and portable path assertion; M006 does not silently
-absorb that implementation scope.
+Repository-hardening M011 implemented the fail-closed symlink behavior and
+portable canonical-root assertion. Its exact-candidate evidence is in
+`plans/closure/repository-hardening/011-status.md`.
 
 ## Compatibility and residuals
 
@@ -75,10 +76,8 @@ release blockers for this no-change outcome.
 
 ## Disposition and handoff
 
-Conditionally close M006 for its comparative evidence, report, exact-candidate
-feature/browser qualification, compatibility checks, and no-change decision.
-The required condition is successful completion of repository-hardening M011
-and a green macOS canonical gate on the corrected candidate. M011 is the
-separate corrective pass required by the planning process; M006 should be
-updated to fully closed when that condition has evidence. No downstream
-CodeGG implementation is transferred by this closure.
+Close M006 for its comparative evidence, report, feature/browser
+qualification, compatibility checks, and no-change decision. The macOS
+condition was discharged by repository-hardening M011 at
+`99316f31caf37ad2165cd5e822316942faf20c6f`; its canonical gate is green. No
+downstream CodeGG implementation is transferred by this closure.
