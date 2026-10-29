@@ -451,6 +451,7 @@ fn tool_surface_byte_budgets() {
         "must advertise exactly ten stable tools"
     );
     let mut total_bytes = 0usize;
+    let mut core_bytes = 0usize;
     let mut max_desc = 0usize;
     for tool in &tools {
         let desc = tool.description.as_deref().unwrap_or("");
@@ -471,6 +472,12 @@ fn tool_surface_byte_budgets() {
             .expect("tool definition stringifies")
             .len();
         total_bytes += bytes;
+        if matches!(
+            tool.name.as_ref(),
+            "web_search" | "web_fetch" | "repo_search"
+        ) {
+            core_bytes += bytes;
+        }
         println!(
             "tool-surface-bytes tool={} desc_chars={} json_bytes={} est_tokens={}",
             tool.name,
@@ -515,8 +522,9 @@ fn tool_surface_byte_budgets() {
         "tool-surface fingerprint must be deterministic"
     );
     println!(
-        "tool-surface-summary total_bytes={total_bytes} est_tokens={} max_desc={max_desc} instructions_bytes={} max_compact={max_compact} fingerprint={fingerprint}",
+        "tool-surface-summary total_bytes={total_bytes} core_bytes={core_bytes} est_tokens={} core_est_tokens={} max_desc={max_desc} instructions_bytes={} max_compact={max_compact} fingerprint={fingerprint}",
         estimate_tokens(total_bytes),
+        estimate_tokens(core_bytes),
         instructions.len(),
     );
 }

@@ -1,5 +1,9 @@
+use std::collections::HashSet;
+
 use eggsearch::mcp::projection::{project, ResponseDetail};
 use serde_json::{json, Value};
+
+const RETRIEVAL_CASES: &str = include_str!("fixtures/retrieval_quality/cases.json");
 
 fn bytes(v: &Value) -> usize {
     serde_json::to_string(v).unwrap().len()
@@ -405,6 +409,9 @@ fn compact_reduces_bytes_for_representative_payloads() {
     let diag_bytes = bytes(&web);
     let compact_bytes = bytes(&project("web_search", web.clone(), ResponseDetail::Compact));
     let standard_bytes = bytes(&project("web_search", web, ResponseDetail::Standard));
+    println!(
+        "projection-bytes tool=web_search diagnostic={diag_bytes} standard={standard_bytes} compact={compact_bytes}"
+    );
     assert!(
         compact_bytes < diag_bytes,
         "compact {compact_bytes} should be < diagnostic {diag_bytes}"
@@ -430,9 +437,133 @@ fn compact_reduces_bytes_for_representative_payloads() {
     });
     let f_diag = bytes(&fetch);
     let f_compact = bytes(&project("web_fetch", fetch, ResponseDetail::Compact));
+    println!("projection-bytes tool=web_fetch diagnostic={f_diag} compact={f_compact}");
     assert!(
         f_compact < f_diag,
         "fetch compact {f_compact} < diagnostic {f_diag}"
+    );
+}
+
+#[test]
+fn retrieval_quality_host_trace_records_per_case_projection_cost() {
+    let corpus: Value = serde_json::from_str(RETRIEVAL_CASES).unwrap();
+    let cases = corpus["cases"].as_array().unwrap();
+    let mut byte_totals = [0usize; 3];
+    let mut retained_totals = [0usize; 3];
+    let mut simulated_call_total = 0usize;
+    for case in cases {
+        let results = case["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|result| {
+                let passages = result["passages"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                json!({
+                    "id": result["id"],
+                    "stable_id": result["id"],
+                    "url": result["url"],
+                    "title": result["title"],
+                    "snippet": result["snippet"],
+                    "trust": "external_untrusted",
+                    "excerpts": passages.into_iter().map(|text| json!({"text": text, "provenance": "fixture"})).collect::<Vec<_>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        let failed = case["expected_state"] == "failure";
+        let absent = case["expected_state"] == "absence";
+        let mut response = web_payload(
+            json!(results),
+            if failed {
+                json!([{"provider_id": "fixture-provider", "error_class": "unavailable"}])
+            } else {
+                json!([])
+            },
+            json!({
+                "has_failures": failed,
+                "has_absences": absent,
+                "has_truncation": false,
+                "attempted_job_count": 1,
+                "completed_job_count": if failed {0} else {1},
+                "failed_job_count": if failed {1} else {0}
+            }),
+        );
+        response["query"] = case["query"].clone();
+        let tool = match case["retrieval_scope"].as_str().unwrap() {
+            "repository" => "repo_search",
+            "advisory" | "advisory_and_package_metadata" => "security_search",
+            "multi_source" | "package_registry" => "research_search",
+            _ => "web_search",
+        };
+        let modes = [
+            ResponseDetail::Diagnostic,
+            ResponseDetail::Standard,
+            ResponseDetail::Compact,
+        ];
+        let mut mode_bytes = [0usize; 3];
+        let mut retained = [0usize; 3];
+        let relevant_ids: HashSet<&str> = case["relevant_documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|item| item["id"].as_str())
+            .collect();
+        for (index, mode) in modes.into_iter().enumerate() {
+            let projected = project(tool, response.clone(), mode);
+            mode_bytes[index] = bytes(&projected);
+            byte_totals[index] += mode_bytes[index];
+            retained[index] = projected["results"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|result| {
+                    result["id"]
+                        .as_str()
+                        .is_some_and(|id| relevant_ids.contains(id))
+                })
+                .count();
+            retained_totals[index] += retained[index];
+            if mode == ResponseDetail::Compact && (failed || absent) {
+                assert_eq!(projected["retrieval_status"]["has_failures"], json!(failed));
+                assert_eq!(projected["retrieval_status"]["has_absences"], json!(absent));
+            }
+        }
+        let source_fetches = retained[0];
+        let simulated_calls = 1 + source_fetches + usize::from(source_fetches > 0);
+        simulated_call_total += simulated_calls;
+        println!(
+            "retrieval-context-trace case={} tool={} partition={} state={} bytes_diagnostic={} bytes_standard={} bytes_compact={} relevant_retained_diagnostic={} relevant_retained_standard={} relevant_retained_compact={} simulated_tool_calls={} token_estimates={}/{}/{}",
+            case["id"].as_str().unwrap(),
+            tool,
+            case["partition"].as_str().unwrap(),
+            case["expected_state"].as_str().unwrap(),
+            mode_bytes[0],
+            mode_bytes[1],
+            mode_bytes[2],
+            retained[0],
+            retained[1],
+            retained[2],
+            simulated_calls,
+            mode_bytes[0].div_ceil(4),
+            mode_bytes[1].div_ceil(4),
+            mode_bytes[2].div_ceil(4)
+        );
+    }
+    assert_eq!(retained_totals, [14, 14, 14]);
+    assert_eq!(simulated_call_total, 42);
+    println!(
+        "retrieval-context-trace-total cases={} bytes_diagnostic={} bytes_standard={} bytes_compact={} token_estimates={}/{}/{} retained={:?} simulated_tool_calls={}",
+        cases.len(),
+        byte_totals[0],
+        byte_totals[1],
+        byte_totals[2],
+        byte_totals[0].div_ceil(4),
+        byte_totals[1].div_ceil(4),
+        byte_totals[2].div_ceil(4),
+        retained_totals,
+        simulated_call_total
     );
 }
 
