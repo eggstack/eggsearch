@@ -23,6 +23,8 @@ Precision and nDCG exclude unjudged
 results when judgments are incomplete; denominators are included. URL aliases
 use Eggsearch canonicalization for scheme/host case, `www`, fragments, default
 ports, percent encoding, and trailing slashes while preserving query strings.
+Corpus validation rejects canonical URL aliases that point to multiple gold
+judgments, so ambiguous matches cannot silently select the first label.
 Grades are 0–3, with zero reserved for judged irrelevant results. Per-category
 metrics are available from the evaluator. A deliberately degraded ranking
 must fail its MRR/nDCG check.
@@ -42,8 +44,9 @@ must not be reported as a measured Eggsearch quality baseline.
 
 ### Frozen synthetic evaluator baseline
 
-Reference implementation SHA: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`.
-Corpus: `retrieval-quality-v1`, fingerprint `fnv1a64:397f0c320097dbe5`.
+M001 candidate SHA: `3289c7c7f34071dd06b9641957a38a8eb5b25214`.
+Pre-M001 production baseline SHA: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`.
+Corpus: `retrieval-quality-v1`, fingerprint `fnv1a64:b882ce3d844e8ace`.
 Evaluator: `retrieval-quality-evaluator-v1`, schema version 1, mock feature.
 The emitted JSON report includes per-case result hashes and per-category
 denominators. Aggregate oracle-fixture metrics:
@@ -60,9 +63,9 @@ denominators. Aggregate oracle-fixture metrics:
 
 This baseline freezes evaluator and fixture behavior only. It establishes no
 live retrieval quality, cross-provider winner, latency, cost, or superiority
-claim. The original implementation SHA is unchanged in production code from
-the specified M001 planning baseline; intervening commits only registered the
-roadmap and plans.
+claim. Production implementation is unchanged from the specified M001
+planning baseline; the new source changes add only the evaluator, fixtures,
+tests, and documentation.
 
 ## Opt-in live observations
 

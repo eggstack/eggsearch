@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Deserialize;
 
@@ -263,6 +263,21 @@ fn matches_document(judgment: &Judgment, result: &ResultEnvelope) -> bool {
             .any(|alias| canonical_url(alias) == canonical_url(&result.url))
 }
 
+fn aliases_are_unambiguous(case: &Case) -> bool {
+    let mut aliases = HashMap::<String, &str>::new();
+    for judgment in &case.relevant_documents {
+        for url in &judgment.urls {
+            if aliases
+                .insert(canonical_url(url), judgment.id.as_str())
+                .is_some_and(|existing| existing != judgment.id.as_str())
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn passage_match(judgment: &Judgment, results: &[&ResultEnvelope], budget: usize) -> bool {
     let mut used = 0usize;
     let mut evidence = String::new();
@@ -327,6 +342,8 @@ fn offline_report(
     corpus: &Corpus,
     aggregate: serde_json::Value,
     categories: &BTreeMap<String, Metrics>,
+    train: serde_json::Value,
+    held_out: serde_json::Value,
 ) -> serde_json::Value {
     let build_features = [
         ("pdf", cfg!(feature = "pdf")),
@@ -362,6 +379,7 @@ fn offline_report(
         "cache_state": "synthetic_fixture_no_cache",
         "tie_break_seed": null,
         "aggregate": aggregate,
+        "per_partition": {"train": train, "held_out": held_out},
         "per_category": per_category,
         "result_hashes": result_hashes
     })
@@ -378,6 +396,10 @@ fn retrieval_quality_corpus_and_metrics_are_reproducible() {
     let ids: BTreeSet<&str> = corpus.cases.iter().map(|case| case.id.as_str()).collect();
     assert_eq!(ids.len(), corpus.cases.len());
     for case in &corpus.cases {
+        assert!(
+            aliases_are_unambiguous(case),
+            "gold URL aliases must identify one judgment"
+        );
         assert!(!case.query.is_empty());
         assert!(!case.language.is_empty() && !case.region.is_empty());
         assert!(!case.intent.is_empty() && !case.retrieval_scope.is_empty());
@@ -410,6 +432,8 @@ fn retrieval_quality_corpus_and_metrics_are_reproducible() {
     }
     let (first, categories) = evaluate(&corpus, None);
     let (second, _) = evaluate(&corpus, None);
+    let (train, _) = evaluate(&corpus, Some("train"));
+    let (held_out, _) = evaluate(&corpus, Some("held_out"));
     assert_eq!(first, second);
     assert_eq!(
         categories.len(),
@@ -434,7 +458,14 @@ fn retrieval_quality_corpus_and_metrics_are_reproducible() {
     assert!(corpus_hash.starts_with("fnv1a64:"));
     println!(
         "retrieval-quality-offline-report {}",
-        serde_json::to_string(&offline_report(&corpus, first, &categories)).unwrap()
+        serde_json::to_string(&offline_report(
+            &corpus,
+            first,
+            &categories,
+            train,
+            held_out
+        ))
+        .unwrap()
     );
 }
 
@@ -490,6 +521,18 @@ fn canonical_url_aliases_match_after_url_normalization() {
     let mut distinct_query = result;
     distinct_query.url = "https://www.example.test/path/?revision=2".into();
     assert!(!matches_document(&judgment, &distinct_query));
+}
+
+#[test]
+fn ambiguous_gold_url_aliases_are_rejected() {
+    let mut corpus: Corpus = serde_json::from_str(CORPUS).expect("corpus parses");
+    let case = corpus
+        .cases
+        .iter_mut()
+        .find(|case| case.id == "security-applicability-001")
+        .unwrap();
+    case.relevant_documents[1].urls = case.relevant_documents[0].urls.clone();
+    assert!(!aliases_are_unambiguous(case));
 }
 
 #[cfg(feature = "mock")]
@@ -648,6 +691,10 @@ async fn retrieval_quality_live_observation() {
     );
     for case in &cases {
         assert!(
+            aliases_are_unambiguous(case),
+            "gold URL aliases must identify one judgment"
+        );
+        assert!(
             case.provider_restrictions.is_empty()
                 || provider_ids
                     .iter()
@@ -662,6 +709,7 @@ async fn retrieval_quality_live_observation() {
     let mut records = Vec::new();
     let mut scored = Metrics::default();
     let mut live_categories = BTreeMap::<String, Metrics>::new();
+    let mut live_partitions = BTreeMap::<String, Metrics>::new();
     let mut latencies = Vec::new();
     let mut response_bytes = 0usize;
     for case in cases {
@@ -715,6 +763,10 @@ async fn retrieval_quality_live_observation() {
         scored.add(&observed);
         live_categories
             .entry(case.category.clone())
+            .or_default()
+            .add(&observed);
+        live_partitions
+            .entry(case.partition.clone())
             .or_default()
             .add(&observed);
         let attempt_count = payload["retrieval_summary"]["attempted_job_count"].as_u64();
@@ -790,6 +842,7 @@ async fn retrieval_quality_live_observation() {
         "latency_ms": {"p50": percentile(0.50), "p95": percentile(0.95)},
         "aggregate": scored.report(),
         "per_category": live_categories.iter().map(|(name, metrics)| (name.clone(), metrics.report())).collect::<BTreeMap<_, _>>(),
+        "per_partition": live_partitions.iter().map(|(name, metrics)| (name.clone(), metrics.report())).collect::<BTreeMap<_, _>>(),
         "records": records
     });
     println!(
