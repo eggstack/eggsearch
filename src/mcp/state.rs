@@ -663,6 +663,8 @@ mod tests {
     fn host_scopes_authenticate_and_cache_distinct_roots() {
         let first = tempfile::tempdir().expect("first root");
         let second = tempfile::tempdir().expect("second root");
+        let first_canonical = first.path().canonicalize().expect("canonical first root");
+        let second_canonical = second.path().canonicalize().expect("canonical second root");
         let token = format!("test-{}", std::process::id());
         let previous_token = std::env::var_os(HOST_LOCAL_SCOPE_TOKEN_ENV);
         std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, &token);
@@ -682,8 +684,11 @@ mod tests {
         let first_warm = state
             .local_workspace_view(Some(&scope(first.path(), &token)))
             .expect("warm authorized first root");
-        assert_eq!(first_view.backend().unwrap().roots()[0].1, first.path());
-        assert_eq!(second_view.backend().unwrap().roots()[0].1, second.path());
+        assert_eq!(first_view.backend().unwrap().roots()[0].1, first_canonical);
+        assert_eq!(
+            second_view.backend().unwrap().roots()[0].1,
+            second_canonical
+        );
         assert!(!Arc::ptr_eq(&first_view, &second_view));
         assert!(Arc::ptr_eq(&first_view, &first_warm));
 

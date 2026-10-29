@@ -510,6 +510,7 @@ fn search_and_fetch_use_equivalent_path_policy() {
     }
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn safe_open_follow_in_root_symlink_succeeds() {
     let tmp = TempDir::new().unwrap();
@@ -527,6 +528,31 @@ fn safe_open_follow_in_root_symlink_succeeds() {
         "in-root symlink should succeed with follow_symlinks=true"
     );
     assert_eq!(result.unwrap().size, 5);
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+#[test]
+fn safe_open_follow_symlink_is_unsupported() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().join("root");
+    let outside = tmp.path().join("outside.txt");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("inside.txt"), "inside").unwrap();
+    fs::write(&outside, "outside").unwrap();
+    std::os::unix::fs::symlink(&outside, root.join("escape.txt")).unwrap();
+
+    let cfg = LocalConfig {
+        follow_symlinks: true,
+        ..default_cfg()
+    };
+    assert!(matches!(
+        safe_open_relative(&root, "inside.txt", &cfg),
+        Err(SafeOpenError::SafeSymlinkFollowingUnsupported)
+    ));
+    assert!(matches!(
+        safe_open_relative(&root, "escape.txt", &cfg),
+        Err(SafeOpenError::SafeSymlinkFollowingUnsupported)
+    ));
 }
 
 #[cfg(target_os = "linux")]
@@ -602,6 +628,7 @@ fn safe_open_follow_chained_symlinks_escaping_root_rejected() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn safe_open_follow_fstat_size_check_through_descriptor() {
     let tmp = TempDir::new().unwrap();
@@ -620,6 +647,7 @@ fn safe_open_follow_fstat_size_check_through_descriptor() {
     );
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn safe_open_follow_not_a_file_rejected() {
     let tmp = TempDir::new().unwrap();
