@@ -20,7 +20,8 @@ passage hit within a 1,200-character budget, source diversity, evidence
 coverage, and expected-state accuracy. Passage-hit and status metrics include
 Wilson 95% intervals and trial counts; small corpus categories are descriptive.
 Precision and nDCG exclude unjudged
-results when judgments are incomplete; denominators are included. URL aliases
+results when judgments are incomplete; date-window tasks only match results
+with an in-window publication date. Denominators are included. URL aliases
 use Eggsearch canonicalization for scheme/host case, `www`, fragments, default
 ports, percent encoding, and trailing slashes while preserving query strings.
 Corpus validation rejects canonical URL aliases that point to multiple gold
@@ -44,7 +45,7 @@ must not be reported as a measured Eggsearch quality baseline.
 
 ### Frozen synthetic evaluator baseline
 
-M001 candidate SHA: `3289c7c7f34071dd06b9641957a38a8eb5b25214`.
+M001 candidate SHA: `df78a9e9ff2898bbf0a6ae3eb0321cd9e655eb64`.
 Pre-M001 production baseline SHA: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`.
 Corpus: `retrieval-quality-v1`, fingerprint `fnv1a64:b882ce3d844e8ace`.
 Evaluator: `retrieval-quality-evaluator-v1`, schema version 1, mock feature.
@@ -60,6 +61,13 @@ denominators. Aggregate oracle-fixture metrics:
 | Passage hit@1,200 characters | 0.9333 | 14 of 15 judged passages |
 | Source diversity@5, macro | 0.8462 | 13 nonempty-result cases |
 | Expected-state accuracy | 1.0000 | 15 labeled outcomes |
+
+Partition results keep tuning and holdout separate:
+
+| Partition | Cases (ranking) | Precision@5 | Recall@5 | MRR@5 | nDCG@5 | Passage hit |
+|-----------|----------------:|------------:|---------:|-------:|-------:|------------:|
+| Train | 9 (9) | 0.3778 | 0.9444 | 0.9444 | 0.9353 | 0.9000 (9/10) |
+| Held out | 6 (4) | 0.2500 | 1.0000 | 1.0000 | 1.0000 | 1.0000 (5/5) |
 
 This baseline freezes evaluator and fixture behavior only. It establishes no
 live retrieval quality, cross-provider winner, latency, cost, or superiority

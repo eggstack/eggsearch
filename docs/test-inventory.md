@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5692 | 24 |
-| `--features mock` | 5421 | 2 |
+| `--all-features` | 5693 | 24 |
+| `--features mock` | 5422 | 2 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 

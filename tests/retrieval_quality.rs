@@ -103,7 +103,7 @@ impl Metrics {
             .filter_map(|(rank, result)| {
                 relevant
                     .iter()
-                    .find(|judgment| matches_document(judgment, result))
+                    .find(|judgment| matches_case_document(case, judgment, result))
                     .map(|judgment| (rank, judgment.grade))
                     .or_else(|| case.judgments_complete.then_some((rank, 0)))
             })
@@ -128,7 +128,7 @@ impl Metrics {
                 .filter_map(|result| {
                     relevant
                         .iter()
-                        .find(|judgment| matches_document(judgment, result))
+                        .find(|judgment| matches_case_document(case, judgment, result))
                         .map(|judgment| judgment.id.as_str())
                 })
                 .collect();
@@ -162,7 +162,7 @@ impl Metrics {
             .iter()
             .filter(|judgment| {
                 top.iter().any(|result| {
-                    matches_document(judgment, result)
+                    matches_case_document(case, judgment, result)
                         && passage_match(judgment, &top, PASSAGE_BUDGET_CHARS)
                 })
             })
@@ -263,6 +263,18 @@ fn matches_document(judgment: &Judgment, result: &ResultEnvelope) -> bool {
             .any(|alias| canonical_url(alias) == canonical_url(&result.url))
 }
 
+fn matches_case_document(case: &Case, judgment: &Judgment, result: &ResultEnvelope) -> bool {
+    if !matches_document(judgment, result) {
+        return false;
+    }
+    case.temporal_window.as_ref().is_none_or(|window| {
+        result
+            .published_at
+            .as_ref()
+            .is_some_and(|date| date >= &window.start && date <= &window.end)
+    })
+}
+
 fn aliases_are_unambiguous(case: &Case) -> bool {
     let mut aliases = HashMap::<String, &str>::new();
     for judgment in &case.relevant_documents {
@@ -307,6 +319,21 @@ fn source_host(url: &str) -> String {
                 .to_string()
         })
         .unwrap_or_default()
+}
+
+fn live_intent(intent: &str) -> eggsearch::core::query::SearchIntent {
+    use eggsearch::core::query::SearchIntent;
+
+    match intent {
+        "docs" => SearchIntent::Docs,
+        "code" | "exact_error" => SearchIntent::Code,
+        "issues" => SearchIntent::Issues,
+        "releases" => SearchIntent::Releases,
+        "security" => SearchIntent::Security,
+        "news" => SearchIntent::News,
+        "web" | "package" | "research" => SearchIntent::Web,
+        other => panic!("unsupported task intent {other}"),
+    }
 }
 
 fn fingerprint(bytes: &[u8]) -> String {
@@ -535,6 +562,21 @@ fn ambiguous_gold_url_aliases_are_rejected() {
     assert!(!aliases_are_unambiguous(case));
 }
 
+#[test]
+fn results_outside_the_task_date_window_do_not_match_gold() {
+    let corpus: Corpus = serde_json::from_str(CORPUS).expect("corpus parses");
+    let mut case = corpus
+        .cases
+        .iter()
+        .find(|case| case.id == "freshness-date-001")
+        .unwrap()
+        .clone();
+    case.results[0].published_at = Some("2025-12-31".into());
+    let mut metrics = Metrics::default();
+    metrics.add(&case);
+    assert_eq!(metrics.report()["recall_at_5"], 0.0);
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn synthetic_reference_envelope_replays_through_search_adapter_and_tool_handler() {
@@ -722,9 +764,14 @@ async fn retrieval_quality_live_observation() {
                 providers: provider_ids.clone(),
                 safe_search: None,
                 timeout_ms: Some(10_000),
-                intent: None,
+                intent: Some(live_intent(&case.intent)),
                 freshness: None,
-                date_range: None,
+                date_range: case.temporal_window.as_ref().map(|window| {
+                    eggsearch::core::query::SearchDateRange::new(
+                        window.start.clone(),
+                        window.end.clone(),
+                    )
+                }),
                 include_domains: Vec::new(),
                 exclude_domains: Vec::new(),
                 language: Some(case.language.clone()),
@@ -757,6 +804,7 @@ async fn retrieval_quality_live_observation() {
                 "url": item.get("url").and_then(serde_json::Value::as_str).unwrap_or_default(),
                 "title": item.get("title").and_then(serde_json::Value::as_str).unwrap_or_default(),
                 "snippet": item.get("snippet").and_then(serde_json::Value::as_str).unwrap_or_default(),
+                "published_at": item.get("metadata").and_then(|metadata| metadata.get("published_at")).and_then(serde_json::Value::as_str),
                 "passages": item.get("excerpts").and_then(serde_json::Value::as_array).map(|xs| xs.iter().filter_map(|x| x.get("text").and_then(serde_json::Value::as_str).map(str::to_owned)).collect::<Vec<_>>()).unwrap_or_default()
             })).ok()).collect())
             .unwrap_or_default();
@@ -786,7 +834,7 @@ async fn retrieval_quality_live_observation() {
             observed
                 .relevant_documents
                 .iter()
-                .any(|gold| matches_document(gold, result))
+                .any(|gold| matches_case_document(case, gold, result))
         });
         records.push(serde_json::json!({
             "case_id": case.id,
