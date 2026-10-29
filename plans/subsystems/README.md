@@ -23,6 +23,7 @@ transport-consolidation-roadmap.md
 performance-optimization-roadmap.md
 optional-outbound-routing-roadmap.md
 tool-surface-consolidation-roadmap.md
+deterministic-retrieval-quality-roadmap.md
 dependency-evidence-hardening-roadmap.md
 repository-hardening-roadmap.md
 ```
