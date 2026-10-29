@@ -11,6 +11,8 @@ const EVALUATOR_REVISION: &str = "retrieval-quality-evaluator-v1";
 struct Corpus {
     schema_version: u32,
     corpus_revision: String,
+    provenance: String,
+    annotation_uncertainty: String,
     cases: Vec<Case>,
 }
 
@@ -24,6 +26,8 @@ struct Case {
     region: String,
     intent: String,
     retrieval_scope: String,
+    #[serde(default)]
+    provider_restrictions: Vec<String>,
     max_results: usize,
     #[serde(default)]
     temporal_window: Option<TemporalWindow>,
@@ -248,19 +252,7 @@ fn ratio(numerator: usize, denominator: usize) -> f64 {
 }
 
 fn canonical_url(url: &str) -> String {
-    let lower = url.trim().to_ascii_lowercase();
-    let without_fragment = lower.split('#').next().unwrap_or_default();
-    let without_query = without_fragment.split('?').next().unwrap_or_default();
-    let without_www = without_query
-        .strip_prefix("https://www.")
-        .map(|rest| format!("https://{rest}"))
-        .or_else(|| {
-            without_query
-                .strip_prefix("http://www.")
-                .map(|rest| format!("http://{rest}"))
-        })
-        .unwrap_or_else(|| without_query.to_string());
-    without_www.trim_end_matches('/').to_string()
+    eggsearch::core::identity::canonicalize_url(url)
 }
 
 fn matches_document(judgment: &Judgment, result: &ResultEnvelope) -> bool {
@@ -380,6 +372,8 @@ fn retrieval_quality_corpus_and_metrics_are_reproducible() {
     let corpus: Corpus = serde_json::from_str(CORPUS).expect("corpus parses");
     assert_eq!(corpus.schema_version, 1);
     assert_eq!(corpus.corpus_revision, "retrieval-quality-v1");
+    assert!(!corpus.provenance.is_empty());
+    assert!(!corpus.annotation_uncertainty.is_empty());
     assert!(corpus.cases.len() >= 12);
     let ids: BTreeSet<&str> = corpus.cases.iter().map(|case| case.id.as_str()).collect();
     assert_eq!(ids.len(), corpus.cases.len());
@@ -387,6 +381,9 @@ fn retrieval_quality_corpus_and_metrics_are_reproducible() {
         assert!(!case.query.is_empty());
         assert!(!case.language.is_empty() && !case.region.is_empty());
         assert!(!case.intent.is_empty() && !case.retrieval_scope.is_empty());
+        assert!(case.provider_restrictions.iter().all(|provider| {
+            eggsearch::core::provider::KNOWN_PROVIDER_IDS.contains(&provider.as_str())
+        }));
         assert!(case.max_results > 0);
         assert!(matches!(
             case.expected_state.as_str(),
@@ -483,13 +480,16 @@ fn canonical_url_aliases_match_after_url_normalization() {
     };
     let result = ResultEnvelope {
         id: "provider-specific-id".into(),
-        url: "HTTPS://WWW.EXAMPLE.TEST/path/?tracking=1#section".into(),
+        url: "HTTPS://WWW.EXAMPLE.TEST/path/#section".into(),
         title: "Gold document".into(),
         snippet: String::new(),
         published_at: None,
         passages: Vec::new(),
     };
     assert!(matches_document(&judgment, &result));
+    let mut distinct_query = result;
+    distinct_query.url = "https://www.example.test/path/?revision=2".into();
+    assert!(!matches_document(&judgment, &distinct_query));
 }
 
 #[cfg(feature = "mock")]
@@ -586,6 +586,11 @@ async fn retrieval_quality_live_observation() {
         .map(str::to_owned)
         .collect();
     assert!(!provider_ids.is_empty());
+    assert_eq!(
+        provider_ids.iter().collect::<HashSet<_>>().len(),
+        provider_ids.len(),
+        "provider IDs must not be duplicated"
+    );
     assert!(
         provider_ids.len() <= 8,
         "live provider ceiling is 8 providers"
@@ -629,6 +634,7 @@ async fn retrieval_quality_live_observation() {
         .map(str::trim)
         .map(str::to_owned)
         .collect();
+    assert!(!allowed.is_empty(), "select at least one task case");
     let corpus: Corpus = serde_json::from_str(CORPUS).expect("corpus parses");
     let cases: Vec<&Case> = corpus
         .cases
@@ -640,12 +646,22 @@ async fn retrieval_quality_live_observation() {
         allowed.len(),
         "all selected case IDs must exist"
     );
+    for case in &cases {
+        assert!(
+            case.provider_restrictions.is_empty()
+                || provider_ids
+                    .iter()
+                    .all(|provider| case.provider_restrictions.contains(provider)),
+            "selected providers violate a task's provider restriction"
+        );
+    }
     assert!(cases.len() <= 20, "live task ceiling is 20 cases per run");
     let mut config = AppConfig::default();
     config.search.providers = provider_ids.iter().map(|id| (id.clone(), true)).collect();
     let state = Arc::new(ServerState::build(config).expect("configured state builds"));
     let mut records = Vec::new();
     let mut scored = Metrics::default();
+    let mut live_categories = BTreeMap::<String, Metrics>::new();
     let mut latencies = Vec::new();
     let mut response_bytes = 0usize;
     for case in cases {
@@ -697,17 +713,43 @@ async fn retrieval_quality_live_observation() {
             })).ok()).collect())
             .unwrap_or_default();
         scored.add(&observed);
+        live_categories
+            .entry(case.category.clone())
+            .or_default()
+            .add(&observed);
         let attempt_count = payload["retrieval_summary"]["attempted_job_count"].as_u64();
         let provider_failure_count = payload["providers_failed"].as_array().map_or(0, Vec::len);
-        let result_count = payload["results"].as_array().map_or(0, Vec::len);
+        let result_items = payload["results"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let result_count = result_items.len();
+        let unique_sources = result_items
+            .iter()
+            .filter_map(|item| item["url"].as_str())
+            .map(canonical_url)
+            .collect::<HashSet<_>>()
+            .len();
+        let useful_evidence = observed.results.iter().any(|result| {
+            observed
+                .relevant_documents
+                .iter()
+                .any(|gold| matches_document(gold, result))
+        });
         records.push(serde_json::json!({
             "case_id": case.id,
             "providers": provider_ids,
             "elapsed_ms": elapsed_ms,
             "attempt_count": attempt_count,
+            "retry_count": null,
             "provider_failure_count": provider_failure_count,
+            "timeout_count": payload["retrieval_summary"]["timed_out_count"],
+            "deadline_interrupted_count": payload["retrieval_summary"]["deadline_interrupted_count"],
             "result_count": result_count,
+            "unique_source_count": unique_sources,
+            "first_useful_evidence_latency_ms": if useful_evidence {Some(elapsed_ms)} else {None::<u128>},
             "response_bytes": bytes.len(),
+            "estimated_tokens_from_response_bytes": bytes.len().div_ceil(4),
             "response_hash": fingerprint(&bytes),
             "outcome": if payload.get("error").is_some() {"failure"} else {"observed"}
         }));
@@ -744,8 +786,10 @@ async fn retrieval_quality_live_observation() {
         "request_count_upper_bound": records.len() * provider_ids.len(),
         "billable_request_upper_bound": records.len() * paid_ids.len(),
         "response_bytes": response_bytes,
+        "estimated_response_tokens": response_bytes.div_ceil(4),
         "latency_ms": {"p50": percentile(0.50), "p95": percentile(0.95)},
         "aggregate": scored.report(),
+        "per_category": live_categories.iter().map(|(name, metrics)| (name.clone(), metrics.report())).collect::<BTreeMap<_, _>>(),
         "records": records
     });
     println!(

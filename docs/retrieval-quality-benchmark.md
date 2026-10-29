@@ -21,7 +21,8 @@ coverage, and expected-state accuracy. Passage-hit and status metrics include
 Wilson 95% intervals and trial counts; small corpus categories are descriptive.
 Precision and nDCG exclude unjudged
 results when judgments are incomplete; denominators are included. URL aliases
-are canonicalized for scheme case, `www`, query, fragment, and trailing slash.
+use Eggsearch canonicalization for scheme/host case, `www`, fragments, default
+ports, percent encoding, and trailing slashes while preserving query strings.
 Grades are 0–3, with zero reserved for judged irrelevant results. Per-category
 metrics are available from the evaluator. A deliberately degraded ranking
 must fail its MRR/nDCG check.
