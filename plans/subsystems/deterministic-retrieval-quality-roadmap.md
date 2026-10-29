@@ -1,6 +1,6 @@
 # Deterministic Retrieval Quality and Comparative Evaluation Roadmap
 
-Status: active; M001-M003 closed; M004-M005 ready; M006 blocked on M004-M005
+Status: active; M001-M004 closed; M005 ready; M006 blocked on M005
 Planning baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b` (main, 2026-10-28 UTC)
 
 References: `plans/000-long-term-specification.md` ``1, 2, 3, 4, 5, 7, 8, 9; `plans/001-terminology-and-domain-model.md` ``1-5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0002, ADR-0006.
@@ -79,4 +79,4 @@ HTML provider flux, dynamic search-result drift, changing competitor cost/terms,
 
 ## 9. Closure and status
 
-Every milestone needs its own `plans/closure/deterministic-retrieval-quality/NNN-status.md` with implementation SHA, tests and outputs, quality deltas by task, unchanged safety/policy evidence, failures, resource budgets, and release/consumer implications. M001 is closed at `310611b733c2067ddeab184618156ef072934a6e` with closure `plans/closure/deterministic-retrieval-quality/001-status.md`. M002 is closed with the browser rendering limitation and exact evidence in `plans/closure/deterministic-retrieval-quality/002-status.md`. M003 is closed with no routing change; real provider observations remain an optional live-evidence input to M006. M004-M005 are dependency-ready; M006 remains blocked on their closure and integrated operational evidence. No later milestone is pre-closed.
+Every milestone needs its own `plans/closure/deterministic-retrieval-quality/NNN-status.md` with implementation SHA, tests and outputs, quality deltas by task, unchanged safety/policy evidence, failures, resource budgets, and release/consumer implications. M001 is closed at `310611b733c2067ddeab184618156ef072934a6e` with closure `plans/closure/deterministic-retrieval-quality/001-status.md`. M002 is closed with the browser rendering limitation and exact evidence in `plans/closure/deterministic-retrieval-quality/002-status.md`. M003 is closed with no routing change; real provider observations remain an optional live-evidence input to M006. M004 is closed with no ranking change because no independent held-out lift was established. M005 is dependency-ready; M006 remains blocked on its closure and integrated operational evidence. No later milestone is pre-closed.

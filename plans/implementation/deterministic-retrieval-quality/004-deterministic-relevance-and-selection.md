@@ -1,6 +1,6 @@
 # M004 — Deterministic Relevance, Passage Selection and Ranking Experiments
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M004
 Primary class: capability if measured lift is accepted; otherwise infrastructure evaluation
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
@@ -39,3 +39,7 @@ No neural model, hosted rerank inference, mandatory vector DB, LSP dependency, e
 ## Acceptance and stop conditions
 
 A comparable baseline vs candidate report records each algorithm, corpus split, metric denominators, per-category regressions, execution time and resource impact. Accepted changes must beat predeclared held-out thresholds, have byte-bounded allocation/timeout tests and retain all safety invariants; an evidence-backed rejection is equally valid closure. Stop if candidate requires inference, changes source authority/IDs, shifts compiled default feature dependencies, or overfits fixtures. Closure `plans/closure/deterministic-retrieval-quality/004-status.md` records exact baseline/candidate SHAs, algorithm/threshold version, accepted/no-change rationale and tests.
+
+## Outcome
+
+Closed as a no-change experiment against candidate `84472dfe010c498ab95a60b08153e6209c9ec5e5`. The frozen synthetic held-out baseline is already at ceiling for recall@5, MRR@5, nDCG@5 and passage hit@1,200 chars; no candidate could be supported without independent labels. Existing RRF, intent and focus selection remain unchanged. See `docs/retrieval-quality-ranking-ablation.md` and `plans/closure/deterministic-retrieval-quality/004-status.md`.
