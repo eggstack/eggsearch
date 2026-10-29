@@ -1,6 +1,6 @@
 # M003 — Keyless Provider Contribution, Fault Isolation and Bounded Routing
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M003
 Primary class: infrastructure; capability only if measured routing improvement lands
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
@@ -34,3 +34,7 @@ No inference, learning-to-rank, auto-billing, auto-CAPTCHA, credential/region by
 ## Acceptance and closure
 
 Provider marginal-value reports exist for independent and combined keyless paths, with exact query/task categories, valid denominators, labels, and failure conditioning. Existing keyless startup and explicitly selected providers are unchanged. Optional routing code lands **only** when held-out relevance, latency, and call-cost evidence supports it without regression in failure/absence correctness; otherwise M003 closes with a documented negative experiment. Record code/config effects, test outcomes, comparisons and any deferred ideas under `plans/closure/deterministic-retrieval-quality/003-status.md`. Stop if a proposal makes an API key mandatory or masks upstream failure.
+
+## Outcome
+
+Closed against candidate `3ef5242c928181b27343a463015c09912dcabbc5`. The deterministic mock contribution fixture and provider fault suites validate metric arithmetic and failure/absence handling. No live keyless observations were made, so the synthetic fixture is not treated as provider performance evidence. No routing change was justified or made. See `docs/retrieval-quality-provider-contribution.md` and `plans/closure/deterministic-retrieval-quality/003-status.md`.
