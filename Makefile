@@ -1,4 +1,4 @@
-.PHONY: check ci fmt clippy feature-check test hygiene dependency-policy packaging-check producer-drift release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
+.PHONY: check ci fmt clippy feature-check test hygiene dependency-policy packaging-check producer-drift release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke eval-tool-surface eval-retrieval-quality native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
 check: fmt clippy feature-check test hygiene dependency-policy packaging-check
 
@@ -71,6 +71,9 @@ live-smoke:
 
 eval-tool-surface:
 	cargo test --locked --all-features --test tool_surface_evaluation -- --nocapture
+
+eval-retrieval-quality:
+	cargo test --locked --features mock --test retrieval_quality -- --nocapture
 
 native-forge-smoke-github:
 	cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored native_github

@@ -9,7 +9,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 
 ## Suite count and layout
 
-`tests/*.rs` holds 78 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
+`tests/*.rs` holds 79 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
 
 | Location | Purpose |
 |----------|---------|
@@ -21,6 +21,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
+| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus + ignored live observation |
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
 | `src/**/mod.rs` unit tests | Private-function coverage at the bottom of the source file |
@@ -225,6 +226,20 @@ make eval-tool-surface
 
 ```bash
 cargo test --locked --all-features --test tool_surface_live -- --ignored
+```
+
+`tests/retrieval_quality.rs` separately evaluates retrieved evidence against the
+versioned synthetic corpus at `tests/fixtures/retrieval_quality/cases.json`.
+It reports ranked relevance, passage hits, diversity, evidence coverage, and
+status correctness with per-category denominators. The default evaluator is
+offline. Its ignored live observation uses the existing `web_search` path and
+requires explicit query/provider allowlists plus separate billing
+acknowledgement; methodology and limitations are in
+`docs/retrieval-quality-benchmark.md`.
+
+```bash
+cargo test --locked --features mock --test retrieval_quality
+make eval-retrieval-quality
 ```
 
 ## Transport, egress, and browser suites
