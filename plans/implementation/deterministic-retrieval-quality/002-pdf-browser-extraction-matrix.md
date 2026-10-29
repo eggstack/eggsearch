@@ -1,6 +1,6 @@
 # M002 — Optional PDF and Browser Extraction Comparison Matrix
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M002
 Primary class: infrastructure; feature-specific capability evaluation
 Baseline: `7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
@@ -40,3 +40,7 @@ No new public tool or default feature, no second release SKU, no required headle
 ## Acceptance, stop and closure
 
 All four arms have per-case pass/fail/unsupported/skip classification with reference passages and bounded latency/memory records. Browser tests are not reported as passes when Chrome/network fixture support is absent. Existing security checks and default build behavior are unchanged, and a source-built PDF/browser consumer can reproduce the matrix. Stop on SSRF relaxation, profile leakage, unbounded execution or pressure to add OCR/default SKU. Closure `plans/closure/deterministic-retrieval-quality/002-status.md` includes exact source/build features, browser/PDF version, fixtures, numerical deltas, regression tests and limitations.
+
+## Outcome
+
+Closed against candidate `25f4910cdf68acf513a4f46e125c19e8dc84c5a8`. The four feature builds and controlled HTTP/PDF/browser-policy suites are recorded in `docs/retrieval-quality-extraction-matrix.md`. Browser rendering is limited because no Chrome/Chromium executable or safe local fixture seam exists in this environment; no external origin was used and production SSRF checks were not weakened. M006 retains the operational browser/live-reference qualification.
