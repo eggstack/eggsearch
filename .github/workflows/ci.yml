@@ -50,3 +50,15 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - name: Check all features on Windows target
         run: cargo check --locked --all-features --target x86_64-pc-windows-msvc
+  macos-portability:
+    name: macOS local filesystem portability
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable snapshot 2026-09-28
+        with:
+          toolchain: "1.89"
+      - name: Test unsupported symlink following behavior
+        run: cargo test --locked --no-default-features --test property_local_fs_extended -- safe_open_follow_symlink_is_unsupported
+      - name: Test host-scoped workspace root canonicalization
+        run: cargo test --locked --lib host_scopes_authenticate_and_cache_distinct_roots
