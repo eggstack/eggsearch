@@ -185,6 +185,11 @@ pub fn safe_open_relative(
         }
     }
 
+    #[cfg(all(unix, not(target_os = "linux")))]
+    if config.follow_symlinks {
+        return Err(SafeOpenError::SafeSymlinkFollowingUnsupported);
+    }
+
     #[cfg(unix)]
     {
         let root_str = root

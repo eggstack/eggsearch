@@ -56,6 +56,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
 | `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
 | `tests/tool_surface_evaluation.rs` | None | 43-case tool-selection corpus (`tests/fixtures/tool_surface/cases.json`): top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |
+| `tests/retrieval_quality.rs` | `mock` (live observation ignored) | Synthetic retrieval relevance corpus (`tests/fixtures/retrieval_quality/cases.json`): precision/recall/MRR/nDCG, passage budget, source diversity, status correctness (`make eval-retrieval-quality`) |
 | `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | None | Tool consolidation contracts: registry parity, schema budgets, structured errors, response projection |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
@@ -68,7 +69,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
-This table is representative, not exhaustive — 78 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 79 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -78,6 +79,7 @@ cargo test --locked --features mock --test repo_workflow
 cargo test --locked --features mock --test corpus_runner
 cargo test --locked --all-features --test forge_adapter
 cargo test --locked --all-features --test tool_surface_evaluation
+cargo test --locked --features mock --test retrieval_quality
 cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-in only
 cargo test --locked --all-features --test dispatch_fault_injection
 cargo test --locked --all-features --test adversarial_corpus

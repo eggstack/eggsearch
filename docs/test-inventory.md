@@ -6,10 +6,10 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5686 | 23 |
-| `--features mock` | 5415 | 1 |
+| `--all-features` | 5693 | 24 |
+| `--features mock` | 5422 | 2 |
 
-Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
+Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
 ## Behavioral & Workflow Contracts
 
@@ -30,6 +30,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `local_workspace_integration` | `mock` | Local workspace search backend |
 | `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
 | `retrieval_attempt_ledger` | None | Attempt ledger validation |
+| `retrieval_quality` | `mock` (live observation ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, opt-in bounded provider observations |
 | `conflict_source_attribution` | None | Conflict source attribution |
 | `bounded_command` | `mock` | Bounded git command execution (caps, timeout, termination) |
 | `firecrawl_developer` | None | Developer-index adapter behavior |
@@ -215,13 +216,13 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 |-----|----------|----------------|
 | `ci` | ~3min | fmt + clippy + no-default-features check + all-features tests + hygiene + packaging-check |
 | `windows-portability` | ~4min | `cargo check --locked --all-features --target x86_64-pc-windows-msvc` on `windows-latest` with pinned Rust 1.89; routine PR/main sentinel so Windows cfg breakage cannot hide behind Linux-green CI |
-| `python-native-qualification` | varies | Native wheel builds for five targets; each exact abi3 wheel runs the Python suite on CPython 3.11–3.14 (28 tests on debug builds; 23 on release wheels with 5 debug-only barrier skips); extracted sdist offline rebuild and smoke; Cargo and Python dependency audits |
+| `python-native-qualification` | varies | Native wheel builds for five targets; exact abi3 qualification covers CPython 3.11–3.15 (25 smoke cells); native extension suite coverage is recorded separately below; extracted sdist offline rebuild and smoke; Cargo and Python dependency audits |
 
 ## Python Native Binding
 
 | Suite | Runtime | Tests | Focus |
 |-------|---------|-------|-------|
-| `bindings/python/tests/test_native.py` | CPython 3.11–3.14; PyO3 extension | 28 (23 on release wheels; 5 debug-only barrier tests skip) | Ten-operation asyncio smoke, canonical schema/type coverage, typed method delegation and explicit null/false/empty preservation, async context manager, structured errors, Mode-Off local trust, bounded JSON conversion and invalid inputs, cycles, started-barrier cancellation with Rust drop/permit recovery, concurrent close with `client_closed` taxonomy, 32-call saturation and recovery, conversion-failure leak checks, sequential event-loop recovery, and default-config selection (`from_default_config`, explicit override, missing fallback, invalid TOML, token non-leak) |
+| `bindings/python/tests/test_native.py` | CPython 3.11–3.15; PyO3 extension | 28 (23 on release wheels; 5 debug-only barrier tests skip) | Ten-operation asyncio smoke, canonical schema/type coverage, typed method delegation and explicit null/false/empty preservation, async context manager, structured errors, Mode-Off local trust, bounded JSON conversion and invalid inputs, cycles, started-barrier cancellation with Rust drop/permit recovery, concurrent close with `client_closed` taxonomy, 32-call saturation and recovery, conversion-failure leak checks, sequential event-loop recovery, and default-config selection (`from_default_config`, explicit override, missing fallback, invalid TOML, token non-leak) |
 
 Run from the repository root after installing the extension into an active
 virtual environment:

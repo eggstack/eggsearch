@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-10-29T21:05Z",
+  "source_sha": "92b0a27737e21fb42cdcf8a984cab6a04931121f",
+  "eggsearch_version": "0.4.4",
+  "eggsearch_binary_sha256": "5bc0a37f6fe9f037fed460de7389998a746ec234f4fbb4914f72b55170687495",
+  "build_command": "cargo build --locked --features 'pdf browser' --bin eggsearch",
+  "feature_arm": ["pdf", "browser"],
+  "chrome_version": "156.0.8078.48",
+  "lopdf_version": "0.42.0",
+  "fetch_settings": {
+    "allow_private_network": false,
+    "allow_localhost": false,
+    "cache_enabled": false,
+    "cache_policy": "bypass",
+    "max_chars": 400000,
+    "timeout_ms": 45000,
+    "focus_query": "404 Not Found 410 Gone",
+    "focus_max_chunks": 5,
+    "focus_max_chars": 6000
+  },
+  "source_corpus": "official RFC Editor RFC 9110 HTML and PDF representations; source body omitted",
+  "rows": [
+    {
+      "case_id": "rfc9110_html_http_only",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "transport": "http",
+      "http_status": 200,
+      "content_type": "text/html",
+      "focus_chunks": 5,
+      "focus_chars": 3811,
+      "expected_section_and_status_markers": {
+        "15.5.5": true,
+        "15.5.11": true,
+        "404 Not Found": true,
+        "410 Gone": true
+      },
+      "projected_payload_sha256": "d0eb331044f132e2ff1031efb88b827a681af795ae75c9b20df7580c1b6c3941"
+    },
+    {
+      "case_id": "rfc9110_html_browser",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "transport": "browser",
+      "http_status": 200,
+      "content_type": "text/html",
+      "focus_chunks": 5,
+      "focus_chars": 3811,
+      "expected_section_and_status_markers": {
+        "15.5.5": true,
+        "15.5.11": true,
+        "404 Not Found": true,
+        "410 Gone": true
+      },
+      "projected_payload_sha256": "ff4c3116f9a4d1d4f35e9c00b5e7e05585b70c896c186a02024f2ebc9ac52a29",
+      "browser_escalated": false,
+      "interpretation": "Explicit browser transport was exercised. This source is server-rendered, not JS-only."
+    },
+    {
+      "case_id": "rfc9110_pdf",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.pdf",
+      "transport": "http",
+      "http_status": 200,
+      "content_type": "application/pdf",
+      "focus_chunks": 1,
+      "focus_chars": 6000,
+      "expected_section_and_status_markers": {
+        "15.5.5": true,
+        "15.5.11": true,
+        "404 Not Found": true,
+        "410 Gone": true
+      },
+      "projected_payload_sha256": "deb4f9c7e7d747ebed85c0b512b0b6caf3023e9145d1f8a5ca615c6d7edf6191",
+      "interpretation": "Text-based PDF extraction; no OCR claim."
+    }
+  ],
+  "response_bodies_committed": false,
+  "failed_setup_attempts": [
+    {
+      "attempt": "PDF URL https://www.rfc-editor.org/rfc/pdfrfc/rfc9110.txt.pdf",
+      "outcome": "HTTP 404; replaced by the official /rfc/rfc9110.pdf representation"
+    },
+    {
+      "attempt": "5,000-character request budget",
+      "outcome": "target sections were beyond the returned HTML prefix; final run increased the shared bounded request cap and recorded focused excerpts"
+    }
+  ]
+}

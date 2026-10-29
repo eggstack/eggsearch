@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M001/M002/M007/M008/M009/M010 closed, M006 blocked
+Status: active; M001/M002/M007/M008/M009/M010/M011 closed, M006 blocked
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -231,7 +231,7 @@ transport-feature change, and process refactor remain independently reviewable.
 
 ## 8. Milestones
 
-Current milestone state: M001/M007 are closed by M010 after reconciling the first scheduled dependency-security run `38290328560`. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 remains closed through M007. M005 remains closed. M006 remains blocked on upstream chromiumoxide. Original closure records remain historical evidence; M007 is the corrective control point.
+Current milestone state: M001/M007 are closed by M010 after reconciling the first scheduled dependency-security run `38290328560`. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 remains closed through M007. M005 remains closed. M006 remains blocked on upstream chromiumoxide. M011 is closed at `99316f31caf37ad2165cd5e822316942faf20c6f`; closure is recorded in `plans/closure/repository-hardening/011-status.md`. Original closure records remain historical evidence; M007 is the corrective control point.
 
 | Milestone | Current status | Control point |
 |---|---|---|
@@ -245,6 +245,7 @@ Current milestone state: M001/M007 are closed by M010 after reconciling the firs
 | M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
 | M009 first tagged-release provenance reconciliation | closed | `plans/closure/repository-hardening/009-status.md` |
 | M010 scheduled dependency-security evidence reconciliation | closed | `plans/closure/repository-hardening/010-status.md` |
+| M011 macOS symlink containment and test portability corrective | closed | `plans/implementation/repository-hardening/011-macos-symlink-containment-and-test-portability.md`; closure `plans/closure/repository-hardening/011-status.md`; exact candidate `99316f31caf37ad2165cd5e822316942faf20c6f`; also discharges deterministic retrieval M006 closure condition |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 

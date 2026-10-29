@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "dataset": "SciFact BEIR test",
+  "dataset_sha256": "40f78fb516f4a69bfc4fc13b5b4f1d7ee784638d937ccf338c6b6436934613d2",
+  "dataset_archive_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+  "source_sha": "92b0a27737e21fb42cdcf8a984cab6a04931121f",
+  "runner_sha256": "23ae31e677faefe81b3d063ad29cd0230c3c0df6a962a69a5473b2ff25cd2e09",
+  "binary_sha256": "5bc0a37f6fe9f037fed460de7389998a746ec234f4fbb4914f72b55170687495",
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "provider": "duckduckgo",
+  "config_state": "binary defaults",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m007-ddg-cohort-001",
+  "query_ids": [
+    "913",
+    "870",
+    "249",
+    "637",
+    "124"
+  ],
+  "query_count": 5,
+  "repetitions": 2,
+  "provider_query_attempts": 10,
+  "max_results": 5,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "provider_error": 8,
+    "zero_results": 2
+  },
+  "judgment_denominators": {
+    "selected_queries": 5,
+    "repeated_valid_result_query_trials": 2,
+    "known_relevant_query_document_pairs_per_cohort": 5,
+    "known_relevant_query_document_pairs_across_valid_trials": 2,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": 0.0,
+  "macro_recall_at_k_over_valid_result_trials": 0.0,
+  "micro_recall_at_k_over_valid_result_trials": 0.0,
+  "rows": [
+    {
+      "query_id": "913",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 7426,
+      "raw_response_sha256": "7686686488c7d0101003be8d65b7d1a2f15f81104c25adcb5112b60ced4b96b4"
+    },
+    {
+      "query_id": "870",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 839,
+      "raw_response_sha256": "cd21e3f3c76ac4623897e65efeb484f2950601ae519a13cf6e29ce2b702e991d"
+    },
+    {
+      "query_id": "249",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 890,
+      "raw_response_sha256": "479d0860d7a1f3f4b7ab7a6766c0a4d265cca901223184e24fb7b9d1e128cfdf"
+    },
+    {
+      "query_id": "637",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 844,
+      "raw_response_sha256": "e056d477fa35c62f2591b2c111dc9d47a6e435791187af81d1634e05cd66a21b"
+    },
+    {
+      "query_id": "124",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 847,
+      "raw_response_sha256": "40a987467d49d024c11c04708ece1c5e5e4469643cd1a3b3eadffc5f3362f9ed"
+    },
+    {
+      "query_id": "913",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 904,
+      "raw_response_sha256": "7686686488c7d0101003be8d65b7d1a2f15f81104c25adcb5112b60ced4b96b4"
+    },
+    {
+      "query_id": "870",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 877,
+      "raw_response_sha256": "cd21e3f3c76ac4623897e65efeb484f2950601ae519a13cf6e29ce2b702e991d"
+    },
+    {
+      "query_id": "249",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 901,
+      "raw_response_sha256": "479d0860d7a1f3f4b7ab7a6766c0a4d265cca901223184e24fb7b9d1e128cfdf"
+    },
+    {
+      "query_id": "637",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 353,
+      "raw_response_sha256": "b4c295a7dfe5ef4cbdc020e2b6407c1ec68f84a4e9d4de681e2c69d95b5e539f"
+    },
+    {
+      "query_id": "124",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 304,
+      "raw_response_sha256": "e8db4e63b08dc6fcd252cf83b7f3ac0da860da04fccd5b7031aa760a68a37734"
+    }
+  ],
+  "raw_search_results_included": false
+}

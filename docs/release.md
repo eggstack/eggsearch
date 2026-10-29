@@ -12,13 +12,16 @@ the published release contains the exact 16-asset contract. Unix installer and
 updater checks passed locally, and native Windows PowerShell latest/pinned
 installer plus `update --check` smoke passed in run `34660182644`.
 
-`v0.4.2` is the latest published release as of preparing the `v0.4.3` candidate.
-It was staged by the Eggpack producer with the current 19-asset contract,
-attested while draft, and published on 2026-10-07. `v0.4.1` remains the first
-binary release carrying the frozen CodeGG parity surface; `v0.4.0` is crate +
-tag only, with no published binaries. Corrections after a crates.io publication
-always require a new version, a new changelog entry, and full re-qualification;
-see `plans/closure/codegg-legacy-search-parity/005-status.md` and the current
+`v0.4.3` is the latest published binary release. It was qualified and published
+from the exact source recorded in `plans/closure/mode-off-repository-locality-corrective/002-status.md`.
+The separate Python distribution `eggsearch==0.4.4` was published to PyPI on
+2026-10-28; it does not represent a new binary release. `v0.4.2` was staged by
+the Eggpack producer with the 19-asset contract, attested while draft, and
+published on 2026-10-07. `v0.4.1` remains the first binary release carrying the
+frozen CodeGG parity surface; `v0.4.0` is crate + tag only, with no published
+binaries. Corrections after a crates.io publication always require a new
+version, a new changelog entry, and full re-qualification; see
+`plans/closure/codegg-legacy-search-parity/005-status.md` and the current
 Mode-Off corrective plan.
 
 ## Preparation

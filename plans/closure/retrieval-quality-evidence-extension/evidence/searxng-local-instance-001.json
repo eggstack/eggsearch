@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "source_sha": "92b0a27737e21fb42cdcf8a984cab6a04931121f",
+  "eggsearch_binary_sha256": "24ab65f3a71dbb36dee85fa415e07edd13b031d6bf0a2934fe7b700d025d0cb2",
+  "searxng_version": "2026.10.29+c15647b",
+  "searxng_source_sha": "c15647b5a5921858d5147d291c658fbda3cba12c",
+  "python_version": "3.11.15",
+  "base_url": "http://127.0.0.1:18888",
+  "bind_address": "127.0.0.1",
+  "selected_upstream_engines": ["arxiv", "brave", "duckduckgo", "wikipedia"],
+  "search_categories": ["general"],
+  "search_format": "json",
+  "settings_fingerprint_sha256": "462a9bfc7e0752f6290ac46f56b7754b4b043b15d2ca2bba8466359b801cc12b",
+  "settings_secret_included": false,
+  "runtime": "temporary Python virtual environment under /tmp; server stopped after the cohort",
+  "instance_logs": {
+    "duckduckgo": "CAPTCHA responses observed during the cohort",
+    "brave": "HTTP 429 responses observed during the cohort",
+    "other": "SearXNG result URL callback logged AttributeError warnings"
+  },
+  "classification": "real local SearXNG adapter baseline; five-query cohort only; upstream throttling limits interpretation"
+}

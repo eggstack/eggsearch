@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "corpus_id": "rfc9110-extraction-pair-v1",
+  "provenance": "Official RFC Editor representations of RFC 9110; references and section identifiers only, no source body copied.",
+  "cases": [
+    {
+      "id": "rfc9110-html-http-browser",
+      "document_id": "rfc9110",
+      "source_type": "html",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.html",
+      "paired_renders": ["http_only", "browser"],
+      "focus_query": "15.5.5 404 Not Found 15.5.11 410 Gone",
+      "expected_sections": ["15.5.5", "15.5.11"],
+      "expected_terms": ["404 Not Found", "410 Gone"],
+      "interpretation_limit": "The HTML document is server-rendered; this is a browser execution and overhead control, not a JavaScript-only fidelity case."
+    },
+    {
+      "id": "rfc9110-pdf-text",
+      "document_id": "rfc9110",
+      "source_type": "pdf",
+      "url": "https://www.rfc-editor.org/rfc/rfc9110.pdf",
+      "feature_build": "pdf browser",
+      "runtime_pdf_enabled": true,
+      "focus_query": "15.5.5 404 Not Found 15.5.11 410 Gone",
+      "expected_sections": ["15.5.5", "15.5.11"],
+      "expected_terms": ["404 Not Found", "410 Gone"],
+      "interpretation_limit": "The PDF is text based; this does not evaluate scanned-page OCR."
+    }
+  ]
+}
