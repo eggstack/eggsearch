@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "dataset": "SciFact BEIR test",
+  "dataset_sha256": "40f78fb516f4a69bfc4fc13b5b4f1d7ee784638d937ccf338c6b6436934613d2",
+  "dataset_archive_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+  "source_component_sha256": {},
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "46f309a2649fdd781d77e3459e7868f0c35e76e760470a558af52e56d6d5ca52",
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "provider": "searxng",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "8a0f82e280d102774e6250da7ef7b2ae7858570b3e548cd792ba6513b884139d",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m007-cross-domain-provider-v1",
+  "query_ids": [
+    "870",
+    "1352",
+    "327"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 6,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": 0.0,
+  "macro_recall_at_k_over_valid_result_trials": 0.0,
+  "micro_recall_at_k_over_valid_result_trials": 0.0,
+  "rows": [
+    {
+      "query_id": "870",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 184,
+      "raw_response_sha256": "07221bd05d03e7f132e9abc7eec9126aa2c0eaa683a6171cef5b56848f10c473"
+    },
+    {
+      "query_id": "1352",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 85,
+      "raw_response_sha256": "4a50bc60da15e796666f4ac5fb8aa6f1ef1c4176167a83d00c4ad808fbb76984"
+    },
+    {
+      "query_id": "327",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 107,
+      "raw_response_sha256": "689c9ca5ba4ecdacc5f7a92dd6d4456af07d1b2e0c13becfbc5514b235ce1b04"
+    },
+    {
+      "query_id": "870",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 82,
+      "raw_response_sha256": "07221bd05d03e7f132e9abc7eec9126aa2c0eaa683a6171cef5b56848f10c473"
+    },
+    {
+      "query_id": "1352",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 82,
+      "raw_response_sha256": "4a50bc60da15e796666f4ac5fb8aa6f1ef1c4176167a83d00c4ad808fbb76984"
+    },
+    {
+      "query_id": "327",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 113,
+      "raw_response_sha256": "689c9ca5ba4ecdacc5f7a92dd6d4456af07d1b2e0c13becfbc5514b235ce1b04"
+    }
+  ],
+  "raw_search_results_included": false
+}

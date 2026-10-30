@@ -130,8 +130,10 @@ retrieval lift.
 
 ## Disposition
 
-M007 remains active. The independent corpus and bounded repeat runner are now
-available, with small repeated keyless and actual SearXNG observations
-recorded. Paired live browser/PDF extraction has a first operational cohort;
-JS-only fidelity, OCR, broader repetitions, and resource comparisons remain
-unmeasured. No ranking, routing, fetch policy, or feature default changed.
+At the time of this initial evidence report, M007 remained active. Subsequent
+cross-domain, paired extraction/resource, and CodeGG evidence is recorded in
+`docs/retrieval-quality-cross-domain-live.md`,
+`docs/retrieval-quality-extraction-qualification.md`, and
+`docs/retrieval-quality-consumer-acceptance.md`. The milestone is now closing
+pending hosted Linux, macOS, and Windows CI on the final merged candidate. No
+ranking, routing, fetch policy, or feature default changed.

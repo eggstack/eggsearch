@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "dataset": "SciFact BEIR test",
+  "dataset_sha256": "40f78fb516f4a69bfc4fc13b5b4f1d7ee784638d937ccf338c6b6436934613d2",
+  "dataset_archive_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+  "source_component_sha256": {},
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "46f309a2649fdd781d77e3459e7868f0c35e76e760470a558af52e56d6d5ca52",
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "provider": "yahoo",
+  "config_state": "binary defaults",
+  "config_fingerprint_sha256": null,
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m007-cross-domain-provider-v1",
+  "query_ids": [
+    "870",
+    "1352",
+    "327"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "provider_error": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 0,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 0,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": null,
+  "macro_recall_at_k_over_valid_result_trials": null,
+  "micro_recall_at_k_over_valid_result_trials": null,
+  "rows": [
+    {
+      "query_id": "870",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "yahoo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1049,
+      "raw_response_sha256": "41c83e2a714777bbe31a2b7727f3e76be0d742ef639b090534284852823e6cac"
+    },
+    {
+      "query_id": "1352",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "yahoo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1146,
+      "raw_response_sha256": "5c2e198c266dcbb048374a2b4167be54e101cb74db8dc4a6d62bc0b63446bee4"
+    },
+    {
+      "query_id": "327",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "yahoo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1056,
+      "raw_response_sha256": "494d12e599273585f47d83adf3177f2894798173fdbda0ed6822bd8cec1488cc"
+    },
+    {
+      "query_id": "870",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "yahoo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1044,
+      "raw_response_sha256": "41c83e2a714777bbe31a2b7727f3e76be0d742ef639b090534284852823e6cac"
+    },
+    {
+      "query_id": "1352",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "yahoo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1026,
+      "raw_response_sha256": "5c2e198c266dcbb048374a2b4167be54e101cb74db8dc4a6d62bc0b63446bee4"
+    },
+    {
+      "query_id": "327",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "yahoo",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1041,
+      "raw_response_sha256": "494d12e599273585f47d83adf3177f2894798173fdbda0ed6822bd8cec1488cc"
+    }
+  ],
+  "raw_search_results_included": false
+}

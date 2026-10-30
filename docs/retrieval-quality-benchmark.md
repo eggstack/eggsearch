@@ -134,8 +134,9 @@ unjudged results out of precision claims. Successful zero-result trials count
 as misses; provider errors and timeouts remain separate outcomes. Small
 cohorts do not establish provider superiority. The first small repeated
 DuckDuckGo cohort and current SearXNG/provider limitations are recorded in
-`docs/retrieval-quality-external-live.md`; this is a new follow-up to closed
-M006, not a reinterpretation of its synthetic contract corpus or historical
+`docs/retrieval-quality-external-live.md` and
+`docs/retrieval-quality-cross-domain-live.md`; these are follow-ups to closed
+M006, not reinterpretations of its synthetic contract corpus or historical
 comparison.
 
 ## Handoff contract
@@ -147,3 +148,8 @@ separate from latency, bytes, estimated token cost, and paid request cost.
 Missing annotations, unavailable connectors, and unsupported task classes are
 reported as unscorable or skipped with denominators, never assigned a zero
 quality score.
+
+## M007 follow-up evidence
+
+The later cross-domain live observations, paired extraction/resource runs, and
+CodeGG consumer acceptance are documented in [`retrieval-quality-cross-domain-live.md`](retrieval-quality-cross-domain-live.md), [`retrieval-quality-extraction-qualification.md`](retrieval-quality-extraction-qualification.md), and [`retrieval-quality-consumer-acceptance.md`](retrieval-quality-consumer-acceptance.md). These bounded observations do not revise the frozen synthetic baseline or establish provider superiority.

@@ -22,3 +22,8 @@ This is an Eggsearch-side handoff from the deterministic context experiment. Cod
 ## Consumer acceptance tests
 
 Register these as CodeGG-owned tests: initial core palette is callable; one deferred-tool lookup can hydrate a requested tool; hydration cache invalidates after fingerprint change; compact mode lowers serialized bytes while stable IDs, trust, truncation and failure/absence survive; full structured results remain available for evidence-bundle construction; unsupported compact mode falls back to standard/diagnostic; search-to-fetch-to-bundle trace does not fetch a source twice solely because of disclosure. Record serialized bytes and host round trips in CodeGG; the Eggsearch tests do not claim those consumer measurements.
+
+M007 adds a bounded CodeGG Harness Lab acceptance across the RFC 9110 and
+FEVER claim tasks. The exact model route, usage, verified tool sequence, and
+remaining measurement limits are in
+`docs/retrieval-quality-consumer-acceptance.md`.

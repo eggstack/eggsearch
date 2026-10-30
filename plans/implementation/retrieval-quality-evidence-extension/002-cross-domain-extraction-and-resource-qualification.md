@@ -1,6 +1,6 @@
 # M007 — Cross-domain Retrieval, Extraction, and Resource Qualification
 
-Status: active
+Status: closing
 Source: `plans/subsystems/retrieval-quality-evidence-extension-roadmap.md` M007
 Primary class: infrastructure
 Baseline: merged Eggsearch candidate `5a99711`; capture exact source and binary identities per run
@@ -27,9 +27,30 @@ Complete M007's remaining evidence gaps with a rights-attributed, multi-domain h
 - A reachable local SearXNG adapter arm is repeated with exact query IDs, configuration fingerprint, source revision and selected engine list.
 - Static HTML, JS-only HTML, text PDF, and scanned PDF outcomes are paired across the supported feature arms; browser runs use real Chrome; OCR absence is explicit. SSRF/private-target guards remain green.
 - Resource rows contain repeated paired latency and process/executable metrics or explicitly identify a measurement as unavailable. No CI threshold is introduced.
+- The final merged candidate passes hosted Linux, macOS, and Windows CI; local macOS evidence alone does not close this cross-platform qualification gate.
 - CodeGG acceptance has at least three successful verified turns across at least two registered cases/categories. Report schema bytes/provider attribution only if directly observed; keep model budget inside the existing operator-approved controller limit.
 - Run `make check`, `make docs-check`, JSON/license/corpus validation, and `git diff --check` on the exact final source. Update registry, M007 roadmap, evidence report, and closure record together. M007 cannot close while any required unqualified work package is silently omitted.
 
 ## Stop conditions
 
 Stop dataset import when component-level reuse rights are unclear. Stop public fixture exposure after the bounded trial and close the ephemeral origin. Stop model/provider runs at the controller budget, unrecognized route, or missing admission receipt. Stop browser trials on any private-target resolution or policy rejection; do not add a bypass.
+
+## Progress — 2026-10-30
+
+The four-family corpus and bounded cross-domain runner are implemented. SciFact,
+Natural Questions, FEVER, and Touché 2020 are recorded in the fixture README;
+Touché remains offline-only because opaque qrel IDs do not support safe live
+matching. Three matched queries were selected in each of SciFact, NQ, and FEVER
+and repeated twice for DuckDuckGo, Startpage, Yahoo, and the local SearXNG arm.
+Per-run reports and SearXNG identity are under
+`plans/closure/retrieval-quality-evidence-extension/evidence/`; aggregate
+interpretation is in `docs/retrieval-quality-cross-domain-live.md`. This completes the corpus and repeated-provider work packages for the reported
+arms. Paired HTTP-only, PDF-only, browser-only, and combined extraction arms are
+recorded in `docs/retrieval-quality-extraction-qualification.md`; browser used
+real Chrome and the scanned PDF explicitly returned the no-OCR classification.
+Three CodeGG RFC 9110 turns and one FEVER turn passed independent verification;
+the exact schema-byte and upstream-provider attribution boundaries remain
+unavailable and are recorded in `docs/retrieval-quality-consumer-acceptance.md`.
+Resource and extraction evidence is complete for this macOS source candidate.
+M007 remains in closing status until the final merged candidate passes hosted
+Linux, macOS, and Windows CI and a SHA-specific closure record is committed.

@@ -1,6 +1,6 @@
 # Retrieval Quality Evidence Extension Roadmap
 
-Status: active
+Status: closing
 Source: corrective follow-up to closed deterministic retrieval quality M006
 References: `plans/implementation/deterministic-retrieval-quality/006-comparative-qualification-and-closure.md`; `plans/closure/deterministic-retrieval-quality/006-status.md`; ADR-0006.
 

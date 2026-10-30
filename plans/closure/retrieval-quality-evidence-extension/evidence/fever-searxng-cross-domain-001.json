@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "dataset": "FEVER BEIR test",
+  "dataset_sha256": "4f359df04ad5a9a29c2f78009e7229d2a1c8eb0bf42d953853811373dea13305",
+  "dataset_archive_sha256": null,
+  "source_component_sha256": {
+    "beir_fever_queries_parquet_sha256": "b9cf00001ef1aa07a7030118490ce5f8a840e783ad8d972b9afee8ef281d6093",
+    "beir_fever_test_qrels_tsv_sha256": "6599dab4e2189ca5eb5216546021710c06dc8bdd1a0c59cc1fa52129c6e038b3",
+    "beir_fever_revision": "426aea4d30c65c041f093ae072e25fb5a0e64659",
+    "beir_fever_qrels_revision": "64cd0e4ef9b63a88ac8e69d1133a2f649acd4745"
+  },
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "46f309a2649fdd781d77e3459e7868f0c35e76e760470a558af52e56d6d5ca52",
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "provider": "searxng",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "8a0f82e280d102774e6250da7ef7b2ae7858570b3e548cd792ba6513b884139d",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m007-cross-domain-provider-v1",
+  "query_ids": [
+    "fever:test139749",
+    "fever:test153539",
+    "fever:test111976"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 4,
+    "known_relevant_query_document_pairs_across_valid_trials": 8,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": 0.0,
+  "macro_recall_at_k_over_valid_result_trials": 0.0,
+  "micro_recall_at_k_over_valid_result_trials": 0.0,
+  "rows": [
+    {
+      "query_id": "fever:test139749",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 84,
+      "raw_response_sha256": "0bf592a0071baebedf66221545b39f264c930b9ba41902f836a5245b03ac2bf4"
+    },
+    {
+      "query_id": "fever:test153539",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 900,
+      "raw_response_sha256": "8380c9f633b2652c98551ece723d53ce687d5f6f3b6014ad14f573340d6e3a8a"
+    },
+    {
+      "query_id": "fever:test111976",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 2,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 766,
+      "raw_response_sha256": "8d0035ae2197b4e18ed232db83f6336c0cf2d4e7fd9f5a72af09ec90c07c6d45"
+    },
+    {
+      "query_id": "fever:test139749",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 115,
+      "raw_response_sha256": "0bf592a0071baebedf66221545b39f264c930b9ba41902f836a5245b03ac2bf4"
+    },
+    {
+      "query_id": "fever:test153539",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 85,
+      "raw_response_sha256": "8380c9f633b2652c98551ece723d53ce687d5f6f3b6014ad14f573340d6e3a8a"
+    },
+    {
+      "query_id": "fever:test111976",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 2,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 87,
+      "raw_response_sha256": "8d0035ae2197b4e18ed232db83f6336c0cf2d4e7fd9f5a72af09ec90c07c6d45"
+    }
+  ],
+  "raw_search_results_included": false
+}
