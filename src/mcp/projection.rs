@@ -100,6 +100,8 @@ fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serd
     }
     let mut projected = project(tool, value, ResponseDetail::Compact);
     reduce_brief_fields(&mut projected);
+    let applicability_total = add_applicability_summary(&mut projected);
+    let provider_failure_total = add_provider_failure_summary(&mut projected);
     if let Some(object) = projected.as_object_mut() {
         object.insert(
             "response_detail".into(),
@@ -140,6 +142,71 @@ fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serd
                 .iter()
                 .rposition(|item| !brief_record_is_failure(item));
             let Some(index) = removable else {
+                if tool == "batch_fetch" {
+                    let removed_failure = projected
+                        .get_mut(key)
+                        .and_then(serde_json::Value::as_array_mut)
+                        .and_then(|values| {
+                            values
+                                .iter()
+                                .rposition(brief_record_is_failure)
+                                .map(|index| (index, values.remove(index)))
+                        });
+                    if let Some((position, member)) = removed_failure {
+                        let member_index = member
+                            .get("index")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(position as u64);
+                        record_failed_batch_member(&mut projected, member_index);
+                        omitted += 1;
+                        clipped = true;
+                        continue;
+                    }
+                }
+                let removed_applicability = projected
+                    .get_mut("applicability")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .and_then(|items| (!items.is_empty()).then(|| items.pop()).flatten())
+                    .is_some();
+                if removed_applicability {
+                    clipped = true;
+                    let retained = projected
+                        .get("applicability")
+                        .and_then(serde_json::Value::as_array)
+                        .map_or(0, Vec::len);
+                    if let Some(summary) = projected
+                        .get_mut("applicability_summary")
+                        .and_then(serde_json::Value::as_object_mut)
+                    {
+                        summary.insert(
+                            "omitted".into(),
+                            applicability_total.saturating_sub(retained).into(),
+                        );
+                    }
+                    continue;
+                }
+                let removed_provider_failure = projected
+                    .get_mut("providers_failed")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .and_then(Vec::pop)
+                    .is_some();
+                if removed_provider_failure {
+                    clipped = true;
+                    let retained = projected
+                        .get("providers_failed")
+                        .and_then(serde_json::Value::as_array)
+                        .map_or(0, Vec::len);
+                    if let Some(summary) = projected
+                        .get_mut("providers_failed_summary")
+                        .and_then(serde_json::Value::as_object_mut)
+                    {
+                        summary.insert(
+                            "omitted".into(),
+                            provider_failure_total.saturating_sub(retained).into(),
+                        );
+                    }
+                    continue;
+                }
                 break;
             };
             values.remove(index);
@@ -195,8 +262,118 @@ fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serd
             "output_truncated".into(),
             serde_json::Value::Bool(clipped || omitted > 0),
         );
+        let retained = object
+            .get("applicability")
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len);
+        if let Some(summary) = object
+            .get_mut("applicability_summary")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            summary.insert(
+                "omitted".into(),
+                applicability_total.saturating_sub(retained).into(),
+            );
+        }
+        let retained_provider_failures = object
+            .get("providers_failed")
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len);
+        if let Some(summary) = object
+            .get_mut("providers_failed_summary")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            summary.insert(
+                "omitted".into(),
+                provider_failure_total
+                    .saturating_sub(retained_provider_failures)
+                    .into(),
+            );
+        }
     }
     projected
+}
+
+fn add_applicability_summary(value: &mut serde_json::Value) -> usize {
+    let Some(items) = value
+        .get("applicability")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return 0;
+    };
+    let total = items.len();
+    let mut summary = serde_json::Map::new();
+    for (key, aliases) in [
+        ("affected", ["affected", "applicable"]),
+        ("not_affected", ["not_affected", "unaffected"]),
+        ("unknown", ["unknown", "unknown"]),
+    ] {
+        let count = items
+            .iter()
+            .filter(|item| {
+                item.get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|status| aliases.contains(&status))
+            })
+            .count();
+        summary.insert(key.into(), count.into());
+    }
+    summary.insert("total".into(), total.into());
+    summary.insert("omitted".into(), 0usize.into());
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "applicability_summary".into(),
+            serde_json::Value::Object(summary),
+        );
+    }
+    total
+}
+
+fn add_provider_failure_summary(value: &mut serde_json::Value) -> usize {
+    let Some(failures) = value
+        .get("providers_failed")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return 0;
+    };
+    let total = failures.len();
+    if total > 0 {
+        let mut error_classes = serde_json::Map::new();
+        for failure in failures {
+            let class = failure
+                .get("error_class")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            let count = error_classes
+                .get(class)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            error_classes.insert(class.into(), (count + 1).into());
+        }
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "providers_failed_summary".into(),
+                serde_json::json!({
+                    "total": total,
+                    "omitted": 0,
+                    "error_classes": error_classes
+                }),
+            );
+        }
+    }
+    total
+}
+
+fn record_failed_batch_member(value: &mut serde_json::Value, index: u64) {
+    if let Some(object) = value.as_object_mut() {
+        let indices = object
+            .entry("failed_member_indices")
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        if let Some(indices) = indices.as_array_mut() {
+            indices.push(index.into());
+            indices.sort_by_key(|value| value.as_u64().unwrap_or(u64::MAX));
+        }
+    }
 }
 
 fn brief_serialized_chars(value: &serde_json::Value) -> usize {

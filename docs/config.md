@@ -54,8 +54,10 @@ Omitted `response_detail` defaults to `brief` in compact mode; explicit
 `diagnostic`, `standard`, or `compact` calls override it. `brief_max_chars`
 defaults to 8,000 and must be between 512 and 32,000. Brief output preserves
 status, source identity, trust, critical warnings and security applicability;
-it reports omitted records and truncation. The structured result and text
-fallback are both brief. Switch to `schema_profile = "full"` for complete
+when applicability records exceed the budget, per-state totals remain in
+`applicability_summary`; omitted provider failures and batch member indexes
+are also counted. The structured result and text fallback are both brief.
+Switch to `schema_profile = "full"` for complete
 schema guidance and the existing diagnostic-by-default response behavior.
 
 ## Provider Requirements

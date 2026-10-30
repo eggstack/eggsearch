@@ -176,7 +176,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `mcp_tool_contract` | 15 | Canonical registry parity, sanitization, deterministic fingerprints, and compact-profile size/all-name contract |
 | `mcp_schema_slimming` | 17 | Slimmed ordinary schema size budget with legacy-field acceptance |
 | `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
-| `mcp_projection` | 19 | Brief/compact/standard/diagnostic projections: status, trust, security applicability, failure retention, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, 15-task byte/retention trace, bundle identity |
+| `mcp_projection` | 21 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, 15-task byte/retention trace, bundle identity |
 
 ## Tool-Surface Evaluation (2 suites)
 

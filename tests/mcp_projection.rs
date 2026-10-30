@@ -325,8 +325,11 @@ fn brief_budget_and_reduction_cover_repository_and_research_groups() {
     );
     assert!(bytes(&bounded) <= 512, "{} chars", bytes(&bounded));
     assert_eq!(bounded["retrieval_status"]["has_failures"], true);
-    assert_eq!(bounded["providers_failed"].as_array().unwrap().len(), 1);
-    assert_eq!(bounded["providers_failed"][0]["error_class"], "timeout");
+    assert_eq!(bounded["providers_failed_summary"]["total"], 1);
+    assert_eq!(
+        bounded["providers_failed_summary"]["error_classes"]["timeout"],
+        1
+    );
 
     for tool in ["repo_search", "research_search"] {
         let item = json!({
@@ -377,6 +380,106 @@ fn brief_budget_and_reduction_cover_repository_and_research_groups() {
             "external_untrusted"
         );
     }
+}
+
+#[test]
+fn brief_budget_bounds_large_security_applicability_lists() {
+    let payload = json!({
+        "query": "package ecosystem",
+        "vulnerabilities": [],
+        "applicability": (0..40).map(|index| json!({
+            "package": format!("package-{index}"),
+            "version": "1.2.3",
+            "status": match index % 3 {
+                0 => "affected",
+                1 => "not_affected",
+                _ => "unknown"
+            }
+        })).collect::<Vec<_>>(),
+        "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+        "warnings": [],
+        "structured_warnings": []
+    });
+    let brief = eggsearch::mcp::projection::project_with_budget(
+        "security_search",
+        payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(bytes(&brief) <= 512, "{} chars", bytes(&brief));
+    assert_eq!(brief["applicability_summary"]["affected"], 14);
+    assert_eq!(brief["applicability_summary"]["not_affected"], 13);
+    assert_eq!(brief["applicability_summary"]["unknown"], 13);
+    assert_eq!(brief["output_truncated"], true);
+}
+
+#[test]
+fn brief_budget_summarizes_many_provider_and_batch_failures() {
+    let providers_failed = (0..40)
+        .map(|index| {
+            json!({
+                "provider_id": format!("provider-{index}"),
+                "error_class": "timeout",
+                "message": "provider timed out"
+            })
+        })
+        .collect::<Vec<_>>();
+    let provider_payload = json!({
+        "results": [],
+        "providers_failed": providers_failed,
+        "retrieval_summary": {"has_failures": true, "has_absences": false, "has_truncation": false},
+        "warnings": [],
+        "structured_warnings": []
+    });
+    let provider_brief = eggsearch::mcp::projection::project_with_budget(
+        "web_search",
+        provider_payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(
+        bytes(&provider_brief) <= 512,
+        "{} chars",
+        bytes(&provider_brief)
+    );
+    assert_eq!(provider_brief["retrieval_status"]["has_failures"], true);
+    assert_eq!(provider_brief["providers_failed_summary"]["total"], 40);
+    assert!(
+        provider_brief["providers_failed_summary"]["omitted"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+
+    let results = (0..20)
+        .map(|index| {
+            json!({
+                "index": index,
+                "item_type": "web",
+                "ok": false,
+                "error": "timeout",
+                "response": null
+            })
+        })
+        .collect::<Vec<_>>();
+    let batch_payload =
+        json!({"failed":20,"fetched":0,"results":results,"warnings":[],"structured_warnings":[]});
+    let batch_brief = eggsearch::mcp::projection::project_with_budget(
+        "batch_fetch",
+        batch_payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(bytes(&batch_brief) <= 512, "{} chars", bytes(&batch_brief));
+    assert_eq!(batch_brief["failed"], 20);
+    let retained_failure_count = batch_brief["results"].as_array().unwrap().len();
+    let omitted_failure_indices = batch_brief["failed_member_indices"].as_array().unwrap();
+    assert_eq!(retained_failure_count + omitted_failure_indices.len(), 20);
+    assert!(batch_brief["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["ok"] == false));
 }
 
 #[test]
