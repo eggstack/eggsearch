@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001 closed, M002 ready, M003 blocked by M002)
+Status: active (M001-M002 closed, M003 blocked on live LM Studio consumer qualification)
 Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
