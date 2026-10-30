@@ -119,19 +119,24 @@ expected absence.
 
 ## External independently judged cohort
 
-The separate M007 corrective adds 300 SciFact test claims and 339 published
-positive evidence judgments in
-`tests/fixtures/retrieval_quality/scifact_test_queries.jsonl` and
-`tests/fixtures/retrieval_quality/scifact_test_qrels.jsonl`, with query and
-paper-title attribution and no abstract text. Its bounded, opt-in repeated
-runner is `scripts/run_retrieval_quality_external_live.py`. It reports title
-matched hit@k/recall over known positive judgments and leaves unjudged results
-out of precision claims. Successful zero-result trials count as misses;
-provider errors and timeouts remain separate outcomes. The first small repeated
-DuckDuckGo cohort and the current SearXNG/provider limitations are recorded in
-`docs/retrieval-quality-external-live.md`; they are not a broad quality ranking.
-This is a new follow-up to closed M006, not a reinterpretation of its synthetic
-contract corpus or historical comparison.
+The separate M007 corrective includes four published task families for
+opt-in evidence: 300 SciFact claims, 100 Natural Questions, 100 FEVER claims,
+and 49 Touché 2020 argument topics. Component licenses, attribution, fixed
+selection seeds, source fingerprints, and judgment semantics are recorded in
+`tests/fixtures/retrieval_quality/README.md`. No source passages or corpus
+bodies are retained. Touché is offline-only because its opaque judged document
+IDs cannot be mapped to web results without carrying document metadata and its
+argument relevance is not comparable to ordinary web retrieval. The bounded,
+opt-in repeated runner is `scripts/run_retrieval_quality_external_live.py`;
+`--dataset` selects `scifact`, `nq`, `fever`, or `touche2020`. It reports exact
+URL and normalized-title matches over known positive judgments and leaves
+unjudged results out of precision claims. Successful zero-result trials count
+as misses; provider errors and timeouts remain separate outcomes. Small
+cohorts do not establish provider superiority. The first small repeated
+DuckDuckGo cohort and current SearXNG/provider limitations are recorded in
+`docs/retrieval-quality-external-live.md`; this is a new follow-up to closed
+M006, not a reinterpretation of its synthetic contract corpus or historical
+comparison.
 
 ## Handoff contract
 

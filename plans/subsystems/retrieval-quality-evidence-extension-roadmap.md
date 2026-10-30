@@ -35,7 +35,9 @@ routine CI.
 ## Acceptance and handoff
 
 Register implementation under
-`plans/implementation/retrieval-quality-evidence-extension/001-expanded-live-and-consumer-acceptance.md`.
+`plans/implementation/retrieval-quality-evidence-extension/001-expanded-live-and-consumer-acceptance.md`
+and the active follow-up
+`plans/implementation/retrieval-quality-evidence-extension/002-cross-domain-extraction-and-resource-qualification.md`.
 Record source SHA, corpus/annotation fingerprints, provider configuration,
 trial windows and budgets, feature/runtime versions, model route and usage,
 per-case judgments and failures, plus explicit unavailable/blocked arms in

@@ -10,8 +10,44 @@ from pathlib import Path
 
 
 FIXTURE_DIRECTORY = Path(__file__).parents[1] / "tests/fixtures/retrieval_quality"
-QUERY_FILE = FIXTURE_DIRECTORY / "scifact_test_queries.jsonl"
-QRELS_FILE = FIXTURE_DIRECTORY / "scifact_test_qrels.jsonl"
+DATASETS = {
+    "scifact": {
+        "name": "SciFact BEIR test",
+        "query_file": "scifact_test_queries.jsonl",
+        "qrel_file": "scifact_test_qrels.jsonl",
+        "archive_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+    },
+    "nq": {
+        "name": "Natural Questions BEIR test",
+        "query_file": "nq_test_queries.jsonl",
+        "qrel_file": "nq_test_qrels.jsonl",
+        "archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+        "source_fingerprints": {
+            "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+        },
+    },
+    "touche2020": {
+        "name": "Touché 2020 test",
+        "query_file": "touche2020_test_queries.jsonl",
+        "qrel_file": "touche2020_test_qrels.jsonl",
+        "archive_sha256": "1a706ed9c03ecc75cf012495bd8e37b761f7b0350a939910d0f54862e26fc601",
+        "source_fingerprints": {
+            "beir_touche2020_archive_sha256": "1a706ed9c03ecc75cf012495bd8e37b761f7b0350a939910d0f54862e26fc601",
+        },
+    },
+    "fever": {
+        "name": "FEVER BEIR test",
+        "query_file": "fever_test_queries.jsonl",
+        "qrel_file": "fever_test_qrels.jsonl",
+        "archive_sha256": None,
+        "source_fingerprints": {
+            "beir_fever_queries_parquet_sha256": "b9cf00001ef1aa07a7030118490ce5f8a840e783ad8d972b9afee8ef281d6093",
+            "beir_fever_test_qrels_tsv_sha256": "6599dab4e2189ca5eb5216546021710c06dc8bdd1a0c59cc1fa52129c6e038b3",
+            "beir_fever_revision": "426aea4d30c65c041f093ae072e25fb5a0e64659",
+            "beir_fever_qrels_revision": "64cd0e4ef9b63a88ac8e69d1133a2f649acd4745",
+        },
+    },
+}
 KEYLESS_PROVIDERS = {"duckduckgo", "startpage", "yahoo", "brave", "mojeek", "searxng"}
 MAX_PROVIDER_QUERIES = 80
 MAX_RESULTS = 10
@@ -27,20 +63,28 @@ def normalize_title(value):
     return "".join(char for char in normalized if char.isalnum())
 
 
-def load_corpus():
-    queries_raw = QUERY_FILE.read_bytes()
-    qrels_raw = QRELS_FILE.read_bytes()
+def normalize_url(value):
+    value = value.strip().casefold().split("#", 1)[0]
+    return value.rstrip("/")
+
+
+def load_corpus(dataset_id):
+    manifest = DATASETS[dataset_id]
+    queries_raw = (FIXTURE_DIRECTORY / manifest["query_file"]).read_bytes()
+    qrels_raw = (FIXTURE_DIRECTORY / manifest["qrel_file"]).read_bytes()
     queries = [json.loads(line) for line in queries_raw.splitlines()]
     qrels = [json.loads(line) for line in qrels_raw.splitlines()]
-    if len(queries) != 300 or len(qrels) != 300:
+    if not queries or len(queries) != len(qrels):
         raise ValueError("external corpus schema or case count differs from the frozen manifest")
     if [case["id"] for case in queries] != [case["id"] for case in qrels]:
         raise ValueError("external query and qrel IDs do not align")
+    if dataset_id == "scifact" and (len(queries) != 300 or len(qrels) != 300):
+        raise ValueError("SciFact case count differs from the frozen manifest")
     cases = [dict(query, relevant_documents=judgments["relevant_documents"]) for query, judgments in zip(queries, qrels)]
-    if sum(len(case["relevant_documents"]) for case in cases) != 339:
+    if dataset_id == "scifact" and sum(len(case["relevant_documents"]) for case in cases) != 339:
         raise ValueError("external corpus judgment count differs from the frozen manifest")
     fingerprint = digest(queries_raw + b"\0" + qrels_raw)
-    return {"dataset": "SciFact BEIR test", "cases": cases}, fingerprint
+    return {"dataset": manifest["name"], "cases": cases}, fingerprint, manifest
 
 
 def select_cases(cases, query_count, seed):
@@ -66,12 +110,24 @@ def run_one(binary, config, provider, case, repetition, max_results, timeout):
             response = {}
         results = response.get("results", []) if isinstance(response, dict) else []
         errors = response.get("providers_failed", []) if isinstance(response, dict) else []
-        relevant = {normalize_title(item["title"]): item["corpus_id"] for item in case["relevant_documents"]}
+        relevant_titles = {
+            normalize_title(item["title"]): item["corpus_id"]
+            for item in case["relevant_documents"]
+            if item.get("title")
+        }
+        relevant_urls = {
+            normalize_url(item["url"]): item["corpus_id"]
+            for item in case["relevant_documents"]
+            if item.get("url")
+        }
         matches = []
         matched_ids = set()
         for rank, result in enumerate(results[:max_results], 1):
             title = result.get("title", "") if isinstance(result, dict) else ""
-            matched_id = relevant.get(normalize_title(title))
+            url = result.get("url", "") if isinstance(result, dict) else ""
+            matched_id = relevant_urls.get(normalize_url(url)) if url else None
+            if matched_id is None:
+                matched_id = relevant_titles.get(normalize_title(title))
             if matched_id is not None and matched_id not in matched_ids:
                 matched_ids.add(matched_id)
                 matches.append({"corpus_id": matched_id, "rank": rank})
@@ -118,6 +174,7 @@ def main():
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--provider", required=True, choices=sorted(KEYLESS_PROVIDERS))
+    parser.add_argument("--dataset", choices=sorted(DATASETS), default="scifact")
     parser.add_argument("--config", type=Path)
     parser.add_argument("--query-count", type=int, default=10)
     parser.add_argument("--repetitions", type=int, default=2)
@@ -142,7 +199,7 @@ def main():
     if args.max_provider_queries > MAX_PROVIDER_QUERIES:
         parser.error(f"--max-provider-queries cannot exceed {MAX_PROVIDER_QUERIES}")
 
-    corpus, corpus_sha = load_corpus()
+    corpus, corpus_sha, dataset_manifest = load_corpus(args.dataset)
     selected = select_cases(corpus["cases"], args.query_count, args.seed)
     binary_sha = digest(args.binary.read_bytes())
     rows = []
@@ -175,7 +232,8 @@ def main():
         "schema_version": 1,
         "dataset": corpus["dataset"],
         "dataset_sha256": corpus_sha,
-        "dataset_archive_sha256": DATASET_ARCHIVE_SHA256,
+        "dataset_archive_sha256": dataset_manifest["archive_sha256"],
+        "source_component_sha256": dataset_manifest.get("source_fingerprints", {}),
         "source_sha": args.source_sha.lower(),
         "runner_sha256": digest(Path(__file__).read_bytes()),
         "binary_sha256": binary_sha,
