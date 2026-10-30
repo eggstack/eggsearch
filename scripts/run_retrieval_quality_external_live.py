@@ -241,6 +241,7 @@ def main():
         "host": platform.platform(),
         "provider": args.provider,
         "config_state": "explicit config supplied" if args.config else "binary defaults",
+        "config_fingerprint_sha256": digest(args.config.read_bytes()) if args.config else None,
         "cache_state": "uncontrolled; CLI provides no cache-state control",
         "seed": args.seed,
         "query_ids": [case["id"] for case in selected],
