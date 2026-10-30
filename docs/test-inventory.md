@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5693 | 24 |
-| `--features mock` | 5422 | 2 |
+| `--all-features` | 5694 | 24 |
+| `--features mock` | 5423 | 2 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -176,7 +176,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `mcp_tool_contract` | 15 | Canonical registry parity, sanitization, deterministic fingerprints, and compact-profile size/all-name contract |
 | `mcp_schema_slimming` | 17 | Slimmed ordinary schema size budget with legacy-field acceptance |
 | `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
-| `mcp_projection` | 21 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, 15-task byte/retention trace, bundle identity |
+| `mcp_projection` | 22 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, intact over-800-character document extraction within budget, 15-task byte/retention trace, bundle identity |
 
 ## Tool-Surface Evaluation (2 suites)
 

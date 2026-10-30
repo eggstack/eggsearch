@@ -122,7 +122,8 @@ fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serd
         .map_or(0, Vec::len);
     let mut clipped = false;
     let mut omitted = 0usize;
-    for per_text_limit in [800usize, 320, 128, 48, 0] {
+    let mut per_text_limit = max_chars;
+    loop {
         clipped |= clip_brief_strings(&mut projected, per_text_limit);
         loop {
             let size = brief_serialized_chars(&projected);
@@ -224,9 +225,10 @@ fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serd
                 serde_json::Value::Bool(clipped || omitted > 0),
             );
         }
-        if brief_serialized_chars(&projected) <= max_chars {
+        if brief_serialized_chars(&projected) <= max_chars || per_text_limit == 0 {
             break;
         }
+        per_text_limit = (per_text_limit / 2).min(per_text_limit.saturating_sub(1));
     }
     for optional in [
         "next_actions",

@@ -264,6 +264,47 @@ fn brief_preserves_security_applicability_states_and_fetch_truncation() {
 }
 
 #[test]
+fn brief_keeps_extracted_document_text_when_it_fits_the_budget() {
+    let query = "What are two changes in the Rust 1.90.0 announcement?";
+    let document_text = format!(
+        "<<<EXTERNAL_UNTRUSTED field=text id=fetch_rust_1_90>>>\n{}\n<<<END>>>",
+        (0..40)
+            .map(|index| format!(
+                "Section {index}: Rust 1.90.0 includes a documented language and tooling change."
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let document = json!({
+        "query": query,
+        "url": "https://blog.rust-lang.org/2025/09/18/Rust-1.90.0/",
+        "final_url": "https://blog.rust-lang.org/2025/09/18/Rust-1.90.0/",
+        "content_type": "text/html",
+        "fetched": true,
+        "truncated": false,
+        "trust": "external_untrusted",
+        "text": document_text,
+        "warnings": [],
+        "structured_warnings": []
+    });
+
+    let diagnostic = project("web_fetch", document.clone(), ResponseDetail::Diagnostic);
+    let brief = eggsearch::mcp::projection::project_with_budget(
+        "web_fetch",
+        document,
+        ResponseDetail::Brief,
+        8_000,
+    );
+
+    assert_eq!(diagnostic["query"], query);
+    assert_eq!(brief["query"], query);
+    assert_eq!(diagnostic["text"], brief["text"]);
+    assert_eq!(brief["truncated"], false);
+    assert_eq!(brief["output_truncated"], false);
+    assert!(brief["text"].as_str().unwrap().chars().count() > 800);
+}
+
+#[test]
 fn brief_enforces_character_budget_and_retains_failed_batch_items() {
     let mut payload = web_payload(
         json!([card("a", 1, 0), card("b", 1, 0), card("c", 1, 0)]),
