@@ -76,9 +76,12 @@ configuration rollback is verified. The canonical gate was rerun with
 `tests/bounded_command.rs` and remained there without test output for over two
 minutes, then was manually interrupted (exit 130). No assertion failure was
 reported. The same host-specific stall was recorded in the original M004
-qualification. The canonical gate is not green, so M004 remains blocked;
-rerun it on a host where the process-group/cap-breach tests complete before
-closing this milestone.
+qualification. A serial retry,
+`rtk cargo test --locked --all-features --test bounded_command -- --test-threads=1`,
+also remained silent for over two minutes and was interrupted (exit 130), so
+test parallelism did not resolve the stall. The canonical gate is not green,
+so M004 remains blocked; rerun it on a host where the process-group/cap-breach
+tests complete before closing this milestone.
 
 M003 remains blocked on broader paired model trials, exact tokenizer and
 prompt-token attribution, structured-content and refresh behavior, protected
