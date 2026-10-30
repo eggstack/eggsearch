@@ -110,6 +110,7 @@ def run_one(binary, config, provider, case, repetition, max_results, timeout):
             response = {}
         results = response.get("results", []) if isinstance(response, dict) else []
         errors = response.get("providers_failed", []) if isinstance(response, dict) else []
+        relevant_ids = {item["corpus_id"] for item in case["relevant_documents"]}
         relevant_titles = {
             normalize_title(item["title"]): item["corpus_id"]
             for item in case["relevant_documents"]
@@ -150,7 +151,7 @@ def run_one(binary, config, provider, case, repetition, max_results, timeout):
             ],
             "result_count": len(results),
             "matched_relevant_documents": matches,
-            "relevant_document_count": len(relevant),
+            "relevant_document_count": len(relevant_ids),
             "matched_relevant_document_count": len(matches),
             "latency_ms": elapsed_ms,
             "raw_response_sha256": digest(raw),
