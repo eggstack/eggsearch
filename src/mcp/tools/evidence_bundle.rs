@@ -25,7 +25,7 @@ pub struct EvidenceBundleArgs {
     /// Maximum total characters across all fetched text (default 100000, cap 500000).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_total_chars: Option<usize>,
-    /// Response detail: compact, standard, or diagnostic. Bundle identity is
+    /// Response detail: brief, compact, standard, or diagnostic. Bundle identity is
     /// unchanged across all modes; the canonical bundle is always returned.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,

@@ -1,6 +1,6 @@
 # M002 — Brief Evidence Projection and Deterministic Output Budgets
 
-Status: blocked (hard dependency: M001 closure)
+Status: blocked (implementation is ready for closure after accepted M001 closure)
 Primary class: capability
 Planning baseline: eggstack/eggsearch main `a666517c39adf28f32fad04198c74cb70d935c5b` (reconfirm after M001)
 Roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

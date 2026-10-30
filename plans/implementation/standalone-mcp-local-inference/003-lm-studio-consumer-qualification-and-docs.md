@@ -1,6 +1,6 @@
 # M003 — LM Studio Direct-MCP Qualification and Consumer Documentation
 
-Status: blocked (hard dependencies: M001 and M002 closure)
+Status: blocked (hard dependency: M002 closure; live LM Studio API smoke also requires its protected API setting)
 Primary class: capability
 Planning baseline: eggstack/eggsearch main `a666517c39adf28f32fad04198c74cb70d935c5b` (rebase baseline to exact M002 candidate at start)
 Roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

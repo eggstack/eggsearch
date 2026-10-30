@@ -1,6 +1,6 @@
 # M001 — Opt-in Compact Ten-Tool MCP Advertisement
 
-Status: ready
+Status: active
 Primary class: capability
 Planning baseline: eggstack/eggsearch main `a666517c39adf28f32fad04198c74cb70d935c5b` (2026-10-30)
 Roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
@@ -17,7 +17,7 @@ Create a **process-configured, opt-in** compact MCP tool-definition profile for 
 - `src/mcp/output_schema.rs` attaches permissive per-tool output schemas; `src/mcp/tool_contract.rs` already has concise canonical selection descriptions, aliases and discovery metadata.
 - `src/mcp/tools/{web_search,repo_search,research_search,security_search,web_fetch,repo_fetch,batch_fetch,repo_map,evidence_bundle,provider_status}.rs` deserialize the canonical runtime argument structs; older advanced fields are sometimes `#[schemars(skip)]` while remaining accepted.
 - `src/mcp/mod.rs::build_server` is shared by client-owned stdio and loopback HTTP; `src/commands/mcp.rs` is transport startup. `src/core/config.rs` / `src/config.rs` own config parsing and validation.
-- `docs/retrieval-quality-context-efficiency.md` records 72,939 full `tools/list` serialized bytes, 14,008 bytes for a three-tool subset, and ~18.2k tokens by a 4-bytes/token proxy. Do not treat this as a measured LM Studio prompt cost.
+- `docs/retrieval-quality-context-efficiency.md` records 72,950 full `tools/list` serialized bytes, 18,481 bytes for the compact ten-tool profile, and 14,008 bytes for a three-tool subset. Token figures are a four-bytes/token proxy, not a measured LM Studio prompt cost.
 
 ## Invariants / non-goals
 

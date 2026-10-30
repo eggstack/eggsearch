@@ -158,7 +158,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `fetch_safety` | Fetch safety bounds |
 | `security_applicability_corpus` | Security applicability pipeline |
 | `security_applicability_contract` | Security applicability assessment contract |
-| `mcp_http` | Loopback Streamable HTTP lifecycle and transport hardening |
+| `mcp_http` | Loopback Streamable HTTP lifecycle, transport hardening, and compact-profile initialized `tools/list` |
 | `security_applicability_regression` | Security applicability regression |
 | `research_evidence_corpus` | Research evidence regression |
 | `research_semantic_roles` | Research semantic role mapping |
@@ -173,20 +173,20 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 
 | Suite | Tests | Focus |
 |-------|-------|-------|
-| `mcp_tool_contract` | 14 | Canonical registry parity: aliases, discovery text, sanitization, fingerprint determinism |
+| `mcp_tool_contract` | 15 | Canonical registry parity, sanitization, deterministic fingerprints, and compact-profile size/all-name contract |
 | `mcp_schema_slimming` | 17 | Slimmed ordinary schema size budget with legacy-field acceptance |
 | `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
-| `mcp_projection` | 14 | Response-detail projection: failure-vs-absence, trust, conflicts, truncation, bundle identity, byte reduction |
+| `mcp_projection` | 19 | Brief/compact/standard/diagnostic projections: status, trust, security applicability, failure retention, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, 15-task byte/retention trace, bundle identity |
 
 ## Tool-Surface Evaluation (2 suites)
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
-| `tool_surface_evaluation` | None | 4 | Labeled 43-fixture discovery corpus (top-1/recall@3/MRR), description/total/instructions/compact byte budgets, fingerprint determinism, forbidden-primary exclusion, synthetic next-action hydration mechanics |
+| `tool_surface_evaluation` | None | 5 | Labeled 43-fixture discovery corpus for full and compact profiles (top-1/recall@3/MRR), description/total/instructions/compact byte budgets, fingerprint determinism, forbidden-primary exclusion, synthetic next-action hydration mechanics |
 | `tool_surface_live` | None (comparison `#[ignore]`d) | 1 (+1 ignored) | Layer 3 report contract (fingerprint, config, deltas); opt-in manual multi-model comparison via `EGGSEARCH_EVAL_MODEL` |
 
 Corpus: `tests/fixtures/tool_surface/cases.json` (43 cases) with `README.md`
-baseline (72939 definition bytes, 1614 instruction bytes, 43/43 top-1; the
+baseline (72906 per-tool serialized definition bytes, 1614 instruction bytes, 43/43 top-1; the
 post-consolidation v0.3.9 figure was 73037 definition bytes before `repo_map`
 stopped advertising `providers`). Re-run with `make eval-tool-surface`.
 

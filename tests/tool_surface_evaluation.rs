@@ -362,6 +362,13 @@ fn live_server() -> eggsearch::mcp::EggsearchServer {
     eggsearch::mcp::EggsearchServer::new(state)
 }
 
+fn compact_server() -> eggsearch::mcp::EggsearchServer {
+    let mut config = AppConfig::default();
+    config.mcp.schema_profile = eggsearch::core::config::McpSchemaProfile::Compact;
+    let state = Arc::new(ServerState::build(config).expect("compact state builds"));
+    eggsearch::mcp::EggsearchServer::new(state)
+}
+
 #[test]
 fn tool_surface_corpus_is_well_formed() {
     let cases = load_cases();
@@ -613,6 +620,62 @@ fn tool_surface_discovery_accuracy() {
         "recall@3 {recall3:.3} below {MIN_RECALL_AT_3}"
     );
     assert!(mrr >= MIN_MRR, "MRR {mrr:.3} below {MIN_MRR}");
+}
+
+#[test]
+fn compact_tool_surface_discovery_accuracy() {
+    let server = compact_server();
+    let tools = server.tool_definitions();
+    assert_eq!(tools.len(), KNOWN_TOOLS.len());
+    let desc_index = description_index(&tools);
+    let cases = load_cases();
+    let mut top1_hits = 0usize;
+    let mut recall3_hits = 0usize;
+    let mut reciprocal_sum = 0.0;
+    let mut failures = Vec::new();
+    for case in &cases {
+        let ranked = rank_tools(&case.query, &tools, &desc_index);
+        assert_eq!(ranked.len(), KNOWN_TOOLS.len());
+        assert!(
+            !case.forbidden_primary.contains(&ranked[0].0),
+            "compact profile ranked forbidden tool {} for case {}",
+            ranked[0].0,
+            case.id
+        );
+        let acceptable: HashSet<&str> = case.acceptable.iter().map(String::as_str).collect();
+        let first_hit = ranked
+            .iter()
+            .position(|(name, _)| acceptable.contains(name.as_str()));
+        match first_hit {
+            Some(0) => top1_hits += 1,
+            Some(position) => failures.push(format!("{}: primary #{}", case.id, position + 1)),
+            None => failures.push(format!("{}: primary missing from top-3", case.id)),
+        }
+        if first_hit.is_some_and(|position| position < 3) {
+            recall3_hits += 1;
+        }
+        if let Some(position) = first_hit {
+            reciprocal_sum += 1.0 / (position as f64 + 1.0);
+        }
+    }
+    let total = cases.len() as f64;
+    let top1 = top1_hits as f64 / total;
+    let recall3 = recall3_hits as f64 / total;
+    let mrr = reciprocal_sum / total;
+    for failure in &failures {
+        println!("compact-tool-surface-miss {failure}");
+    }
+    println!(
+        "compact-tool-surface-report cases={} top1={top1_hits}/{n} acc={top1:.3} recall3={recall3_hits}/{n} r3={recall3:.3} mrr={mrr:.3}",
+        cases.len(),
+        n = cases.len(),
+    );
+    assert!(
+        top1 >= MIN_TOP1_ACCURACY,
+        "compact top-1 accuracy {top1:.3}"
+    );
+    assert!(recall3 >= MIN_RECALL_AT_3, "compact recall@3 {recall3:.3}");
+    assert!(mrr >= MIN_MRR, "compact MRR {mrr:.3}");
 }
 
 #[test]

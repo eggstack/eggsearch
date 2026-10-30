@@ -39,6 +39,15 @@ struct EggsearchServer {
 
 Construction (`EggsearchServer::new`) builds the `#[tool_router]` router once, then decorates every entry via `apply_contract_metadata()` and freezes the result. `tool_definitions()` clones the frozen list; `tool_fingerprint()` returns the frozen FNV-1a content hash. Nothing is recomputed per call.
 
+`build_server()` reads `[mcp].schema_profile` once when constructing the
+server. `full` is the default and leaves the decorated list unchanged.
+`compact` projects only advertised tool copies: all ten names and required
+arguments remain, optional input fields and prose are reduced, extra accepted
+properties stay allowed, and output schemas are omitted. The request router,
+Serde argument types, validation and execution policies are shared. The
+profile is presentation configuration, never a permission or dispatch gate;
+the profile-specific serialized definitions produce a distinct fingerprint.
+
 `ServerHandler` implementation:
 
 - `get_info()` advertises `ServerCapabilities` with tools enabled, implementation `eggsearch` + crate version, and `EGGSEARCH_INSTRUCTIONS`.
@@ -46,7 +55,7 @@ Construction (`EggsearchServer::new`) builds the `#[tool_router]` router once, t
 
 `EGGSEARCH_INSTRUCTIONS` carries global rules only: external content is untrusted data, search discovers while fetch inspects explicitly selected targets, start with the task-appropriate search primitive (never `provider_status`), specialist tools only when their domain semantics apply, one URL per `web_fetch` with `batch_fetch` for fan-out, follow `next_actions`, `build_evidence_bundle` packages without searching/fetching/summarizing. Tool-specific selection guidance lives in `tools/list` descriptions and schemas, sourced from `tool_contract.rs`.
 
-`build_server()` (`mod.rs`) is the single factory both transports share: `ServerState::build(config)` wrapped in `EggsearchServer::new`. Tool registration, contract metadata, schemas, provider construction, and policy behavior exist in exactly one place.
+`build_server()` (`mod.rs`) is the single factory both transports share: `ServerState::build(config)` wrapped in `EggsearchServer::new`, which reads the schema profile from the same immutable config. Tool registration, contract metadata, schemas, provider construction, and policy behavior exist in exactly one place.
 
 ---
 
@@ -124,7 +133,10 @@ Registration lives in `server.rs`; behavior lives in `tools/`; semantics live in
 | `research_search` | Multi-source evidence discovery with grouped bundles, no synthesis | `query`, `depth` (`quick`/`standard`/`deep`), `domain`, `goal`, `include` (`counterpoints`, `primary_sources`, `recent_discussion`, `security_considerations`) | `MetadataSearchAdapter::research_search` |
 | `build_evidence_bundle` | Deterministic packaging of already-selected evidence for handoff | `goal`, `sources`, `fetches`, `include_unfetched_sources`, `max_sources` (default 50, cap 200), `max_fetched_items` (default 20, cap 100), `max_total_chars` (default 100000, cap 500000), `response_detail` (accepted, identity-preserving) | Pure local: `meta::evidence_bundle::build_evidence_bundle`; no adapter, no fetch, no network |
 
-All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic`).
+All response-bearing search/fetch tools accept optional `response_detail`
+(`brief`/`compact`/`standard`/`diagnostic`). Omitted detail is
+`diagnostic` in the `full` schema profile and `brief` in `compact`; explicit
+per-call values win. `provider_status` remains diagnostic-only.
 
 ### Per-tool notes
 
@@ -243,13 +255,14 @@ Tool behavior modules carry unit coverage in-file plus the shared `tools/tests.r
 
 ## Projection: `ResponseDetail` and Identity-Preserving Bundles (`projection.rs`)
 
-`ResponseDetail` (`Compact` / `Standard` / `Diagnostic`, default `Diagnostic`) is parsed case-insensitively (`parse_raw`) with a stable error for unknown values. Canonical typed responses are built first, then projected to JSON at the MCP boundary via the central `project(tool, value, detail)` function — structured values are never truncated before host capture.
+`ResponseDetail` (`Brief` / `Compact` / `Standard` / `Diagnostic`) is parsed case-insensitively (`parse_raw`) with a stable error for unknown values. Canonical typed responses are built first, then projected to JSON at the MCP boundary. `full` defaults to diagnostic; opt-in `compact` defaults to the new `brief` projection. An explicit detail always wins.
 
 - `diagnostic` — full observability payload, passthrough with no added keys.
 - `standard` — specialist research/security default surface. Keeps full `retrieval_summary`, `conflict_metadata`, `workflow_coverage`, `evidence_role_summary`, `capability_enforcement`, and fetch/cache metadata; summarizes only `routing_decision` (→ `routing_summary`) and `telemetry.routing_decision`.
 - `compact` — ordinary agent operation. Trims excerpts to 1 per card, replaces `routing_decision` with `routing_summary`, replaces `retrieval_summary`/`conflict_metadata` with `retrieval_status`/`conflict_indicator`, drops `workflow_coverage`/`telemetry`/`document`/`links`, strips per-vulnerability `references`/`details`, caps `repo_map` entries at 50. Every projection stamps `response_detail` plus an explicit truncation marker (`projection_excerpts_trimmed`, `projection_entries_truncated`, `links_omitted_in_compact`).
+- `brief` — applies compact safety reductions, then retains identity, status, trust, warnings, applicability and citation fields using explicit allowlists. Content strings are clipped at UTF-8 character boundaries; if the configured `[mcp].brief_max_chars` serialized-character budget still cannot fit, complete successful result records are omitted from the tail with `returned_count`, `omitted_count`, and `output_truncated`. Failed batch members and critical failure/applicability signals are retained. Text plus overlapping focus chunks are avoided through the existing compact fetch projection. The structured result and text fallback are both brief; callers request `diagnostic` for the full diagnostic payload.
 
-The suite asserts `compact < standard < diagnostic` and that compaction never erases failure-vs-absence state, trust/injection markers, conflict/applicability semantics, truncation evidence, or stable IDs.
+The suite measures diagnostic/standard/compact/brief serialized characters across the 15-case retrieval-quality corpus and asserts that brief never erases failure-vs-absence state, trust/injection markers, security applicability, PDF coordinates, truncation evidence, failed batch members or stable IDs. The sparse corpus report is descriptive; a separate nontrivial fixture enforces the 30% byte reduction target.
 
 Per-tool reducers (`projection.rs`):
 
