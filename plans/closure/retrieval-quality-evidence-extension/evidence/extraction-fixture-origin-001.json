@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "mcp_series_runner_sha256": "a9472e0bf657375743ed54d3fb83160ada267b6146be19aa1491a045e7620ca2",
+  "fixture_hashes_sha256": {
+    "javascript.html": "2c2e8d778669ef9d4653b6d35a672324f57f143ea9f6e59cd77dd5651dfec88f",
+    "scanned.pdf": "ee85dc190b7eb82ab3b9e8fe6b44ddaaa0e6640a2c5b6b48fbc1ee021864f398",
+    "static.html": "d115b9886203aa739fcd26e80b59d6ab05566a17053e63050f77e9a8f8b9c631",
+    "text.pdf": "076fb37ba1f05410e5691170b757b909eda5ff251d5886ba8b1459580cf2314d"
+  },
+  "public_origin": "https://swap-trucks-terminology-carried.trycloudflare.com",
+  "origin_binding": "127.0.0.1:8765",
+  "origin_contents": "only four original synthetic qualification fixtures",
+  "tunnel": "Cloudflare quick Tunnel; temporary and stopped after the paired runs",
+  "cloudflared_version": "2026.10.6",
+  "cloudflared_release_url": "https://github.com/cloudflare/cloudflared/releases/tag/2026.10.6",
+  "cloudflared_archive_sha256": "6c04a13835ca5ff29a0c6f58d17d1f3956aad1b7df1631f5b5efbc06269deded",
+  "cloudflared_binary_checksum": "2b74a9a6b9e5161dbf79a77c2fcc6337cd7e9d2b23eee9d1b6635ecb17608589",
+  "chrome_version": "Google Chrome 156.0.8078.48",
+  "chrome_executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "http_only": {
+    "binary_sha256": "d80b5c22f6e31d3bf9df8934544b737d8df0bf657268cfabeac75b449005a2e3",
+    "size_bytes": 19310288,
+    "features": []
+  },
+  "pdf": {
+    "binary_sha256": "882434e533101f8b50c6a4fb084c6ac36629848e3fdff19cb0e5684acf6e71cc",
+    "size_bytes": 20659408,
+    "features": [
+      "pdf"
+    ]
+  },
+  "browser": {
+    "binary_sha256": "5d8c208e7305ab3b3e597279d5834502e88b6c0ecad10828eeea93827b73daf6",
+    "size_bytes": 23871336,
+    "features": [
+      "browser"
+    ]
+  },
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "measurement_design": "Three repeated cache-bypass (cold) and default (warm) web_fetch pairs per fixture and feature arm; 30 second tool timeout; 100 ms ps-based process-tree RSS sampling. Tool-response duration is the observable upper bound for time to first useful text because web_fetch does not expose a streaming extraction event. Process-tree RSS is reported per feature-arm session, not per case; browser subprocesses can persist between calls.",
+  "combined": {
+    "binary_sha256": "05c561a1e646cd83fecabe38b5d990f11f2562065791b871301a2d90c30ee078",
+    "size_bytes": 25216504,
+    "features": [
+      "pdf",
+      "browser"
+    ]
+  }
+}

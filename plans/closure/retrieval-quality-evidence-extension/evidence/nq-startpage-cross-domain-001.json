@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "dataset": "Natural Questions BEIR test",
+  "dataset_sha256": "76f3240642b95adaccc4a0e6cb7ef75776ec105e6763585f37ade994663673ed",
+  "dataset_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+  "source_component_sha256": {
+    "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752"
+  },
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "46f309a2649fdd781d77e3459e7868f0c35e76e760470a558af52e56d6d5ca52",
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "provider": "startpage",
+  "config_state": "binary defaults",
+  "config_fingerprint_sha256": null,
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m007-cross-domain-provider-v1",
+  "query_ids": [
+    "nq:test2809",
+    "nq:test1327",
+    "nq:test697"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "zero_results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 6,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": 0.0,
+  "macro_recall_at_k_over_valid_result_trials": 0.0,
+  "micro_recall_at_k_over_valid_result_trials": 0.0,
+  "rows": [
+    {
+      "query_id": "nq:test2809",
+      "repetition": 1,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 211,
+      "raw_response_sha256": "a6ad449d3a34add67afa5fcfeb0773a4d81d627afc09ebf9f08af2b74cdc04fa"
+    },
+    {
+      "query_id": "nq:test1327",
+      "repetition": 1,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 236,
+      "raw_response_sha256": "cbb5140ea10e4756142749355c50c67722d8dd5b6a8a3859b2aa5370f303c3c0"
+    },
+    {
+      "query_id": "nq:test697",
+      "repetition": 1,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 249,
+      "raw_response_sha256": "86b7e409379edb302c03b8cb0e8da837201343cbacf2f1184024710cb6ffea62"
+    },
+    {
+      "query_id": "nq:test2809",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 239,
+      "raw_response_sha256": "a6ad449d3a34add67afa5fcfeb0773a4d81d627afc09ebf9f08af2b74cdc04fa"
+    },
+    {
+      "query_id": "nq:test1327",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 236,
+      "raw_response_sha256": "cbb5140ea10e4756142749355c50c67722d8dd5b6a8a3859b2aa5370f303c3c0"
+    },
+    {
+      "query_id": "nq:test697",
+      "repetition": 2,
+      "outcome": "zero_results",
+      "provider_errors": [],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 244,
+      "raw_response_sha256": "86b7e409379edb302c03b8cb0e8da837201343cbacf2f1184024710cb6ffea62"
+    }
+  ],
+  "raw_search_results_included": false
+}

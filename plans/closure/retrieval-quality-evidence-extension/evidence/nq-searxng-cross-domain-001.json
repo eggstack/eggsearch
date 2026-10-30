@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "dataset": "Natural Questions BEIR test",
+  "dataset_sha256": "76f3240642b95adaccc4a0e6cb7ef75776ec105e6763585f37ade994663673ed",
+  "dataset_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+  "source_component_sha256": {
+    "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752"
+  },
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "46f309a2649fdd781d77e3459e7868f0c35e76e760470a558af52e56d6d5ca52",
+  "host": "macOS-26.6.2-x86_64-i386-64bit-Mach-O",
+  "provider": "searxng",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "8a0f82e280d102774e6250da7ef7b2ae7858570b3e548cd792ba6513b884139d",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m007-cross-domain-provider-v1",
+  "query_ids": [
+    "nq:test2809",
+    "nq:test1327",
+    "nq:test697"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 6,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": 0.0,
+  "macro_recall_at_k_over_valid_result_trials": 0.0,
+  "micro_recall_at_k_over_valid_result_trials": 0.0,
+  "rows": [
+    {
+      "query_id": "nq:test2809",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 85,
+      "raw_response_sha256": "8c78064529cfff5d9f0f28b0800e57fe1ea0777f94f3ff8618378d5ffda74666"
+    },
+    {
+      "query_id": "nq:test1327",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 78,
+      "raw_response_sha256": "25870ed99359bd96a115499bc3e2e0f03f9357e74eec6775b6859ce138d985c9"
+    },
+    {
+      "query_id": "nq:test697",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 76,
+      "raw_response_sha256": "819922b8d6e40972c962bf9868a0d912a60a925c392202164dfec4b591c62aec"
+    },
+    {
+      "query_id": "nq:test2809",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 79,
+      "raw_response_sha256": "8c78064529cfff5d9f0f28b0800e57fe1ea0777f94f3ff8618378d5ffda74666"
+    },
+    {
+      "query_id": "nq:test1327",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 86,
+      "raw_response_sha256": "25870ed99359bd96a115499bc3e2e0f03f9357e74eec6775b6859ce138d985c9"
+    },
+    {
+      "query_id": "nq:test697",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 5,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 81,
+      "raw_response_sha256": "819922b8d6e40972c962bf9868a0d912a60a925c392202164dfec4b591c62aec"
+    }
+  ],
+  "raw_search_results_included": false
+}

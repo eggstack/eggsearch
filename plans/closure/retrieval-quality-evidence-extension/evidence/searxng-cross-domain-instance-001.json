@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "source_sha": "28545de1fa899281f41980f4de31046df3431f22",
+  "eggsearch_binary_sha256": "46f309a2649fdd781d77e3459e7868f0c35e76e760470a558af52e56d6d5ca52",
+  "eggsearch_adapter_config_sha256": "8a0f82e280d102774e6250da7ef7b2ae7858570b3e548cd792ba6513b884139d",
+  "searxng_version": "2026.10.29+c15647b",
+  "searxng_source_sha": "c15647b5a5921858d5147d291c658fbda3cba12c",
+  "python_version": "3.11.15",
+  "base_url": "http://127.0.0.1:18888",
+  "bind_address": "127.0.0.1",
+  "settings_fingerprint_sha256": "3e25ef2a5100b4694e286ac99f610c0bc4613203eefd626c48e9bd2f05eb5a42",
+  "settings_secret_included": false,
+  "selected_upstream_engines": ["arxiv", "brave", "duckduckgo", "wikipedia"],
+  "search_categories": ["general"],
+  "search_format": "json",
+  "request_attempts": 18,
+  "upstream_observations": ["DuckDuckGo CAPTCHA responses", "SearXNG URL callback AttributeError warnings"],
+  "runtime": "temporary Python virtual environment and settings under /tmp; server stopped after the cohort"
+}

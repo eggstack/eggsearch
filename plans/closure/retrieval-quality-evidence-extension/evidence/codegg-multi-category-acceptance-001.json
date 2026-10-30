@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "status": "partial-acceptance",
+  "model_route": "opencode_go/muse-spark-1.3-contributor",
+  "codegg_source_sha": "f3c0a9e2e9903bb097d8bf56641138e03d964eb7",
+  "codegg_binary_sha256": "22c7399b02dcfe40f7111cc80116b35b9f2b42d080dea799fe0089eb94c1db26",
+  "eggsearch_sidecar_sha256": "d80b5c22f6e31d3bf9df8934544b737d8df0bf657268cfabeac75b449005a2e3",
+  "fixture_case": "retrieval-quality-fever",
+  "case_manifest_sha256": "ec3281ab8682fd5d479b30c84f78f3162862bea29fffdbb9038da4f6a0cddbb0",
+  "verifier_sha256": "8611c715e4f22b32eecba1cb12158cefb0b00181f97721888780a63643a7300e",
+  "accepted_attempt": {
+    "harness_receipt_sha256": "af6da3e6d3394a0184799e1ea915c0b3d13a0c5ff7ed16de026e0111c9f39b0b",
+    "provider_requests": 16,
+    "tool_calls": 7,
+    "input_tokens": 35672,
+    "output_tokens": 198,
+    "reported_cost_usd": 0.004684,
+    "verification_exit_code": 0,
+    "verification": "FEVER retrieval consumer acceptance passed",
+    "tool_sequence": ["tool_search", "tool_search", "websearch", "webfetch", "evidence_bundle", "read", "write"]
+  },
+  "excluded_attempt": {
+    "harness_receipt_sha256": "3edd95993bad260bdddd19919e95a05d20ac5a9dac0f14f1f41e7730d076cb53",
+    "provider_requests": 8,
+    "tool_calls": 7,
+    "reported_cost_usd": 0.004862,
+    "disposition": "not counted: initial verifier required a prose phrase absent from the answer; the tool sequence also included a failed evidence_bundle attempt before a successful one"
+  },
+  "prior_rfc9110_acceptance": {
+    "accepted_turns": 3,
+    "provider_requests": 24,
+    "input_tokens": 109264,
+    "output_tokens": 849,
+    "reported_cost_usd": 0.018303,
+    "source": "plans/closure/eggsearch-retrieval-quality-consumer-acceptance/001-status.md"
+  },
+  "combined_accepted_turns": 4,
+  "combined_provider_requests": 40,
+  "combined_input_tokens": 144936,
+  "combined_output_tokens": 1047,
+  "combined_reported_cost_usd": 0.022987,
+  "limitations": [
+    "The Harness Lab receipt does not expose serialized tool-schema bytes at the CodeGG/provider request boundary.",
+    "The Harness Lab does not attribute the Eggsearch search result to DuckDuckGo, Brave, or another search provider for this turn.",
+    "One verified turn was accepted for the FEVER claim case; it complements three previously accepted RFC 9110 turns but does not establish broad consumer quality."
+  ]
+}

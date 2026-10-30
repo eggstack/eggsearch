@@ -1,9 +1,9 @@
 # M007 — Expanded Live Retrieval and Consumer Acceptance
 
-Status: active
+Status: closing
 Source: `plans/subsystems/retrieval-quality-evidence-extension-roadmap.md` M007
 Primary class: infrastructure
-Baseline: Eggsearch branch `plan/deterministic-retrieval-quality-20261029`; capture the exact final SHA before trials
+Baseline: Eggsearch branch `plan/deterministic-retrieval-quality-20261029`; initial live source SHA `28545de1fa899281f41980f4de31046df3431f22`
 References: closed M006 plan and closure, `docs/retrieval-quality-benchmark.md`, `docs/retrieval-quality-extraction-matrix.md`, `docs/retrieval-quality-codegg-handoff.md`, ADR-0006, `plans/003-planning-process.md`.
 Dependencies: operational access to configured keyless providers, an actual SearXNG endpoint, Chrome, and PDF sources; CodeGG consumer run uses the explicitly authorized `opencode_go/muse-spark-1.3-contributor` route with Harness Lab's bounded controller policy.
 
@@ -62,3 +62,7 @@ retrieval lift.
   superiority claim.
 - Any production behavior change, stale held-out leakage, unsafe source
   capture, or unbudgeted provider/model use stops the run.
+
+Final evidence is consolidated in implementation plan 002 and the M007
+reports linked from `plans/registry.md`. The remaining close gate is hosted
+Linux, macOS, and Windows CI on the final merged candidate.
