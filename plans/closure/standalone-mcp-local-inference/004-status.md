@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M004 — Corrective Status
 
-Status: blocked (schema correction and offline qualification pass; post-fix LM Studio interaction was not reliably refreshed)
+Status: blocked (schema correction, focused live requalification, and installed-child smoke pass; canonical `make check` stalls in `bounded_command` on this host)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md`
@@ -54,18 +54,34 @@ measured list by 445 bytes over M003's 18,545-byte candidate.
 
 ## 3. Live qualification and disposition
 
-The LM Studio `mcp.json` on disk was temporarily pointed at the corrected
-release candidate and compact profile, then restored byte-for-byte to the
-original installed-binary configuration. The app's accessibility tree
-continued to report a Chat route while its visible window remained on Model
-Server; save/refresh actions could not be verified. No post-fix model turn is
-claimed, and no API authentication or MCP permission setting was changed.
+The LM Studio `mcp.json` was temporarily pointed at the corrected
+`target/release/eggsearch` binary with the compact profile and then restored
+byte-for-byte to the original installed-binary configuration (`cmp` passed).
+The model was `google/gemma-4-e2b` in LM Studio 0.4.26+4, MLX 4-bit, with a
+10,703-token context. Both focused prompts were run in fresh chats. Tool
+approval was per-call; neither persistent “Always allow” option was selected.
+No API authentication or MCP permission setting was changed.
 
-M004 therefore remains blocked on a fresh Gemma E2B research-schema and
-official-page fetch task against this exact candidate, with LM Studio refresh
-and rollback visibly verified. M003 remains blocked on broader paired model
-trials, exact tokenizer and prompt-token attribution, structured-content and
-refresh behavior, protected API qualification, and resolution of the
-observed quality issues. Do not claim the enum correction fixes Gemma's
-research quality or the incomplete fetch answer until a new live run confirms
-it.
+| Task | Tool behavior | Result quality | Context / disposition |
+|---|---|---|---|
+| Research: Rust 1.90.0 changes, `goal=understand`, `research_domain=language_ecosystem` | First prompt was treated as underspecified and did not call a tool. On an explicit-query retry, Gemma called `research_search` once with `query="Rust 1.90.0 release notes new features"`, `goal="understand"`, and `research_domain="language_ecosystem"`; values were valid with no argument repair. | Returned two changes and named official release-note pages, but citations were page-level and not deep links. | Final chat context meter was approximately 49.6% (5,314/10,703). The enum correction supported a valid call once the query was explicit; it did not address prompt ambiguity or establish general research quality. |
+| Fetch official Rust 1.90.0 announcement and report two changes | Gemma called `web_fetch` once with the requested URL and valid arguments. | Fetch succeeded, but the visible fetched payload contained only “LLD is now the default.” Gemma correctly identified that item, then incorrectly used `$ rustup update stable` as its second “change”; that is an installation command, not a release change. | Final chat context meter was approximately 31.4% (3,359/10,703). The focused extraction criterion failed and confirms the previously recorded M003 quality issue. |
+
+The live schema-discoverability task and compact fetch task are therefore
+requalified on the exact implementation candidate, and the original MCP
+configuration rollback is verified. The canonical gate was rerun with
+`rtk make check` on branch HEAD `1608fe904408c29d3bfe2d3ce35d4ccc79f683fa`
+(whose production code is unchanged from candidate
+`776f8ca4a8246e467041696b2220600eb7b2648d`). It reached
+`tests/bounded_command.rs` and remained there without test output for over two
+minutes, then was manually interrupted (exit 130). No assertion failure was
+reported. The same host-specific stall was recorded in the original M004
+qualification. The canonical gate is not green, so M004 remains blocked;
+rerun it on a host where the process-group/cap-breach tests complete before
+closing this milestone.
+
+M003 remains blocked on broader paired model trials, exact tokenizer and
+prompt-token attribution, structured-content and refresh behavior, protected
+API qualification, and resolution/explicit acceptance of its observed
+quality issues. Do not claim that the enum correction fixes prompt ambiguity,
+general research quality, or incomplete fetch extraction.

@@ -104,18 +104,15 @@ qualification.
    credentials were created and no security-sensitive setting was changed;
    complete that prerequisite in LM Studio, then run the API smoke and restore
    prior settings.
-5. M004 is implemented in source at candidate
-   `776f8ca4a8246e467041696b2220600eb7b2648d` to expose accepted research goal/domain
-   values in compact schemas. Focused contract tests, all-features compile,
-   release build, and installed-child smoke pass. The release binary advertised
-   all ten tools at 18,990 compact schema bytes. A post-fix Gemma turn was not
-   completed: LM Studio's exposed accessibility state and visible window
-   diverged during integration refresh, so results from the previous child
-   were not attributed to the new candidate. See
-   `plans/closure/standalone-mcp-local-inference/004-status.md`.
-6. Run the focused live tasks against the corrected exact candidate, then
-   update this status with the result; close M003 only after its full live
-   acceptance criteria pass.
+5. M004 candidate `776f8ca4a8246e467041696b2220600eb7b2648d` exposes the
+   runtime-accepted research goal/domain values in compact schemas. Its
+   focused Gemma requalification and remaining fetch-extraction failure are
+   recorded in `plans/closure/standalone-mcp-local-inference/004-status.md`.
+   The canonical `make check` gate remains stalled in the macOS
+   `bounded_command` suite, so M004 is still blocked. M003 also remains blocked
+   on its broader operational acceptance matrix.
+6. Complete M003's broader operational acceptance matrix, then update this
+   status; close M003 only after its full live acceptance criteria pass.
 
 ## 6. Security and operational disposition
 

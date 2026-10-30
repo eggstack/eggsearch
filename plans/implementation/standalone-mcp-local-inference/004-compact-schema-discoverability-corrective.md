@@ -1,6 +1,6 @@
 # M004 — Compact Schema Discoverability Corrective
 
-Status: blocked (schema correction and offline qualification pass; post-fix LM Studio interaction was not reliably refreshed; see `plans/closure/standalone-mcp-local-inference/004-status.md`)
+Status: blocked (schema correction, focused LM Studio requalification, and installed-child smoke pass; canonical `make check` stalls in the existing macOS `bounded_command` suite; see `plans/closure/standalone-mcp-local-inference/004-status.md`)
 Primary class: capability
 Source roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 Corrects: M003 evidence in `plans/closure/standalone-mcp-local-inference/003-status.md`
