@@ -1,6 +1,6 @@
 # M001 — Opt-in Compact Ten-Tool MCP Advertisement
 
-Status: active
+Status: closed (candidate `02a8af6fe4f87971c7daca7d1fca20c087b328ec`; closure `plans/closure/standalone-mcp-local-inference/001-status.md`)
 Primary class: capability
 Planning baseline: eggstack/eggsearch main `a666517c39adf28f32fad04198c74cb70d935c5b` (2026-10-30)
 Roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
