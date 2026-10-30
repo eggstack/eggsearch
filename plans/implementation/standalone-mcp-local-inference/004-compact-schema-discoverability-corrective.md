@@ -1,6 +1,6 @@
 # M004 — Compact Schema Discoverability Corrective
 
-Status: active (registered after live M003 qualification found research argument retries)
+Status: blocked (schema correction and offline qualification pass; post-fix LM Studio interaction was not reliably refreshed; see `plans/closure/standalone-mcp-local-inference/004-status.md`)
 Primary class: capability
 Source roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 Corrects: M003 evidence in `plans/closure/standalone-mcp-local-inference/003-status.md`

@@ -104,7 +104,8 @@ qualification.
    credentials were created and no security-sensitive setting was changed;
    complete that prerequisite in LM Studio, then run the API smoke and restore
    prior settings.
-5. M004 is implemented in source to expose accepted research goal/domain
+5. M004 is implemented in source at candidate
+   `776f8ca4a8246e467041696b2220600eb7b2648d` to expose accepted research goal/domain
    values in compact schemas. Focused contract tests, all-features compile,
    release build, and installed-child smoke pass. The release binary advertised
    all ten tools at 18,990 compact schema bytes. A post-fix Gemma turn was not
