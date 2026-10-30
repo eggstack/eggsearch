@@ -200,8 +200,95 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
         _ => COMMON,
     };
     compact_schema_value(schema, allowed);
+    compact_research_schema(name, schema);
     if name == "build_evidence_bundle" {
         compact_evidence_bundle_schema(schema);
+    }
+}
+
+fn compact_research_schema(name: &str, schema: &mut serde_json::Value) {
+    if name != "research_search" {
+        return;
+    }
+    let Some(properties) = schema
+        .get_mut("properties")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    if let Some(domain) = properties.get_mut("research_domain") {
+        set_string_schema_enum(
+            domain,
+            &[
+                "general",
+                "software_architecture",
+                "architecture",
+                "api_design",
+                "api",
+                "distributed_systems",
+                "distributed",
+                "security",
+                "performance",
+                "language_ecosystem",
+                "ecosystem",
+                "machine_learning",
+                "ml",
+                "infrastructure",
+                "infra",
+            ],
+        );
+    }
+    if let Some(goal) = properties.get_mut("goal") {
+        set_string_schema_enum(goal, crate::mcp::tools::canonical::RESEARCH_GOAL_VALUES);
+    }
+}
+
+fn set_string_schema_enum(schema: &mut serde_json::Value, values: &[&str]) {
+    match schema {
+        serde_json::Value::Object(object) => {
+            match object.get("type") {
+                Some(serde_json::Value::String(kind)) if kind == "string" => {
+                    object.insert(
+                        "enum".into(),
+                        serde_json::Value::Array(
+                            values
+                                .iter()
+                                .map(|value| serde_json::Value::String((*value).into()))
+                                .collect(),
+                        ),
+                    );
+                }
+                Some(serde_json::Value::Array(kinds))
+                    if kinds.iter().any(|kind| kind.as_str() == Some("string")) =>
+                {
+                    let mut allowed: Vec<serde_json::Value> = values
+                        .iter()
+                        .map(|value| serde_json::Value::String((*value).into()))
+                        .collect();
+                    if kinds.iter().any(serde_json::Value::is_null) {
+                        allowed.push(serde_json::Value::Null);
+                    }
+                    object.insert("enum".into(), serde_json::Value::Array(allowed));
+                }
+                _ => {}
+            }
+            for key in ["anyOf", "oneOf", "allOf"] {
+                if let Some(variants) = object
+                    .get_mut(key)
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    for variant in variants {
+                        set_string_schema_enum(variant, values);
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(variants) => {
+            for value in variants {
+                set_string_schema_enum(value, values);
+            }
+        }
+        _ => {}
     }
 }
 

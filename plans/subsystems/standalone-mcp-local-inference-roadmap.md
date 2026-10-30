@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001-M002 closed, M003 blocked on live LM Studio consumer qualification)
+Status: active (M001-M002 closed; M003 blocked; M004 active for compact research-schema discoverability)
 Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
@@ -54,6 +54,7 @@ No CodeGG dependency; it is a regression consumer, not the implementation target
 | M001 | capability | `plans/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md` | Opt-in compact `tools/list` for all ten existing names; measurable schema reduction; parity across MCP transports; default unchanged |
 | M002 | capability | `plans/implementation/standalone-mcp-local-inference/002-brief-evidence-and-output-budgets.md` | Explicit brief projection and bounded results with critical failure, identity, trust and security semantics intact; unchanged legacy defaults |
 | M003 | capability | `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md` | Verified LM Studio install/smoke, measured local-model context cost and completion quality, onboarding guides, and stop/rollback evidence |
+| M004 | capability | `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md` | Advertise runtime-accepted research goal/domain values in compact schemas; test schema parity and size; repeat focused live tasks; M003 remains open for its broader gates |
 
 ## Cross-cutting controls
 
