@@ -120,6 +120,20 @@ qualification.
    structured-content/refresh behavior, and remediation or explicit
    acceptance of the quality failures in §7. Close M003 only after its
    remaining live acceptance criteria pass.
+7. Current branch verification passes on `a339cce` (test-fixture-only
+   stabilization over implementation candidate `de69f1d`): hosted CI run
+   `41175183998` passed primary CI, macOS canonical/filesystem checks, and
+   Windows portability; release-drift, egress, and Python-native workflows
+   also passed. Local `make check` passed on `a339cce`; `make docs-check` and
+   `make bench-check` passed on its documentation-only parent `3bd46b1` before
+   the test-fixture-only change. The preceding documentation commit's hosted
+   macOS run failed the cold local-workspace search fixture; that fixture
+   relied on an implicit 500 ms budget derived from its 50,000-file cap. The
+   10-second explicit test budget passes locally and on the hosted rerun. The
+   timeout explanation is an inference from the configured budget and failure
+   behavior; the hosted log did not print the response's timeout warning. This
+   CI result does not
+   close M003's live-model acceptance gaps.
 
 ## 6. Security and operational disposition
 
