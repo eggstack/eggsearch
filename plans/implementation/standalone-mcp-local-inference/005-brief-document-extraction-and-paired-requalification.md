@@ -1,6 +1,6 @@
 # M005 — Brief Document Extraction and Paired Requalification
 
-Status: active
+Status: closed
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

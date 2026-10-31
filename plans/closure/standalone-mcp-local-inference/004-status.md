@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M004 — Corrective Status
 
-Status: closed (hosted canonical Linux, macOS, and Windows portability qualification passed on candidate `755008c0a1da658835dd8f215d3b82bd1cb3dee5`)
+Status: closed (hosted canonical Linux, macOS, and Windows portability qualification passed on final candidate `de69f1ddd7a7e4acc067fb9892c438f6165cfe83`)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md`
@@ -85,17 +85,16 @@ below.
 
 ## 4. Hosted canonical requalification
 
-The exact candidate `755008c0a1da658835dd8f215d3b82bd1cb3dee5` includes the
+The final candidate `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` includes the
 M004 research schema correction and passed the hosted CI workflow's canonical
 `make ci` job plus Windows portability and the added macOS canonical/local
 filesystem job in GitHub Actions run
-[`41141113615`](https://github.com/eggstack/eggsearch/actions/runs/41141113615).
+[`41160264796`](https://github.com/eggstack/eggsearch/actions/runs/41160264796).
 All three jobs completed successfully. The process-group/cap-breach stall did
-not reproduce on hosted Linux or macOS. This resolves the M004 canonical gate;
-the earlier local interruption remains useful host-specific history, not a
-current blocker. A separate egress qualification run had its macOS egress job
-cancelled while the other egress targets passed; that job is outside the M004
-canonical gate and does not affect this closure.
+not reproduce on hosted Linux or macOS. The same correction had also passed
+earlier hosted CI run `41141113615`; the final-candidate run supersedes that
+earlier evidence for closure. The prior local interruption remains useful
+host-specific history, not a current blocker.
 
 M003 remains blocked on broader paired model trials, exact tokenizer and
 prompt-token attribution, structured-content and refresh behavior, protected

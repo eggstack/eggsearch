@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001, M002, and M004 closed; M003 remains open on operational acceptance; M005 corrective active)
+Status: active (M001, M002, M004, and M005 closed; M003 remains open on operational acceptance)
 Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
@@ -45,9 +45,9 @@ M001 compact ten-tool advertised schema profile (closed)
   +-- hard --> M002 brief/budgeted agent responses (closed)
                   |
                   +-- operational --> M003 LM Studio/direct-client compatibility and quality (open acceptance)
-                  +-- corrective --> M005 brief document extraction and paired requalification (active)
+                  +-- corrective --> M005 brief document extraction and paired requalification (closed)
 
-M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate 755008c)
+M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate de69f1d)
 ```
 
 No CodeGG dependency; it is a regression consumer, not the implementation target. M003's offline qualification can run in CI; a real LM Studio interactive smoke is an operational closure requirement, not a reason to block M001/M002 development.
@@ -58,7 +58,7 @@ No CodeGG dependency; it is a regression consumer, not the implementation target
 | M002 | capability | `plans/implementation/standalone-mcp-local-inference/002-brief-evidence-and-output-budgets.md` | Explicit brief projection and bounded results with critical failure, identity, trust and security semantics intact; unchanged legacy defaults |
 | M003 | capability | `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md` | Verified LM Studio install/smoke, measured local-model context cost and completion quality, onboarding guides, and stop/rollback evidence |
 | M004 | capability | `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md` | Advertise runtime-accepted research goal/domain values in compact schemas; test schema parity and size; repeat focused live tasks; M003 remains open for its broader gates |
-| M005 | corrective | `plans/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md` | Preserve extracted document text when it fits the brief budget; compare diagnostic and brief on identical queries/documents; complete paired Gemma E2B and larger-model evidence and close M004's hosted Linux/macOS canonical gate |
+| M005 | corrective | `plans/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md` | Closed on `de69f1d`; brief preserves same-document extraction within budget; model evidence and unresolved M003 failures are recorded; hosted Linux/macOS/Windows gates pass |
 
 ## Cross-cutting controls
 
