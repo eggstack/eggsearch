@@ -82,20 +82,18 @@ See LM Studio's [MCP app guide](https://lmstudio.ai/docs/app/mcp),
 ## What the measurements establish
 
 Eggsearch's offline fixtures measure serialized schema and result sizes and
-exercise the MCP protocol. They do not establish LM Studio tokenizer counts,
-model-visible prompt inclusion, tool-choice quality, or end-to-end task
-success. Those require a live LM Studio chat with the actual local model. The
-recorded environment used LM Studio 0.4.26+4. After the user enabled
-authentication and configured-server access, a native `/api/v1/chat` request
-through `mcp/eggsearch` completed a `web_fetch` call and returned LM Studio's
-usage counters; see the M003 operational record for the task and limits. A
-controlled direct-fetch pair found that compact used fewer reported input
-tokens and returned the same document evidence, while other specialist tasks
-showed no-call, argument, and host plugin-loading failures. The interactive
-app also rendered an Eggsearch `web_fetch` result card. These observations do
-not establish a general context or completion-quality improvement, and host
-handling of `structuredContent` versus the text fallback or profile refresh
-has not been isolated.
+exercise the MCP protocol. They do not establish model context use, tool-choice
+quality, or end-to-end task success. LM Studio's native `/api/v1/chat` endpoint
+can invoke configured MCP servers and returns actual tool calls, tool results,
+and usage counters. Its `stats.input_tokens` includes formatting, tool
+definitions, and prior messages; see the [native chat API
+docs](https://lmstudio.ai/docs/developer/rest/chat). Use paired requests with
+the same model, prompt, context, and allowed tool set to compare profiles.
+The M003 record contains LFM3-2B and Gemma E2B trials showing reduced input
+usage and result size with compact/brief, along with mixed answer quality and
+host/plugin failures. These are model-use experiments through LM Studio as the
+available local inference host; app UI refresh and tool-result presentation
+are outside the qualification scope.
 
 For configuration keys and bounds, see [Eggsearch configuration](config.md)
 and the [context-efficiency measurements](retrieval-quality-context-efficiency.md).

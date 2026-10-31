@@ -1,7 +1,7 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001, M002, M004, M005, and M006 closed; M003 blocked on operational acceptance)
-Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
+Status: active (M001, M002, M004, M005, and M006 closed; M003 and M007 active)
+Scope: small local-model tool-use and context qualification through an actual inference API; not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
 Controlling ADRs: `plans/adrs/ADR-0001-ten-tool-surface-and-adapter-ownership.md` and `plans/adrs/ADR-0006-keyless-deterministic-retrieval-and-optional-extraction.md`.
@@ -9,9 +9,9 @@ Closed predecessor: `plans/subsystems/tool-surface-consolidation-roadmap.md` (M0
 
 ## Purpose and ownership
 
-Make eggsearch practical as a direct MCP server in LM Studio and similarly simple local-inference hosts that eagerly pass advertised tool definitions and responses to a model. Eggsearch owns the MCP server's advertised schema, protocol responses, deterministic projection and operator configuration; the client owns the model, tokenizer, context window and tool invocation. CodeGG's native wrappers, progressive disclosure and diagnostic storage are intentionally unchanged.
+Qualify Eggsearch's compact schema and brief result modes for small locally hosted models that need to call tools while keeping prompt context small. LM Studio is the available API host in this environment, including for MLX support; the acceptance target is model tool-use and context cost, not LM Studio UI behavior. Eggsearch owns the MCP server's advertised schema, protocol responses, deterministic projection and operator configuration; the host owns the model, tokenizer, context window and invocation. CodeGG's native wrappers, progressive disclosure and diagnostic storage are intentionally unchanged.
 
-Primary classes: M001 capability (compact advertised schema profile); M002 capability (brief bounded output); M003 capability (tested direct-client onboarding/qualification). Infrastructure includes measurement and config; polish follows qualified behavior.
+Primary classes: M001 capability (compact advertised schema profile); M002 capability (brief bounded output); M003 capability (small local-model tool-use and context qualification). Infrastructure includes measurement and config; polish follows qualified behavior.
 
 ## Baseline and findings
 
@@ -44,35 +44,37 @@ M001 compact ten-tool advertised schema profile (closed)
   |
   +-- hard --> M002 brief/budgeted agent responses (closed)
                   |
-                  +-- operational --> M003 LM Studio/direct-client compatibility and quality (blocked on live acceptance)
+                  +-- operational --> M003 small local-model tool-use and context qualification (active)
                   +-- corrective --> M005 brief document extraction and paired requalification (closed)
                   +-- corrective --> M006 compact direct-fetch tool-choice corrective (closed at `6dc63d5`; hosted CI run `41181749609`)
+                  +-- corrective --> M007 compact schema reference corrective (active; discovered during M003 all-tools API qualification)
 
 M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate de69f1d)
 ```
 
-No CodeGG dependency; it is a regression consumer, not the implementation target. M003's offline qualification can run in CI; a real LM Studio interactive smoke is an operational closure requirement, not a reason to block M001/M002 development.
+No CodeGG dependency; it is a regression consumer, not the implementation target. M003's offline qualification can run in CI; live small-model API turns are the operational closure evidence. LM Studio is the available inference host here, not a product-specific acceptance target.
 
 | Milestone | Primary class | Source plan | Exit |
 |---|---|---|---|
 | M001 | capability | `plans/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md` | Opt-in compact `tools/list` for all ten existing names; measurable schema reduction; parity across MCP transports; default unchanged |
 | M002 | capability | `plans/implementation/standalone-mcp-local-inference/002-brief-evidence-and-output-budgets.md` | Explicit brief projection and bounded results with critical failure, identity, trust and security semantics intact; unchanged legacy defaults |
-| M003 | capability | `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md` | Verified LM Studio install/smoke, measured local-model context cost and completion quality, onboarding guides, and stop/rollback evidence |
+| M003 | capability | `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md` | Paired API trials show whether small local models can use the tools appropriately while `compact + brief` reduces actual context use; quality and token evidence determine acceptance, not host UI behavior |
 | M004 | capability | `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md` | Advertise runtime-accepted research goal/domain values in compact schemas; test schema parity and size; repeat focused live tasks; M003 remains open for its broader gates |
 | M005 | corrective | `plans/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md` | Closed on `de69f1d`; brief preserves same-document extraction within budget; model evidence and unresolved M003 failures are recorded; hosted Linux/macOS/Windows gates pass |
 | M006 | corrective | `plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md` | Resolve or bound a repeated native LM Studio compact `web_fetch` no-call failure from M003; keep M003 open until evidence supports acceptance |
+| M007 | corrective | `plans/implementation/standalone-mcp-local-inference/007-compact-schema-reference-corrective.md` | Resolve dangling compact-schema `$ref` in `build_evidence_bundle`; preserve ten-tool contract and verify all local references plus all-tools model API invocation |
 
 ## Cross-cutting controls
 
-Compatibility/protocol: verify current `rmcp` schema serialization and protocol negotiation before implementing profile-specific tool definitions. MCP `tools/list` caching or `listChanged` support MUST NOT be assumed by LM Studio. Profiles are process/config scoped, never inferred from user agent or model size. Fingerprints MUST differ when serialized contracts differ and remain stable across equivalent process launches.
+Compatibility/protocol: verify current `rmcp` schema serialization and protocol negotiation before implementing profile-specific tool definitions. MCP `tools/list` caching or `listChanged` support MUST NOT be assumed by clients. Profiles are process/config scoped, never inferred from user agent or model size. Fingerprints MUST differ when serialized contracts differ and remain stable across equivalent process launches.
 
 Safety: every tool uses existing policy and validation gates. Removing an advertised property MUST NOT remove runtime validation. Diagnostics must not disappear from the unmodified default. A brief response must signal incomplete retrieval; when a client ignores structured content, text fallback must still be useful.
 
 Resources: local inference budget is an agent-context budget; do not reduce remote search recall, upstream concurrency or browser/PDF capabilities as a side effect. Keep memory bounded, deterministic order and fast serialization; avoid doubling large JSON payloads in memory merely to render brief.
 
-Observability: keep per-tool profile-size fixtures, model-visible response samples, omission counts, source-card retention, constraint-enforcement caveats and error/repair traces. Test actual LM Studio tool-selection success, not merely canned keyword matching.
+Observability: keep per-tool profile-size fixtures, model-visible response samples, omission counts, source-card retention, constraint-enforcement caveats and error/repair traces. Test actual small-model API tool-use and evidence quality, not merely canned keyword matching.
 
-Documentation: M001/M002 update `architecture/mcp.md`, `architecture/config.md`, `docs/config.md`, `docs/tool-matrix.md` and `docs/test-inventory.md` as applicable. M003 updates `README.md` / `docs/integrations.md` / `docs/installation.md` with LM Studio guidance. Never rewrite historical closure records.
+Documentation: M001/M002 update `architecture/mcp.md`, `architecture/config.md`, `docs/config.md`, `docs/tool-matrix.md` and `docs/test-inventory.md` as applicable. M003 maintains optional LM Studio operator guidance and records the model qualification method/results. Never rewrite historical closure records.
 
 ## Known risks and decision boundaries
 
@@ -84,4 +86,4 @@ Documentation: M001/M002 update `architecture/mcp.md`, `architecture/config.md`,
 
 ## Definition of done
 
-Every milestone gets an exact-SHA closure record in `plans/closure/standalone-mcp-local-inference/NNN-status.md`; update this roadmap and `plans/registry.md` in each closure commit. No full rollout, release, claims of LM Studio savings, or marking M003 closed on synthetic tests alone.
+Every milestone gets an exact-SHA closure record in `plans/closure/standalone-mcp-local-inference/NNN-status.md`; update this roadmap and `plans/registry.md` in each closure commit. No full rollout or release, and no claim of small-model context or quality improvement without measured paired API turns.

@@ -344,8 +344,16 @@ fn compact_evidence_bundle_schema(schema: &mut serde_json::Value) {
             }
         }),
     );
+    let response_detail = schema.pointer("/$defs/ResponseDetail").cloned();
     if let Some(object) = schema.as_object_mut() {
-        object.remove("$defs");
+        if let Some(response_detail) = response_detail {
+            object.insert(
+                "$defs".into(),
+                serde_json::json!({"ResponseDetail": response_detail}),
+            );
+        } else {
+            object.remove("$defs");
+        }
     }
 }
 

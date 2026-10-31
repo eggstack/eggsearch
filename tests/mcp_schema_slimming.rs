@@ -19,13 +19,16 @@ fn schema_for(name: &str) -> serde_json::Value {
     serde_json::to_value(&tool.input_schema).expect("schema serializes")
 }
 
-fn compact_tool_for(name: &str) -> rmcp::model::Tool {
+fn compact_tool_definitions() -> Vec<rmcp::model::Tool> {
     let mut config = AppConfig::default();
     config.mcp.schema_profile = McpSchemaProfile::Compact;
     let state = Arc::new(ServerState::build(config).expect("compact state"));
     let server = eggsearch::mcp::EggsearchServer::new(state);
-    server
-        .tool_definitions()
+    server.tool_definitions()
+}
+
+fn compact_tool_for(name: &str) -> rmcp::model::Tool {
+    compact_tool_definitions()
         .into_iter()
         .find(|t| t.name.as_ref() == name)
         .unwrap_or_else(|| panic!("tool {name} not found"))
@@ -56,6 +59,50 @@ fn prop_count(schema: &serde_json::Value) -> usize {
 
 fn has_prop(schema: &serde_json::Value, prop: &str) -> bool {
     schema.get("properties").and_then(|p| p.get(prop)).is_some()
+}
+
+fn collect_unresolved_local_refs(
+    value: &serde_json::Value,
+    root: &serde_json::Value,
+    path: &str,
+    unresolved: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(serde_json::Value::as_str) {
+                if let Some(pointer) = reference.strip_prefix('#') {
+                    if root.pointer(pointer).is_none() {
+                        unresolved.push(format!("{path} -> {reference}"));
+                    }
+                }
+            }
+            for (key, child) in object {
+                collect_unresolved_local_refs(child, root, &format!("{path}/{key}"), unresolved);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for (index, child) in values.iter().enumerate() {
+                collect_unresolved_local_refs(child, root, &format!("{path}/{index}"), unresolved);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn every_compact_schema_resolves_local_references() {
+    let tools = compact_tool_definitions();
+    assert_eq!(tools.len(), 10);
+    for tool in tools {
+        let schema = serde_json::to_value(tool.input_schema).expect("schema serializes");
+        let mut unresolved = Vec::new();
+        collect_unresolved_local_refs(&schema, &schema, "$", &mut unresolved);
+        assert!(
+            unresolved.is_empty(),
+            "{} has unresolved compact schema references: {unresolved:?}",
+            tool.name
+        );
+    }
 }
 
 #[test]

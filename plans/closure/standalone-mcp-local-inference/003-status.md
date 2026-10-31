@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M003 — Operational Status
 
-Status: blocked (native API retrieval works for a controlled direct-fetch pair, but specialist-task outcomes are mixed and LM Studio UI refresh/result-shape behavior remains uncharacterized)
+Status: active (scope clarified: qualify small-model tool use and context reduction through actual API turns; UI refresh/result-shape behavior is out of scope; paired specialist-task outcomes remain mixed)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
@@ -22,8 +22,10 @@ valid tool calls alongside missing synthesis, weak source support, invalid
 arguments, and a host-side plugin-unloaded error. The direct-fetch compact
 no-call outcome also did not reproduce in the controlled baseline/candidate
 comparison. This mixed evidence does not establish a general quality or
-reliability improvement; LM Studio UI refresh and result-shape acceptance
-remain open.
+reliability improvement. The qualification scope was clarified on 2026-10-31:
+LM Studio is the available local API host for MLX and other local models, while
+the target is small-model tool-use quality and context cost. App UI refresh and
+presentation behavior are not acceptance criteria.
 
 The final candidate's installed-child stdio smoke passed on 2026-10-31:
 full exposed all ten tools in 72,923 serialized `tools/list` bytes, compact
@@ -70,12 +72,11 @@ provide a reliable per-chat usage breakdown for this test set.
 | Windows/macOS/Linux paths and stdio logging contract | `docs/lm-studio.md` | pass | None for documentation |
 | Reproducible installed-candidate stdio smoke | `scripts/lm_studio_stdio_smoke.py` | pass | Offline protocol evidence only |
 | Ten tools and profile list sizes | M006-candidate initialized child-process smoke: 72,923 full / 19,370 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
-| LM Studio tool visibility and interactive tool use | Prior full/compact qualification chats called `web_search`; compact also called `security_search`, `research_search`, and `web_fetch`. The app rendered a `web_fetch mcp/eggsearch` result card. | partial | Verify refresh/new-chat behavior against the final candidate; determine whether the app consumes structured content, text fallback, or both |
-| Paired small/larger model comparison | Gemma E2B and E4B native API trials plus earlier Gemma E2B/Bonsai 27B and LFM3 2B task pairs; see §12 | partial / mixed | Repeat larger-model specialist tasks with a refreshed MCP plugin and enough output budget to synthesize results |
-| Tool choice, argument validity, repairs, evidence and failure truthfulness | Earlier interactive findings plus §12; includes no-call, invalid-argument, plugin-unloaded, and truthful evidence-gap outcomes | partial / quality concern | Re-run a balanced research/security matrix after LM Studio plugin refresh; verify source authority and answer citations |
-| Exact tokenizer and prompt-token attribution | Controlled native API pair in §12 reports 1,628 input / 89 output tokens for full and 872 / 105 for candidate compact; UI still exposes no tokenizer identity | partial | Keep host usage separate from tokenizer identity and characterize the UI context meter |
-| Output schema / structuredContent vs text fallback | Offline protocol coverage plus a successful rendered UI tool-result card and native API tool call | partial | Isolate which result representation the UI consumes; compare a generic MCP inspector/client if available |
-| Protected API MCP smoke | Authenticated native `/api/v1/chat` call through configured `mcp/eggsearch`, with only `web_fetch` allowed | pass | UI structured-content/text fallback and refresh behavior remain uncharacterized |
+| Configured MCP API path | Authenticated native `/api/v1/chat` calls through configured `mcp/eggsearch`, with task-specific `allowed_tools`; exact config rollback hash recorded | pass | None for the tested local host; this verifies the model/API path, not LM Studio UI behavior |
+| Paired small-model comparison | LFM3 2B direct-fetch trials in §12 and repeated security-applicability trials in §13; Gemma E2B/E4B observations in §12 | partial / mixed | Expand paired coverage across research and extraction; retain API/plugin failures as infrastructure outcomes, separate from model failures |
+| Tool choice, argument validity, evidence and failure truthfulness | §12-13 include valid and invalid calls, no-calls, plugin/API failures, evidence gaps, and both correct and incorrect applicability conclusions | partial / quality concern | Complete repeatable paired task coverage and assess evidence quality across more than one small model |
+| Actual context/token reduction | LM Studio native API reports `input_tokens` including formatting, tool definitions, and prior messages; §12-13 record paired full/compact usage and tool-result lengths | pass for measured tasks | Extend measurements across the remaining paired task set; no tokenizer identity or UI context meter is required |
+| Eggsearch result contract | Offline MCP protocol tests cover structured results and text fallback; native API exposes returned tool output to the model | pass for Eggsearch contract | No host-specific result-shape or UI-consumption test is required |
 | Config rollback | Restored original `~/.lmstudio/mcp.json`; SHA-256 is `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c` | pass | None |
 
 ## 4. Work completed
@@ -95,7 +96,12 @@ negative findings rule out closure. M004 is registered to expose runtime-
 accepted research goal/domain values in compact schemas and repeat the focused
 qualification.
 
-## 5. Remaining evidence to unblock and close
+## 5. Earlier remaining-evidence list
+
+The following list records the state before the scope clarification in §13. Its
+references to UI behavior as a gate are superseded; UI refresh, UI result cards,
+and LM Studio's internal structured-content/fallback selection are not M003
+acceptance criteria.
 
 1. Initial paired full+diagnostic and compact+brief API trials on Gemma E2B
    and Bonsai 27B, including extraction and security failure interpretation,
@@ -211,7 +217,7 @@ schema, but the LM Studio request timed out after 300 seconds before returning
 a tool call, final answer, or usage counters. This is recorded as a failed
 retry, not as a pass; the initial invalid call remains in the table above.
 
-### Remaining M003 acceptance
+### Remaining M003 acceptance (historical assessment before §13)
 
 The paired model matrix now has exact prompt/completion usage for successful
 requests and explicit timeouts where the host returned no counter, including
@@ -220,9 +226,9 @@ does not pass M003: the full Gemma extraction ended blank, Gemma's security
 answer misstated evidence authority, Bonsai's security call failed argument
 validation, and Bonsai full-profile inference timed out. Native LM Studio UI
 tool-result handling and refresh behavior, structured-content/text fallback,
-and broader domain coverage remain open. The protected API smoke is later
-qualified in §10. Keep M003 blocked until remaining criteria pass or are
-explicitly re-scoped by a future plan.
+and broader domain coverage remained open at that time. The protected API
+smoke is later qualified in §10. The UI-specific criteria in this historical
+assessment are superseded by the scope clarification in §13.
 
 ## 8. LFM3-2B paired search and extraction trials
 
@@ -405,11 +411,114 @@ For the security task, E4B full called `security_search` without a query or ecos
 
 All native API trials restored `~/.lmstudio/mcp.json` to SHA-256
 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
-The remaining UI refresh and structured-content/text-fallback acceptance was
-not executable through the available UI automation in this environment; the
-LM Studio UI native pipe startup failed. A new `cua.getState()` attempt on
-2026-10-31, after the user confirmed a client pause window, returned the same
-native-pipe startup failure and reported that the browser access host was
-unavailable; no profile swap was made. M003 remains blocked until those UI
-checks and the larger-model specialist matrix are completed or explicitly
-re-scoped.
+The UI refresh and result-presentation checks could not be exercised because
+the computer-use host was unavailable; no profile swap was made during that
+attempt. This was recorded as a blocker before the user's scope clarification
+in §13 and is now historical evidence only.
+
+## 13. Qualification scope update and repeated LFM3 API pair
+
+On 2026-10-31, the user clarified that M003 qualifies small local models'
+ability to use Eggsearch tools appropriately while the opt-in profiles reduce
+context. LM Studio is only the available local inference/API host here,
+including for MLX support. Its UI refresh, chat presentation, and internal
+choice between MCP structured content and text fallback are not acceptance
+criteria. This scope supersedes the earlier UI-related remaining-work wording
+above; the recorded UI automation failure is retained as history, not as an
+M003 blocker.
+
+LM Studio's native `POST /api/v1/chat` API supports configured MCP plugins and
+returns tool calls/results plus usage counters. Its documented
+`stats.input_tokens` includes formatting and tool definitions, making paired
+full/compact requests a direct context-cost measure for the selected local
+model. Trials below used LM Studio 0.4.26+4, `lfm3-2b-omni-abliter8`,
+24,000-token context, temperature 0, `max_output_tokens=1000`, `store=false`,
+the same prompt and system instruction, and only `security_search` allowed.
+The candidate executable was `target/release/eggsearch`, SHA-256
+`52385c8454808a0c784f980dd12e79542ac8ab10a6133ace87396c875c4814dc`. Full
+used `schema_profile="full"`; compact used `schema_profile="compact"` and
+`brief_max_chars=8000`. The exact original `mcp.json` hash was restored after
+the trials.
+
+The task asked whether Apache Log4j 2.14.1 is affected by CVE-2021-44228 and
+required an evidence-grounded applicability conclusion with failures retained.
+The primary Apache security page lists affected Log4j versions as
+`[2.0-beta9, 2.15.0)`, which includes 2.14.1, and states that `log4j-core` is
+the affected component: https://logging.apache.org/security.html.
+
+| Profile / trial | API input / output tokens | `security_search` result characters | Model disposition |
+|---|---:|---:|---|
+| Full, trial 1 | 682 / 450 | 32,659 | Valid call. Answer said applicability was not confirmed despite citing an NVD description whose affected range includes 2.14.1; it preserved provider failures. Incorrect/internally inconsistent conclusion. |
+| Compact, trial 1 | 454 / 386 | 7,277 | Valid call with CVE query. Correctly said affected and cited NVD and vendor advisory; retained Yahoo 500 and unavailable native OSV lookup. |
+| Full, repeat | 682 / 824 | 46,665 | Valid call. Answer again treated applicability as unconfirmed based on weak/low-confidence results; it noted Yahoo failures. Incorrect conclusion against the authoritative affected-version range. |
+| Compact, repeat | 454 / 480 | 7,334 | Valid call with CVE query. Correctly said affected and cited the NVD and vendor advisory; retained Yahoo 500 and unavailable OSV lookup. |
+
+Across these paired turns, compact input usage was 33.4% lower. Brief result
+length was 77.7% and 84.3% lower in the two repeats. Combined input plus
+output usage was 25.8% and 38.0% lower per corresponding trial. Compact
+preserved the decisive advisory passage and provider-failure uncertainty, and
+the model applied the version range correctly in both runs; full produced a
+longer result but failed to apply the evidence in both runs. These are two
+paired observations for one model/task, not a general model-quality claim.
+
+A paired `web_search` task was not scored: full returned HTTP 500 with an
+MCP structured-content/output-schema validation error (`query` and `results`
+missing), while compact returned HTTP 500 `Plugin unloaded`. Neither provided
+a model answer or usage counters, so these are recorded as API/tool-path
+failures rather than model outcomes.
+
+The current remaining work is to repeat the paired task matrix for other small
+task classes (especially research and document extraction), separate
+model/tool-call failures from host/plugin failures, and assess whether the
+measured context reduction preserves adequate task quality overall. Current
+paired security evidence covers two small models; it is promising but narrow.
+M003 is active, not blocked on the UI. The current acceptance objective and
+method are in `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`.
+
+### Gemma E2B paired security trial
+
+A second small model, `google/gemma-4-e2b`, was run through the same configured
+MCP API path with the identical Log4j applicability task and system prompt.
+The run used LM Studio 0.4.26+4, 10,000-token context, temperature 0,
+`max_output_tokens=1200`, `store=false`, and only `security_search` allowed.
+The same candidate binary and full/compact profile TOML settings as the LFM3
+pair above were used. The original `mcp.json` hash was restored and verified
+after the pair.
+
+| Profile | API input / output tokens | `security_search` result characters | Model disposition |
+|---|---:|---:|---|
+| Full | 615 / 391 | 46,241 | Valid call with CVE, package, and query. It focused on Yahoo 500 failures and declined to conclude applicability, although the returned diagnostic result included advisory evidence. |
+| Compact | 356 / 534 | 7,758 | Valid call with CVE, package, query, goal, and version. Correctly applied the affected range 2.0-beta9–2.15.0 to version 2.14.1 and cited the NVD source. |
+
+Compact used 42.1% fewer input tokens and returned 83.2% fewer result
+characters. Combined input and output tokens were 11.5% lower (890 versus
+1,006); the compact turn used more completion tokens to give the correct
+evidence-based conclusion. This matches the LFM3 direction on the same task,
+but remains one pair for this model and one security case.
+
+### All-tools palette pair after M007 schema correction
+
+The M003 task was repeated with no `allowed_tools` filter, exposing the full
+ten-tool palette to `lfm3-2b-omni-abliter8`. The candidate executable included
+the M007 fix (SHA-256
+`ff98098566a89f0603d1c07ad3cd88e5d36fae830bc8d6bde65cebc3456a71ea`). Both
+requests used a 24,000-token context, temperature 0, the same Log4j/CVE task,
+the same system instruction, and `store=false`.
+
+| Profile / trial | API input / prompt tokens | Tool outcome | Model disposition |
+|---|---:|---|---|
+| Full, all tools | 34,779 prompt tokens; rejected against 24,064 available | No tool call; context overrun | No answer generated; cannot score model tool use. |
+| Compact, all tools, after full request | No usage; HTTP 500 `Plugin unloaded` | No tool call | Host/plugin failure, not scored as a model outcome. |
+| Compact, all tools, fresh compact-first request | 5,365 input tokens; 362 output tokens | Valid `security_search`; arguments included applicability intent, Log4j package, and CVE query; result was 7,215 characters | Correctly applied the NVD affected range to 2.14.1, cited the advisory, and retained Yahoo's 500 failure. |
+
+The compact-first request passed the schema validation point that had failed
+before M007: all ten tools were exposed and the API completed the specialist
+call. Full exceeded this model's 24k context by 10,715 tokens. The 5,365 input
+counter is the successful API response's usage value; the full value is the
+inference engine's rejected prompt count. Treat this as evidence that the
+compact palette fit and was usable in this task, not as a general percentage
+savings or proof that every compact tool schema is accepted by every host.
+The earlier post-full `Plugin unloaded` response remains recorded as a host
+failure; the exact original MCP config was restored byte-for-byte after each
+request block (SHA-256
+`b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`).
