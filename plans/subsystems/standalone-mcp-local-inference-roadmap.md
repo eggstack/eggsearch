@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001, M002, M004, and M005 closed; M003 remains open on operational acceptance; M006 compact direct-fetch corrective is active)
+Status: active (M001, M002, M004, M005, and M006 closed; M003 blocked on operational acceptance)
 Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
@@ -44,9 +44,9 @@ M001 compact ten-tool advertised schema profile (closed)
   |
   +-- hard --> M002 brief/budgeted agent responses (closed)
                   |
-                  +-- operational --> M003 LM Studio/direct-client compatibility and quality (open acceptance)
+                  +-- operational --> M003 LM Studio/direct-client compatibility and quality (blocked on live acceptance)
                   +-- corrective --> M005 brief document extraction and paired requalification (closed)
-                  +-- corrective --> M006 compact direct-fetch tool-choice corrective (active)
+                  +-- corrective --> M006 compact direct-fetch tool-choice corrective (closed at `6dc63d5`; hosted CI run `41181749609`)
 
 M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate de69f1d)
 ```

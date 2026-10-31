@@ -1,6 +1,6 @@
 # M006 — Compact Direct-Fetch Tool-Choice Corrective
 
-Status: active
+Status: closed
 Primary class: corrective
 Source roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 Corrects: M001 compact tool presentation, as evidenced by M003 native API qualification in `plans/closure/standalone-mcp-local-inference/003-status.md`

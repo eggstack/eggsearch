@@ -407,6 +407,9 @@ All native API trials restored `~/.lmstudio/mcp.json` to SHA-256
 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
 The remaining UI refresh and structured-content/text-fallback acceptance was
 not executable through the available UI automation in this environment; the
-LM Studio UI native pipe startup failed. M003 remains blocked until those UI
+LM Studio UI native pipe startup failed. A new `cua.getState()` attempt on
+2026-10-31, after the user confirmed a client pause window, returned the same
+native-pipe startup failure and reported that the browser access host was
+unavailable; no profile swap was made. M003 remains blocked until those UI
 checks and the larger-model specialist matrix are completed or explicitly
 re-scoped.

@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M006 — Closure Status
 
-Status: active (local implementation and qualification pass; hosted CI pending)
+Status: closed
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md`
@@ -8,7 +8,7 @@ Source implementation plan:
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 
-Implementation candidate: pending commit and hosted Linux/macOS/Windows qualification.
+Implementation candidate: `6dc63d5f1a45b85352c40b26e6effbb6b9793826`.
 Native API test executable SHA-256: `9b70544f64bc1d87a3956480c020074f3ae4e65e5002a927d83bf973b448f801`.
 Final local stdio-smoke executable SHA-256: `52385c8454808a0c784f980dd12e79542ac8ab10a6133ace87396c875c4814dc`.
 
@@ -65,15 +65,16 @@ Authentication and MCP permission settings were not changed.
 | `make check` | pass locally; 3,486 tests |
 | `make docs-check` | pass locally |
 | `make bench-check` | pass; optimized Criterion harness compiled with `--no-run` |
-| Hosted Linux, macOS, and Windows CI | pending on the committed candidate |
+| Hosted Linux, macOS, and Windows CI | pass on exact candidate `6dc63d5f1a45b85352c40b26e6effbb6b9793826`; CI run [`41181749609`](https://github.com/eggstack/eggsearch/actions/runs/41181749609) passed canonical Linux and macOS verification plus Windows all-features portability and macOS filesystem portability checks |
 
 ## 4. Disposition
 
 The candidate passes the controlled direct-fetch task gate. The baseline
 comparison does not establish that the added description alone changes model
 behavior; it clarifies the intended supported URL source without changing
-tool behavior or breaching the compact schema budget. M006 can close after
-`make bench-check` and hosted CI pass.
+tool behavior or breaching the compact schema budget. Focused, canonical,
+documentation, benchmark-compilation, installed-child, and hosted checks all
+pass for the implementation candidate.
 
 M003 remains blocked on the broader task-quality matrix and LM Studio UI
 refresh and result-shape behavior. The additional Gemma E2B/E4B results and
