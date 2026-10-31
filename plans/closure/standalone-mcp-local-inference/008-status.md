@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M008 — Closure Status
 
-Status: active (schema corrective and focused contract test pass; compact browser invocation and hosted qualification pending)
+Status: closed at `772a073fd40e9f044017b26bae18a6efd0724b1d`
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/008-compact-browser-render-reachability-corrective.md`
@@ -21,37 +21,55 @@ compact schema reachability gap, but not successful paired browser extraction.
 
 ## 2. Candidate and verification
 
-Implementation candidate release executable SHA-256:
+Implementation candidate commit: `772a073fd40e9f044017b26bae18a6efd0724b1d`.
+Release executable SHA-256:
 `507724a14a1926488913a50b1864543f1e899d8a3df6e1b44d1a90dcc4110b43`.
 
 The compact schema now preserves `render` and constrains it to the runtime's
 accepted values `http_only`, `auto`, and `browser`. The focused
 `mcp_schema_slimming` suite passes 20 tests. `make docs-check` passes.
 
-The paired LFM3 2B browser call used the same `example.com` prompt for full
-and compact. Full/diagnostic called `web_fetch` with `render="browser"`, used
-18,805 input and 259 output tokens, and returned HTTP 200 with
-`transport="browser"`; the model extracted the heading and paragraph
-accurately and retained the external-content warning. Compact/brief failed
-before a model turn completed because Chrome could not acquire the shared
-`chromiumoxide-runner/SingletonLock`. LM Studio returned HTTP 500 and no usage
-counters. This is an infrastructure failure, not a compact-model outcome, and
-does not satisfy successful compact browser invocation acceptance.
+The paired LFM3 2B browser trial used the same `example.com` prompt, all ten
+tool schemas, and the exact candidate executable. A local inference harness
+supplied the schemas to LM Studio's `/v1/chat/completions` endpoint, executed
+the selected MCP call over stdio, and returned the result for answer synthesis.
+Full used 68,736 serialized schema bytes and 40,415 API input / 176 output
+tokens across both turns. Its valid `web_fetch` request set `render="browser"`
+and returned HTTP 200 with `transport="browser"`; the model extracted the
+heading and paragraph accurately and retained the external-content warning.
+The serialized tool result was 9,901 characters.
+
+Compact used 19,339 schema bytes and 11,904 API input / 216 output tokens. Its
+valid request also set `render="browser"` and returned HTTP 200; the brief
+projection did not include the `transport` field. The model extracted the same
+heading and paragraph and retained the external-content warning. Its result
+was 3,817 characters and carried `output_truncated=true`; the model did not
+mention that outer-output warning even though the relevant page text was
+complete. For this one pair, compact reduced schema bytes by 71.9%, total input
+tokens by 70.5%, and result characters by 61.4%. This qualifies compact
+browser-call reachability and extraction for this simple page, not general
+browser reliability or quality.
 
 The canonical `make check` attempt passed its earlier formatting, lint, and
 compile stages but stalled without output for more than five minutes in the
 unchanged `bounded_command` integration suite on this macOS host. It was
-interrupted. The exact committed candidate still requires hosted CI.
+interrupted. Hosted CI on the exact source commit `772a073fd40e9f044017b26bae18a6efd0724b1d`
+passed Linux canonical, macOS canonical and filesystem portability, and
+Windows portability in run `41220450246`. Release drift run `41220450259` and
+Python native qualification run `41220450258` also passed. The separate egress
+feature run `41220450274` passed its Linux, x86_64 macOS, Windows, MSRV, and
+ARMv7 jobs; its Apple Silicon macOS egress job was cancelled by a scheduled
+runner-image brownout and does not exercise this change.
 
-Remaining evidence: committed-candidate hosted CI, an uncontended compact
-browser API call with actual usage and extraction results, and verification
-that the compact schema remains within its size budget on the built candidate.
-The original `~/.lmstudio/mcp.json` is restored at SHA-256
+The focused schema suite verifies that the compact tool surface remains within
+budget. The original `~/.lmstudio/mcp.json` is restored at SHA-256
 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
 
 ## 3. Disposition
 
-M008 remains active until its acceptance criteria pass. M003 remains active and
-owns the broader small-model tool-use and context qualification. The config
-restoration hash is verified, and no API authentication or MCP permission
-setting was changed.
+M008 is closed at `772a073fd40e9f044017b26bae18a6efd0724b1d`. The compact
+schema preserves all render modes within budget, the paired local-model API
+trial successfully invoked and extracted through compact browser mode, and
+hosted canonical qualification passed. M003 remains active and owns the broader
+small-model tool-use and context qualification. The config restoration hash is
+verified, and no API authentication or MCP permission setting was changed.

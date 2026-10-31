@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001, M002, M004, M005, and M006 closed; M003, M007, and M008 active)
+Status: active (M001, M002, and M004-M008 closed; M003 active)
 Scope: small local-model tool-use and context qualification through an actual inference API; not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
@@ -47,8 +47,8 @@ M001 compact ten-tool advertised schema profile (closed)
                   +-- operational --> M003 small local-model tool-use and context qualification (active)
                   +-- corrective --> M005 brief document extraction and paired requalification (closed)
                   +-- corrective --> M006 compact direct-fetch tool-choice corrective (closed at `6dc63d5`; hosted CI run `41181749609`)
-                  +-- corrective --> M007 compact schema reference corrective (active; discovered during M003 all-tools API qualification)
-                  +-- corrective --> M008 compact browser-render reachability corrective (active; discovered during M003 paired extraction)
+                  +-- corrective --> M007 compact schema reference corrective (closed at `772a073`; hosted CI run `41220450246`)
+                  +-- corrective --> M008 compact browser-render reachability corrective (closed at `772a073`; hosted CI run `41220450246`)
 
 M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate de69f1d)
 ```
@@ -63,8 +63,8 @@ No CodeGG dependency; it is a regression consumer, not the implementation target
 | M004 | capability | `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md` | Advertise runtime-accepted research goal/domain values in compact schemas; test schema parity and size; repeat focused live tasks; M003 remains open for its broader gates |
 | M005 | corrective | `plans/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md` | Closed on `de69f1d`; brief preserves same-document extraction within budget; model evidence and unresolved M003 failures are recorded; hosted Linux/macOS/Windows gates pass |
 | M006 | corrective | `plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md` | Resolve or bound a repeated native LM Studio compact `web_fetch` no-call failure from M003; keep M003 open until evidence supports acceptance |
-| M007 | corrective | `plans/implementation/standalone-mcp-local-inference/007-compact-schema-reference-corrective.md` | Resolve dangling compact-schema `$ref` in `build_evidence_bundle`; preserve ten-tool contract and verify all local references plus all-tools model API invocation |
-| M008 | corrective | `plans/implementation/standalone-mcp-local-inference/008-compact-browser-render-reachability-corrective.md` | Advertise the existing `web_fetch.render` option in compact mode and requalify paired browser extraction |
+| M007 | corrective | `plans/implementation/standalone-mcp-local-inference/007-compact-schema-reference-corrective.md` | Closed at `772a073`; all compact local references resolve; hosted Linux/macOS/Windows CI run `41220450246` passed |
+| M008 | corrective | `plans/implementation/standalone-mcp-local-inference/008-compact-browser-render-reachability-corrective.md` | Closed at `772a073`; compact browser call and extraction qualified on LFM3 2B; hosted CI run `41220450246` passed |
 
 ## Cross-cutting controls
 

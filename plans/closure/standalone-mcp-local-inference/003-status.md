@@ -73,7 +73,7 @@ provide a reliable per-chat usage breakdown for this test set.
 | Reproducible installed-candidate stdio smoke | `scripts/lm_studio_stdio_smoke.py` | pass | Offline protocol evidence only |
 | Ten tools and profile list sizes | M006-candidate initialized child-process smoke: 72,923 full / 19,370 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
 | Configured MCP API path | Authenticated native `/api/v1/chat` calls through configured `mcp/eggsearch`, with task-specific `allowed_tools`; exact config rollback hash recorded | pass | None for the tested local host; this verifies the model/API path, not LM Studio UI behavior |
-| Paired small-model comparison | §12-15 include direct fetch, web search, research, security applicability, PDF extraction, and a browser-render attempt on LFM3 2B and Gemma E2B | partial / mixed | Repeat research and browser tasks; separate host failures from model outcomes |
+| Paired small-model comparison | §12-15 include direct fetch, web search, research, security applicability, PDF extraction, and a successful LFM3 browser-render pair | partial / mixed | Repeat research and browser tasks; improve compact warning interpretation and separate host failures from model outcomes |
 | Tool choice, argument validity, evidence and failure truthfulness | §12-14 include valid calls, wrong-tool selection, argument repair, weak evidence, extraction errors, provider failures, and API/browser failures | partial / quality concern | Improve consistency on research and exact applicability ranges; distinguish host failures from model failures |
 | Actual context/token reduction | LM Studio native API reports `input_tokens` including formatting, tool definitions, and prior messages; §12-14 record paired full/compact usage and tool-result lengths | pass for measured tasks | Repeat key pairs to estimate variability; no tokenizer identity or UI context meter is required |
 | Eggsearch result contract | Offline MCP protocol tests cover structured results and text fallback; native API exposes returned tool output to the model | pass for Eggsearch contract | No host-specific result-shape or UI-consumption test is required |
@@ -472,10 +472,11 @@ fetch, web search, research search, security applicability, and PDF extraction
 on two small models. Outcomes remain mixed: compact consistently reduced
 measured input tokens, but it did not preserve adequate quality in every task.
 At the time of the M007 trials, the compact schema did not advertise optional
-`render`; M008 adds that argument, with the first requalification attempt in
-§15. Browser-rendered extraction remains unqualified because the compact call
-failed before inference on Chrome's shared-profile lock. M003 remains active,
-not blocked on the UI. The current acceptance objective and method are in
+`render`; M008 adds that argument. The paired API requalification in §15 shows
+both profiles can extract the requested browser page, though compact's brief
+result omits transport metadata and the model missed its `output_truncated`
+warning. Repeat research and browser tasks before a broader quality claim.
+M003 remains active, not blocked on the UI. The current acceptance objective and method are in
 `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`.
 
 ### Gemma E2B paired security trial
@@ -581,10 +582,13 @@ are not counted as a successful paired browser extraction.
 The original `~/.lmstudio/mcp.json` was restored byte-for-byte after testing;
 SHA-256 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
 The local LM Studio server was restarted with that original registration.
-This candidate passed the local canonical `make check` and `make docs-check`;
+This M007 candidate passed local `make check` and `make docs-check`;
 hosted CI, release drift, and Python native qualification passed on commit
-`fe677ff45a4c69feee50907cfbd451b6ae2a1fd4`. The hosted egress qualification
-run was cancelled and must be rerun before M007 closure. M003 remains active:
+`fe677ff45a4c69feee50907cfbd451b6ae2a1fd4`. The separate hosted egress
+qualification run `41220450274` passed its Linux, x86_64 macOS, Windows, MSRV,
+and ARMv7 jobs; the Apple Silicon macOS job was cancelled by a scheduled
+runner-image brownout. This egress-only cancellation did not block M007 or M008
+closure. M003 remains active:
 the matrix now demonstrates consistent context reduction on these tasks, but
 tool choice, evidence quality, failure handling, and browser reachability still
 vary by model and profile. Additional repeats and a clean browser pair are
@@ -599,20 +603,33 @@ compact schema preserves all three values. The exact local candidate release
 binary SHA-256 is
 `507724a14a1926488913a50b1864543f1e899d8a3df6e1b44d1a90dcc4110b43`.
 
-The LFM3 2B browser-render API trial used the same `example.com` extraction
-prompt for both profiles. Full/diagnostic used 18,805 input and 259 output
-tokens; its valid `web_fetch` call included `render="browser"` and returned
-HTTP 200 with `transport="browser"`. It extracted the heading and explanatory
-paragraph correctly, reported no truncation, and retained the external-content
-warning. Compact/brief returned an HTTP 500 before a model turn completed:
-Chrome could not create its shared ProcessSingleton because a
-`chromiumoxide-runner/SingletonLock` already existed. It produced no usage
-counters or scored model outcome. Therefore this is not successful compact
-browser invocation evidence. The React reference page remains unqualified.
+The LFM3 2B pair used the same `example.com` extraction prompt, all ten MCP
+tools, and the M008 release executable. The local `/v1/chat/completions`
+inference harness supplied each profile's actual MCP schemas, executed the
+model's MCP call over stdio, and returned its result for synthesis. Full used
+68,736 schema bytes, 18,813 first-turn input tokens, and 40,415 total input /
+176 output tokens across the tool and answer turns. Its valid call requested
+`render="browser"`, returned HTTP 200 with `transport="browser"`, and the
+model accurately gave the heading, paragraph, URL, and external-content
+warning. The tool result was 9,901 serialized characters.
 
-M008 remains active until a compact-profile browser call succeeds on the exact
-candidate, local canonical checks pass, and hosted CI qualifies the committed
-candidate. M003 remains active because research/security evidence quality is
-mixed and key specialist/browser tasks need repeats. Existing measured token
-reductions are per task and do not establish a general quality or reliability
-improvement.
+Compact used 19,339 schema bytes, 5,382 first-turn input tokens, and 11,904
+total input / 216 output tokens. Its valid call requested `render="browser"`
+and returned HTTP 200; the brief result did not expose the `transport` field.
+The model correctly gave the same heading, paragraph, URL, and external-content
+warning. The tool result was 3,817 serialized characters with
+`output_truncated=true`; the model did not report that outer-output warning,
+although the extracted page content was complete. The brief output's
+transport-field omission and warning miss are recorded as quality limits, not
+as a failed browser call. Compact reduced schema bytes by 71.9%, total input
+tokens by 70.5%, and result characters by 61.4% for this one task pair. The
+React reference page remains unqualified.
+
+The compact-profile browser call succeeds on the exact M008 executable.
+M008 is closed at source commit `772a073fd40e9f044017b26bae18a6efd0724b1d`
+after hosted Linux/macOS/Windows CI. The full local `make check` attempt
+stalled in `bounded_command`, while the focused 20-test schema suite, release
+build, formatting, diff, and documentation checks passed. M003 remains active
+because research/security evidence quality is mixed and key specialist/browser
+tasks need repeats. Existing measured token reductions are per task and do not
+establish a general quality or reliability improvement.

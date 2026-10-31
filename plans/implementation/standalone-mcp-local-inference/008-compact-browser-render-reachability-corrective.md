@@ -1,6 +1,6 @@
 # M008 — Compact Browser-Render Reachability Corrective
 
-Status: active
+Status: closed (candidate `772a073fd40e9f044017b26bae18a6efd0724b1d`; hosted CI `41220450246`)
 Primary class: corrective
 Source roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 Corrects: M001 compact `web_fetch` schema, discovered during M003 small-model task qualification
