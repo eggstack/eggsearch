@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M003 — Operational Status
 
-Status: blocked (live LM Studio interaction is qualified, but the acceptance matrix is incomplete and Gemma quality failures require a corrective decision)
+Status: blocked (interactive and authenticated native API paths are qualified, but the acceptance matrix is incomplete and documented model-quality failures require a corrective decision)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
@@ -13,13 +13,15 @@ Predecessor closures: M001 `d983fa5`; M002 `plans/closure/standalone-mcp-local-i
 
 ## 1. Current finding
 
-M003 is not closed. The installed-candidate stdio smoke and the interactive
-LM Studio chat path both worked with the candidate, and all ten tools remained
-available. This is the first real model-turn evidence for the branch. It does
-not establish that compact is a safe default: one paired web task showed a
-large context-meter reduction, but specialist research and direct-fetch tasks
-had material quality failures. The tests used only `google/gemma-4-e2b` in
-LM Studio 0.4.26+4, so the required larger-reference comparison remains open.
+M003 is not closed. The installed-candidate stdio smoke, interactive LM
+Studio chat path, and authenticated native `/api/v1/chat` path worked with the
+candidate, and all ten tools remained available. The paired direct-inference
+trials included `google/gemma-4-e2b`, `prism-ml/bonsai-27b`, and
+`lfm3-2b-omni-abliter8`; the required same-task comparison with a larger
+reference model remains incomplete. Existing evidence does not establish
+that compact is a safe default: specialist research and direct-fetch tasks
+had material quality failures, and several runs timed out or exhausted the
+available context.
 
 Model/server facts observed in LM Studio:
 
@@ -66,7 +68,7 @@ provide a reliable per-chat usage breakdown for this test set.
 | Tool choice, argument validity, repairs, evidence and failure truthfulness | Five task records above | partial / quality concern | Investigate research argument retries, context overrun, and source classification; add paired specialist/fetch cases |
 | Exact tokenizer and prompt-token attribution | App context meter only; no per-chat token counts or tokenizer identifier | blocked | Capture host-injected prompt and response usage for each profile |
 | Output schema / structuredContent vs text fallback | Offline protocol coverage only | partial | Inspect actual LM Studio handling and compare a generic MCP inspector/client |
-| Protected API MCP smoke | Previous API call was permission-denied; “Allow calling servers from mcp.json” remained disabled | blocked | Operator must configure LM Studio authentication and authorize that server permission before API qualification; no such security settings were changed |
+| Protected API MCP smoke | Authenticated native `/api/v1/chat` call through configured `mcp/eggsearch`, with only `web_fetch` allowed | pass | UI structured-content/text fallback and refresh behavior remain uncharacterized |
 | Config rollback | Restored original `~/.lmstudio/mcp.json`; `cmp` against backup succeeded | pass | None |
 
 ## 4. Work completed
@@ -91,7 +93,7 @@ qualification.
 1. Initial paired full+diagnostic and compact+brief API trials on Gemma E2B
    and Bonsai 27B, including extraction and security failure interpretation,
    are recorded in §7 with tool validity, evidence quality, actual usage, and
-   latency. Repeat Bonsai's security task after M005 adds accepted goal values;
+   latency. The post-M005 Bonsai security retry timed out without a result;
    expand the task set to research, PDF, repository/evidence, and grouped
    failures before closing M003.
 2. Exact prompt/completion usage is now recorded for completed requests in §7.
@@ -102,28 +104,27 @@ qualification.
 3. Characterize LM Studio's structured output and text fallback handling,
    visibility after config refresh/new chat, and compare one generic MCP
    inspector/client.
-4. For API-specific qualification, the LM Studio server requires
-   authentication before enabling “Allow calling servers from mcp.json.” No
-   credentials were created and no security-sensitive setting was changed;
-   complete that prerequisite in LM Studio, then run the API smoke and restore
-   prior settings.
+4. The authenticated native configured-server API smoke now passes; see §10.
+   The user enabled authentication and “Allow calling servers from mcp.json.”
+   UI structured-content/text fallback and refresh behavior remain untested.
 5. M004's hosted Linux/macOS/Windows canonical gate now passes on candidate
    `755008c0a1da658835dd8f215d3b82bd1cb3dee5`; see its closure status. The
    earlier local `bounded_command` stall did not reproduce in hosted CI.
-6. M003 remains blocked on the post-correction Bonsai retry, broader domain
-   coverage, LM Studio UI structured-content/refresh behavior, protected API
-   smoke, and remediation or explicit acceptance of the quality failures in
-   §7. Close M003 only after its remaining live acceptance criteria pass.
+6. M003 remains blocked on broader domain coverage, LM Studio UI
+   structured-content/refresh behavior, and remediation or explicit
+   acceptance of the quality failures in §7. Close M003 only after its
+   remaining live acceptance criteria pass.
 
 ## 6. Security and operational disposition
 
-No API authentication, credential, or MCP permission setting was changed.
-The temporary global MCP config was restored and verified byte-identical to
-its pre-test backup. LM Studio interactive chat qualification is now recorded,
-so the remaining block is broader than the earlier API permission denial:
-model comparison, exact token attribution, host behavior checks, and the
-substantial live quality failures remain open. Do not claim a general LM
-Studio token-saving or quality win from the single paired task.
+The agent did not change API authentication, credentials, or MCP permission
+settings. The user enabled authentication and configured-server access after
+the earlier tests. The temporary global MCP config was restored and verified
+byte-identical to its pre-test backup. LM Studio interactive and native API
+qualification are recorded, but model comparison, exact token attribution,
+UI host behavior checks, and substantial live quality failures remain open.
+Do not claim a general LM Studio token-saving or quality win from the single
+paired task.
 
 ## 7. Paired local inference API measurements (M005)
 
@@ -188,9 +189,9 @@ does not pass M003: the full Gemma extraction ended blank, Gemma's security
 answer misstated evidence authority, Bonsai's security call failed argument
 validation, and Bonsai full-profile inference timed out. Native LM Studio UI
 tool-result handling and refresh behavior, structured-content/text fallback,
-and the protected API smoke also remain open. No API authentication or MCP
-permission setting was changed. Keep M003 blocked until these criteria pass or
-are explicitly re-scoped by a future plan.
+and broader domain coverage remain open. The protected API smoke is later
+qualified in §10. Keep M003 blocked until remaining criteria pass or are
+explicitly re-scoped by a future plan.
 
 ## 8. LFM3-2B paired search and extraction trials
 
@@ -259,18 +260,49 @@ after the request.
 ## 9. Bearer-token probe with authentication disabled
 
 At the user's request, a loopback-only `POST /api/v1/chat` request included
-the supplied bearer token and the configured `mcp/eggsearch` integration. The
-request returned HTTP 403 with LM Studio's `Permission denied to use plugin
-'mcp/eggsearch'` error, directing the operator to allow plugin use in server
-configuration and ensure the token has the required permission. At the time of
-the probe, `Require Authentication` and `Allow calling servers from mcp.json`
-were both off; neither setting was changed. The token value is intentionally
-not recorded here.
+the supplied bearer token and a temporary configured-server alias
+`mcp/eggsearch-test`. It returned HTTP 403 with LM Studio's `Permission denied
+to use plugin` error. At the time of the probe, `Require Authentication` and
+`Allow calling servers from mcp.json` were both off; neither setting was
+changed. A plain authenticated inference request succeeded. The token value
+is intentionally not recorded here.
 
-This establishes that supplying a bearer token alone does not bypass the
-disabled configured-server permission. Since authentication was off, the
-response does not establish whether LM Studio validated the token. The
-existing no-auth API clients were not interrupted. Enabling the authentication
-switch makes a valid token mandatory for every API request, according to LM
-Studio's server contract; existing no-auth clients would then need to supply a
-valid token too.
+The 403 was specific to the temporary alias and disabled configured-server
+permission, rather than evidence that the token lacked MCP permission. The
+follow-up in §10 tests the actual `mcp/eggsearch` entry after the user enabled
+authentication and configured-server access. LM Studio requires an API token
+for every request when authentication is enabled; the user enabled this
+setting after the earlier probe.
+
+## 10. Authenticated native MCP API acceptance
+
+After the user enabled authentication and “Allow calling servers from
+mcp.json,” a loopback-only `POST http://127.0.0.1:1234/api/v1/chat` request
+used the actual `mcp/eggsearch` integration from the restored LM Studio
+configuration. LM Studio 0.4.26+4 ran `lfm3-2b-omni-abliter8` (Q4_K_M,
+128,000-token model context). No token value is recorded.
+
+The request restricted the integration to `web_fetch` and asked the model to
+read LM Studio's official authentication documentation. The native API
+returned HTTP 200, emitted one valid `web_fetch` call for the requested URL,
+and returned a correct answer identifying the Authentication page and
+explaining that an existing token's permissions can be edited in the API
+Tokens modal. LM Studio reported 1,575 input tokens and 113 output tokens;
+the local request took about six seconds. Eggsearch returned a successful
+fetch of the official page. The request used a 24,000-token context setting.
+
+A first request exposing the full Eggsearch tool palette at a 12,000-token
+context setting failed before inference because the resolved prompt required
+18,737 tokens against an available 12,032. Raising context to 32,768 allowed
+the native request to run. Restricting `allowed_tools` to the single required
+tool therefore produced a much smaller measured prompt (1,575 input tokens)
+and successfully completed the retrieval. These are API-reported usage
+figures for this request, not a general quality or token-saving claim.
+
+The user enabled the server authentication and configured-server settings;
+the agent did not change them. The original `~/.lmstudio/mcp.json` was
+restored byte-for-byte after the temporary test alias was removed. The
+protected native MCP API criterion is now passed. Interactive UI
+structured-content versus text fallback, config refresh behavior, broader
+paired-task quality, and the documented negative model outcomes remain open,
+so M003 is still blocked.
