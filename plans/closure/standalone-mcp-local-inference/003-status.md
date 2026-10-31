@@ -73,9 +73,9 @@ provide a reliable per-chat usage breakdown for this test set.
 | Reproducible installed-candidate stdio smoke | `scripts/lm_studio_stdio_smoke.py` | pass | Offline protocol evidence only |
 | Ten tools and profile list sizes | M006-candidate initialized child-process smoke: 72,923 full / 19,370 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
 | Configured MCP API path | Authenticated native `/api/v1/chat` calls through configured `mcp/eggsearch`, with task-specific `allowed_tools`; exact config rollback hash recorded | pass | None for the tested local host; this verifies the model/API path, not LM Studio UI behavior |
-| Paired small-model comparison | LFM3 2B direct-fetch trials in §12 and repeated security-applicability trials in §13; Gemma E2B/E4B observations in §12 | partial / mixed | Expand paired coverage across research and extraction; retain API/plugin failures as infrastructure outcomes, separate from model failures |
-| Tool choice, argument validity, evidence and failure truthfulness | §12-13 include valid and invalid calls, no-calls, plugin/API failures, evidence gaps, and both correct and incorrect applicability conclusions | partial / quality concern | Complete repeatable paired task coverage and assess evidence quality across more than one small model |
-| Actual context/token reduction | LM Studio native API reports `input_tokens` including formatting, tool definitions, and prior messages; §12-13 record paired full/compact usage and tool-result lengths | pass for measured tasks | Extend measurements across the remaining paired task set; no tokenizer identity or UI context meter is required |
+| Paired small-model comparison | §12-15 include direct fetch, web search, research, security applicability, PDF extraction, and a browser-render attempt on LFM3 2B and Gemma E2B | partial / mixed | Repeat research and browser tasks; separate host failures from model outcomes |
+| Tool choice, argument validity, evidence and failure truthfulness | §12-14 include valid calls, wrong-tool selection, argument repair, weak evidence, extraction errors, provider failures, and API/browser failures | partial / quality concern | Improve consistency on research and exact applicability ranges; distinguish host failures from model failures |
+| Actual context/token reduction | LM Studio native API reports `input_tokens` including formatting, tool definitions, and prior messages; §12-14 record paired full/compact usage and tool-result lengths | pass for measured tasks | Repeat key pairs to estimate variability; no tokenizer identity or UI context meter is required |
 | Eggsearch result contract | Offline MCP protocol tests cover structured results and text fallback; native API exposes returned tool output to the model | pass for Eggsearch contract | No host-specific result-shape or UI-consumption test is required |
 | Config rollback | Restored original `~/.lmstudio/mcp.json`; SHA-256 is `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c` | pass | None |
 
@@ -467,13 +467,16 @@ missing), while compact returned HTTP 500 `Plugin unloaded`. Neither provided
 a model answer or usage counters, so these are recorded as API/tool-path
 failures rather than model outcomes.
 
-The current remaining work is to repeat the paired task matrix for other small
-task classes (especially research and document extraction), separate
-model/tool-call failures from host/plugin failures, and assess whether the
-measured context reduction preserves adequate task quality overall. Current
-paired security evidence covers two small models; it is promising but narrow.
-M003 is active, not blocked on the UI. The current acceptance objective and
-method are in `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`.
+The expanded paired task results are recorded in §14. They cover direct HTML
+fetch, web search, research search, security applicability, and PDF extraction
+on two small models. Outcomes remain mixed: compact consistently reduced
+measured input tokens, but it did not preserve adequate quality in every task.
+At the time of the M007 trials, the compact schema did not advertise optional
+`render`; M008 adds that argument, with the first requalification attempt in
+§15. Browser-rendered extraction remains unqualified because the compact call
+failed before inference on Chrome's shared-profile lock. M003 remains active,
+not blocked on the UI. The current acceptance objective and method are in
+`plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`.
 
 ### Gemma E2B paired security trial
 
@@ -522,3 +525,94 @@ The earlier post-full `Plugin unloaded` response remains recorded as a host
 failure; the exact original MCP config was restored byte-for-byte after each
 request block (SHA-256
 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`).
+
+## 14. Expanded small-model task matrix on M007 candidate
+
+The native LM Studio REST API was used as a local inference harness; its UI
+behavior is not part of this qualification. LM Studio 0.4.26+4 invoked the
+release executable built from the M007 candidate (SHA-256
+`ff98098566a89f0603d1c07ad3cd88e5d36fae830bc8d6bde65cebc3456a71ea`). The
+temporary configured-server entries exposed the full Eggsearch palette under
+both profiles, without an `allowed_tools` filter for the matrix tasks. Each
+pair used a fresh `store=false` request, temperature 0, the same model,
+prompt, context size, and source URL. LFM3 used Q4_K_M GGUF at a 128,000-token
+request context; Gemma E2B used 4-bit MLX at 32,000 tokens. The profile
+settings were `full + diagnostic` and `compact + brief`, with PDF and browser
+features enabled in the temporary Eggsearch config. API/plugin errors were
+kept separate from model outcomes.
+
+| Model / task | Full input / output tokens; result chars | Compact input / output tokens; result chars | Tool and task outcome |
+|---|---:|---:|---|
+| LFM3 2B — direct fetch, official Rust 1.90 announcement | 18,846 / 578; 21,120 | 5,378 / 596; 5,706 | Both made one valid `web_fetch` and correctly identified LLD and workspace publishing with source evidence. |
+| LFM3 2B — web search, same release task | 18,821 / 994; 55,193 | 5,353 / 770; 18,973 | Full selected `security_search` for a release query and used secondary evidence. Compact selected `web_search`, repaired an excessive `excerpt_count`, fetched official Rust sources, and answered the requested changes correctly. |
+| LFM3 2B — `research_search`, workspace publishing | 18,825 / 1,216; 53,140 | 5,357 / 1,175; 28,581 | Both invoked research. Full leaned on weak/secondary evidence; compact added official Rust release and Cargo sources and better substantiated the claim. |
+| LFM3 2B — security applicability, Log4j 2.14.1 | 18,803 / 566; 53,020 | 5,335 / 610; 12,099 | Full made several calls, including repair attempts, and gave an imprecise upper range. Compact used `security_search` then fetched NVD/OSV; it gave the full affected range and reported Yahoo's 500. |
+| LFM3 2B — PDF extraction, NIST FIPS 197 | 18,860 / 905; 50,732 | 5,392 / 574; 5,084 | Both fetched the exact PDF. Full incorrectly assigned 192- and 256-bit block sizes; compact correctly reported 128-bit blocks and 128/192/256-bit keys, noting truncation after the needed evidence. |
+| Gemma E2B — direct fetch, official Rust 1.90 announcement | 4,612 / 1,030; 21,120 | 1,825 / 1,162; 5,706 | Both made one valid `web_fetch` and identified the two requested release changes. |
+| Gemma E2B — web search, same release task | 4,585 / 1,971; 71,023 | 1,798 / 1,659; 13,129 | Full fetched the general GitHub releases page and answered with unrelated examples. Compact searched, fetched the official Rust blog, and gave the requested changes. |
+| Gemma E2B — `research_search`, workspace publishing | 4,586 / 1,861; 55,062 | 1,799 / 1,731; 7,414 | Both invoked research but neither established the Rust 1.90-specific feature from primary evidence. Compact appropriately stated the evidence was inconclusive; full overstated a generic workspace result. |
+| Gemma E2B — security applicability, Log4j 2.14.1 | 4,589 / 2,280; 140,916 | 1,802 / 1,184; 5,535 | Both concluded 2.14.1 is affected and cited advisories. Both gave an incomplete upper range; full also made extra `provider_status` and repair calls. |
+| Gemma E2B — PDF extraction, NIST FIPS 197 | 4,634 / 947; 50,732 | 1,847 / 877; 5,084 | Both fetched the same PDF and correctly separated key length from the 128-bit block size. |
+
+Compact reduced API-reported input tokens by 71.4–71.6% for the scored LFM3
+pairs and 60.1–60.8% for the Gemma pairs. Result-character reduction varied
+by task (approximately 46–90% for LFM3 research/PDF and 73–90% for the direct
+fetch/PDF cases; approximately 73–96% for Gemma direct-fetch/security/PDF).
+These are per-task measurements, not a universal savings estimate. Across
+models, compact improved the release-search and PDF answers, while research
+and exact security-range quality remained mixed. Fewer result characters did
+not guarantee correctness.
+
+### Browser-rendered extraction disposition
+
+The React `useState` page was paired with the same question. Full-profile
+requests explicitly using `render="browser"` timed out or returned HTTP errors
+in the native API; a successful compact request fetched the page over HTTP
+instead. Its result metadata reported `browser_escalated=false`, and the model
+made incorrect claims about initializer functions and immediate state updates.
+A separate `example.com` call with `render="browser"` returned HTTP 200, but
+does not qualify browser extraction quality. The compact schema on this M007
+candidate omitted the optional `render` parameter. M008 adds it and is
+recorded in §15. The successful full-profile call and compact launch failure
+are not counted as a successful paired browser extraction.
+
+### Candidate and cleanup
+
+The original `~/.lmstudio/mcp.json` was restored byte-for-byte after testing;
+SHA-256 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
+The local LM Studio server was restarted with that original registration.
+This candidate passed the local canonical `make check` and `make docs-check`;
+hosted CI, release drift, and Python native qualification passed on commit
+`fe677ff45a4c69feee50907cfbd451b6ae2a1fd4`. The hosted egress qualification
+run was cancelled and must be rerun before M007 closure. M003 remains active:
+the matrix now demonstrates consistent context reduction on these tasks, but
+tool choice, evidence quality, failure handling, and browser reachability still
+vary by model and profile. Additional repeats and a clean browser pair are
+needed before a release-quality recommendation.
+
+## 15. M008 compact browser-render reachability corrective
+
+M008 adds the runtime-supported `render` argument to compact `web_fetch`, with
+the accepted enum values `http_only`, `auto`, and `browser`. The source change
+is in `src/mcp/server.rs`; `tests/mcp_schema_slimming.rs` now checks that the
+compact schema preserves all three values. The exact local candidate release
+binary SHA-256 is
+`507724a14a1926488913a50b1864543f1e899d8a3df6e1b44d1a90dcc4110b43`.
+
+The LFM3 2B browser-render API trial used the same `example.com` extraction
+prompt for both profiles. Full/diagnostic used 18,805 input and 259 output
+tokens; its valid `web_fetch` call included `render="browser"` and returned
+HTTP 200 with `transport="browser"`. It extracted the heading and explanatory
+paragraph correctly, reported no truncation, and retained the external-content
+warning. Compact/brief returned an HTTP 500 before a model turn completed:
+Chrome could not create its shared ProcessSingleton because a
+`chromiumoxide-runner/SingletonLock` already existed. It produced no usage
+counters or scored model outcome. Therefore this is not successful compact
+browser invocation evidence. The React reference page remains unqualified.
+
+M008 remains active until a compact-profile browser call succeeds on the exact
+candidate, local canonical checks pass, and hosted CI qualifies the committed
+candidate. M003 remains active because research/security evidence quality is
+mixed and key specialist/browser tasks need repeats. Existing measured token
+reductions are per task and do not establish a general quality or reliability
+improvement.

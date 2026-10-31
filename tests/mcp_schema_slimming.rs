@@ -182,6 +182,23 @@ fn web_search_hides_infrastructure_controls() {
 }
 
 #[test]
+fn compact_web_fetch_preserves_browser_render_modes() {
+    let schema = compact_schema_for("web_fetch");
+    let render = schema
+        .pointer("/properties/render")
+        .expect("compact web_fetch exposes render");
+    let values = render
+        .get("enum")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("compact render modes are not constrained: {render}"));
+    let values = values
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(values, ["http_only", "auto", "browser"]);
+}
+
+#[test]
 fn compact_web_fetch_explains_user_urls_and_bounded_extraction() {
     let description = compact_tool_for("web_fetch")
         .description

@@ -137,6 +137,7 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
             "focus",
             "focus_max_chunks",
             "focus_max_chars",
+            "render",
             "response_detail",
         ],
         "repo_fetch" => &[
@@ -201,6 +202,11 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
     };
     compact_schema_value(schema, allowed);
     compact_workflow_schema(name, schema);
+    if name == "web_fetch" {
+        if let Some(render) = schema.pointer_mut("/properties/render") {
+            set_string_schema_enum(render, &["http_only", "auto", "browser"]);
+        }
+    }
     if name == "build_evidence_bundle" {
         compact_evidence_bundle_schema(schema);
     }
