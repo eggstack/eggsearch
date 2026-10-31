@@ -1,6 +1,6 @@
 # M003 — Small Local-Model Tool-Use and Context Qualification
 
-Status: active (M001/M002 dependencies closed; native API experiments establish a working harness, but paired small-model task coverage and quality disposition remain incomplete; see `plans/closure/standalone-mcp-local-inference/003-status.md`)
+Status: closed (qualification completed at source candidate `772a073fd40e9f044017b26bae18a6efd0724b1d`; compact remains opt-in, with no default or general quality claim; see `plans/closure/standalone-mcp-local-inference/003-status.md`)
 Primary class: capability
 Planning baseline: eggstack/eggsearch main `a666517c39adf28f32fad04198c74cb70d935c5b` (rebase baseline to exact M002 candidate at start)
 Roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

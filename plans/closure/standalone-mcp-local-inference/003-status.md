@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M003 — Operational Status
 
-Status: active (scope clarified: qualify small-model tool use and context reduction through actual API turns; UI refresh/result-shape behavior is out of scope; paired specialist-task outcomes remain mixed)
+Status: closed at source candidate `772a073fd40e9f044017b26bae18a6efd0724b1d` (small-model tool use and context qualification completed; results are mixed; compact remains opt-in)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
@@ -658,5 +658,57 @@ characters before its additional fetches, but the final answer still
 overstated what the primary evidence established. Full required an argument
 repair and also made the unsupported version claim. This repeated pair
 confirms that lower context and valid tool use do not guarantee evidence
-authority or version-specific accuracy. Keep M003 active; do not recommend
-compact as an unqualified default from these results.
+authority or version-specific accuracy.
+
+## 17. Repeated M008 browser-render pair and final disposition
+
+The same LFM3 2B browser task from §15 was repeated with the exact M008
+executable and profile settings. Both profiles again selected `web_fetch` and
+requested `render="browser"`. Full used 68,736 schema bytes and 40,415 API
+input / 176 output tokens; compact used 19,339 schema bytes and 11,904 API
+input / 216 output tokens. Full returned HTTP 200 with `transport="browser"`;
+compact returned HTTP 200 with the correct heading and paragraph, while its
+brief projection omitted the transport field. The model again retained the
+external-content warning but did not mention the compact result's
+`output_truncated=true` flag. The repeated pair had the same calls, token
+counts, content lengths, and answer quality as §15. It establishes
+repeatability for this static page only; the React reference page remains
+unqualified.
+
+### Qualification result
+
+M003 is closed as a completed measurement, not as a general quality
+endorsement. LFM3 2B, Gemma E2B, and Gemma E4B completed paired tasks across
+direct fetch, web search, research, security applicability, PDF extraction,
+and browser rendering; earlier Bonsai 27B trials are retained as reference
+context. Repeated direct-fetch, security, research, and browser cases expose
+both stable context reductions and repeated answer-quality defects. Across the
+main paired matrix, compact reduced model-reported input tokens by about
+60–72%; the repeated research pair reduced them by 48.7%, and the browser pair
+by 70.5%. These are workload-specific measurements, not a universal savings
+rate.
+
+Models successfully selected and called Eggsearch tools in each task class,
+but evidence authority, version-specific claims, exact affected-version
+ranges, and compact truncation-warning interpretation were inconsistent.
+These results do not support switching the default or claiming a general
+quality improvement. Keep `full + diagnostic` as the unchanged default and
+`compact + brief` as an opt-in profile. The M007 schema-reference and M008
+browser-render reachability correctives are closed; no further deterministic
+Eggsearch schema defect was found. Model-quality limitations remain documented
+as the qualification result rather than an unmeasured product promise.
+
+The final source candidate is `772a073fd40e9f044017b26bae18a6efd0724b1d`
+with release executable SHA-256
+`507724a14a1926488913a50b1864543f1e899d8a3df6e1b44d1a90dcc4110b43`. Hosted
+Linux/macOS/Windows canonical CI run `41220450246`, release drift run
+`41220450259`, and Python native qualification run `41220450258` passed.
+Local focused schema tests (20/20), static guards (60/60), formatting,
+documentation checks, and release build passed. Local `make check` stalled in
+the unchanged `bounded_command` integration suite; hosted Linux and macOS
+canonical runs on the exact candidate passed. The optional egress feature
+matrix's Apple Silicon macOS runner was cancelled by a scheduled brownout; it
+does not cover this milestone's changes. The original LM Studio MCP config is
+restored at SHA-256
+`b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`, and the
+local server was restarted with it.
