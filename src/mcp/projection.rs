@@ -7,15 +7,19 @@ use serde::{Deserialize, Serialize};
 pub enum ResponseDetail {
     Compact,
     Standard,
+    Brief,
     #[default]
     Diagnostic,
 }
+
+pub const DEFAULT_BRIEF_MAX_CHARS: usize = 8_000;
 
 impl ResponseDetail {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Compact => "compact",
             Self::Standard => "standard",
+            Self::Brief => "brief",
             Self::Diagnostic => "diagnostic",
         }
     }
@@ -24,15 +28,26 @@ impl ResponseDetail {
         opt.unwrap_or(Self::Diagnostic)
     }
 
+    pub fn from_opt_for_profile(
+        opt: Option<ResponseDetail>,
+        profile: crate::core::config::McpSchemaProfile,
+    ) -> Self {
+        opt.unwrap_or(match profile {
+            crate::core::config::McpSchemaProfile::Full => Self::Diagnostic,
+            crate::core::config::McpSchemaProfile::Compact => Self::Brief,
+        })
+    }
+
     pub fn parse_raw(raw: Option<&str>) -> Result<Option<Self>, String> {
         match raw {
             None => Ok(None),
             Some(s) => match s.to_ascii_lowercase().as_str() {
                 "compact" => Ok(Some(Self::Compact)),
                 "standard" => Ok(Some(Self::Standard)),
+                "brief" => Ok(Some(Self::Brief)),
                 "diagnostic" => Ok(Some(Self::Diagnostic)),
                 _ => Err(format!(
-                    "invalid response_detail '{s}'; accepted values: compact, standard, diagnostic"
+                    "invalid response_detail '{s}'; accepted values: brief, compact, standard, diagnostic"
                 )),
             },
         }
@@ -40,7 +55,17 @@ impl ResponseDetail {
 }
 
 pub fn project(tool: &str, value: serde_json::Value, detail: ResponseDetail) -> serde_json::Value {
+    project_with_budget(tool, value, detail, DEFAULT_BRIEF_MAX_CHARS)
+}
+
+pub fn project_with_budget(
+    tool: &str,
+    value: serde_json::Value,
+    detail: ResponseDetail,
+    max_chars: usize,
+) -> serde_json::Value {
     match detail {
+        ResponseDetail::Brief => project_brief(tool, value, max_chars),
         ResponseDetail::Diagnostic => value,
         ResponseDetail::Compact => match tool {
             "web_search" => project_web_search(value, true),
@@ -67,6 +92,528 @@ pub fn project(tool: &str, value: serde_json::Value, detail: ResponseDetail) -> 
             _ => value,
         },
     }
+}
+
+fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serde_json::Value {
+    if tool == "build_evidence_bundle" {
+        return value;
+    }
+    let mut projected = project(tool, value, ResponseDetail::Compact);
+    reduce_brief_fields(&mut projected);
+    let applicability_total = add_applicability_summary(&mut projected);
+    let provider_failure_total = add_provider_failure_summary(&mut projected);
+    if let Some(object) = projected.as_object_mut() {
+        object.insert(
+            "response_detail".into(),
+            serde_json::Value::String("brief".into()),
+        );
+    }
+    let primary_key = ["results", "groups", "vulnerabilities", "items"]
+        .into_iter()
+        .find(|key| {
+            projected
+                .get(*key)
+                .and_then(|value| value.as_array())
+                .is_some()
+        });
+    let original_count = primary_key
+        .and_then(|key| projected.get(key))
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    let mut clipped = false;
+    let mut omitted = 0usize;
+    let mut per_text_limit = max_chars;
+    loop {
+        clipped |= clip_brief_strings(&mut projected, per_text_limit);
+        loop {
+            let size = brief_serialized_chars(&projected);
+            if size <= max_chars {
+                break;
+            }
+            let Some(key) = primary_key else {
+                break;
+            };
+            let Some(values) = projected
+                .get_mut(key)
+                .and_then(serde_json::Value::as_array_mut)
+            else {
+                break;
+            };
+            let removable = values
+                .iter()
+                .rposition(|item| !brief_record_is_failure(item));
+            let Some(index) = removable else {
+                if tool == "batch_fetch" {
+                    let removed_failure = projected
+                        .get_mut(key)
+                        .and_then(serde_json::Value::as_array_mut)
+                        .and_then(|values| {
+                            values
+                                .iter()
+                                .rposition(brief_record_is_failure)
+                                .map(|index| (index, values.remove(index)))
+                        });
+                    if let Some((position, member)) = removed_failure {
+                        let member_index = member
+                            .get("index")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(position as u64);
+                        record_failed_batch_member(&mut projected, member_index);
+                        omitted += 1;
+                        clipped = true;
+                        continue;
+                    }
+                }
+                let removed_applicability = projected
+                    .get_mut("applicability")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .and_then(|items| (!items.is_empty()).then(|| items.pop()).flatten())
+                    .is_some();
+                if removed_applicability {
+                    clipped = true;
+                    let retained = projected
+                        .get("applicability")
+                        .and_then(serde_json::Value::as_array)
+                        .map_or(0, Vec::len);
+                    if let Some(summary) = projected
+                        .get_mut("applicability_summary")
+                        .and_then(serde_json::Value::as_object_mut)
+                    {
+                        summary.insert(
+                            "omitted".into(),
+                            applicability_total.saturating_sub(retained).into(),
+                        );
+                    }
+                    continue;
+                }
+                let removed_provider_failure = projected
+                    .get_mut("providers_failed")
+                    .and_then(serde_json::Value::as_array_mut)
+                    .and_then(Vec::pop)
+                    .is_some();
+                if removed_provider_failure {
+                    clipped = true;
+                    let retained = projected
+                        .get("providers_failed")
+                        .and_then(serde_json::Value::as_array)
+                        .map_or(0, Vec::len);
+                    if let Some(summary) = projected
+                        .get_mut("providers_failed_summary")
+                        .and_then(serde_json::Value::as_object_mut)
+                    {
+                        summary.insert(
+                            "omitted".into(),
+                            provider_failure_total.saturating_sub(retained).into(),
+                        );
+                    }
+                    continue;
+                }
+                break;
+            };
+            values.remove(index);
+            omitted += 1;
+        }
+        let retained_count = primary_key
+            .and_then(|key| projected.get(key))
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len);
+        if let Some(object) = projected.as_object_mut() {
+            object.insert("returned_count".into(), retained_count.into());
+            object.insert("omitted_count".into(), omitted.into());
+            object.insert(
+                "output_truncated".into(),
+                serde_json::Value::Bool(clipped || omitted > 0),
+            );
+        }
+        if brief_serialized_chars(&projected) <= max_chars || per_text_limit == 0 {
+            break;
+        }
+        per_text_limit = (per_text_limit / 2).min(per_text_limit.saturating_sub(1));
+    }
+    for optional in [
+        "next_actions",
+        "suggested_fetches",
+        "providers_queried",
+        "routing_summary",
+        "workflow_coverage",
+        "capability_enforcement",
+        "response_detail",
+        "query",
+    ] {
+        if brief_serialized_chars(&projected) > max_chars {
+            if let Some(object) = projected.as_object_mut() {
+                clipped |= object.remove(optional).is_some();
+                object.insert(
+                    "output_truncated".into(),
+                    serde_json::Value::Bool(clipped || omitted > 0),
+                );
+            }
+        }
+    }
+    let retained_count = primary_key
+        .and_then(|key| projected.get(key))
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len);
+    if let Some(object) = projected.as_object_mut() {
+        object.insert("returned_count".into(), retained_count.into());
+        object.insert(
+            "omitted_count".into(),
+            (omitted.max(original_count.saturating_sub(retained_count))).into(),
+        );
+        object.insert(
+            "output_truncated".into(),
+            serde_json::Value::Bool(clipped || omitted > 0),
+        );
+        let retained = object
+            .get("applicability")
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len);
+        if let Some(summary) = object
+            .get_mut("applicability_summary")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            summary.insert(
+                "omitted".into(),
+                applicability_total.saturating_sub(retained).into(),
+            );
+        }
+        let retained_provider_failures = object
+            .get("providers_failed")
+            .and_then(serde_json::Value::as_array)
+            .map_or(0, Vec::len);
+        if let Some(summary) = object
+            .get_mut("providers_failed_summary")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            summary.insert(
+                "omitted".into(),
+                provider_failure_total
+                    .saturating_sub(retained_provider_failures)
+                    .into(),
+            );
+        }
+    }
+    projected
+}
+
+fn add_applicability_summary(value: &mut serde_json::Value) -> usize {
+    let Some(items) = value
+        .get("applicability")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return 0;
+    };
+    let total = items.len();
+    let mut summary = serde_json::Map::new();
+    for (key, aliases) in [
+        ("affected", ["affected", "applicable"]),
+        ("not_affected", ["not_affected", "unaffected"]),
+        ("unknown", ["unknown", "unknown"]),
+    ] {
+        let count = items
+            .iter()
+            .filter(|item| {
+                item.get("status")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|status| aliases.contains(&status))
+            })
+            .count();
+        summary.insert(key.into(), count.into());
+    }
+    summary.insert("total".into(), total.into());
+    summary.insert("omitted".into(), 0usize.into());
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "applicability_summary".into(),
+            serde_json::Value::Object(summary),
+        );
+    }
+    total
+}
+
+fn add_provider_failure_summary(value: &mut serde_json::Value) -> usize {
+    let Some(failures) = value
+        .get("providers_failed")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return 0;
+    };
+    let total = failures.len();
+    if total > 0 {
+        let mut error_classes = serde_json::Map::new();
+        for failure in failures {
+            let class = failure
+                .get("error_class")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            let count = error_classes
+                .get(class)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0);
+            error_classes.insert(class.into(), (count + 1).into());
+        }
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "providers_failed_summary".into(),
+                serde_json::json!({
+                    "total": total,
+                    "omitted": 0,
+                    "error_classes": error_classes
+                }),
+            );
+        }
+    }
+    total
+}
+
+fn record_failed_batch_member(value: &mut serde_json::Value, index: u64) {
+    if let Some(object) = value.as_object_mut() {
+        let indices = object
+            .entry("failed_member_indices")
+            .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+        if let Some(indices) = indices.as_array_mut() {
+            indices.push(index.into());
+            indices.sort_by_key(|value| value.as_u64().unwrap_or(u64::MAX));
+        }
+    }
+}
+
+fn brief_serialized_chars(value: &serde_json::Value) -> usize {
+    serde_json::to_string(value).map_or(usize::MAX, |encoded| encoded.chars().count())
+}
+
+fn brief_record_is_failure(value: &serde_json::Value) -> bool {
+    value.get("ok").and_then(serde_json::Value::as_bool) == Some(false)
+        || value.get("fetched").and_then(serde_json::Value::as_bool) == Some(false)
+        || value.get("error").is_some_and(|error| !error.is_null())
+        || value.get("error_class").is_some()
+        || value.get("failed").and_then(serde_json::Value::as_bool) == Some(true)
+}
+
+fn reduce_brief_fields(value: &mut serde_json::Value) {
+    const FIELDS: &[&str] = &[
+        "affected_versions",
+        "aggregate_budget_exhausted",
+        "applicability",
+        "attempted_job_count",
+        "batch_status",
+        "build_configs",
+        "cache_status",
+        "capability_enforcement",
+        "code",
+        "code_span_id",
+        "commit_sha",
+        "conflict_count",
+        "conflict_indicator",
+        "conflicts",
+        "content_type",
+        "counterpoints",
+        "coverage",
+        "coverage_status",
+        "checkout_state",
+        "dirty",
+        "degraded",
+        "dependency_findings",
+        "document_id",
+        "ecosystem",
+        "error",
+        "error_class",
+        "evidence_gaps",
+        "evidence_role",
+        "excerpts",
+        "failed",
+        "failed_job_count",
+        "fetches",
+        "fetched",
+        "final_url",
+        "fixed_versions",
+        "focus",
+        "gaps",
+        "group",
+        "groups",
+        "has_absences",
+        "has_conflicts",
+        "has_failures",
+        "has_truncation",
+        "id",
+        "injection_hits",
+        "item_type",
+        "items",
+        "items_completed",
+        "items_failed",
+        "items_requested",
+        "chars_returned",
+        "total_chars_returned",
+        "chunks",
+        "page",
+        "page_number",
+        "label",
+        "language",
+        "line_end",
+        "line_start",
+        "locator",
+        "message",
+        "mode",
+        "next_actions",
+        "omitted_count",
+        "output_truncated",
+        "page_end",
+        "page_start",
+        "package",
+        "partial",
+        "path",
+        "provider_id",
+        "providers_failed",
+        "providers_queried",
+        "query",
+        "rank",
+        "ref",
+        "redirected",
+        "response",
+        "response_detail",
+        "ok",
+        "results",
+        "retrieval_status",
+        "retrieval_summary",
+        "returned_count",
+        "routing_summary",
+        "telemetry",
+        "severity",
+        "snippet",
+        "source_id",
+        "source_kind",
+        "source_role",
+        "sources",
+        "stable_id",
+        "status",
+        "structured_warnings",
+        "suggested_fetches",
+        "text",
+        "title",
+        "total_chars",
+        "truncated",
+        "untracked",
+        "trust",
+        "trust_level",
+        "trust_markers",
+        "type",
+        "unknown",
+        "url",
+        "version",
+        "workspace_id",
+        "workspace_root",
+        "remote_mismatch",
+        "vulnerabilities",
+        "warnings",
+        "workflow_coverage",
+        "affected",
+        "unaffected",
+        "applicable",
+        "not_applicable",
+        "confidence",
+        "advisory_id",
+        "vulnerability_id",
+        "source",
+        "reason",
+        "tool",
+        "items_truncated",
+        "truncation_evidence",
+        "completed_job_count",
+        "returned_sources",
+        "omitted_sources",
+        "conflict_metadata",
+    ];
+    match value {
+        serde_json::Value::Object(object) => {
+            object.retain(|key, _| FIELDS.contains(&key.as_str()));
+            for child in object.values_mut() {
+                reduce_brief_fields(child);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for child in values {
+                reduce_brief_fields(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn clip_brief_strings(value: &mut serde_json::Value, max_chars: usize) -> bool {
+    let mut changed = false;
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, child) in object.iter_mut() {
+                if key == "warnings" {
+                    if let Some(warnings) = child.as_array_mut() {
+                        for warning in warnings {
+                            if let Some(text) = warning.as_str() {
+                                let warning_limit = max_chars.min(96);
+                                if text.chars().count() > warning_limit {
+                                    *warning = serde_json::Value::String(clip_warning_text(
+                                        text,
+                                        warning_limit,
+                                    ));
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if matches!(key.as_str(), "snippet" | "text" | "message" | "error") {
+                    if let Some(text) = child.as_str() {
+                        if text.chars().count() > max_chars {
+                            *child = serde_json::Value::String(clip_framed_text(text, max_chars));
+                            changed = true;
+                        }
+                    }
+                }
+                changed |= clip_brief_strings(child, max_chars);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for child in values {
+                changed |= clip_brief_strings(child, max_chars);
+            }
+        }
+        _ => {}
+    }
+    changed
+}
+
+fn clip_warning_text(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return text
+            .split_once(':')
+            .map_or_else(String::new, |(code, _)| code.to_string());
+    }
+    let prefix = text.split_once(':').map_or(text, |(code, _)| code);
+    if prefix.chars().count() <= max_chars {
+        prefix.to_string()
+    } else {
+        prefix.chars().take(max_chars).collect()
+    }
+}
+
+fn clip_framed_text(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let start = "<<<EXTERNAL_UNTRUSTED";
+    let end = "<<<END>>>";
+    if let Some(header_end) = text.find(">>>") {
+        if text.starts_with(start) && text.rfind(end).is_some() {
+            let header_end = header_end + 3;
+            let header = &text[..header_end];
+            let body_end = text.rfind(end).unwrap_or(text.len());
+            let body = text[header_end..body_end].trim_matches('\n');
+            let body_chars = max_chars.saturating_sub(header.chars().count() + end.len() + 2);
+            let clipped: String = body.chars().take(body_chars).collect();
+            return format!("{header}\n{clipped}\n{end}");
+        }
+    }
+    let clipped: String = text.chars().take(max_chars).collect();
+    clipped
 }
 
 fn retrieval_status_minimal(summary: &serde_json::Value) -> serde_json::Value {

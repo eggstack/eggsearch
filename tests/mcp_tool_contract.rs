@@ -450,3 +450,146 @@ fn fingerprint_is_content_based_not_count_based() {
         "tools/list must stay name-sorted for caching"
     );
 }
+
+#[test]
+fn compact_profile_advertises_all_tools_with_smaller_stable_contract() {
+    let full_state = Arc::new(eggsearch::mcp::ServerState::build(AppConfig::default()).unwrap());
+    let full = eggsearch::mcp::EggsearchServer::new(full_state);
+    let mut config = AppConfig::default();
+    config.mcp.schema_profile = eggsearch::core::config::McpSchemaProfile::Compact;
+    let compact_state = Arc::new(eggsearch::mcp::ServerState::build(config).unwrap());
+    let compact = eggsearch::mcp::EggsearchServer::new(compact_state);
+    let full_tools = full.tool_definitions();
+    let compact_tools = compact.tool_definitions();
+    assert_eq!(compact_tools.len(), 10);
+    assert_eq!(
+        compact_tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>(),
+        full_tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>()
+    );
+    let full_bytes = serde_json::to_vec(&full_tools).unwrap().len();
+    let compact_bytes = serde_json::to_vec(&compact_tools).unwrap().len();
+    assert!(
+        compact_bytes * 2 <= full_bytes,
+        "compact contract must be at least 50% smaller: full={full_bytes}, compact={compact_bytes}"
+    );
+    assert!(
+        compact_bytes <= 36_000,
+        "compact contract is {compact_bytes} bytes"
+    );
+    assert_ne!(full.tool_fingerprint(), compact.tool_fingerprint());
+    let compact_again = eggsearch::mcp::EggsearchServer::new(Arc::new(
+        eggsearch::mcp::ServerState::build(AppConfig {
+            mcp: eggsearch::core::config::McpSection {
+                schema_profile: eggsearch::core::config::McpSchemaProfile::Compact,
+                ..Default::default()
+            },
+            ..AppConfig::default()
+        })
+        .unwrap(),
+    ));
+    assert_eq!(compact.tool_fingerprint(), compact_again.tool_fingerprint());
+    for (full_tool, compact_tool) in full_tools.iter().zip(compact_tools.iter()) {
+        let required = full_tool.input_schema.get("required");
+        assert_eq!(required, compact_tool.input_schema.get("required"));
+        assert_eq!(
+            compact_tool.input_schema.get("additionalProperties"),
+            Some(&serde_json::Value::Bool(true))
+        );
+    }
+
+    fn schema_enum_strings(schema: &serde_json::Value) -> Vec<String> {
+        let mut values = Vec::new();
+        match schema {
+            serde_json::Value::Object(object) => {
+                if let Some(enumeration) = object.get("enum").and_then(serde_json::Value::as_array)
+                {
+                    values.extend(
+                        enumeration
+                            .iter()
+                            .filter_map(serde_json::Value::as_str)
+                            .map(str::to_owned),
+                    );
+                }
+                for value in object.values() {
+                    values.extend(schema_enum_strings(value));
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for value in items {
+                    values.extend(schema_enum_strings(value));
+                }
+            }
+            _ => {}
+        }
+        values.sort();
+        values.dedup();
+        values
+    }
+
+    let research = compact_tools
+        .iter()
+        .find(|tool| tool.name.as_ref() == "research_search")
+        .unwrap();
+    let properties = research.input_schema.get("properties").unwrap();
+    let goal_values = schema_enum_strings(&properties["goal"]);
+    let mut expected_goal_values = [
+        "general",
+        "architecture_decision",
+        "api_evaluation",
+        "library_comparison",
+        "migration_planning",
+        "security_review",
+        "performance_investigation",
+        "ecosystem_survey",
+        "understand",
+        "debug",
+        "compare",
+        "pre_change",
+        "post_change",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    expected_goal_values.sort();
+    assert_eq!(goal_values, expected_goal_values);
+    for goal in &goal_values {
+        assert!(
+            eggsearch::mcp::tools::canonical::parse_research_goal(goal).is_some(),
+            "compact schema goal must be accepted by runtime parser: {goal}"
+        );
+    }
+
+    let domain_values = schema_enum_strings(&properties["research_domain"]);
+    let mut expected_domain_values = [
+        "general",
+        "software_architecture",
+        "architecture",
+        "api_design",
+        "api",
+        "distributed_systems",
+        "distributed",
+        "security",
+        "performance",
+        "language_ecosystem",
+        "ecosystem",
+        "machine_learning",
+        "ml",
+        "infrastructure",
+        "infra",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    expected_domain_values.sort();
+    assert_eq!(domain_values, expected_domain_values);
+    for domain in &domain_values {
+        assert!(
+            eggsearch::core::ResearchDomain::parse(domain).is_some(),
+            "compact schema domain must be accepted by runtime parser: {domain}"
+        );
+    }
+}

@@ -50,7 +50,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
 | `provider_workstream_regression` | Provider inventory, capability descriptors, URL dedup with stable IDs |
 | `structured_local_code_intelligence` | Structured parsing, definition ranking, regex fallback, budgets, repo-map enrichment |
-| `mcp_tool_contract`, `mcp_schema_slimming`, `mcp_2026_protocol`, `mcp_projection` | Registry parity, schema size budgets, structured error contract, response-detail projection |
+| `mcp_tool_contract`, `mcp_schema_slimming`, `mcp_2026_protocol`, `mcp_projection` | Registry parity, full/compact schema budgets, structured error contract, bounded brief and response-detail projection |
 | `fetch_safety` | URL validation and SSRF prevention at the fetch boundary |
 | `forge_adapter` | Forge endpoint validation, redirect policy, URL construction from the resolved ref (`resolved_ref_name`) |
 | `local_workspace_integration`, `inventory_freshness`, `retrieval_attempt_ledger`, `evidence_bundle_handoff`, `evidence_integration` | Workspace, inventory lifecycle, ledger validation, bundle pipeline |
@@ -214,7 +214,7 @@ which runs `cargo bench --locked --all-features --bench perf --no-run`.
 
 ## Tool-surface evaluation
 
-`tests/tool_surface_evaluation.rs` runs a deterministic tool-selection regression over the labeled corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across generic web, repo, fetch, exact-error, security, research, evidence, diagnostics, and ambiguity categories; every stable tool is an expected primary at least once). The runner scores each query against the live tool definitions, then asserts description, total, instructions, and compact byte budgets, top-1/recall@3/MRR thresholds, forbidden-primary exclusion, known-tool and next-action reference validity, and synthetic Layer 2 hydration mechanics (next actions stay within the ten stable tools and compact discovery stays below full definitions). The baseline fingerprint and per-category accuracy print with `-- --nocapture` or `make eval-tool-surface`:
+`tests/tool_surface_evaluation.rs` runs a deterministic tool-selection regression over the labeled corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across generic web, repo, fetch, exact-error, security, research, evidence, diagnostics, and ambiguity categories; every stable tool is an expected primary at least once). Full and compact advertised descriptions are scored independently against every case; both must meet top-1/recall@3/MRR thresholds and avoid forbidden-primary results. The suite also asserts description, total, instructions, and compact byte budgets, known-tool and next-action reference validity, and synthetic Layer 2 hydration mechanics (next actions stay within the ten stable tools and compact discovery stays below full definitions). The fingerprints and per-category accuracy print with `-- --nocapture` or `make eval-tool-surface`:
 
 ```bash
 cargo test --locked --all-features --test tool_surface_evaluation
@@ -244,7 +244,7 @@ make eval-retrieval-quality
 
 ## Transport, egress, and browser suites
 
-`tests/mcp_http.rs` covers the loopback Streamable HTTP lifecycle: health identity, current and legacy protocol flows, shared tool definitions, request hardening, session cleanup, and shutdown behavior. It runs under `--all-features`:
+`tests/mcp_http.rs` covers the loopback Streamable HTTP lifecycle: health identity, current and legacy protocol flows, shared tool definitions, the compact-profile initialized `tools/list`, request hardening, session cleanup, and shutdown behavior. It runs under `--all-features`:
 
 ```bash
 cargo test --locked --all-features --test mcp_http

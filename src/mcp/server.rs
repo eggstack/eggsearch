@@ -36,8 +36,13 @@ impl std::fmt::Debug for EggsearchServer {
 
 impl EggsearchServer {
     pub fn new(state: Arc<ServerState>) -> Self {
+        let profile = state.config.mcp.schema_profile;
         let tool_router = Self::tool_router();
-        let advertised_tools = Arc::new(apply_contract_metadata(tool_router.list_all()));
+        let mut advertised_tools = apply_contract_metadata(tool_router.list_all());
+        if profile == crate::core::config::McpSchemaProfile::Compact {
+            advertised_tools = apply_compact_profile(advertised_tools);
+        }
+        let advertised_tools = Arc::new(advertised_tools);
         let advertised_fingerprint: Arc<str> = contract_fingerprint(&advertised_tools).into();
         Self {
             state,
@@ -58,6 +63,338 @@ impl EggsearchServer {
     /// `tools/list` by content rather than by count.
     pub fn tool_fingerprint(&self) -> String {
         self.advertised_fingerprint.to_string()
+    }
+}
+
+fn apply_compact_profile(mut tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
+    for tool in &mut tools {
+        if let Some(description) = compact_description(tool.name.as_ref()) {
+            tool.description = Some(description.into());
+        }
+        let mut schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+        compact_schema(tool.name.as_ref(), &mut schema);
+        if let Some(object) = schema.as_object() {
+            tool.input_schema = Arc::new(object.clone());
+        }
+        tool.output_schema = None;
+    }
+    tools
+}
+
+fn compact_description(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "web_search" => "Search the public web for sources; use web_fetch to inspect a result.",
+        "provider_status" => "Check configured provider availability and diagnostics.",
+        "repo_search" => "Search repository code, documentation, issues, and releases.",
+        "web_fetch" => "Fetch one known HTTP(S) URL from search results or user input; return bounded extracted text. Use batch_fetch for several targets; do not search or crawl.",
+        "repo_fetch" => "Fetch a known repository file or span by structured locator.",
+        "security_search" => "Find vulnerability evidence and assess package applicability.",
+        "research_search" => "Gather grouped evidence for complex research questions.",
+        "batch_fetch" => "Fetch several known URLs or repository locators in one call.",
+        "repo_map" => "Describe a repository layout before searching or fetching files.",
+        "build_evidence_bundle" => {
+            "Package already selected search and fetch evidence for handoff."
+        }
+        _ => return None,
+    })
+}
+
+fn compact_schema(name: &str, schema: &mut serde_json::Value) {
+    const COMMON: &[&str] = &["response_detail"];
+    let allowed: &[&str] = match name {
+        "web_search" => &[
+            "query",
+            "max_results",
+            "safe_search",
+            "intent",
+            "freshness",
+            "date_range",
+            "include_domains",
+            "exclude_domains",
+            "language",
+            "region",
+            "excerpt_count",
+            "response_detail",
+        ],
+        "provider_status" => &["probe"],
+        "repo_search" => &[
+            "query",
+            "owner",
+            "repo",
+            "host",
+            "profile",
+            "goal",
+            "sources",
+            "include_local",
+            "response_detail",
+        ],
+        "web_fetch" => &[
+            "url",
+            "max_chars",
+            "extract_mode",
+            "include_links",
+            "pdf",
+            "focus",
+            "focus_max_chunks",
+            "focus_max_chars",
+            "render",
+            "response_detail",
+        ],
+        "repo_fetch" => &[
+            "owner",
+            "repo",
+            "path",
+            "ref",
+            "commit_sha",
+            "line_start",
+            "line_end",
+            "symbol",
+            "max_chars",
+            "response_detail",
+        ],
+        "security_search" => &[
+            "query",
+            "package",
+            "version",
+            "ecosystem",
+            "assess_applicability",
+            "dependency_files",
+            "goal",
+            "response_detail",
+        ],
+        "research_search" => &[
+            "query",
+            "domain",
+            "research_domain",
+            "goal",
+            "depth",
+            "compare_targets",
+            "constraints",
+            "known_context",
+            "response_detail",
+        ],
+        "batch_fetch" => &[
+            "items",
+            "max_chars_per_item",
+            "total_max_chars",
+            "response_detail",
+        ],
+        "repo_map" => &[
+            "owner",
+            "repo",
+            "host",
+            "ref",
+            "path",
+            "max_depth",
+            "response_detail",
+        ],
+        "build_evidence_bundle" => &[
+            "goal",
+            "sources",
+            "fetches",
+            "max_sources",
+            "max_fetched_items",
+            "max_total_chars",
+            "include_unfetched_sources",
+            "response_detail",
+        ],
+        _ => COMMON,
+    };
+    compact_schema_value(schema, allowed);
+    compact_workflow_schema(name, schema);
+    if name == "web_fetch" {
+        if let Some(render) = schema.pointer_mut("/properties/render") {
+            set_string_schema_enum(render, &["http_only", "auto", "browser"]);
+        }
+    }
+    if name == "build_evidence_bundle" {
+        compact_evidence_bundle_schema(schema);
+    }
+}
+
+fn compact_workflow_schema(name: &str, schema: &mut serde_json::Value) {
+    if name != "research_search" && name != "security_search" {
+        return;
+    }
+    let Some(properties) = schema
+        .get_mut("properties")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    if name == "research_search" {
+        if let Some(domain) = properties.get_mut("research_domain") {
+            set_string_schema_enum(
+                domain,
+                &[
+                    "general",
+                    "software_architecture",
+                    "architecture",
+                    "api_design",
+                    "api",
+                    "distributed_systems",
+                    "distributed",
+                    "security",
+                    "performance",
+                    "language_ecosystem",
+                    "ecosystem",
+                    "machine_learning",
+                    "ml",
+                    "infrastructure",
+                    "infra",
+                ],
+            );
+        }
+        if let Some(goal) = properties.get_mut("goal") {
+            set_string_schema_enum(goal, crate::mcp::tools::canonical::RESEARCH_GOAL_VALUES);
+        }
+    } else if let Some(goal) = properties.get_mut("goal") {
+        set_string_schema_enum(goal, crate::mcp::tools::canonical::SECURITY_GOAL_VALUES);
+    }
+}
+
+fn set_string_schema_enum(schema: &mut serde_json::Value, values: &[&str]) {
+    match schema {
+        serde_json::Value::Object(object) => {
+            match object.get("type") {
+                Some(serde_json::Value::String(kind)) if kind == "string" => {
+                    object.insert(
+                        "enum".into(),
+                        serde_json::Value::Array(
+                            values
+                                .iter()
+                                .map(|value| serde_json::Value::String((*value).into()))
+                                .collect(),
+                        ),
+                    );
+                }
+                Some(serde_json::Value::Array(kinds))
+                    if kinds.iter().any(|kind| kind.as_str() == Some("string")) =>
+                {
+                    let mut allowed: Vec<serde_json::Value> = values
+                        .iter()
+                        .map(|value| serde_json::Value::String((*value).into()))
+                        .collect();
+                    if kinds.iter().any(serde_json::Value::is_null) {
+                        allowed.push(serde_json::Value::Null);
+                    }
+                    object.insert("enum".into(), serde_json::Value::Array(allowed));
+                }
+                _ => {}
+            }
+            for key in ["anyOf", "oneOf", "allOf"] {
+                if let Some(variants) = object
+                    .get_mut(key)
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    for variant in variants {
+                        set_string_schema_enum(variant, values);
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(variants) => {
+            for value in variants {
+                set_string_schema_enum(value, values);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn compact_evidence_bundle_schema(schema: &mut serde_json::Value) {
+    let Some(properties) = schema
+        .get_mut("properties")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return;
+    };
+    properties.insert(
+        "sources".into(),
+        serde_json::json!({
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "url": {"type": "string"},
+                    "title": {"type": "string"},
+                    "snippet": {"type": "string"},
+                    "providers": {"type": "array", "items": {"type": "string"}},
+                    "trust": {"type": "string"},
+                    "trust_markers": {"type": "object", "additionalProperties": true},
+                    "metadata": {"type": "object", "additionalProperties": true},
+                    "quality": {"type": "object", "additionalProperties": true}
+                },
+                "additionalProperties": true
+            }
+        }),
+    );
+    properties.insert(
+        "fetches".into(),
+        serde_json::json!({
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "source_id": {"type": "string"},
+                    "url": {"type": "string"},
+                    "fetched": {"type": "boolean"},
+                    "content_type": {"type": "string"},
+                    "text": {"type": "string"},
+                    "truncated": {"type": "boolean"},
+                    "trust": {"type": "string"},
+                    "warnings": {"type": "array", "items": {"type": "string"}}
+                },
+                "additionalProperties": true
+            }
+        }),
+    );
+    let response_detail = schema.pointer("/$defs/ResponseDetail").cloned();
+    if let Some(object) = schema.as_object_mut() {
+        if let Some(response_detail) = response_detail {
+            object.insert(
+                "$defs".into(),
+                serde_json::json!({"ResponseDetail": response_detail}),
+            );
+        } else {
+            object.remove("$defs");
+        }
+    }
+}
+
+fn compact_schema_value(value: &mut serde_json::Value, allowed: &[&str]) {
+    match value {
+        serde_json::Value::Object(object) => {
+            let required = object
+                .get("required")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(properties) = object.get_mut("properties").and_then(|v| v.as_object_mut()) {
+                properties.retain(|key, _| {
+                    allowed.contains(&key.as_str())
+                        || required.iter().any(|entry| entry.as_str() == Some(key))
+                });
+                for value in properties.values_mut() {
+                    compact_schema_value(value, &[]);
+                }
+            }
+            object.remove("description");
+            object.remove("title");
+            object.insert("additionalProperties".into(), serde_json::Value::Bool(true));
+            if let Some(defs) = object.get_mut("$defs").and_then(|v| v.as_object_mut()) {
+                for value in defs.values_mut() {
+                    compact_schema_value(value, &[]);
+                }
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                compact_schema_value(value, &[]);
+            }
+        }
+        _ => {}
     }
 }
 

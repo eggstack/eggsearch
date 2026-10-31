@@ -75,7 +75,7 @@ pub struct SecuritySearchArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub workflow: Option<String>,
-    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
@@ -294,10 +294,14 @@ pub async fn run_security_search(
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 
-    let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
-    Ok(crate::mcp::projection::project(
+    let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
+        args.response_detail,
+        state.config.mcp.schema_profile,
+    );
+    Ok(crate::mcp::projection::project_with_budget(
         "security_search",
         value,
         detail,
+        state.config.mcp.brief_max_chars,
     ))
 }

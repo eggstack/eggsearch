@@ -19,6 +19,10 @@ struct TestServer {
 
 impl TestServer {
     async fn start() -> Self {
+        Self::start_with_config(AppConfig::default()).await
+    }
+
+    async fn start_with_config(config: AppConfig) -> Self {
         let options = ServeOptions {
             bind: "127.0.0.1:0".parse().unwrap(),
             path: "/mcp".parse::<McpPath>().unwrap(),
@@ -26,7 +30,7 @@ impl TestServer {
         let listener = tokio::net::TcpListener::bind(options.bind).await.unwrap();
         let address = listener.local_addr().unwrap();
         let cancellation_token = CancellationToken::new();
-        let server = build_server(AppConfig::default()).unwrap();
+        let server = build_server(config).unwrap();
         let app = http::router(server, &options, cancellation_token.clone());
         let shutdown = cancellation_token.clone();
         let task = tokio::spawn(async move {
@@ -203,6 +207,71 @@ async fn legacy_http_lifecycle_lists_tools_and_calls_local_tool() {
     )
     .await;
     assert_eq!(tool_result["result"]["isError"], false);
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn compact_profile_is_used_by_initialized_http_tools_list() {
+    let mut config = AppConfig::default();
+    config.mcp.schema_profile = eggsearch::core::config::McpSchemaProfile::Compact;
+    let server = TestServer::start_with_config(config).await;
+    let (session_id, _) = initialize_legacy(&server).await;
+    let tools = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )
+        .await,
+    )
+    .await;
+    let listed = tools["result"]["tools"].as_array().unwrap();
+    let names = listed
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(names.len(), 10);
+    assert!(names.contains(&"security_search"));
+    assert!(names.contains(&"research_search"));
+    assert!(listed.iter().all(|tool| tool.get("outputSchema").is_none()));
+    assert!(serde_json::to_vec(listed).unwrap().len() <= 36_000);
+    let compact_call = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0",
+                "id":3,
+                "method":"tools/call",
+                "params":{"name":"provider_status","arguments":{"probe":false}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(compact_call["result"]["isError"], false);
+
+    let full_server = TestServer::start().await;
+    let (full_session, _) = initialize_legacy(&full_server).await;
+    let full_call = sse_payload(
+        legacy_request(
+            &full_server,
+            &full_session,
+            json!({
+                "jsonrpc":"2.0",
+                "id":3,
+                "method":"tools/call",
+                "params":{"name":"provider_status","arguments":{"probe":false}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        compact_call["result"]["structuredContent"],
+        full_call["result"]["structuredContent"]
+    );
+    full_server.stop().await;
     server.stop().await;
 }
 

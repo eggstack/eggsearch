@@ -35,6 +35,31 @@ enabled = false
 roots = []
 ```
 
+## MCP Tool Schema Profile
+
+The server advertises the complete ten-tool schema by default. Direct clients
+with tight model contexts can opt into a smaller advertisement in the same
+config file:
+
+```toml
+[mcp]
+schema_profile = "compact"
+brief_max_chars = 8000
+```
+
+Compact mode keeps all ten tool names and required inputs, trims optional
+schema guidance, and omits `outputSchema` metadata. Runtime argument parsing
+and tool behavior are unchanged; advanced accepted inputs can still be sent.
+Omitted `response_detail` defaults to `brief` in compact mode; explicit
+`diagnostic`, `standard`, or `compact` calls override it. `brief_max_chars`
+defaults to 8,000 and must be between 512 and 32,000. Brief output preserves
+status, source identity, trust, critical warnings and security applicability;
+when applicability records exceed the budget, per-state totals remain in
+`applicability_summary`; omitted provider failures and batch member indexes
+are also counted. The structured result and text fallback are both brief.
+Switch to `schema_profile = "full"` for complete
+schema guidance and the existing diagnostic-by-default response behavior.
+
 ## Provider Requirements
 
 All 44 built-in providers:

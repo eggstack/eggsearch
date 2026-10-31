@@ -58,6 +58,11 @@ cargo install eggsearch --locked
 The pinned Unix installer requests assets from the exact `vX.Y.Z` release. The
 unpinned form uses `releases/latest/download` for convenience.
 
+For configuring Eggsearch as a local stdio server in LM Studio, see
+[LM Studio integration](lm-studio.md). The compact profile requires an
+executable built with that feature; older published versions use the full
+profile.
+
 ## Release targets
 
 | Host | Rust target | Public asset |

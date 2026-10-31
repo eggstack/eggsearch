@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use eggsearch::core::config::AppConfig;
+use eggsearch::core::config::McpSchemaProfile;
 use eggsearch::mcp::ServerState;
 
 fn tool_definitions() -> Vec<rmcp::model::Tool> {
@@ -16,6 +17,25 @@ fn schema_for(name: &str) -> serde_json::Value {
         .find(|t| t.name.as_ref() == name)
         .unwrap_or_else(|| panic!("tool {name} not found"));
     serde_json::to_value(&tool.input_schema).expect("schema serializes")
+}
+
+fn compact_tool_definitions() -> Vec<rmcp::model::Tool> {
+    let mut config = AppConfig::default();
+    config.mcp.schema_profile = McpSchemaProfile::Compact;
+    let state = Arc::new(ServerState::build(config).expect("compact state"));
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    server.tool_definitions()
+}
+
+fn compact_tool_for(name: &str) -> rmcp::model::Tool {
+    compact_tool_definitions()
+        .into_iter()
+        .find(|t| t.name.as_ref() == name)
+        .unwrap_or_else(|| panic!("tool {name} not found"))
+}
+
+fn compact_schema_for(name: &str) -> serde_json::Value {
+    serde_json::to_value(&compact_tool_for(name).input_schema).expect("schema serializes")
 }
 
 fn serialized_bytes(name: &str) -> usize {
@@ -39,6 +59,50 @@ fn prop_count(schema: &serde_json::Value) -> usize {
 
 fn has_prop(schema: &serde_json::Value, prop: &str) -> bool {
     schema.get("properties").and_then(|p| p.get(prop)).is_some()
+}
+
+fn collect_unresolved_local_refs(
+    value: &serde_json::Value,
+    root: &serde_json::Value,
+    path: &str,
+    unresolved: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(serde_json::Value::as_str) {
+                if let Some(pointer) = reference.strip_prefix('#') {
+                    if root.pointer(pointer).is_none() {
+                        unresolved.push(format!("{path} -> {reference}"));
+                    }
+                }
+            }
+            for (key, child) in object {
+                collect_unresolved_local_refs(child, root, &format!("{path}/{key}"), unresolved);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for (index, child) in values.iter().enumerate() {
+                collect_unresolved_local_refs(child, root, &format!("{path}/{index}"), unresolved);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn every_compact_schema_resolves_local_references() {
+    let tools = compact_tool_definitions();
+    assert_eq!(tools.len(), 10);
+    for tool in tools {
+        let schema = serde_json::to_value(tool.input_schema).expect("schema serializes");
+        let mut unresolved = Vec::new();
+        collect_unresolved_local_refs(&schema, &schema, "$", &mut unresolved);
+        assert!(
+            unresolved.is_empty(),
+            "{} has unresolved compact schema references: {unresolved:?}",
+            tool.name
+        );
+    }
 }
 
 #[test]
@@ -118,6 +182,35 @@ fn web_search_hides_infrastructure_controls() {
 }
 
 #[test]
+fn compact_web_fetch_preserves_browser_render_modes() {
+    let schema = compact_schema_for("web_fetch");
+    let render = schema
+        .pointer("/properties/render")
+        .expect("compact web_fetch exposes render");
+    let values = render
+        .get("enum")
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("compact render modes are not constrained: {render}"));
+    let values = values
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(values, ["http_only", "auto", "browser"]);
+}
+
+#[test]
+fn compact_web_fetch_explains_user_urls_and_bounded_extraction() {
+    let description = compact_tool_for("web_fetch")
+        .description
+        .expect("compact web_fetch description")
+        .to_string();
+    assert!(description.contains("search results or user input"));
+    assert!(description.contains("bounded extracted text"));
+    assert!(description.contains("batch_fetch"));
+    assert!(description.contains("do not search or crawl"));
+}
+
+#[test]
 fn repo_search_advertises_goal_and_sources() {
     let schema = schema_for("repo_search");
     assert!(has_prop(&schema, "goal"), "goal must be advertised");
@@ -182,6 +275,17 @@ fn security_search_advertises_goal_and_include() {
     let schema = schema_for("security_search");
     assert!(has_prop(&schema, "goal"), "goal must be advertised");
     assert!(has_prop(&schema, "include"), "include must be advertised");
+    let compact_schema = compact_schema_for("security_search");
+    let goal_values = compact_schema["properties"]["goal"]["enum"]
+        .as_array()
+        .expect("compact security goal must advertise an enum")
+        .iter()
+        .map(|value| value.as_str().expect("goal enum value is a string"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        goal_values,
+        eggsearch::mcp::tools::canonical::SECURITY_GOAL_VALUES
+    );
     for legacy in [
         "include_kev",
         "include_exploit_context",

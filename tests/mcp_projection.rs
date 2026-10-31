@@ -43,6 +43,14 @@ fn card(id: &str, excerpts: usize, injection_hits: u64) -> Value {
         "stable_id": format!("stable_{id}"),
         "title": format!("Title {id}"),
         "url": format!("https://example.com/{id}"),
+        "canonical_url": format!("https://example.com/{id}"),
+        "providers": ["duckduckgo", "brave_api", "startpage"],
+        "provider_ids": ["duckduckgo", "brave_api"],
+        "score": 0.8734,
+        "source_kind": "documentation",
+        "source_role": "official_documentation",
+        "quality": {"freshness": "recent", "source_authority": "high", "matched_terms": ["async", "runtime"]},
+        "metadata": {"evidence_role": "official_documentation", "debug_trace": "redundant provider normalization details".repeat(4)},
         "trust": "external_untrusted",
         "evidence_role": "primary",
         "excerpts": ex,
@@ -185,6 +193,334 @@ fn compact_trims_excerpts_but_keeps_stable_ids() {
         compact["results"][0].get("id").and_then(|v| v.as_str()),
         Some("c1")
     );
+}
+
+#[test]
+fn brief_keeps_identity_trust_failures_and_distinguishes_absence() {
+    let failed = web_payload(
+        json!([card("src_a", 2, 2)]),
+        json!([{"provider_id": "offline", "error_class": "timeout", "message": "provider timeout"}]),
+        json!({"has_failures": true, "has_absences": false, "has_truncation": false, "attempted_job_count": 2, "completed_job_count": 1, "failed_job_count": 1}),
+    );
+    let brief = project("web_search", failed, ResponseDetail::Brief);
+    assert_eq!(brief["response_detail"], "brief");
+    assert_eq!(brief["retrieval_status"]["has_failures"], true);
+    assert_eq!(brief["retrieval_status"]["has_absences"], false);
+    assert_eq!(brief["results"][0]["stable_id"], "stable_src_a");
+    assert_eq!(brief["results"][0]["trust"], "external_untrusted");
+    assert_eq!(brief["results"][0]["trust_markers"]["injection_hits"], 2);
+    assert_eq!(brief["providers_failed"][0]["error_class"], "timeout");
+
+    let absent = web_payload(
+        json!([]),
+        json!([]),
+        json!({"has_failures": false, "has_absences": true, "has_truncation": false}),
+    );
+    let brief_absent = project("web_search", absent, ResponseDetail::Brief);
+    assert_eq!(brief_absent["retrieval_status"]["has_failures"], false);
+    assert_eq!(brief_absent["retrieval_status"]["has_absences"], true);
+}
+
+#[test]
+fn brief_preserves_security_applicability_states_and_fetch_truncation() {
+    let security = json!({
+        "query": "openssl",
+        "vulnerabilities": [{"id":"CVE-2025-1","title":"Issue","severity":"high"}],
+        "applicability": [
+            {"package":"openssl","status":"affected","version":"1.0"},
+            {"package":"boringssl","status":"not_affected"},
+            {"package":"libressl","status":"unknown"}
+        ],
+        "providers_failed": [{"provider_id":"osv","error_class":"timeout"}],
+        "warnings": ["applicability is incomplete"],
+        "structured_warnings": [{"code":"applicability_unknown","severity":"high","message":"check package metadata"}],
+        "retrieval_summary":{"has_failures":true,"has_absences":false,"has_truncation":false}
+    });
+    let brief = project("security_search", security, ResponseDetail::Brief);
+    let states = brief["applicability"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["status"].as_str())
+        .collect::<Vec<_>>();
+    assert!(states.contains(&"affected"));
+    assert!(states.contains(&"not_affected"));
+    assert!(states.contains(&"unknown"));
+    assert_eq!(brief["vulnerabilities"][0]["id"], "CVE-2025-1");
+
+    let fetch = json!({
+        "url":"https://example.com/file.pdf","final_url":"https://example.com/file.pdf",
+        "content_type":"application/pdf","fetched":true,"truncated":true,
+        "trust":"external_untrusted","trust_markers":{"injection_hits":1},
+        "text":"<<<EXTERNAL_UNTRUSTED field=text id=fetch_1>>>\n".to_owned() + &"quoted text ".repeat(200) + "\n<<<END>>>",
+        "focus":{"chunks":[{"text":"focused passage","page":4,"line_start":8,"line_end":9}]},
+        "warnings":["content_truncated"],"structured_warnings":[]
+    });
+    let brief_fetch = project("web_fetch", fetch, ResponseDetail::Brief);
+    assert_eq!(brief_fetch["truncated"], true);
+    assert_eq!(brief_fetch["trust"], "external_untrusted");
+    assert!(brief_fetch["text"].as_str().unwrap().contains("<<<END>>>"));
+    assert_eq!(brief_fetch["focus"]["chunks"][0]["page"], 4);
+}
+
+#[test]
+fn brief_keeps_extracted_document_text_when_it_fits_the_budget() {
+    let query = "What are two changes in the Rust 1.90.0 announcement?";
+    let document_text = format!(
+        "<<<EXTERNAL_UNTRUSTED field=text id=fetch_rust_1_90>>>\n{}\n<<<END>>>",
+        (0..40)
+            .map(|index| format!(
+                "Section {index}: Rust 1.90.0 includes a documented language and tooling change."
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let document = json!({
+        "query": query,
+        "url": "https://blog.rust-lang.org/2025/09/18/Rust-1.90.0/",
+        "final_url": "https://blog.rust-lang.org/2025/09/18/Rust-1.90.0/",
+        "content_type": "text/html",
+        "fetched": true,
+        "truncated": false,
+        "trust": "external_untrusted",
+        "text": document_text,
+        "warnings": [],
+        "structured_warnings": []
+    });
+
+    let diagnostic = project("web_fetch", document.clone(), ResponseDetail::Diagnostic);
+    let brief = eggsearch::mcp::projection::project_with_budget(
+        "web_fetch",
+        document,
+        ResponseDetail::Brief,
+        8_000,
+    );
+
+    assert_eq!(diagnostic["query"], query);
+    assert_eq!(brief["query"], query);
+    assert_eq!(diagnostic["text"], brief["text"]);
+    assert_eq!(brief["truncated"], false);
+    assert_eq!(brief["output_truncated"], false);
+    assert!(brief["text"].as_str().unwrap().chars().count() > 800);
+}
+
+#[test]
+fn brief_enforces_character_budget_and_retains_failed_batch_items() {
+    let mut payload = web_payload(
+        json!([card("a", 1, 0), card("b", 1, 0), card("c", 1, 0)]),
+        json!([]),
+        json!({"has_failures": false, "has_absences": false, "has_truncation": false}),
+    );
+    payload["results"][0]["excerpts"][0]["text"] = json!("w".repeat(1200));
+    payload["results"][1]["excerpts"][0]["text"] = json!("x".repeat(1200));
+    payload["results"][2]["excerpts"][0]["text"] = json!("y".repeat(1200));
+    let brief = eggsearch::mcp::projection::project_with_budget(
+        "web_search",
+        payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(bytes(&brief) <= 512, "{} chars", bytes(&brief));
+    assert_eq!(brief["output_truncated"], true);
+    assert!(brief["omitted_count"].as_u64().unwrap() > 0);
+    assert!(brief["returned_count"].as_u64().unwrap() < 3);
+
+    let batch = json!({
+        "fetched":1,"failed":1,"truncated":true,"total_chars_returned":100,
+        "results":[
+            {"index":0,"item_type":"web","stable_id":"ok","ok":true,"error":null,"response":{"url":"https://example.com/a","fetched":true,"truncated":false,"text":"success"}},
+            {"index":1,"item_type":"web","stable_id":null,"ok":false,"error":"timeout","response":null,"truncated":true}
+        ],
+        "warnings":["batch item failed"],"structured_warnings":[]
+    });
+    let brief_batch = eggsearch::mcp::projection::project_with_budget(
+        "batch_fetch",
+        batch,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(brief_batch["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["error"] == "timeout"));
+    assert_eq!(brief_batch["failed"], 1);
+}
+
+#[test]
+fn brief_budget_and_reduction_cover_repository_and_research_groups() {
+    let oversized_failure = json!({
+        "results": [],
+        "providers_failed": [{
+            "provider_id": "fixture",
+            "error_class": "timeout",
+            "error": "timeout: ".to_owned() + &"failure detail ".repeat(300)
+        }],
+        "retrieval_summary": {"has_failures": true, "has_absences": false, "has_truncation": false}
+    });
+    let bounded = eggsearch::mcp::projection::project_with_budget(
+        "web_search",
+        oversized_failure,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(bytes(&bounded) <= 512, "{} chars", bytes(&bounded));
+    assert_eq!(bounded["retrieval_status"]["has_failures"], true);
+    assert_eq!(bounded["providers_failed_summary"]["total"], 1);
+    assert_eq!(
+        bounded["providers_failed_summary"]["error_classes"]["timeout"],
+        1
+    );
+
+    for tool in ["repo_search", "research_search"] {
+        let item = json!({
+            "id": "source-1",
+            "stable_id": "stable-source-1",
+            "title": "Primary source",
+            "url": "https://example.com/source",
+            "locator": {"path": "src/lib.rs", "line_start": 12, "line_end": 24},
+            "trust": "external_untrusted",
+            "source_role": "primary",
+            "excerpts": [{"text": "relevant evidence", "provenance": "content"}],
+            "metadata": {"discardable": "debug details ".repeat(80)},
+            "quality": {"discardable": "quality details ".repeat(80)},
+            "providers": ["provider-a", "provider-b"],
+            "score": 0.82
+        });
+        let payload = json!({
+            "query": "locate the primary source",
+            "groups": [{"group": "primary_sources", "results": [item.clone()]}],
+            "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+            "conflict_metadata": [],
+            "telemetry": {"discardable": "routing diagnostics ".repeat(100)},
+            "workflow_context": {"discardable": "workflow diagnostics ".repeat(100)},
+            "source_quality": {"discardable": "source diagnostics ".repeat(100)},
+            "evidence_role_summary": {"discardable": "role diagnostics ".repeat(100)}
+        });
+        let diagnostic_bytes = bytes(&payload);
+        let brief = project(tool, payload, ResponseDetail::Brief);
+        let brief_bytes = bytes(&brief);
+        println!(
+            "brief-fixture tool={tool} diagnostic_bytes={diagnostic_bytes} brief_bytes={brief_bytes} reduction_percent={:.1}",
+            100.0 * (diagnostic_bytes - brief_bytes) as f64 / diagnostic_bytes as f64
+        );
+        assert!(
+            brief_bytes * 10 <= diagnostic_bytes * 7,
+            "{tool} brief={brief_bytes}, diagnostic={diagnostic_bytes}"
+        );
+        assert_eq!(
+            brief["groups"][0]["results"][0]["stable_id"],
+            "stable-source-1"
+        );
+        assert_eq!(
+            brief["groups"][0]["results"][0]["locator"]["line_start"],
+            12
+        );
+        assert_eq!(
+            brief["groups"][0]["results"][0]["trust"],
+            "external_untrusted"
+        );
+    }
+}
+
+#[test]
+fn brief_budget_bounds_large_security_applicability_lists() {
+    let payload = json!({
+        "query": "package ecosystem",
+        "vulnerabilities": [],
+        "applicability": (0..40).map(|index| json!({
+            "package": format!("package-{index}"),
+            "version": "1.2.3",
+            "status": match index % 3 {
+                0 => "affected",
+                1 => "not_affected",
+                _ => "unknown"
+            }
+        })).collect::<Vec<_>>(),
+        "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+        "warnings": [],
+        "structured_warnings": []
+    });
+    let brief = eggsearch::mcp::projection::project_with_budget(
+        "security_search",
+        payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(bytes(&brief) <= 512, "{} chars", bytes(&brief));
+    assert_eq!(brief["applicability_summary"]["affected"], 14);
+    assert_eq!(brief["applicability_summary"]["not_affected"], 13);
+    assert_eq!(brief["applicability_summary"]["unknown"], 13);
+    assert_eq!(brief["output_truncated"], true);
+}
+
+#[test]
+fn brief_budget_summarizes_many_provider_and_batch_failures() {
+    let providers_failed = (0..40)
+        .map(|index| {
+            json!({
+                "provider_id": format!("provider-{index}"),
+                "error_class": "timeout",
+                "message": "provider timed out"
+            })
+        })
+        .collect::<Vec<_>>();
+    let provider_payload = json!({
+        "results": [],
+        "providers_failed": providers_failed,
+        "retrieval_summary": {"has_failures": true, "has_absences": false, "has_truncation": false},
+        "warnings": [],
+        "structured_warnings": []
+    });
+    let provider_brief = eggsearch::mcp::projection::project_with_budget(
+        "web_search",
+        provider_payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(
+        bytes(&provider_brief) <= 512,
+        "{} chars",
+        bytes(&provider_brief)
+    );
+    assert_eq!(provider_brief["retrieval_status"]["has_failures"], true);
+    assert_eq!(provider_brief["providers_failed_summary"]["total"], 40);
+    assert!(
+        provider_brief["providers_failed_summary"]["omitted"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+
+    let results = (0..20)
+        .map(|index| {
+            json!({
+                "index": index,
+                "item_type": "web",
+                "ok": false,
+                "error": "timeout",
+                "response": null
+            })
+        })
+        .collect::<Vec<_>>();
+    let batch_payload =
+        json!({"failed":20,"fetched":0,"results":results,"warnings":[],"structured_warnings":[]});
+    let batch_brief = eggsearch::mcp::projection::project_with_budget(
+        "batch_fetch",
+        batch_payload,
+        ResponseDetail::Brief,
+        512,
+    );
+    assert!(bytes(&batch_brief) <= 512, "{} chars", bytes(&batch_brief));
+    assert_eq!(batch_brief["failed"], 20);
+    let retained_failure_count = batch_brief["results"].as_array().unwrap().len();
+    let omitted_failure_indices = batch_brief["failed_member_indices"].as_array().unwrap();
+    assert_eq!(retained_failure_count + omitted_failure_indices.len(), 20);
+    assert!(batch_brief["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["ok"] == false));
 }
 
 #[test]
@@ -408,9 +744,14 @@ fn compact_reduces_bytes_for_representative_payloads() {
     );
     let diag_bytes = bytes(&web);
     let compact_bytes = bytes(&project("web_search", web.clone(), ResponseDetail::Compact));
-    let standard_bytes = bytes(&project("web_search", web, ResponseDetail::Standard));
+    let standard_bytes = bytes(&project(
+        "web_search",
+        web.clone(),
+        ResponseDetail::Standard,
+    ));
+    let brief_bytes = bytes(&project("web_search", web, ResponseDetail::Brief));
     println!(
-        "projection-bytes tool=web_search diagnostic={diag_bytes} standard={standard_bytes} compact={compact_bytes}"
+        "projection-bytes tool=web_search diagnostic={diag_bytes} standard={standard_bytes} compact={compact_bytes} brief={brief_bytes}"
     );
     assert!(
         compact_bytes < diag_bytes,
@@ -424,6 +765,10 @@ fn compact_reduces_bytes_for_representative_payloads() {
         compact_bytes <= standard_bytes,
         "compact {compact_bytes} should be <= standard {standard_bytes}"
     );
+    assert!(
+        brief_bytes * 10 <= diag_bytes * 7,
+        "web brief={brief_bytes}, diagnostic={diag_bytes}"
+    );
 
     let fetch = json!({
         "url": "https://example.com/a",
@@ -436,11 +781,22 @@ fn compact_reduces_bytes_for_representative_payloads() {
         "cache_status": "miss"
     });
     let f_diag = bytes(&fetch);
-    let f_compact = bytes(&project("web_fetch", fetch, ResponseDetail::Compact));
-    println!("projection-bytes tool=web_fetch diagnostic={f_diag} compact={f_compact}");
+    let f_compact = bytes(&project(
+        "web_fetch",
+        fetch.clone(),
+        ResponseDetail::Compact,
+    ));
+    let f_brief = bytes(&project("web_fetch", fetch, ResponseDetail::Brief));
+    println!(
+        "projection-bytes tool=web_fetch diagnostic={f_diag} compact={f_compact} brief={f_brief}"
+    );
     assert!(
         f_compact < f_diag,
         "fetch compact {f_compact} < diagnostic {f_diag}"
+    );
+    assert!(
+        f_brief * 10 <= f_diag * 7,
+        "fetch brief={f_brief}, diagnostic={f_diag}"
     );
 }
 
@@ -448,8 +804,8 @@ fn compact_reduces_bytes_for_representative_payloads() {
 fn retrieval_quality_host_trace_records_per_case_projection_cost() {
     let corpus: Value = serde_json::from_str(RETRIEVAL_CASES).unwrap();
     let cases = corpus["cases"].as_array().unwrap();
-    let mut byte_totals = [0usize; 3];
-    let mut retained_totals = [0usize; 3];
+    let mut byte_totals = [0usize; 4];
+    let mut retained_totals = [0usize; 4];
     let mut simulated_call_total = 0usize;
     for case in cases {
         let results = case["results"]
@@ -501,9 +857,10 @@ fn retrieval_quality_host_trace_records_per_case_projection_cost() {
             ResponseDetail::Diagnostic,
             ResponseDetail::Standard,
             ResponseDetail::Compact,
+            ResponseDetail::Brief,
         ];
-        let mut mode_bytes = [0usize; 3];
-        let mut retained = [0usize; 3];
+        let mut mode_bytes = [0usize; 4];
+        let mut retained = [0usize; 4];
         let relevant_ids: HashSet<&str> = case["relevant_documents"]
             .as_array()
             .unwrap()
@@ -525,7 +882,8 @@ fn retrieval_quality_host_trace_records_per_case_projection_cost() {
                 })
                 .count();
             retained_totals[index] += retained[index];
-            if mode == ResponseDetail::Compact && (failed || absent) {
+            if matches!(mode, ResponseDetail::Compact | ResponseDetail::Brief) && (failed || absent)
+            {
                 assert_eq!(projected["retrieval_status"]["has_failures"], json!(failed));
                 assert_eq!(projected["retrieval_status"]["has_absences"], json!(absent));
             }
@@ -534,7 +892,7 @@ fn retrieval_quality_host_trace_records_per_case_projection_cost() {
         let simulated_calls = 1 + source_fetches + usize::from(source_fetches > 0);
         simulated_call_total += simulated_calls;
         println!(
-            "retrieval-context-trace case={} tool={} partition={} state={} bytes_diagnostic={} bytes_standard={} bytes_compact={} relevant_retained_diagnostic={} relevant_retained_standard={} relevant_retained_compact={} simulated_tool_calls={} token_estimates={}/{}/{}",
+            "retrieval-context-trace case={} tool={} partition={} state={} bytes_diagnostic={} bytes_standard={} bytes_compact={} bytes_brief={} relevant_retained_diagnostic={} relevant_retained_standard={} relevant_retained_compact={} relevant_retained_brief={} simulated_tool_calls={} token_estimates={}/{}/{}/{}",
             case["id"].as_str().unwrap(),
             tool,
             case["partition"].as_str().unwrap(),
@@ -542,26 +900,31 @@ fn retrieval_quality_host_trace_records_per_case_projection_cost() {
             mode_bytes[0],
             mode_bytes[1],
             mode_bytes[2],
+            mode_bytes[3],
             retained[0],
             retained[1],
             retained[2],
+            retained[3],
             simulated_calls,
             mode_bytes[0].div_ceil(4),
             mode_bytes[1].div_ceil(4),
             mode_bytes[2].div_ceil(4)
+            ,mode_bytes[3].div_ceil(4)
         );
     }
-    assert_eq!(retained_totals, [14, 14, 14]);
+    assert_eq!(retained_totals, [14, 14, 14, 14]);
     assert_eq!(simulated_call_total, 42);
     println!(
-        "retrieval-context-trace-total cases={} bytes_diagnostic={} bytes_standard={} bytes_compact={} token_estimates={}/{}/{} retained={:?} simulated_tool_calls={}",
+        "retrieval-context-trace-total cases={} bytes_diagnostic={} bytes_standard={} bytes_compact={} bytes_brief={} token_estimates={}/{}/{}/{} retained={:?} simulated_tool_calls={}",
         cases.len(),
         byte_totals[0],
         byte_totals[1],
         byte_totals[2],
+        byte_totals[3],
         byte_totals[0].div_ceil(4),
         byte_totals[1].div_ceil(4),
         byte_totals[2].div_ceil(4),
+        byte_totals[3].div_ceil(4),
         retained_totals,
         simulated_call_total
     );
@@ -570,7 +933,22 @@ fn retrieval_quality_host_trace_records_per_case_projection_cost() {
 #[test]
 fn response_detail_param_defaults_to_diagnostic_and_roundtrips() {
     assert_eq!(ResponseDetail::from_opt(None), ResponseDetail::Diagnostic);
+    assert_eq!(
+        ResponseDetail::from_opt_for_profile(
+            None,
+            eggsearch::core::config::McpSchemaProfile::Compact
+        ),
+        ResponseDetail::Brief
+    );
+    assert_eq!(
+        ResponseDetail::from_opt_for_profile(
+            Some(ResponseDetail::Diagnostic),
+            eggsearch::core::config::McpSchemaProfile::Compact
+        ),
+        ResponseDetail::Diagnostic
+    );
     for (raw, expected) in [
+        ("brief", ResponseDetail::Brief),
         ("compact", ResponseDetail::Compact),
         ("standard", ResponseDetail::Standard),
         ("diagnostic", ResponseDetail::Diagnostic),
