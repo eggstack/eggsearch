@@ -9,6 +9,10 @@ Corrects M002's brief projection after M003/M004 live qualification found that
 the unconditional 800-character per-string clip hid most fetched document text.
 The existing M002 closure remains historical and unchanged. This plan also
 records the paired M003 acceptance and finishes M004's hosted canonical gate.
+The initial Bonsai 27B paired failure-interpretation trial also exposed that
+compact `security_search` advertised a free-form goal despite runtime accepting
+only canonical values; this plan now includes making those values discoverable
+and repeating that call.
 
 ## Objective
 
@@ -58,7 +62,10 @@ case and add a deterministic regression fixture.
 5. Enable manual workflow dispatch for the CI workflow and run the canonical
    `make ci` suite on hosted Linux and macOS. Record whether the prior local
    process-group stall reproduces. Do not treat a timeout as a passing gate.
-6. Update M003/M004 statuses only with exact candidate evidence, this plan's
+6. Advertise the canonical runtime-accepted security goals in the compact
+   `security_search` schema, add a schema contract assertion, and repeat the
+   larger-model failure-interpretation trial to check for a valid call.
+7. Update M003/M004 statuses only with exact candidate evidence, this plan's
    closure, the roadmap, and the registry in the same closure commit.
 
 ## Verification

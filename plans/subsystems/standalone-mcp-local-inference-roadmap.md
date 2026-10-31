@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001-M002 closed; M003 blocked on broader LM Studio acceptance; M004 blocked on canonical gate completion after focused live requalification)
+Status: active (M001, M002, and M004 closed; M003 remains open on operational acceptance; M005 corrective active)
 Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
@@ -47,7 +47,7 @@ M001 compact ten-tool advertised schema profile (closed)
                   +-- operational --> M003 LM Studio/direct-client compatibility and quality (open acceptance)
                   +-- corrective --> M005 brief document extraction and paired requalification (active)
 
-M004 compact schema discoverability corrective (implementation complete; hosted gate pending)
+M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate 755008c)
 ```
 
 No CodeGG dependency; it is a regression consumer, not the implementation target. M003's offline qualification can run in CI; a real LM Studio interactive smoke is an operational closure requirement, not a reason to block M001/M002 development.

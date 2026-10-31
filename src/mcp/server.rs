@@ -200,14 +200,14 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
         _ => COMMON,
     };
     compact_schema_value(schema, allowed);
-    compact_research_schema(name, schema);
+    compact_workflow_schema(name, schema);
     if name == "build_evidence_bundle" {
         compact_evidence_bundle_schema(schema);
     }
 }
 
-fn compact_research_schema(name: &str, schema: &mut serde_json::Value) {
-    if name != "research_search" {
+fn compact_workflow_schema(name: &str, schema: &mut serde_json::Value) {
+    if name != "research_search" && name != "security_search" {
         return;
     }
     let Some(properties) = schema
@@ -216,30 +216,34 @@ fn compact_research_schema(name: &str, schema: &mut serde_json::Value) {
     else {
         return;
     };
-    if let Some(domain) = properties.get_mut("research_domain") {
-        set_string_schema_enum(
-            domain,
-            &[
-                "general",
-                "software_architecture",
-                "architecture",
-                "api_design",
-                "api",
-                "distributed_systems",
-                "distributed",
-                "security",
-                "performance",
-                "language_ecosystem",
-                "ecosystem",
-                "machine_learning",
-                "ml",
-                "infrastructure",
-                "infra",
-            ],
-        );
-    }
-    if let Some(goal) = properties.get_mut("goal") {
-        set_string_schema_enum(goal, crate::mcp::tools::canonical::RESEARCH_GOAL_VALUES);
+    if name == "research_search" {
+        if let Some(domain) = properties.get_mut("research_domain") {
+            set_string_schema_enum(
+                domain,
+                &[
+                    "general",
+                    "software_architecture",
+                    "architecture",
+                    "api_design",
+                    "api",
+                    "distributed_systems",
+                    "distributed",
+                    "security",
+                    "performance",
+                    "language_ecosystem",
+                    "ecosystem",
+                    "machine_learning",
+                    "ml",
+                    "infrastructure",
+                    "infra",
+                ],
+            );
+        }
+        if let Some(goal) = properties.get_mut("goal") {
+            set_string_schema_enum(goal, crate::mcp::tools::canonical::RESEARCH_GOAL_VALUES);
+        }
+    } else if let Some(goal) = properties.get_mut("goal") {
+        set_string_schema_enum(goal, crate::mcp::tools::canonical::SECURITY_GOAL_VALUES);
     }
 }
 

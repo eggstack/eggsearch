@@ -88,14 +88,17 @@ qualification.
 
 ## 5. Remaining evidence to unblock and close
 
-1. Run the same paired full+diagnostic and compact+brief prompts on Gemma E2B
-   and a larger reference model, including security, research, page/PDF fetch,
-   repo/evidence, and grouped-failure tasks. Capture tool choice, argument
-   validity, repairs, evidence, failure interpretation, calls, total latency,
-   prompt processing time, and context usage.
-2. Capture exact tokenizer identity and host-injected prompt/completion token
-   counts for each paired task. Keep those distinct from context-meter
-   percentages and serialized JSON byte counts.
+1. Initial paired full+diagnostic and compact+brief API trials on Gemma E2B
+   and Bonsai 27B, including extraction and security failure interpretation,
+   are recorded in §7 with tool validity, evidence quality, actual usage, and
+   latency. Repeat Bonsai's security task after M005 adds accepted goal values;
+   expand the task set to research, PDF, repository/evidence, and grouped
+   failures before closing M003.
+2. Exact prompt/completion usage is now recorded for completed requests in §7.
+   LM Studio did not return counters for the Bonsai full-profile timeout, and
+   no tokenizer identity was exposed. Keep usage, context capacity, and
+   serialized bytes separate; additional prompt/token attribution is still
+   required for the broader acceptance matrix.
 3. Characterize LM Studio's structured output and text fallback handling,
    visibility after config refresh/new chat, and compare one generic MCP
    inspector/client.
@@ -104,15 +107,13 @@ qualification.
    credentials were created and no security-sensitive setting was changed;
    complete that prerequisite in LM Studio, then run the API smoke and restore
    prior settings.
-5. M004 candidate `776f8ca4a8246e467041696b2220600eb7b2648d` exposes the
-   runtime-accepted research goal/domain values in compact schemas. Its
-   focused Gemma requalification and remaining fetch-extraction failure are
-   recorded in `plans/closure/standalone-mcp-local-inference/004-status.md`.
-   The canonical `make check` gate remains stalled in the macOS
-   `bounded_command` suite, so M004 is still blocked. M003 also remains blocked
-   on its broader operational acceptance matrix.
-6. Complete M003's broader operational acceptance matrix, then update this
-   status; close M003 only after its full live acceptance criteria pass.
+5. M004's hosted Linux/macOS/Windows canonical gate now passes on candidate
+   `755008c0a1da658835dd8f215d3b82bd1cb3dee5`; see its closure status. The
+   earlier local `bounded_command` stall did not reproduce in hosted CI.
+6. M003 remains blocked on the post-correction Bonsai retry, broader domain
+   coverage, LM Studio UI structured-content/refresh behavior, protected API
+   smoke, and remediation or explicit acceptance of the quality failures in
+   §7. Close M003 only after its remaining live acceptance criteria pass.
 
 ## 6. Security and operational disposition
 
@@ -123,3 +124,70 @@ so the remaining block is broader than the earlier API permission denial:
 model comparison, exact token attribution, host behavior checks, and the
 substantial live quality failures remain open. Do not claim a general LM
 Studio token-saving or quality win from the single paired task.
+
+## 7. Paired local inference API measurements (M005)
+
+The later M005 trial used LM Studio's local OpenAI-compatible inference API
+with the compact/full tool definitions obtained from the branch MCP stdio
+server. The harness supplied the definitions to the model, executed the
+returned MCP call against the local server, and returned the tool result to the
+model. These are real model turns with per-request usage counters, but they
+are not the LM Studio chat UI's native MCP integration and do not satisfy its
+protected API permission check. The trials used LM Studio 0.4.26+4 and the
+already loaded models `google/gemma-4-e2b` (MLX 4-bit, 10,703-token loaded
+context) and `prism-ml/bonsai-27b` (MLX 2-bit, 262,144-token loaded context).
+
+### Paired Rust 1.90.0 document extraction
+
+Both profiles received the same question and official Rust 1.90.0 release
+announcement URL. The branch MCP server fetched the document once and served
+the cached same document to the paired request. Its diagnostic and brief
+projections were both 4,498 characters, byte-for-byte equal; retrieval marked
+neither document truncated. The brief response's outer warning metadata was
+clipped, recorded as `output_truncated=true`, while the extracted document
+text itself remained intact and longer than 800 characters.
+
+| Model | Profile | Tool call | Actual usage (prompt + completion) | Result |
+|---|---|---|---:|---|
+| Gemma E2B | full / diagnostic | One valid `web_fetch`, exact URL and query focus | 9,273 + 1,319 = 10,592 tokens across the tool-call and answer requests | Correct first change, then blank final answer at the 10,703-token loaded-context ceiling; quality fail. |
+| Gemma E2B | compact / brief | One valid `web_fetch`, same URL and query focus | 6,172 + 798 = 6,970 tokens | Correctly named LLD as the default linker for `x86_64-unknown-linux-gnu` and Cargo's native `cargo publish --workspace`; evidence complete. |
+| Bonsai 27B | full / diagnostic | No completed tool turn | Request timed out at 240 seconds | Fail; no usage counter returned. |
+| Bonsai 27B | compact / brief | One valid `web_fetch`, same URL and query focus | 13,217 + 750 = 13,967 tokens | Correctly named both release changes with an official-page citation; 157.4 seconds. |
+
+The compact schema bytes in the direct inference requests were 18,718 versus
+68,736 for full. The initialized MCP stdio smoke separately measured 18,990
+versus 72,923 serialized `tools/list` bytes. Do not conflate schema bytes with
+the actual usage counts above.
+
+### Paired failure interpretation
+
+Both models received the same compact-profile Log4j 2.14.1 / CVE-2021-44228
+applicability prompt. The actual `security_search` result recorded 12 provider
+attempts, 6 completions, 3 failures, no absence markers, and an HTTP 500 from
+Yahoo; no native advisory provider was available, and the returned evidence
+was generic web material.
+
+| Model | Tool-call validity | Actual usage (prompt + completion) | Interpretation |
+|---|---|---:|---|
+| Gemma E2B | One valid `security_search` call; no runtime error | 6,403 + 900 = 7,303 tokens over two inference requests; 25.31 seconds | Correctly said Yahoo's 500 does not prove absence, but overstated generic web pages as authoritative advisories and omitted the untrusted-source and unavailable-severity warnings. Partial, with evidence-trust failure. |
+| Bonsai 27B | Called `security_search` with unsupported `goal="assess_applicability"`; runtime rejected it and the following repair attempt was not executed by the one-call harness | 11,280 + 367 = 11,647 tokens; 77.6 seconds | No usable final answer; invalid tool arguments and failure-interpretation task failed. |
+
+The Bonsai call exposed that compact `security_search` listed `goal` without
+its accepted values. M005 adds the runtime's canonical security-goal enum and
+a schema contract test. The post-correction Bonsai retry was run against that
+schema, but the LM Studio request timed out after 300 seconds before returning
+a tool call, final answer, or usage counters. This is recorded as a failed
+retry, not as a pass; the initial invalid call remains in the table above.
+
+### Remaining M003 acceptance
+
+The paired model matrix now has exact prompt/completion usage for successful
+requests and explicit timeouts where the host returned no counter, including
+the 300-second post-correction Bonsai retry. It still
+does not pass M003: the full Gemma extraction ended blank, Gemma's security
+answer misstated evidence authority, Bonsai's security call failed argument
+validation, and Bonsai full-profile inference timed out. Native LM Studio UI
+tool-result handling and refresh behavior, structured-content/text fallback,
+and the protected API smoke also remain open. No API authentication or MCP
+permission setting was changed. Keep M003 blocked until these criteria pass or
+are explicitly re-scoped by a future plan.

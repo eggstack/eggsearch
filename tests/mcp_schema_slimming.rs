@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use eggsearch::core::config::AppConfig;
+use eggsearch::core::config::McpSchemaProfile;
 use eggsearch::mcp::ServerState;
 
 fn tool_definitions() -> Vec<rmcp::model::Tool> {
@@ -13,6 +14,19 @@ fn schema_for(name: &str) -> serde_json::Value {
     let tools = tool_definitions();
     let tool = tools
         .iter()
+        .find(|t| t.name.as_ref() == name)
+        .unwrap_or_else(|| panic!("tool {name} not found"));
+    serde_json::to_value(&tool.input_schema).expect("schema serializes")
+}
+
+fn compact_schema_for(name: &str) -> serde_json::Value {
+    let mut config = AppConfig::default();
+    config.mcp.schema_profile = McpSchemaProfile::Compact;
+    let state = Arc::new(ServerState::build(config).expect("compact state"));
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let tool = server
+        .tool_definitions()
+        .into_iter()
         .find(|t| t.name.as_ref() == name)
         .unwrap_or_else(|| panic!("tool {name} not found"));
     serde_json::to_value(&tool.input_schema).expect("schema serializes")
@@ -182,6 +196,17 @@ fn security_search_advertises_goal_and_include() {
     let schema = schema_for("security_search");
     assert!(has_prop(&schema, "goal"), "goal must be advertised");
     assert!(has_prop(&schema, "include"), "include must be advertised");
+    let compact_schema = compact_schema_for("security_search");
+    let goal_values = compact_schema["properties"]["goal"]["enum"]
+        .as_array()
+        .expect("compact security goal must advertise an enum")
+        .iter()
+        .map(|value| value.as_str().expect("goal enum value is a string"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        goal_values,
+        eggsearch::mcp::tools::canonical::SECURITY_GOAL_VALUES
+    );
     for legacy in [
         "include_kev",
         "include_exploit_context",
