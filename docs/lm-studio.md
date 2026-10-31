@@ -88,11 +88,13 @@ success. Those require a live LM Studio chat with the actual local model. The
 recorded environment used LM Studio 0.4.26+4. After the user enabled
 authentication and configured-server access, a native `/api/v1/chat` request
 through `mcp/eggsearch` completed a `web_fetch` call and returned LM Studio's
-usage counters; see the M003 operational record for the task and limits. The
-interactive app also rendered an Eggsearch `web_fetch` result card. These
-smokes do not establish a general context or completion-quality improvement:
-the paired local-model trials include both successful tasks and quality
-failures, and host handling of `structuredContent` versus the text fallback
+usage counters; see the M003 operational record for the task and limits. A
+controlled direct-fetch pair found that compact used fewer reported input
+tokens and returned the same document evidence, while other specialist tasks
+showed no-call, argument, and host plugin-loading failures. The interactive
+app also rendered an Eggsearch `web_fetch` result card. These observations do
+not establish a general context or completion-quality improvement, and host
+handling of `structuredContent` versus the text fallback or profile refresh
 has not been isolated.
 
 For configuration keys and bounds, see [Eggsearch configuration](config.md)

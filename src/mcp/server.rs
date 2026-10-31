@@ -86,7 +86,7 @@ fn compact_description(name: &str) -> Option<&'static str> {
         "web_search" => "Search the public web for sources; use web_fetch to inspect a result.",
         "provider_status" => "Check configured provider availability and diagnostics.",
         "repo_search" => "Search repository code, documentation, issues, and releases.",
-        "web_fetch" => "Fetch one known HTTP(S) URL; use batch_fetch for several targets.",
+        "web_fetch" => "Fetch one known HTTP(S) URL from search results or user input; return bounded extracted text. Use batch_fetch for several targets; do not search or crawl.",
         "repo_fetch" => "Fetch a known repository file or span by structured locator.",
         "security_search" => "Find vulnerability evidence and assess package applicability.",
         "research_search" => "Gather grouped evidence for complex research questions.",

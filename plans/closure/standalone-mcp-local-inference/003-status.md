@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M003 — Operational Status
 
-Status: blocked (the live UI and authenticated native API paths work, but M003's host-contract characterization, broader paired task matrix, and documented quality failures remain unresolved)
+Status: blocked (native API retrieval works for a controlled direct-fetch pair, but specialist-task outcomes are mixed and LM Studio UI refresh/result-shape behavior remains uncharacterized)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
@@ -8,24 +8,26 @@ Source implementation plan:
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 
-Final implementation candidate exercised by the installed-child smoke and native API: `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` (`eggsearch 0.4.4`; M004/M005 changes included). Earlier interactive and model-turn evidence remains separately identified below.
+Final prior candidate exercised by the installed-child smoke and native API: `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` (`eggsearch 0.4.4`; M004/M005 changes included). The M006 corrective candidate is recorded in §12 and its closure record.
 Predecessor closures: M001 `d983fa5`; M002 `plans/closure/standalone-mcp-local-inference/002-status.md`.
 
 ## 1. Current finding
 
 M003 is not closed. The installed-candidate stdio smoke, interactive LM
-Studio chat path, and authenticated native `/api/v1/chat` path worked with the
-candidate, and all ten tools remained available. The paired direct-inference
-trials included `google/gemma-4-e2b`, `prism-ml/bonsai-27b`, and
-`lfm3-2b-omni-abliter8`; the required same-task comparison with a larger
-reference model remains incomplete. Existing evidence does not establish
-that compact is a safe default: specialist research and direct-fetch tasks
-had material quality failures, and several runs timed out or exhausted the
-available context.
+Studio chat path, and authenticated native `/api/v1/chat` path work, and all
+ten tools remain available. Native API trials now include `google/gemma-4-e2b`,
+`google/gemma-4-e4b`, `prism-ml/bonsai-27b`, and
+`lfm3-2b-omni-abliter8`. The controlled E4B research/security turns exposed
+valid tool calls alongside missing synthesis, weak source support, invalid
+arguments, and a host-side plugin-unloaded error. The direct-fetch compact
+no-call outcome also did not reproduce in the controlled baseline/candidate
+comparison. This mixed evidence does not establish a general quality or
+reliability improvement; LM Studio UI refresh and result-shape acceptance
+remain open.
 
 The final candidate's installed-child stdio smoke passed on 2026-10-31:
 full exposed all ten tools in 72,923 serialized `tools/list` bytes, compact
-exposed the same ten in 19,281 bytes, and `provider_status` succeeded in both.
+exposed the same ten in 19,370 bytes, and `provider_status` succeeded in both.
 These byte counts do not estimate LM Studio tokenizer usage.
 
 Model/server facts observed in LM Studio:
@@ -67,14 +69,14 @@ provide a reliable per-chat usage breakdown for this test set.
 | Copyable installed-binary `mcp.json` setup | `docs/lm-studio.md`; config temporarily pointed at branch release binary | pass | None for configuration syntax |
 | Windows/macOS/Linux paths and stdio logging contract | `docs/lm-studio.md` | pass | None for documentation |
 | Reproducible installed-candidate stdio smoke | `scripts/lm_studio_stdio_smoke.py` | pass | Offline protocol evidence only |
-| Ten tools and profile list sizes | Final-candidate initialized child-process smoke: 72,923 full / 19,281 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
+| Ten tools and profile list sizes | M006-candidate initialized child-process smoke: 72,923 full / 19,370 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
 | LM Studio tool visibility and interactive tool use | Prior full/compact qualification chats called `web_search`; compact also called `security_search`, `research_search`, and `web_fetch`. The app rendered a `web_fetch mcp/eggsearch` result card. | partial | Verify refresh/new-chat behavior against the final candidate; determine whether the app consumes structured content, text fallback, or both |
-| Paired small/larger model comparison | Gemma E2B and Bonsai 27B received the same extraction task; Bonsai full timed out while compact completed. Additional same-task pairs are recorded for Gemma E2B and LFM3 2B. | partial | Complete specialist/research and fetch pairs on the larger model; interpret timeouts as failed trials |
-| Tool choice, argument validity, repairs, evidence and failure truthfulness | Five task records above | partial / quality concern | Investigate research argument retries, context overrun, and source classification; add paired specialist/fetch cases |
-| Exact tokenizer and prompt-token attribution | Native API reports 1,575 input / 113 output tokens for one configured-server call; UI still exposes only context-meter readings and no tokenizer identity | partial | Capture same-task API usage across both profiles and characterize UI attribution |
+| Paired small/larger model comparison | Gemma E2B and E4B native API trials plus earlier Gemma E2B/Bonsai 27B and LFM3 2B task pairs; see §12 | partial / mixed | Repeat larger-model specialist tasks with a refreshed MCP plugin and enough output budget to synthesize results |
+| Tool choice, argument validity, repairs, evidence and failure truthfulness | Earlier interactive findings plus §12; includes no-call, invalid-argument, plugin-unloaded, and truthful evidence-gap outcomes | partial / quality concern | Re-run a balanced research/security matrix after LM Studio plugin refresh; verify source authority and answer citations |
+| Exact tokenizer and prompt-token attribution | Controlled native API pair in §12 reports 1,628 input / 89 output tokens for full and 872 / 105 for candidate compact; UI still exposes no tokenizer identity | partial | Keep host usage separate from tokenizer identity and characterize the UI context meter |
 | Output schema / structuredContent vs text fallback | Offline protocol coverage plus a successful rendered UI tool-result card and native API tool call | partial | Isolate which result representation the UI consumes; compare a generic MCP inspector/client if available |
 | Protected API MCP smoke | Authenticated native `/api/v1/chat` call through configured `mcp/eggsearch`, with only `web_fetch` allowed | pass | UI structured-content/text fallback and refresh behavior remain uncharacterized |
-| Config rollback | Restored original `~/.lmstudio/mcp.json`; `cmp` against backup succeeded | pass | None |
+| Config rollback | Restored original `~/.lmstudio/mcp.json`; SHA-256 is `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c` | pass | None |
 
 ## 4. Work completed
 
@@ -116,10 +118,11 @@ qualification.
    candidate `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` in CI run
    `41160264796`; see their closure records. The
    earlier local `bounded_command` stall did not reproduce in hosted CI.
-6. M003 remains blocked on broader domain coverage, LM Studio UI
-   structured-content/refresh behavior, and remediation or explicit
-   acceptance of the quality failures in §7. Close M003 only after its
-   remaining live acceptance criteria pass.
+6. M003 remains blocked on broader domain coverage and LM Studio UI
+   structured-content/refresh behavior. The compact direct-fetch concern in
+   §11 is requalified in §12 and tracked by M006; it is not a reproducible
+   failure in the controlled baseline/candidate pair. Close M003 only after
+   its remaining live acceptance criteria pass.
 7. Current branch verification passes on `a339cce` (test-fixture-only
    stabilization over implementation candidate `de69f1d`): hosted CI run
    `41175183998` passed primary CI, macOS canonical/filesystem checks, and
@@ -134,6 +137,13 @@ qualification.
    behavior; the hosted log did not print the response's timeout warning. This
    CI result does not
    close M003's live-model acceptance gaps.
+8. A configured-server native API pair on 2026-10-31 (LM Studio 0.4.26+4,
+   `lfm3-2b-omni-abliter8`, 24,000-token context, identical task and system
+   prompt, same allowed tool and URL) exposed a compact tool-choice failure;
+   see §11. A controlled repeat on the saved baseline and M006 candidate
+   passed all three candidate turns and both baseline compact turns; see §12.
+   The original failure remains a valid negative trial, but the correction's
+   causal effect is not established.
 
 ## 6. Security and operational disposition
 
@@ -323,7 +333,80 @@ figures for this request, not a general quality or token-saving claim.
 The user enabled the server authentication and configured-server settings;
 the agent did not change them. The original `~/.lmstudio/mcp.json` was
 restored byte-for-byte after the temporary test alias was removed. The
-protected native MCP API criterion is now passed. Interactive UI
-structured-content versus text fallback, config refresh behavior, broader
-paired-task quality, and the documented negative model outcomes remain open,
-so M003 is still blocked.
+protected native MCP API smoke criterion is passed for the single-tool success
+path. A later same-task profile pair is recorded in §11 and shows a repeated
+compact no-call failure. Interactive UI structured-content versus text
+fallback and config refresh behavior also remain open, so M003 is still
+blocked.
+
+## 11. Native configured-server full/compact direct-fetch pair
+
+With the user's pause window, `~/.lmstudio/mcp.json` was temporarily pointed
+at the exact `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` release candidate and
+full then compact profile configs. Both requests used LM Studio's native
+`POST /api/v1/chat` plugin integration, not the OpenAI-compatible manual
+tool-definition harness. They shared the same model (`lfm3-2b-omni-abliter8`),
+task and system prompt, allowed tool, context length, temperature, and
+authentication page URL. LM Studio returned loaded instance IDs ending `:3`
+for full and `:2` for compact.
+
+The task asked the model to read the official LM Studio API authentication
+page and explain where existing API-token permissions are edited. The system
+instruction required exactly one `web_fetch`, prohibited setting
+`response_detail`, and required evidence from that page.
+
+| Profile / trial | Tool call | Actual usage (input + output) | Latency | Result |
+|---|---|---:|---:|---|
+| Full | One valid `web_fetch` for the exact documentation URL; returned page text was 14,067 characters | 1,627 + 97 tokens | 8.93 s | Correctly named the Edit button in the API Tokens modal and cited the page. |
+| Compact, trial 1 | No tool call despite the exact URL, `allowed_tools=["web_fetch"]`, and explicit system instruction | 854 + 39 tokens | 1.92 s | Returned a generic “Authentication section” answer without fetched evidence. Quality fail. |
+| Compact, repeated | No tool call under the same request conditions | 854 + 39 tokens | 2.46 s | Repeated the unsupported generic answer. Quality fail. |
+
+The compact requests used 47.5% fewer input tokens and 59.8% fewer total
+input-plus-output tokens than the full request, but skipped required retrieval
+twice. These are LM Studio-reported token counts, not tokenizer-specific
+attribution. This repeated difference shows the compact native API path is
+not an acceptable direct-fetch default for this model and task without a
+corrective decision. It does not establish that every model or task fails.
+
+The original `mcp.json` bytes were restored after the test block and verified
+against SHA-256
+`b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
+Authentication and MCP permission settings were not changed. Corrective M006
+(`plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md`)
+is active to compare the compact description and test a minimal fix. The
+controlled baseline/candidate follow-up is recorded in §12. UI chat refresh
+and structured-content/text-fallback behavior are still not isolated.
+
+## 12. M006 corrective and native specialist-task requalification
+
+### Compact direct-fetch baseline/candidate comparison
+
+On 2026-10-31, the saved pre-change executable (SHA-256 `da803489495080f30ad83095cd6f0fe56cceaa4ee1b4897a9767bf0ee1fec00a`) and rebuilt M006 candidate executable (SHA-256 `9b70544f64bc1d87a3956480c020074f3ae4e65e5002a927d83bf973b448f801`) were exercised through LM Studio 0.4.26+4 native `POST /api/v1/chat`. All turns used `lfm3-2b-omni-abliter8`, 24,000 context, temperature 0, the same system and user prompt, the same allowed `web_fetch`, and the exact same URL. The system required one fetch, forbade `response_detail`, and directed the model to answer only from the fetched evidence.
+
+| Build / profile / trial | Actual usage (input + output) | Latency | Tool and evidence result |
+|---|---:|---:|---|
+| Saved baseline / compact 1 | 855 + 110 | 7.74 s | One valid fetch; HTTP 200; stable ID `fetch_de9d81a67951e3de`; returned text included the Edit-button sentence; answer cited the API Tokens modal. |
+| Saved baseline / compact 2 | 855 + 110 | 4.05 s | Same valid tool call and identical result hash; answer quoted the permission-edit sentence. |
+| Candidate / full | 1,628 + 89 | 7.08 s | One valid fetch; same stable ID; 14,067-character tool result; answered correctly. |
+| Candidate / compact 1 | 872 + 105 | 3.73 s | One valid fetch; same stable ID and result hash as both baseline compact turns; answer cited the official section and URL. |
+| Candidate / compact 2 | 872 + 105 | 3.72 s | Same valid call and answer evidence as candidate compact 1. |
+
+Candidate compact used 46.4% fewer input tokens and 43.1% fewer total input-plus-output tokens than candidate full. Its initialized tools list was 19,370 serialized bytes, up 89 bytes from the prior 19,281-byte candidate and below the existing compact limit. The compact result was 3,713 serialized characters versus 14,067 for full; both carried the relevant edit-permission evidence and the same stable document identity. LM Studio's `output_truncated` flag was true for brief output, but the required sentence was present.
+
+The first M003 native pair in §11 had two compact no-call failures. Under this controlled prompt, both saved-baseline compact turns and both M006 compact turns called and used the same source. That does not establish that the description edit caused the change; compact tool choice is variable across the recorded prompt conditions. The candidate meets M006's direct-fetch task gate, while the broader M003 model-quality gate remains open. The exact original config hash was restored after the test block, and authentication and permission settings were not modified.
+
+### Gemma specialist-task observations
+
+Additional native LM Studio API turns used `google/gemma-4-e2b` and the larger `google/gemma-4-e4b`, both at 24,000-token context, with one allowed specialist tool and 450 maximum output tokens. The E2B research full/compact turns each exhausted the generation budget in reasoning before a tool call (510/371 input tokens; 449 output tokens, 447 reasoning tokens). Its security full/compact requests returned HTTP 500 `Plugin unloaded` without usage counters.
+
+E4B called `research_search` once with valid query arguments in both profiles. The full and compact results were 37,830 and 6,126 serialized characters respectively. At the 450-token output setting, neither trial synthesized a final answer. In a follow-up full-profile research turn with 1,800 output tokens, E4B called the tool and produced an answer, but the retrieved set had no primary or official source, included mostly low-confidence snippet-only records, and the answer made unsupported comparative claims. The paired compact retry returned HTTP 500 `Plugin unloaded`, so that higher-budget pair is incomplete.
+
+For the security task, E4B full called `security_search` without a query or ecosystem; the tool correctly returned `invalid_semantic_value`, and the model truthfully stated that applicability could not be established. E4B compact supplied valid package, version, ecosystem, query, and goal arguments; no authoritative matching advisory was retrieved, and the model correctly did not infer that the package was safe. This is partial evidence of compact specialist reachability, not a completed vulnerability assessment. These runs preserve tool errors and evidence gaps as failures or inconclusive outcomes rather than passes.
+
+All native API trials restored `~/.lmstudio/mcp.json` to SHA-256
+`b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
+The remaining UI refresh and structured-content/text-fallback acceptance was
+not executable through the available UI automation in this environment; the
+LM Studio UI native pipe startup failed. M003 remains blocked until those UI
+checks and the larger-model specialist matrix are completed or explicitly
+re-scoped.

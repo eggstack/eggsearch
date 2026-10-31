@@ -19,17 +19,20 @@ fn schema_for(name: &str) -> serde_json::Value {
     serde_json::to_value(&tool.input_schema).expect("schema serializes")
 }
 
-fn compact_schema_for(name: &str) -> serde_json::Value {
+fn compact_tool_for(name: &str) -> rmcp::model::Tool {
     let mut config = AppConfig::default();
     config.mcp.schema_profile = McpSchemaProfile::Compact;
     let state = Arc::new(ServerState::build(config).expect("compact state"));
     let server = eggsearch::mcp::EggsearchServer::new(state);
-    let tool = server
+    server
         .tool_definitions()
         .into_iter()
         .find(|t| t.name.as_ref() == name)
-        .unwrap_or_else(|| panic!("tool {name} not found"));
-    serde_json::to_value(&tool.input_schema).expect("schema serializes")
+        .unwrap_or_else(|| panic!("tool {name} not found"))
+}
+
+fn compact_schema_for(name: &str) -> serde_json::Value {
+    serde_json::to_value(&compact_tool_for(name).input_schema).expect("schema serializes")
 }
 
 fn serialized_bytes(name: &str) -> usize {
@@ -129,6 +132,18 @@ fn web_search_hides_infrastructure_controls() {
         has_prop(&schema, "max_results"),
         "max_results must stay advertised"
     );
+}
+
+#[test]
+fn compact_web_fetch_explains_user_urls_and_bounded_extraction() {
+    let description = compact_tool_for("web_fetch")
+        .description
+        .expect("compact web_fetch description")
+        .to_string();
+    assert!(description.contains("search results or user input"));
+    assert!(description.contains("bounded extracted text"));
+    assert!(description.contains("batch_fetch"));
+    assert!(description.contains("do not search or crawl"));
 }
 
 #[test]

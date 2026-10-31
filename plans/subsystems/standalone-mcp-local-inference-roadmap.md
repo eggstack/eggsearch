@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference Efficiency Roadmap
 
-Status: active (M001, M002, M004, and M005 closed; M003 remains open on operational acceptance)
+Status: active (M001, M002, M004, and M005 closed; M003 remains open on operational acceptance; M006 compact direct-fetch corrective is active)
 Scope: eggsearch native MCP clients (LM Studio first), not CodeGG integration
 
 Long-term references: `plans/000-long-term-specification.md` ``1-4, 7-9; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`.
@@ -46,6 +46,7 @@ M001 compact ten-tool advertised schema profile (closed)
                   |
                   +-- operational --> M003 LM Studio/direct-client compatibility and quality (open acceptance)
                   +-- corrective --> M005 brief document extraction and paired requalification (closed)
+                  +-- corrective --> M006 compact direct-fetch tool-choice corrective (active)
 
 M004 compact schema discoverability corrective (closed on hosted Linux/macOS candidate de69f1d)
 ```
@@ -59,6 +60,7 @@ No CodeGG dependency; it is a regression consumer, not the implementation target
 | M003 | capability | `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md` | Verified LM Studio install/smoke, measured local-model context cost and completion quality, onboarding guides, and stop/rollback evidence |
 | M004 | capability | `plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md` | Advertise runtime-accepted research goal/domain values in compact schemas; test schema parity and size; repeat focused live tasks; M003 remains open for its broader gates |
 | M005 | corrective | `plans/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md` | Closed on `de69f1d`; brief preserves same-document extraction within budget; model evidence and unresolved M003 failures are recorded; hosted Linux/macOS/Windows gates pass |
+| M006 | corrective | `plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md` | Resolve or bound a repeated native LM Studio compact `web_fetch` no-call failure from M003; keep M003 open until evidence supports acceptance |
 
 ## Cross-cutting controls
 
