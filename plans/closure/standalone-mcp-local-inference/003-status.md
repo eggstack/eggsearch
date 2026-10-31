@@ -191,3 +191,67 @@ tool-result handling and refresh behavior, structured-content/text fallback,
 and the protected API smoke also remain open. No API authentication or MCP
 permission setting was changed. Keep M003 blocked until these criteria pass or
 are explicitly re-scoped by a future plan.
+
+## 8. LFM3-2B paired search and extraction trials
+
+The user authorized additional trials with `lfm3-2b-omni-abliter8`. LM Studio
+reported it loaded as a 2B Q4_K_M GGUF model with tool-use capability and a
+128,000-token context. As with §7, the model received tool schemas from the
+branch MCP stdio server through the OpenAI-compatible `/v1/chat/completions`
+endpoint; the harness executed tool calls through eggsearch and returned the
+MCP result. This measures local model turns and token usage, but is not LM
+Studio's native MCP API integration.
+
+### Search pair
+
+Both profiles received the same request to find the official Rust 1.90.0
+announcement, report two concrete changes, cite evidence and URLs, and
+distinguish the official source. Each profile first called `web_search` with
+`excerpt_count=5`, which runtime rejected because the maximum is 3. The model
+recovered with a second call using `excerpt_count=3` and completed its answer.
+
+| Profile | Actual usage (prompt + completion) | Calls / time | Result |
+|---|---:|---|---|
+| Full / diagnostic | 14,563 + 470 = 15,033 tokens | Two calls; 21.52 seconds | Correctly identified the Rust Blog as the official announcement, but cited `releases.rs` and Mastodon for the two changes, then mislabeled the official Rust Language Mastodon account as community discussion. Evidence/source classification was partial. |
+| Compact / brief | 8,718 + 352 = 9,070 tokens | Two calls; 13.15 seconds | Correctly named both changes and the official Rust Blog, but attributed the workspace-publishing claim to the `releases.rs` result, whose returned snippet did not establish that claim. Evidence attribution failed. |
+
+The successful full search result reported 10 DuckDuckGo results, zero
+Startpage results, and a Yahoo HTTP 500. The compact retry returned results
+without a provider failure. Both outputs therefore also show why provider
+failure evidence must be interpreted from each actual result rather than
+carried across paired runs.
+
+### Direct-fetch pair
+
+Both profiles received the same official Rust 1.90.0 URL and request for two
+changes with supporting evidence. Both made one valid `web_fetch` call and
+identified the LLD default change and Cargo workspace publishing. Each cited
+the official announcement URL. The text itself was not marked retrieval
+truncated in either result.
+
+| Profile | Fetch arguments | Actual usage (prompt + completion) | Result |
+|---|---|---:|---|
+| Full / diagnostic | Exact URL, `extract_mode=text`, `max_chars=2000` | 8,816 + 495 = 9,311 tokens; 11.56 seconds | Correct changes and official URL; grounded both in excerpts from the fetched announcement. |
+| Compact / brief | Exact URL and `extract_mode=text` | 4,962 + 418 = 5,380 tokens; 7.73 seconds | Correct changes and official URL with direct excerpts. Fetched text was 4,498 characters, over 800; `output_truncated=true` applied to outer projection metadata, while `truncated=false` for the fetched document. |
+
+These direct-fetch answers are a positive result for LFM3 on this task, not a
+general quality claim. Relative to full, compact used 3,931 fewer total
+prompt-plus-completion tokens (about 42.2%) in this one paired trial. This
+comparison is the local API's reported usage; it is separate from serialized
+MCP byte counts and from the LM Studio UI context meter.
+
+### Native MCP API route check
+
+The local server was started on eggsearch's documented loopback-only
+Streamable HTTP endpoint (`127.0.0.1:11320/mcp`). LM Studio's native REST
+`/api/v1/chat` with an `ephemeral_mcp` integration rejected that URL because
+dynamic remote MCP integrations allow only public addresses. No tunnel or
+public exposure was introduced.
+
+The LM Studio settings page showed “Allow per-request MCPs” on, “Require
+Authentication” off, and “Allow calling servers from mcp.json” disabled. The
+last setting requires authentication. The configured-server path is therefore
+not qualified; enabling it and creating an API token would change
+security-sensitive settings and require explicit operator participation.
+No such setting or credential was changed. The loopback server was stopped
+after the request.
