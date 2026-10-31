@@ -1,6 +1,6 @@
 # M003 — LM Studio Direct-MCP Qualification and Consumer Documentation
 
-Status: blocked (M001/M002 dependencies closed; interactive Gemma qualification is recorded, but model comparison, exact token attribution, API/host behavior checks, and quality issues remain; see `plans/closure/standalone-mcp-local-inference/003-status.md`)
+Status: blocked (M001/M002 dependencies closed; interactive and authenticated native API paths work, but larger-model paired tasks, profile-specific native API usage, UI refresh and result-shape characterization, and model-quality disposition remain incomplete; see `plans/closure/standalone-mcp-local-inference/003-status.md`)
 Primary class: capability
 Planning baseline: eggstack/eggsearch main `a666517c39adf28f32fad04198c74cb70d935c5b` (rebase baseline to exact M002 candidate at start)
 Roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

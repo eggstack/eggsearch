@@ -1,6 +1,6 @@
 # Standalone MCP Local-Inference M003 — Operational Status
 
-Status: blocked (interactive and authenticated native API paths are qualified, but the acceptance matrix is incomplete and documented model-quality failures require a corrective decision)
+Status: blocked (the live UI and authenticated native API paths work, but M003's host-contract characterization, broader paired task matrix, and documented quality failures remain unresolved)
 
 Source implementation plan:
 `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
@@ -8,7 +8,7 @@ Source implementation plan:
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 
-Implementation candidate exercised: `02a8af6fe4f87971c7daca7d1fca20c087b328ec`.
+Final implementation candidate exercised by the installed-child smoke and native API: `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` (`eggsearch 0.4.4`; M004/M005 changes included). Earlier interactive and model-turn evidence remains separately identified below.
 Predecessor closures: M001 `d983fa5`; M002 `plans/closure/standalone-mcp-local-inference/002-status.md`.
 
 ## 1. Current finding
@@ -22,6 +22,11 @@ reference model remains incomplete. Existing evidence does not establish
 that compact is a safe default: specialist research and direct-fetch tasks
 had material quality failures, and several runs timed out or exhausted the
 available context.
+
+The final candidate's installed-child stdio smoke passed on 2026-10-31:
+full exposed all ten tools in 72,923 serialized `tools/list` bytes, compact
+exposed the same ten in 19,281 bytes, and `provider_status` succeeded in both.
+These byte counts do not estimate LM Studio tokenizer usage.
 
 Model/server facts observed in LM Studio:
 
@@ -62,12 +67,12 @@ provide a reliable per-chat usage breakdown for this test set.
 | Copyable installed-binary `mcp.json` setup | `docs/lm-studio.md`; config temporarily pointed at branch release binary | pass | None for configuration syntax |
 | Windows/macOS/Linux paths and stdio logging contract | `docs/lm-studio.md` | pass | None for documentation |
 | Reproducible installed-candidate stdio smoke | `scripts/lm_studio_stdio_smoke.py` | pass | Offline protocol evidence only |
-| Ten tools and profile list sizes | Real initialized child-process smoke: 72,923 full / 18,545 compact bytes; all ten names; `provider_status` with probing off | pass | Measure model-tokenized attribution |
-| LM Studio tool visibility and interactive tool use | Full and compact chats each called `web_search`; compact also called `security_search`, `research_search`, and `web_fetch` | partial | Add more paired tasks and verify refresh/new-chat behavior explicitly |
-| Paired small/larger model comparison | One full/compact pair on Gemma E2B only | blocked | Run the same task matrix on a larger local reference model |
+| Ten tools and profile list sizes | Final-candidate initialized child-process smoke: 72,923 full / 19,281 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
+| LM Studio tool visibility and interactive tool use | Prior full/compact qualification chats called `web_search`; compact also called `security_search`, `research_search`, and `web_fetch`. The app rendered a `web_fetch mcp/eggsearch` result card. | partial | Verify refresh/new-chat behavior against the final candidate; determine whether the app consumes structured content, text fallback, or both |
+| Paired small/larger model comparison | Gemma E2B and Bonsai 27B received the same extraction task; Bonsai full timed out while compact completed. Additional same-task pairs are recorded for Gemma E2B and LFM3 2B. | partial | Complete specialist/research and fetch pairs on the larger model; interpret timeouts as failed trials |
 | Tool choice, argument validity, repairs, evidence and failure truthfulness | Five task records above | partial / quality concern | Investigate research argument retries, context overrun, and source classification; add paired specialist/fetch cases |
-| Exact tokenizer and prompt-token attribution | App context meter only; no per-chat token counts or tokenizer identifier | blocked | Capture host-injected prompt and response usage for each profile |
-| Output schema / structuredContent vs text fallback | Offline protocol coverage only | partial | Inspect actual LM Studio handling and compare a generic MCP inspector/client |
+| Exact tokenizer and prompt-token attribution | Native API reports 1,575 input / 113 output tokens for one configured-server call; UI still exposes only context-meter readings and no tokenizer identity | partial | Capture same-task API usage across both profiles and characterize UI attribution |
+| Output schema / structuredContent vs text fallback | Offline protocol coverage plus a successful rendered UI tool-result card and native API tool call | partial | Isolate which result representation the UI consumes; compare a generic MCP inspector/client if available |
 | Protected API MCP smoke | Authenticated native `/api/v1/chat` call through configured `mcp/eggsearch`, with only `web_fetch` allowed | pass | UI structured-content/text fallback and refresh behavior remain uncharacterized |
 | Config rollback | Restored original `~/.lmstudio/mcp.json`; `cmp` against backup succeeded | pass | None |
 
@@ -107,8 +112,9 @@ qualification.
 4. The authenticated native configured-server API smoke now passes; see §10.
    The user enabled authentication and “Allow calling servers from mcp.json.”
    UI structured-content/text fallback and refresh behavior remain untested.
-5. M004's hosted Linux/macOS/Windows canonical gate now passes on candidate
-   `755008c0a1da658835dd8f215d3b82bd1cb3dee5`; see its closure status. The
+5. M004 and M005 hosted Linux/macOS/Windows canonical gates pass on final
+   candidate `de69f1ddd7a7e4acc067fb9892c438f6165cfe83` in CI run
+   `41160264796`; see their closure records. The
    earlier local `bounded_command` stall did not reproduce in hosted CI.
 6. M003 remains blocked on broader domain coverage, LM Studio UI
    structured-content/refresh behavior, and remediation or explicit
@@ -120,11 +126,12 @@ qualification.
 The agent did not change API authentication, credentials, or MCP permission
 settings. The user enabled authentication and configured-server access after
 the earlier tests. The temporary global MCP config was restored and verified
-byte-identical to its pre-test backup. LM Studio interactive and native API
-qualification are recorded, but model comparison, exact token attribution,
-UI host behavior checks, and substantial live quality failures remain open.
-Do not claim a general LM Studio token-saving or quality win from the single
-paired task.
+byte-identical to its pre-test backup
+(`b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`). The
+live UI and native API paths work, but the larger-model task matrix, host
+refresh/structured-content behavior, and quality decision remain open. Do not
+claim a general LM Studio token-saving or quality win from these limited
+paired trials.
 
 ## 7. Paired local inference API measurements (M005)
 

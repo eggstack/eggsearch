@@ -85,10 +85,15 @@ Eggsearch's offline fixtures measure serialized schema and result sizes and
 exercise the MCP protocol. They do not establish LM Studio tokenizer counts,
 model-visible prompt inclusion, tool-choice quality, or end-to-end task
 success. Those require a live LM Studio chat with the actual local model. The
-current environment has LM Studio 0.4.26+4 and a tool-capable local model, but
-the API MCP smoke is blocked until the protected API setting above is enabled.
-Accordingly, the standalone inference workstream does not claim a measured
-LM Studio context or completion-quality improvement.
+recorded environment used LM Studio 0.4.26+4. After the user enabled
+authentication and configured-server access, a native `/api/v1/chat` request
+through `mcp/eggsearch` completed a `web_fetch` call and returned LM Studio's
+usage counters; see the M003 operational record for the task and limits. The
+interactive app also rendered an Eggsearch `web_fetch` result card. These
+smokes do not establish a general context or completion-quality improvement:
+the paired local-model trials include both successful tasks and quality
+failures, and host handling of `structuredContent` versus the text fallback
+has not been isolated.
 
 For configuration keys and bounds, see [Eggsearch configuration](config.md)
 and the [context-efficiency measurements](retrieval-quality-context-efficiency.md).
