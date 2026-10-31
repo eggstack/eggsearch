@@ -255,3 +255,22 @@ not qualified; enabling it and creating an API token would change
 security-sensitive settings and require explicit operator participation.
 No such setting or credential was changed. The loopback server was stopped
 after the request.
+
+## 9. Bearer-token probe with authentication disabled
+
+At the user's request, a loopback-only `POST /api/v1/chat` request included
+the supplied bearer token and the configured `mcp/eggsearch` integration. The
+request returned HTTP 403 with LM Studio's `Permission denied to use plugin
+'mcp/eggsearch'` error, directing the operator to allow plugin use in server
+configuration and ensure the token has the required permission. At the time of
+the probe, `Require Authentication` and `Allow calling servers from mcp.json`
+were both off; neither setting was changed. The token value is intentionally
+not recorded here.
+
+This establishes that supplying a bearer token alone does not bypass the
+disabled configured-server permission. Since authentication was off, the
+response does not establish whether LM Studio validated the token. The
+existing no-auth API clients were not interrupted. Enabling the authentication
+switch makes a valid token mandatory for every API request, according to LM
+Studio's server contract; existing no-auth clients would then need to supply a
+valid token too.
