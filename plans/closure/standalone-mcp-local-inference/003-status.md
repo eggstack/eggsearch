@@ -73,9 +73,9 @@ provide a reliable per-chat usage breakdown for this test set.
 | Reproducible installed-candidate stdio smoke | `scripts/lm_studio_stdio_smoke.py` | pass | Offline protocol evidence only |
 | Ten tools and profile list sizes | M006-candidate initialized child-process smoke: 72,923 full / 19,370 compact bytes; all ten names; `provider_status` with probing off | pass | Byte counts are not token counts |
 | Configured MCP API path | Authenticated native `/api/v1/chat` calls through configured `mcp/eggsearch`, with task-specific `allowed_tools`; exact config rollback hash recorded | pass | None for the tested local host; this verifies the model/API path, not LM Studio UI behavior |
-| Paired small-model comparison | §12-15 include direct fetch, web search, research, security applicability, PDF extraction, and a successful LFM3 browser-render pair | partial / mixed | Repeat research and browser tasks; improve compact warning interpretation and separate host failures from model outcomes |
-| Tool choice, argument validity, evidence and failure truthfulness | §12-14 include valid calls, wrong-tool selection, argument repair, weak evidence, extraction errors, provider failures, and API/browser failures | partial / quality concern | Improve consistency on research and exact applicability ranges; distinguish host failures from model failures |
-| Actual context/token reduction | LM Studio native API reports `input_tokens` including formatting, tool definitions, and prior messages; §12-14 record paired full/compact usage and tool-result lengths | pass for measured tasks | Repeat key pairs to estimate variability; no tokenizer identity or UI context meter is required |
+| Paired small-model comparison | §12-16 include direct fetch, web search, research, security applicability, PDF extraction, and a successful LFM3 browser-render pair | partial / mixed | Add further research/browser repeats; improve compact warning interpretation and separate host failures from model outcomes |
+| Tool choice, argument validity, evidence and failure truthfulness | §12-16 include valid calls, wrong-tool selection, argument repair, weak evidence, extraction errors, provider failures, and API/browser failures | partial / quality concern | Improve consistency on research and exact applicability ranges; distinguish host failures from model failures |
+| Actual context/token reduction | LM Studio native API reports `input_tokens` including formatting, tool definitions, and prior messages; §12-16 record paired full/compact usage and tool-result lengths | pass for measured tasks | Repeat key pairs to estimate variability; no tokenizer identity or UI context meter is required |
 | Eggsearch result contract | Offline MCP protocol tests cover structured results and text fallback; native API exposes returned tool output to the model | pass for Eggsearch contract | No host-specific result-shape or UI-consumption test is required |
 | Config rollback | Restored original `~/.lmstudio/mcp.json`; SHA-256 is `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c` | pass | None |
 
@@ -629,7 +629,34 @@ The compact-profile browser call succeeds on the exact M008 executable.
 M008 is closed at source commit `772a073fd40e9f044017b26bae18a6efd0724b1d`
 after hosted Linux/macOS/Windows CI. The full local `make check` attempt
 stalled in `bounded_command`, while the focused 20-test schema suite, release
-build, formatting, diff, and documentation checks passed. M003 remains active
-because research/security evidence quality is mixed and key specialist/browser
-tasks need repeats. Existing measured token reductions are per task and do not
-establish a general quality or reliability improvement.
+build, formatting, diff, and documentation checks passed. A further paired
+research trial is recorded in §16. M003 remains active because the model still
+overstates evidence authority on a version-specific claim, Gemma's security
+range remains incomplete, and browser warning interpretation needs more
+repeats. Existing measured token reductions are per task and do not establish
+a general quality or reliability improvement.
+
+## 16. Repeated LFM3 2B research-search pair
+
+The repeated task asked whether Rust 1.90 supports `cargo publish --workspace`
+and required version-specific evidence from official Rust release notes or
+Cargo documentation. LM Studio's local `/v1/chat/completions` API received the
+actual full or compact schemas for all ten tools. A local harness executed
+each model MCP call over stdio and returned the actual tool result for
+synthesis. Both profiles used `lfm3-2b-omni-abliter8`, temperature 0, the same
+system and user prompt, and the exact M008 release executable
+(`507724a14a1926488913a50b1864543f1e899d8a3df6e1b44d1a90dcc4110b43`).
+
+| Profile | Schema bytes | API input / output tokens | Calls and evidence | Outcome |
+|---|---:|---:|---|---|
+| Full / diagnostic | 68,736 | 87,721 / 689 | First `research_search` call used an invalid free-form goal; a valid repair then returned 101,607 characters. It included generic Cargo docs, an implementation repository, an issue, a development-cycle article, and a secondary article. | Answered yes, but falsely claimed the generic Cargo command page explicitly proved Rust 1.90 support. The version-specific evidence requirement failed. |
+| Compact / brief | 19,339 | 44,990 / 510 | One valid `research_search` call used `goal="architecture_decision"`; it then fetched a Cargo development-cycle post and an InfoWorld article. The brief result flagged truncation on fetched pages. | Answered yes and cited the secondary article's explicit statement, but claimed the Cargo docs and Rust blog independently confirmed the version-specific feature. The official-source requirement failed. |
+
+Compact reduced serialized schema bytes by 71.9% and API input tokens by
+48.7% for this pair. It reduced the research result from 101,607 to 15,969
+characters before its additional fetches, but the final answer still
+overstated what the primary evidence established. Full required an argument
+repair and also made the unsupported version claim. This repeated pair
+confirms that lower context and valid tool use do not guarantee evidence
+authority or version-specific accuracy. Keep M003 active; do not recommend
+compact as an unqualified default from these results.
