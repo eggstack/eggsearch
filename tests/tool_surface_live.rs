@@ -12,8 +12,8 @@ use eggsearch::mcp::state::ServerState;
 
 // Baseline re-measured after `repo_map` stopped advertising `providers`:
 // -98 definition bytes, -25 estimated tokens.
-const BASELINE_TOTAL_BYTES: i64 = 72939;
-const BASELINE_EST_TOKENS: i64 = 18235;
+const BASELINE_TOTAL_BYTES: i64 = 72906;
+const BASELINE_EST_TOKENS: i64 = 18227;
 const BASELINE_MAX_DESC: i64 = 186;
 const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 

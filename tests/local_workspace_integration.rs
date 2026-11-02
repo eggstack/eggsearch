@@ -106,6 +106,7 @@ async fn mode_off_repo_search_uses_local_workspace_without_remote_dispatch() {
             ecosystem: Some("crates_io".into()),
             package: Some("locality-fixture-package".into()),
             include_security_context: Some(true),
+            timeout_ms: Some(10_000),
             ..Default::default()
         },
     )

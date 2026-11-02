@@ -58,6 +58,8 @@ Current references: [Codex MCP CLI](https://developers.openai.com/codex/cli/mcp)
 
 ## Settings-file clients
 
+For direct local inference with LM Studio, see [LM Studio](lm-studio.md).
+
 Zed renders the current `context_servers` shape for its Settings Editor. Its
 settings are JSONC-capable and there is no stable registration CLI, so
 `--apply` intentionally remains print-only:

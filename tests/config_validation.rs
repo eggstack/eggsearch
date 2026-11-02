@@ -24,6 +24,38 @@ default_providers = ["duckduckgo"]
 }
 
 #[test]
+fn mcp_schema_profile_defaults_to_full_and_accepts_compact() {
+    use eggsearch::core::config::McpSchemaProfile;
+
+    assert_eq!(
+        AppConfig::default().mcp.schema_profile,
+        McpSchemaProfile::Full
+    );
+    let config: AppConfig = toml::from_str("[mcp]\nschema_profile = 'compact'\n").unwrap();
+    assert_eq!(config.mcp.schema_profile, McpSchemaProfile::Compact);
+    assert_eq!(config.mcp.brief_max_chars, 8_000);
+}
+
+#[test]
+fn brief_character_budget_is_bounded() {
+    let mut config = AppConfig::default();
+    config.mcp.brief_max_chars = 511;
+    assert!(config
+        .validate()
+        .unwrap_err()
+        .to_string()
+        .contains("brief_max_chars"));
+    config.mcp.brief_max_chars = 8_000;
+    assert!(config.validate().is_ok());
+    config.mcp.brief_max_chars = 32_001;
+    assert!(config
+        .validate()
+        .unwrap_err()
+        .to_string()
+        .contains("brief_max_chars"));
+}
+
+#[test]
 fn unknown_toml_search_key_is_silently_ignored() {
     let toml = r#"
 [search]

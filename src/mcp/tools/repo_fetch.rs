@@ -83,7 +83,7 @@ pub struct RepoFetchArgs {
     /// from the local workspace instead of fetching remotely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefer_local: Option<bool>,
-    /// Response detail: compact, standard, or diagnostic (default diagnostic).
+    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
@@ -118,9 +118,18 @@ pub async fn run_repo_fetch_with_host_scope(
     // --- workspace:// local file fetch (bypasses fetch policy) ---
     if let Some(ref h) = args.host {
         if h.to_lowercase() == "workspace" {
-            let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+            let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
+                args.response_detail,
+                state.config.mcp.schema_profile,
+            );
+            let max_chars = state.config.mcp.brief_max_chars;
             let value = run_workspace_fetch(state, args, local_view).await?;
-            return Ok(crate::mcp::projection::project("repo_fetch", value, detail));
+            return Ok(crate::mcp::projection::project_with_budget(
+                "repo_fetch",
+                value,
+                detail,
+                max_chars,
+            ));
         }
     }
 
@@ -143,8 +152,11 @@ pub async fn run_repo_fetch_with_host_scope(
                 );
                 if let Some(rid) = matched {
                     // Redirect to workspace fetch using the matched root
-                    let detail =
-                        crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
+                    let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
+                        args.response_detail,
+                        state.config.mcp.schema_profile,
+                    );
+                    let max_chars = state.config.mcp.brief_max_chars;
                     let ws_args = RepoFetchArgs {
                         host: Some("workspace".to_string()),
                         owner: rid.root_name.clone(),
@@ -168,7 +180,12 @@ pub async fn run_repo_fetch_with_host_scope(
                         response_detail: None,
                     };
                     let value = run_workspace_fetch(state, ws_args, local_view).await?;
-                    return Ok(crate::mcp::projection::project("repo_fetch", value, detail));
+                    return Ok(crate::mcp::projection::project_with_budget(
+                        "repo_fetch",
+                        value,
+                        detail,
+                        max_chars,
+                    ));
                 }
                 if host_local_scope.is_some() {
                     return Err(ToolError::Validation(
@@ -605,8 +622,16 @@ pub async fn run_repo_fetch_with_host_scope(
 
             let value = serde_json::to_value(&fetch_response)
                 .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
-            let detail = crate::mcp::projection::ResponseDetail::from_opt(args.response_detail);
-            Ok(crate::mcp::projection::project("repo_fetch", value, detail))
+            let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
+                args.response_detail,
+                state.config.mcp.schema_profile,
+            );
+            Ok(crate::mcp::projection::project_with_budget(
+                "repo_fetch",
+                value,
+                detail,
+                state.config.mcp.brief_max_chars,
+            ))
         }
         Err(e) => Err(ToolError::internal(format!("{}: {}", e.error_code(), e))),
     }

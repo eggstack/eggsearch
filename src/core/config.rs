@@ -93,6 +93,39 @@ pub enum Mode {
     Live,
 }
 
+#[derive(
+    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+#[allow(missing_docs)]
+pub enum McpSchemaProfile {
+    #[default]
+    Full,
+    Compact,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[allow(missing_docs)]
+pub struct McpSection {
+    #[serde(default)]
+    pub schema_profile: McpSchemaProfile,
+    #[serde(default = "default_brief_max_chars")]
+    pub brief_max_chars: usize,
+}
+
+fn default_brief_max_chars() -> usize {
+    8_000
+}
+
+impl Default for McpSection {
+    fn default() -> Self {
+        Self {
+            schema_profile: McpSchemaProfile::Full,
+            brief_max_chars: default_brief_max_chars(),
+        }
+    }
+}
+
 impl Mode {
     /// Parse a mode string. Only `"off"` and `"live"` are accepted; `"ask"`
     /// is a host-level policy and is not a valid value at this layer.
@@ -862,6 +895,9 @@ pub struct AppConfig {
     /// Optional `[egress]` section for listener-free outbound proxy-chain routing.
     #[serde(default)]
     pub egress: EgressSection,
+    /// Optional MCP presentation settings.
+    #[serde(default)]
+    pub mcp: McpSection,
 }
 
 impl AppConfig {
@@ -1155,6 +1191,11 @@ impl AppConfig {
     /// rather than silently degrading behavior.
     pub fn validate(&self) -> CoreResult<()> {
         self.validate_search_profiles()?;
+        if !(512..=32_000).contains(&self.mcp.brief_max_chars) {
+            return Err(CoreError::Config(
+                "[mcp].brief_max_chars must be between 512 and 32000".to_string(),
+            ));
+        }
         if self.fetch.max_chars_cap < self.fetch.max_chars_default {
             return Err(CoreError::Config(format!(
                 "[fetch].max_chars_cap ({}) must be >= [fetch].max_chars_default ({})",

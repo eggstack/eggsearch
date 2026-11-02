@@ -38,8 +38,8 @@ falls back to `default_config_path()` otherwise, then delegates to
 
 ## Section / Field Map
 
-Root type `AppConfig` holds four sections: `search`, `fetch`,
-`local`, `egress`. Each section field on `AppConfig` carries
+Root type `AppConfig` holds five sections: `search`, `fetch`,
+`local`, `egress`, `mcp`. Each section field on `AppConfig` carries
 `#[serde(default)]`, so an omitted table inherits production defaults.
 Within a section, only fields with their own `#[serde(default = ...)]`
 are optional: every `[fetch]`, `[local]`, and `[egress]` field is
@@ -165,6 +165,22 @@ environment variable. Raw passwords are never a config field, and
 `password_env` requires a non-empty `username`. An enabled route on a
 binary built without the `egress` feature fails validation instead of
 being silently ignored.
+
+### `[mcp]` — `McpSection`
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `schema_profile` | `McpSchemaProfile` | `full` | `full` advertises the existing complete schemas; `compact` keeps all ten tool names while shortening descriptions and input schemas for context-heavy direct MCP clients |
+| `brief_max_chars` | `usize` | `8000` | Maximum serialized character count for brief MCP responses, bounded to 512–32000 |
+
+The compact profile is process-wide presentation configuration, shared by
+stdio and loopback HTTP. It does not restrict tool execution or change
+argument validation. Extra accepted properties remain callable. Compact
+advertisement omits `outputSchema` metadata; tool responses continue to use
+the same handlers. Omitted `response_detail` remains `diagnostic` under
+`full` and becomes `brief` under `compact`; explicit per-call values win.
+The default `full` profile keeps the existing advertisement and response
+behavior unchanged.
 
 ---
 
