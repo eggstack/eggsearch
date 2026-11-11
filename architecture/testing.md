@@ -9,7 +9,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 
 ## Suite count and layout
 
-`tests/*.rs` holds 79 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
+`tests/*.rs` holds 80 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
 
 | Location | Purpose |
 |----------|---------|
@@ -21,7 +21,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
-| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus + ignored live observation |
+| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate; ignored live observation and recorder |
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
 | `src/**/mod.rs` unit tests | Private-function coverage at the bottom of the source file |
@@ -36,15 +36,15 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | Suite | Contract |
 |-------|----------|
 | `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs) |
-| `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds |
+| `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds, derived-intent reporting/applied reranking, search-result cache and coalescing equivalence |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
-| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, CodeGG parity qualification journeys |
+| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |
 | `security_workflow` | Advisory retrieval, applicability assessment, safety handling |
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
-| `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls |
+| `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |
 | `batch_fetch_retrieval` | Mixed focused/unfocused batch, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
 | `provider_request_contract` | `EngineSearchRequest` fidelity, date/domain validation, wire compression behavior |
 | `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
@@ -54,7 +54,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `fetch_safety` | URL validation and SSRF prevention at the fetch boundary |
 | `forge_adapter` | Forge endpoint validation, redirect policy, URL construction from the resolved ref (`resolved_ref_name`) |
 | `local_workspace_integration`, `inventory_freshness`, `retrieval_attempt_ledger`, `evidence_bundle_handoff`, `evidence_integration` | Workspace, inventory lifecycle, ledger validation, bundle pipeline |
-| `config_validation`, `docs_config_snippets` | Config rules and doc snippet validity |
+| `config_validation`, `docs_config_snippets` | Config rules (including search-cache bounds) and doc snippet validity |
 | `exa`, `tavily`, `firecrawl_developer` | Provider-specific adapter behavior |
 | `security_applicability_regression`, `security_applicability_corpus`, `security_applicability_contract` | Applicability pipeline regression, corpus, and contract |
 | `research_evidence_corpus`, `research_semantic_roles` | Research evidence regression and role mapping |
@@ -236,6 +236,17 @@ offline. Its ignored live observation uses the existing `web_search` path and
 requires explicit query/provider allowlists plus separate billing
 acknowledgement; methodology and limitations are in
 `docs/retrieval-quality-benchmark.md`.
+
+The same suite owns the candidate-snapshot lane: `candidate_snapshots.json`
+carries optional `provider_lists` that replay through
+`adapter/selection.rs::select()`, the production sequence, so a fusion, dedup,
+or rerank change produces a metric delta. `recorded_snapshots.json` is the small
+committed recorded tier, and an `#[ignore]`d recorder writes larger snapshots
+under `target/snapshots/` only. Three seeded negative controls (degenerate RRF
+constant, dedup disabled, truncate-before-rerank) must each degrade their
+asserted metric; a harness that cannot fail is rejected. The derived-intent
+rollout gate compares `intent=web` against derived intent over the same corpus
+and fails if the recorded decision and the switch disagree.
 
 ```bash
 cargo test --locked --features mock --test retrieval_quality

@@ -75,9 +75,9 @@ fetch ↗
 | Component | Location | One-line Responsibility | Deep Dive |
 |-----------|----------|-------------------------|-----------|
 | Core domain types | `src/core/` (38 files) | Pure data model: source cards, config, identity, sanitization, evidence types. No HTTP, no engines | [core.md](core.md) |
-| Metasearch adapter | `src/meta/` (33 top-level files plus `adapter/`, `dependency_parse/`, `dispatch/`, `engines/`, `forge_adapter/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
+| Metasearch adapter | `src/meta/` (36 top-level files plus `adapter/`, `dependency_parse/`, `dispatch/`, `engines/`, `forge_adapter/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
 | Vendored search engines | `src/meta/engines/` (49 files: 43 per-provider + 6 support modules) | 43 engine structs covering 43 of 44 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, structured API, API key, advisory, registry, scholarly, source-specific | [engines.md](engines.md) |
-| HTTP fetch pipeline | `src/fetch/` (11 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
+| HTTP fetch pipeline | `src/fetch/` (13 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, representation negotiation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#9-browser-rendering-browser-8-files-feature-browser) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#6-render-subsystem-render-8-files) |
 | MCP server & tools | `src/mcp/` (7 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
@@ -130,7 +130,7 @@ Wraps all search behind `MetadataSearchAdapter`; callers never touch engines dir
 
 - Planners turn each tool's request into subqueries (generic, repo, security, research, exact-error)
 - `dispatch/` (bounded parallel executor) fans out subqueries with priority queue, per-provider caps, panic recovery
-- `adapter/` (`web`/`repo`/`research`/`security`/`advisory` paths plus `execution`, `normalization`, `builders`, `status`) builds dispatch jobs and converts results to `SourceCard`
+- `adapter/` (`web`/`repo`/`research`/`security`/`advisory` paths plus `execution`, `normalization`, `selection`, `builders`, `status`) builds dispatch jobs, runs the single post-dispatch selection sequence, and converts results to `SourceCard`
 - `grouping.rs` plus domain groupers deduplicate via reciprocal rank fusion (RRF)
 - Evidence postprocessing assigns roles, computes coverage, detects conflicts, records retrieval attempts
 - Forge adapter (GitHub/GitLab/Gitea APIs), dependency parsers (19 files: `mod` + `status` + one per ecosystem), package resolver, local workspace backend + inventory cache

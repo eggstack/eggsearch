@@ -130,6 +130,24 @@ pub struct FetchRenderMetadata {
     /// Detected programming language or content language, if known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detected_language: Option<String>,
+    /// Token estimate reported by the origin in the `x-markdown-tokens`
+    /// header. Only present when a negotiating origin sent a parseable
+    /// integer.
+    #[serde(
+        default,
+        rename = "x-markdown-tokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub markdown_tokens: Option<usize>,
+    /// Token estimate for the origin's original representation, from the
+    /// `x-original-tokens` header. Only present when a negotiating origin
+    /// sent a parseable integer.
+    #[serde(
+        default,
+        rename = "x-original-tokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub original_tokens: Option<usize>,
 }
 
 /// An entry in the document outline (table of contents).

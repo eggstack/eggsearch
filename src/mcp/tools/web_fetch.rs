@@ -69,6 +69,7 @@ pub async fn run_web_fetch(
     args: WebFetchArgs,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::fetch::ExtractMode;
+    use crate::fetch::accept::select_accept_policy;
     use crate::fetch::cache::{
         build_raw_cache_key, build_raw_response_hash, should_cache_response, CacheScope,
         CacheStatus, FetchCacheMetadata,
@@ -274,6 +275,8 @@ pub async fn run_web_fetch(
         .unwrap_or(state.config.fetch.max_chars_default)
         .min(state.config.fetch.max_chars_cap);
 
+    let target_accept_policy = select_accept_policy(trimmed_url, extract_mode);
+
     let caller_max_age = args
         .max_cache_age_seconds
         .map(std::time::Duration::from_secs);
@@ -290,7 +293,7 @@ pub async fn run_web_fetch(
     let mut cached_response: Option<crate::core::fetch::WebFetchResponse> = None;
     if cache_policy != crate::core::fetch::FetchCachePolicy::Bypass {
         if let Some(ref cache) = state.fetch_cache {
-            let raw_key = build_raw_cache_key(trimmed_url, &scope);
+            let raw_key = build_raw_cache_key(trimmed_url, &scope, target_accept_policy);
             if let Some(raw_entry) = cache.get_raw(&raw_key).await {
                 let browser_cache_allowed = {
                     #[cfg(feature = "browser")]
@@ -394,7 +397,14 @@ pub async fn run_web_fetch(
                                     &raw_entry.validators,
                                 );
                             if !conditional.is_empty() {
-                                match client.fetch_conditional(trimmed_url, &conditional).await {
+                                match client
+                                    .fetch_conditional(
+                                        trimmed_url,
+                                        &conditional,
+                                        raw_key.accept_policy,
+                                    )
+                                    .await
+                                {
                                     Ok((304, reval_headers, _, _)) => {
                                         metadata.cache_status = CacheStatus::Revalidated;
                                         let mut updated_freshness = raw_entry.freshness.clone();
@@ -798,7 +808,7 @@ pub async fn run_web_fetch(
         }
     };
 
-    metadata.attempt_count = attempt_count;
+    metadata.attempt_count = attempt_count + resp.attempt_count.unwrap_or(1).saturating_sub(1);
     metadata.retry_after_ms = retry_after_ms;
 
     if cache_policy == crate::core::fetch::FetchCachePolicy::Bypass {
@@ -820,7 +830,11 @@ pub async fn run_web_fetch(
     if metadata.cache_status == CacheStatus::Miss || metadata.cache_status == CacheStatus::Bypassed
     {
         if let Some(ref cache) = state.fetch_cache {
-            let raw_key = build_raw_cache_key(trimmed_url, &scope);
+            let raw_key = build_raw_cache_key(
+                trimmed_url,
+                &scope,
+                resp.accept_policy.unwrap_or(target_accept_policy),
+            );
             let raw_body_bytes = resp.raw_body.as_deref().unwrap_or(&[]);
             let raw_hash = build_raw_response_hash(raw_body_bytes);
 
@@ -934,6 +948,7 @@ pub async fn run_web_fetch(
         "title": resp.title,
         "description": resp.description,
         "content_type": resp.content_type,
+        "representation": resp.representation,
         "status": resp.status,
         "fetched": resp.fetched,
         "truncated": resp.truncated,

@@ -306,7 +306,7 @@ pub async fn probe_providers(
                     }
                 }
                 Ok(Ok(Ok(results))) => {
-                    health.record_success(&id, latency_ms);
+                    health.record_success(&id, latency_ms, results.len());
                     ProviderProbeOutcome {
                         provider_id: id.clone(),
                         attempted: true,

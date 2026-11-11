@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "corpus_revision": "candidate-snapshots-recorded-v1",
+  "tier": "recorded_real",
+  "provenance": "Recorded-real candidate snapshots. Empty until the opt-in live recorder populates it. Each recorded case stores the source provider, the query, the UTC observation date, and per-provider ranks, titles, and normalized URLs only; page bodies are never stored. No case is fabricated: if the recorder cannot reach live dispatch it fails instead of writing a file.",
+  "annotation_uncertainty": "Recorded provider order is not relevance truth. Cases must carry hand-adjudicated relevant_documents written without reading the recorded rank order; until then judgments_complete is false and the case is reported as unjudged.",
+  "pending": "Populate with cargo test --locked --features mock --test retrieval_quality -- --ignored retrieval_quality_candidate_snapshot_recorder and an EGGSEARCH_RETRIEVAL_SNAPSHOT_OUT path under target/snapshots/, then adjudicate the gold set and commit a trimmed copy here.",
+  "cases": []
+}

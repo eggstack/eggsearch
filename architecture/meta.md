@@ -37,6 +37,8 @@ Behavior splits by file with stable `adapter::X` paths:
 | `adapter/advisory.rs` | `lookup_advisory_scoped()`, `query_advisories_by_package_scoped()` native advisory ops |
 | `adapter/execution.rs` | `dispatch_subqueries()`, failure/warning helpers |
 | `adapter/normalization.rs` | RRF, `SourceCard` conversion, reranking, domain filter |
+| `adapter/selection.rs` | The single post-dispatch selection sequence (`select()`, `SelectionParams`); `web_search` and the snapshot harness both call it |
+| `adapter/search_cache.rs` | Not a separate file: the cache lives in `src/meta/search_cache.rs` |
 | `adapter/builders.rs` | `build_default_engines()` engine construction |
 | `adapter/status.rs` | `record_provider_health()`, `provider_status()` |
 | `adapter/error.rs` | `ErrorClass`, `classify()`, skip-code helpers |
@@ -103,6 +105,36 @@ Priorities are assigned at the adapter layer (`repo_subquery_priority`, `researc
 
 Planners are pure: no network, no engines, no health writes. Redaction, stack-frame truncation, and missing-signal warnings (`no_exact_phrase`, `no_structured_signals`) are planner output, not dispatch behavior.
 
+### Derived intent (`src/meta/intent.rs`)
+
+`web_search` may omit `intent`. Rather than requiring a new argument, the adapter derives it
+deterministically from the query when the caller supplied none:
+
+```rust
+derive_intent(query: &str, hints: &RepoQueryHints) -> DerivedIntent { intent, reasons, confidence }
+```
+
+Fixed precedence, first match wins, evaluated over at most the first 512 characters: error shapes
+(compiler codes, panic/traceback markers, stack frames) → security advisory identifiers and
+vulnerability vocabulary → dependency/version syntax → migration/upgrade → comparison →
+release/changelog → issue/pull-request → code-shaped tokens and parsed repo hints → documentation
+vocabulary → news/recency → fallback `web` with reason `no_signal`. Reason codes are stable
+snake-case strings; patterns compile once (`LazyLock`) and the function is pure — no clock, network,
+randomness, or inference.
+
+Ownership boundary: **the planner never consumes derived intent.** `build_search_plan()` keeps
+receiving `req.intent` verbatim, so `generic_query` and `provider_queries` are byte-identical to a
+call that omitted intent before derivation existed. Derived intent is consumed only by
+`apply_intent_reranking` (and reported in the response), and only when the caller omitted `intent`.
+An explicit `intent` is authoritative and suppresses `derived_intent`/`derived_intent_reasons`
+entirely.
+
+`APPLY_DERIVED_INTENT_TO_RERANKING` in `src/meta/intent.rs` is the recorded rollout decision. It is
+`true`: the tier-1 candidate-snapshot lane showed +0.136 recall@5, +0.076 MRR@5, +0.176 nDCG@5, and
++0.176 authoritative survival with no aggregate or per-case regression, so derived intent feeds
+reranking. `tests/retrieval_quality.rs::derived_intent_rollout_gate_matches_the_recorded_decision`
+recomputes that comparison and fails if the switch is flipped without matching evidence.
+
 ---
 
 ## 4. Bounded dispatch
@@ -123,13 +155,24 @@ Planners are pure: no network, no engines, no health writes. Redaction, stack-fr
 
 `DispatchConfig { candidate_limit, global_timeout, max_concurrent_jobs, max_concurrent_per_provider }` defaults to 30 / 8 s / 8 / 2; production values come from `AppConfig` (`multiquery_concurrency`, `multiquery_provider_concurrency`) and the per-call `candidate_pool_size()` / `effective_timeout()`. Concurrency floors at 1 to avoid deadlock.
 
-`adapter/error.rs::ErrorClass` is the wire taxonomy: `timeout`, `http_status`, `parse_error`, `network_error`, `rate_limited` (HTTP 429 only), `panic` (dispatch panic string), `unknown` (unsupported). `classify()` maps `EngineError` variants; `provider_diagnostics.rs::FailureClass` mirrors it for health recording. Human warnings always pair the class with the message (`[rate_limited] …`); `ProviderFailure` carries the same pair machine-readably.
+`adapter/error.rs::ErrorClass` is the wire taxonomy: `timeout`, `http_status`, `parse_error`, `blocked`, `network_error`, `rate_limited` (HTTP 429 only), `panic` (dispatch panic string), `unknown` (unsupported). `classify()` maps `EngineError` variants; `provider_diagnostics.rs::FailureClass` mirrors it for health recording, including `blocked` (challenge or consent interstitial, rate-limit cooldown). Human warnings always pair the class with the message (`[rate_limited] …`); `ProviderFailure` carries the same pair machine-readably.
 
 ---
 
 ## 5. Adapter execution paths
 
-- **Web (`adapter/web.rs`).** Candidate pool sizing (`candidate_pool_size`: 3× final, clamped by cap; doubled when domain filters are present), per-engine `EngineSearchRequest::from_web_request()`, JoinSet fan-out, health + attempt recording, excerpt clearing when demand is zero, `aggregate_rrf`, `convert_aggregated`, local domain post-filter, `apply_intent_reranking`, truncate, capability-enforcement telemetry + warnings, `materialize_evidence_roles()` + `postprocess()`.
+- **Web (`adapter/web.rs`).** Optional process-local search-result cache and single-flight coalescing (`search_cache.rs`, `web_search` only), candidate pool sizing (`candidate_pool_size`: 3× final, clamped by cap; doubled when domain filters are present), per-engine `EngineSearchRequest::from_web_request()`, JoinSet fan-out, health + attempt recording, excerpt clearing when demand is zero, then the shared selection sequence in `adapter/selection.rs::select()`: `aggregate_rrf`, `convert_aggregated`, local domain post-filter, `apply_intent_reranking`, truncate, followed by capability-enforcement telemetry + warnings, `materialize_evidence_roles()` + `postprocess()`.
+
+  A cache hit or coalesced follower skips the fan-out and provider health recording, then replays everything
+  after it (selection, attempts ledger, warnings, telemetry, postprocessing) from the cached raw
+  per-provider lists, so a hit is byte-identical to a fresh call for the same key. Nothing is cached
+  unless the fan-out completed with zero provider failures and no deadline-interrupted provider. The
+  cache key is an FNV-1a digest over a `eggsearch-search-cache-v1` domain prefix and the normalized
+  query, sorted provider list, caller intent, freshness, date range, domains, language, region, safe
+  search, effective result and candidate bounds, and excerpt demand. A follower shares the leader's
+  deadline. Diagnostics live in `provider_status()` as `search_cache { entries, hits, misses,
+  coalesced, bypassed, evictions }`. Only `web_search` is cached; the domain workflows keep their own
+  subquery and freshness semantics.
 - **Repo (`adapter/repo.rs`).** Package resolution first (bounded client, deterministic fallback on failure), then either the error planner or `build_repo_search_plan_with_package()`. Multi-query `dispatch_subqueries()` with `RepoScope`, `RetrievalAttemptSet` capture, local-workspace merge (budget `local_result_budget`, inventory match, dirty-state warnings, +50 score boost for matched checkouts), `group_results_with_hints()`, optional exact-error rerank, `generate_suggested_fetches()`, capability/deadline/package warnings, role materialization, workflow-model resolution, `postprocess()`.
 - **Research (`adapter/research.rs`).** Plan → prioritized dispatch with precomputed `intended_roles_for_research_source_type()` → `aggregate_source_cards()` → `group_research_results()` → `apply_diversity_caps()` → `generate_research_suggested_fetches()` → workflow context + telemetry + `analyze_research_evidence()` (claims/conflicts/quality/gaps) → `postprocess()`.
 - **Security (`adapter/security.rs` + `security_search.rs`).** `security_search_subqueries()` runs `advisory` / `vendor` / `defensive` lanes through the shared dispatcher and returns cards + warnings + failures + attempts. `security_search.rs` adds native advisory lookups under `NativeOperationBudget` (32 identifiers / 64 provider ops), KEV enrichment, applicability assessment, severity filtering, grouping, and suggested fetches.
@@ -140,7 +183,7 @@ Shared execution helpers (`adapter/execution.rs`): `aggregate_source_cards()`, `
 
 ### Response and warning shapes
 
-- `response.rs::WebSearchResponse { query, mode: "live_metasearch", results, providers_queried, providers_failed, warnings, trust_markers, evidence_postprocess, capability_enforcement }`. Domain responses (`RepoSearchResponse`, `ResearchSearchResponse`, `SecuritySearchResponse` in `src/core/`) mirror it with groups, suggested fetches, telemetry, and coverage fields.
+- `response.rs::WebSearchResponse { query, mode: "live_metasearch", results, providers_queried, providers_failed, warnings, trust_markers, evidence_postprocess, capability_enforcement, derived_intent, derived_intent_reasons }`. `derived_intent`/`derived_intent_reasons` are present only when the caller omitted `intent`; the planner ignores them. Domain responses (`RepoSearchResponse`, `ResearchSearchResponse`, `SecuritySearchResponse` in `src/core/`) mirror it with groups, suggested fetches, telemetry, and coverage fields.
 - Capability warnings derive from `CapabilityEnforcementTelemetry`, never ad hoc: `safe_search_unenforced`, `freshness_unenforced`, `date_range_unenforced`, `language_unenforced`, `region_unenforced`, `domain_filters_local`, plus intent-specific `native_*_unavailable` when no selected engine advertises the needed flag.
 - Deadline warnings (`request_deadline_exceeded` with interrupted/skipped counts) and `scope_unindexed` warnings are additive; every response also carries the `generic_context_untrusted` marker.
 
@@ -148,9 +191,12 @@ Shared execution helpers (`adapter/execution.rs`): `aggregate_source_cards()`, `
 
 ## 6. Grouping, RRF dedup, local domain post-filter
 
-`adapter/normalization.rs` owns the shared math; domain groupers own classification:
+`adapter/normalization.rs` owns the shared math; domain groupers own classification;
+`adapter/selection.rs::select()` is the only implementation of the post-dispatch sequence, and both
+`web_search` and the mock-gated snapshot harness (`adapter/selection_test_harness.rs`) call it:
 
-- `aggregate_rrf()` (RRF_K = 60): sorts engines by ID, normalizes URLs via `engines/normalizer`, accumulates `Σ 1/(60 + rank)`, merges snippets/excerpts (score-ordered, normalized-text dedup, hard caps), keeps the first valid `published_at`, merges structured metadata without letting `ResultMetadata::None` clobber issue/release/advisory rows. Final sort is score desc, then title, then URL (deterministic ties).
+- `aggregate_rrf()` (RRF_K = 60): sorts engines by ID, normalizes URLs via `engines/normalizer`, accumulates `Σ 1/(60 + rank)`, merges snippets/excerpts (score-ordered, normalized-text dedup, hard caps), keeps the first valid `published_at`, merges structured metadata without letting `ResultMetadata::None` clobber issue/release/advisory rows. Final sort is score desc, then title, then URL (deterministic ties); the dedup map drains in ascending normalized-key order so exact ties never depend on hash iteration.
+- `aggregate_rrf_with(..., rrf_k, dedup)` is the same algorithm with explicit knobs. Production always passes `SelectionParams::production()` (RRF_K, dedup on, truncate after rerank); the snapshot harness passes alternatives to seed the three negative controls through the same code path, never a copy.
 - `convert_aggregated()` drops empty/non-HTTP URLs, classifies `SourceKind`/code metadata, assigns deterministic FNV-1a `source_id`, sanitizes title/snippet/excerpts through `sanitize_field()`, attaches `RankReason`s (`RrfMultiProvider`, native-search markers), and computes card quality.
 - `candidate_pool_size()` over-fetches (3×) so reranking can promote just-outside-window hits.
 - `apply_domain_filters()` runs after aggregation, before truncation: normalize filter domains, drop non-matching hosts. Provider-native filtering stays separate (telemetry); this step is always local approximation (`domain_filters_local` warning).

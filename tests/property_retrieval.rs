@@ -1419,3 +1419,68 @@ fn e13_next_actions_avoid_identical_failed_provider_query() {
         "missing required role with failed attempt must be indeterminate"
     );
 }
+
+#[cfg(feature = "mock")]
+mod derived_intent_properties {
+    use proptest::prelude::*;
+
+    const INTENTS: [&str; 7] = [
+        "web", "docs", "code", "issues", "releases", "security", "news",
+    ];
+
+    fn query_strategy() -> impl Strategy<Value = String> {
+        prop_oneof![
+            "[ -~]{0,120}",
+            "[a-zA-Z0-9:_/.#@^<>=~ -]{0,300}",
+            "[ -~]{500,700}",
+            (
+                prop::sample::select(vec![
+                    "CVE-2024-1234",
+                    "E0277",
+                    "serde == 1.0.200",
+                    "migrate",
+                    "vim vs emacs",
+                    "changelog",
+                    "pull request",
+                    "Router::layer",
+                    "repo:tokio-rs/axum",
+                    "documentation",
+                    "latest news",
+                ]),
+                "[ -~]{0,40}"
+            )
+                .prop_map(|(signal, tail)| format!("{signal} {tail}")),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn derivation_is_deterministic(query in query_strategy()) {
+            let first = eggsearch::selection_test::derive_intent(&query);
+            let second = eggsearch::selection_test::derive_intent(&query);
+            prop_assert_eq!(first.clone(), second);
+        }
+
+        #[test]
+        fn text_past_the_query_limit_cannot_change_the_classification(query in query_strategy()) {
+            let limit = eggsearch::selection_test::max_classified_query_chars();
+            let bounded: String = query.chars().take(limit).collect();
+            prop_assert_eq!(
+                eggsearch::selection_test::derive_intent(&query),
+                eggsearch::selection_test::derive_intent(&bounded)
+            );
+        }
+
+        #[test]
+        fn every_result_reports_a_valid_intent_and_snake_case_reasons(query in query_strategy()) {
+            let derived = eggsearch::selection_test::derive_intent(&query);
+            prop_assert!(INTENTS.contains(&derived.intent.as_str()));
+            prop_assert!(!derived.reasons.is_empty());
+            for reason in &derived.reasons {
+                prop_assert!(!reason.is_empty());
+                prop_assert!(reason.chars().all(|c| c.is_ascii_lowercase() || c == '_'));
+            }
+            prop_assert!(matches!(derived.confidence, "high" | "medium" | "low"));
+        }
+    }
+}

@@ -544,6 +544,65 @@ fn compact_reports_conflicts_via_indicator() {
 }
 
 #[test]
+fn derived_intent_detail_levels_are_explicit() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let mut payload = web_payload(json!([card("a", 0, 0)]), json!([]), summary);
+    payload["derived_intent"] = json!("docs");
+    payload["derived_intent_reasons"] = json!(["docs_vocabulary"]);
+
+    let diagnostic = project("web_search", payload.clone(), ResponseDetail::Diagnostic);
+    assert_eq!(diagnostic["derived_intent"], "docs");
+    assert_eq!(
+        diagnostic["derived_intent_reasons"],
+        json!(["docs_vocabulary"])
+    );
+
+    let standard = project("web_search", payload.clone(), ResponseDetail::Standard);
+    assert_eq!(standard["derived_intent"], "docs");
+    assert_eq!(
+        standard["derived_intent_reasons"],
+        json!(["docs_vocabulary"])
+    );
+
+    let compact = project("web_search", payload.clone(), ResponseDetail::Compact);
+    assert_eq!(compact["derived_intent"], "docs");
+    assert!(
+        compact.get("derived_intent_reasons").is_none(),
+        "compact keeps the intent string only: {compact}"
+    );
+
+    let brief = project("web_search", payload, ResponseDetail::Brief);
+    assert_eq!(brief["query"], "rust async");
+    assert!(
+        brief.get("derived_intent").is_none(),
+        "brief is an allow-list surface and carries neither field: {brief}"
+    );
+    assert!(brief.get("derived_intent_reasons").is_none());
+}
+
+#[test]
+fn explicit_intent_payload_gains_no_derived_fields() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let payload = web_payload(json!([card("a", 0, 0)]), json!([]), summary);
+    for detail in [
+        ResponseDetail::Diagnostic,
+        ResponseDetail::Standard,
+        ResponseDetail::Compact,
+        ResponseDetail::Brief,
+    ] {
+        let projected = project("web_search", payload.clone(), detail);
+        assert!(
+            projected.get("derived_intent").is_none(),
+            "{detail:?} must not invent a derived intent: {projected}"
+        );
+        assert!(
+            projected.get("derived_intent_reasons").is_none(),
+            "{detail:?} must not invent derived reasons"
+        );
+    }
+}
+
+#[test]
 fn standard_preserves_specialist_fields() {
     let summary = json!({"has_failures": false, "has_absences": true, "has_truncation": false});
     let payload = web_payload(json!([card("a", 1, 0)]), json!([]), summary);

@@ -256,6 +256,16 @@ pub enum FetchTrust {
     ExternalUntrusted,
 }
 
+/// The representation the origin served for a fetch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FetchRepresentation {
+    /// A Markdown body (`text/markdown`).
+    Markdown,
+    /// An HTML body (`text/html` or `application/xhtml+xml`).
+    Html,
+}
+
 /// Cache policy for a fetch request.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -293,6 +303,11 @@ pub struct WebFetchResponse {
     /// Content-Type header value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
+    /// Representation the origin served: `markdown` when the body is
+    /// Markdown, `html` when it is HTML. Omitted when the body is another
+    /// format (PDF, JSON, plain text) or was rendered by the browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub representation: Option<FetchRepresentation>,
     /// HTTP status code.
     pub status: u16,
     /// Whether content was successfully fetched.
@@ -417,6 +432,12 @@ pub struct WebFetchResponse {
     /// HTTP-fetched content from browser-rendered content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
+    /// Content-negotiation policy that produced this response. Internal
+    /// plumbing for raw cache-key selection so a fallback response is
+    /// stored under the policy that actually fetched it.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub accept_policy: Option<crate::fetch::accept::AcceptPolicy>,
     /// Original bounded response body bytes, before text/PDF
     /// extraction. Carried through so the cache layer can store
     /// the raw transport bytes rather than extracted text. Only

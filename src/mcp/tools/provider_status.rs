@@ -259,6 +259,34 @@ fn build_payload_without_probe(
             map.remove("workflow_recipes");
         }
     }
+    if let Some(stats) = state.adapter.search_cache_stats() {
+        if let serde_json::Value::Object(map) = &mut payload {
+            map.insert(
+                "search_cache".to_string(),
+                serde_json::json!({
+                    "entries": stats.entries,
+                    "hits": stats.hits,
+                    "misses": stats.misses,
+                    "coalesced": stats.coalesced,
+                    "bypassed": stats.bypassed,
+                    "evictions": stats.evictions,
+                }),
+            );
+        }
+    }
+    if let Some(providers) = payload
+        .get_mut("providers")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for provider in providers {
+            let Some(id) = provider.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if let Some(shape) = health_registry.health_view(id).parse_shape {
+                provider["parse_shape"] = serde_json::json!(shape);
+            }
+        }
+    }
     payload
 }
 

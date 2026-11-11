@@ -751,6 +751,7 @@ fn project_web_search(mut value: serde_json::Value, compact: bool) -> serde_json
             let capability = obj.remove("capability_enforcement");
             obj.remove("workflow_coverage");
             obj.remove("evidence_role_summary");
+            obj.remove("derived_intent_reasons");
             if let Some(r) = retrieval {
                 obj.insert("retrieval_status".to_string(), retrieval_status_minimal(&r));
             }

@@ -50,6 +50,8 @@ pub mod serpapi;
 pub mod sourcegraph;
 pub mod startpage;
 pub mod tavily;
+#[cfg(feature = "mock")]
+pub mod test_harness;
 pub mod wikipedia;
 pub mod yahoo;
 
@@ -1314,6 +1316,120 @@ fn resolve_user_agent(user_agent: Option<&str>) -> &str {
     user_agent.unwrap_or(DEFAULT_USER_AGENT)
 }
 
+/// A marker that only appears on a documented non-results page.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PageMarker {
+    /// A CSS selector that only matches on the marked page.
+    Selector(&'static str),
+    /// A literal run of rendered page text that only appears on the marked page.
+    Text(&'static str),
+}
+
+impl PageMarker {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Selector(marker) | Self::Text(marker) => marker,
+        }
+    }
+}
+
+/// Declared result container and non-results page markers for one HTML scraper.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ScrapeShape {
+    pub(crate) result_container: &'static str,
+    pub(crate) empty_markers: &'static [PageMarker],
+    pub(crate) blocked_markers: &'static [PageMarker],
+}
+
+/// Classify one scraper parse result into the three-outcome contract.
+///
+/// Parsed rows are returned unchanged. With no rows, a documented
+/// empty-state marker yields `Ok(vec![])`, a challenge or consent marker
+/// yields [`EngineError::Blocked`], and anything else is a structural
+/// [`EngineError::ParseFailed`] whose reason names the result container.
+pub(crate) fn finalize_scrape(
+    engine: &'static str,
+    document: &scraper::Html,
+    shape: &ScrapeShape,
+    results: Vec<SearchResult>,
+) -> Result<Vec<SearchResult>, EngineError> {
+    if !results.is_empty() {
+        return Ok(results);
+    }
+
+    let mut rendered: Option<String> = None;
+    for marker in shape.blocked_markers {
+        if marker_matches(engine, *marker, document, &mut rendered)? {
+            return Err(EngineError::Blocked {
+                engine,
+                reason: format!("challenge page detected ({})", marker.label()),
+            });
+        }
+    }
+    for marker in shape.empty_markers {
+        if marker_matches(engine, *marker, document, &mut rendered)? {
+            return Ok(results);
+        }
+    }
+
+    let container = sel(engine, shape.result_container)?;
+    let reason = if document.select(&container).next().is_some() {
+        format!(
+            "result container '{}' produced no parseable results",
+            shape.result_container
+        )
+    } else {
+        format!("result container '{}' missing", shape.result_container)
+    };
+    Err(EngineError::ParseFailed { engine, reason })
+}
+
+/// Parse a CSS selector, mapping invalid syntax to
+/// [`EngineError::ParseFailed`].
+pub(crate) fn sel(engine: &'static str, selector: &str) -> Result<scraper::Selector, EngineError> {
+    scraper::Selector::parse(selector).map_err(|e| EngineError::ParseFailed {
+        engine,
+        reason: format!("invalid selector '{selector}': {e:?}"),
+    })
+}
+
+fn marker_matches(
+    engine: &'static str,
+    marker: PageMarker,
+    document: &scraper::Html,
+    rendered: &mut Option<String>,
+) -> Result<bool, EngineError> {
+    match marker {
+        PageMarker::Selector(selector) => {
+            Ok(document.select(&sel(engine, selector)?).next().is_some())
+        }
+        PageMarker::Text(text) => {
+            let rendered = rendered.get_or_insert_with(|| rendered_text(document));
+            Ok(rendered.contains(text))
+        }
+    }
+}
+
+fn rendered_text(document: &scraper::Html) -> String {
+    let mut text = String::new();
+    for node in document.root_element().descendants() {
+        let Some(value) = node.value().as_text() else {
+            continue;
+        };
+        if node.ancestors().any(|ancestor| {
+            ancestor
+                .value()
+                .as_element()
+                .is_some_and(|element| matches!(element.name(), "script" | "style"))
+        }) {
+            continue;
+        }
+        text.push_str(value);
+        text.push(' ');
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1345,5 +1461,126 @@ mod tests {
     fn build_http_client_succeeds_with_default_ua() {
         let client = build_http_client(None).expect("build");
         drop(client);
+    }
+
+    fn row(title: &str, url: &str) -> SearchResult {
+        SearchResult {
+            title: title.to_string(),
+            url: url.to_string(),
+            snippet: None,
+            source_engine: "test".to_string(),
+            excerpts: Vec::new(),
+            published_at: None,
+            metadata: Default::default(),
+        }
+    }
+
+    const SHAPE: ScrapeShape = ScrapeShape {
+        result_container: "div.result",
+        empty_markers: &[
+            PageMarker::Selector("div.no-results"),
+            PageMarker::Text("No results."),
+        ],
+        blocked_markers: &[
+            PageMarker::Selector("#challenge-form"),
+            PageMarker::Text("Please verify you are a human"),
+        ],
+    };
+
+    #[test]
+    fn finalize_scrape_returns_parsed_rows() {
+        let document = scraper::Html::parse_document(
+            r#"<html><body><div class="result">ok</div></body></html>"#,
+        );
+        let results = finalize_scrape(
+            "test",
+            &document,
+            &SHAPE,
+            vec![row("Title", "https://example.com")],
+        )
+        .expect("parsed rows");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Title");
+    }
+
+    #[test]
+    fn finalize_scrape_returns_empty_for_text_marker() {
+        let document =
+            scraper::Html::parse_document(r#"<html><body><p>No results.</p></body></html>"#);
+        let results = finalize_scrape("test", &document, &SHAPE, Vec::new()).expect("empty state");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn finalize_scrape_returns_empty_for_selector_marker() {
+        let document = scraper::Html::parse_document(
+            r#"<html><body><div class="no-results"></div></body></html>"#,
+        );
+        let results = finalize_scrape("test", &document, &SHAPE, Vec::new()).expect("empty state");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn finalize_scrape_ignores_script_text_markers() {
+        let document = scraper::Html::parse_document(
+            r#"<html><body><script>const t = "No results.";</script><div id="page"></div></body></html>"#,
+        );
+        let err = finalize_scrape("test", &document, &SHAPE, Vec::new()).expect_err("drift");
+        assert!(matches!(
+            err,
+            EngineError::ParseFailed { engine: "test", .. }
+        ));
+    }
+
+    #[test]
+    fn finalize_scrape_flags_missing_container() {
+        let document = scraper::Html::parse_document(r#"<html><body><p>changed</p></body></html>"#);
+        let err = finalize_scrape("test", &document, &SHAPE, Vec::new()).expect_err("drift");
+        match err {
+            EngineError::ParseFailed { engine, reason } => {
+                assert_eq!(engine, "test");
+                assert!(reason.contains("div.result"), "reason: {reason}");
+                assert!(reason.contains("missing"), "reason: {reason}");
+            }
+            other => panic!("expected ParseFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn finalize_scrape_flags_container_without_rows() {
+        let document = scraper::Html::parse_document(
+            r#"<html><body><div class="result"><span>no title</span></div></body></html>"#,
+        );
+        let err = finalize_scrape("test", &document, &SHAPE, Vec::new()).expect_err("drift");
+        match err {
+            EngineError::ParseFailed { reason, .. } => {
+                assert!(
+                    reason.contains("produced no parseable results"),
+                    "reason: {reason}"
+                );
+            }
+            other => panic!("expected ParseFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn finalize_scrape_flags_blocked_page() {
+        for html in [
+            r#"<html><body><form id="challenge-form"></form></body></html>"#,
+            r#"<html><body><h1>Please verify you are a human</h1></body></html>"#,
+        ] {
+            let document = scraper::Html::parse_document(html);
+            let err = finalize_scrape("test", &document, &SHAPE, Vec::new()).expect_err("blocked");
+            assert!(matches!(err, EngineError::Blocked { engine: "test", .. }));
+        }
+    }
+
+    #[test]
+    fn sel_rejects_invalid_selector_syntax() {
+        let err = sel("test", "div[").expect_err("invalid selector");
+        assert!(matches!(
+            err,
+            EngineError::ParseFailed { engine: "test", .. }
+        ));
     }
 }

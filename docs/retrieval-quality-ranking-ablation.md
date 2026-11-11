@@ -17,6 +17,39 @@ The synthetic corpus is `retrieval-quality-v1`, fingerprint `fnv1a64:b882ce3d844
 
 The corpus is self-authored synthetic truth, not independent adjudication. Perfect held-out retrieval on this six-case fixture leaves no credible basis to claim a general ranking lift. M003 also has no real provider-attributed snapshot series, and M002 has no real browser-rendered passages to use as comparable ranking inputs. A candidate tuned against these tiny fixtures would risk overfitting.
 
+## Corrective finding (agentic retrieval integrity M004)
+
+The M004 experiment above could not answer its own question. It scored
+`Case::results`, a single pre-merged list authored in the fixture, and never
+invoked `aggregate_rrf`, `convert_aggregated`, domain filtering, or
+`apply_intent_reranking`. The corpus could validate metric arithmetic but could
+not distinguish two rankers, so "no reliable lift established" was a
+measurement limitation, not a negative result about the ranker.
+
+The corrective is `plans/implementation/agentic-retrieval-integrity/004-candidate-snapshot-ranking-benchmark.md`,
+now landed:
+
+- `tests/fixtures/retrieval_quality/candidate_snapshots.json` stores
+  `provider_lists` (provider id, rank, title, url) per case; the harness builds
+  the real per-provider lists and replays them through
+  `adapter/selection.rs::select()`, the same sequence `web_search` uses.
+- `SelectionParams` exposes the production constants, and the three seeded
+  negative controls run through the same code path: a degenerate RRF constant,
+  dedup disabled, and truncation before rerank.
+- New metrics surface fusion defects first: duplicate slots, distinct domains
+  in the top k, and authoritative survival (grade ≥ 2 documents kept in the top
+  k).
+- Tiers: committed structured-synthetic (CI gate), a small committed
+  recorded-real set with provenance, and an untracked larger set recorded into
+  `target/snapshots/` for release qualification.
+
+Observed control deltas on the tier-1 corpus: degenerate RRF reduces
+authoritative survival 0.82 → 0.45 and MRR 0.74 → 0.31; dedup disabled raises
+duplicate slots 0 → 9; truncate-before-rerank reduces authoritative survival
+0.82 → 0.55 and drops both promotion cases to 0.0. The harness fails if it
+cannot detect these, so a future selector change produces a delta instead of an
+unanswerable claim.
+
 ## Decision
 
 Keep existing RRF, intent and focus behavior. Do not add score normalization, per-provider diversity, lexical/BM25 re-ranking, candidate truncation changes, or a persistent index. The no-change result is the accepted outcome: available evidence does not establish a reliable quality lift, and current held-out metrics are already at ceiling. No held-out labels were added to production heuristics.

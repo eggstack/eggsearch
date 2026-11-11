@@ -10,6 +10,26 @@ use crate::fetch::{FetchClient, FetchLimits};
 use crate::mcp::state::ServerState;
 use std::sync::Arc;
 
+#[cfg(feature = "mock")]
+fn mock_web_state() -> Arc<ServerState> {
+    use crate::meta::mock::{mock_engines, MockEngine, MockResult};
+
+    let cfg = AppConfig::default();
+    let engine = MockEngine::success(
+        "duckduckgo",
+        vec![MockResult::new(
+            "Example result",
+            "https://example.com/result",
+            "duckduckgo",
+        )],
+    );
+    let adapter = crate::meta::MetadataSearchAdapter::from_engines(
+        mock_engines(vec![engine]),
+        std::time::Duration::from_millis(cfg.search.timeout_ms),
+    );
+    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+}
+
 #[test]
 fn batch_timeout_client_is_prepared_at_batch_scope() {
     let client = Arc::new(
@@ -163,10 +183,10 @@ fn workspace_fetch_path_is_trimmed_before_use() {
     assert_eq!(workspace_relative_path_arg(&args).unwrap(), "file.rs");
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
 async fn safe_search_warning_emitted_when_requested() {
-    let cfg = AppConfig::default();
-    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let state = mock_web_state();
 
     let args = WebSearchArgs {
         query: "test query".to_string(),
@@ -194,10 +214,10 @@ async fn safe_search_warning_emitted_when_requested() {
         .any(|w| w.as_str().unwrap().contains("safe_search_unenforced")));
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_payload_includes_top_level_trust_markers() {
-    let cfg = AppConfig::default();
-    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let state = mock_web_state();
 
     let args = WebSearchArgs {
         query: "test".to_string(),
@@ -339,10 +359,10 @@ async fn repo_search_host_none_accepted() {
     }
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_structured_warnings_safe_search_unenforced() {
-    let cfg = AppConfig::default();
-    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let state = mock_web_state();
 
     let args = WebSearchArgs {
         query: "test".to_string(),
@@ -372,10 +392,10 @@ async fn web_search_structured_warnings_safe_search_unenforced() {
     );
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_structured_warnings_present_alongside_legacy() {
-    let cfg = AppConfig::default();
-    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let state = mock_web_state();
 
     let args = WebSearchArgs {
         query: "test".to_string(),
@@ -406,10 +426,10 @@ async fn web_search_structured_warnings_present_alongside_legacy() {
     );
 }
 
+#[cfg(feature = "mock")]
 #[tokio::test]
 async fn web_search_structured_warnings_empty_for_clean_search() {
-    let cfg = AppConfig::default();
-    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let state = mock_web_state();
 
     let args = WebSearchArgs {
         query: "test".to_string(),

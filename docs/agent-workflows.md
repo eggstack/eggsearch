@@ -102,6 +102,33 @@ All search/fetch tools except `provider_status` accept optional `response_detail
 // to read the full page; excerpts alone never authorize conclusions.
 ```
 
+### Omitting `intent`
+
+`intent` stays optional. When you omit it, eggsearch derives one lexically
+(error shapes → security identifiers → dependency/version → migration →
+comparison → release → issue → code tokens → documentation → news → `web`) and
+reports the decision, so you can see why a result set was reranked:
+
+```jsonc
+// Request
+{ "query": "CVE-2024-1234 openssl vulnerability" }
+
+// Response excerpt
+{ "derived_intent": "security",
+  "derived_intent_reasons": ["vulnerability_identifier"] }
+```
+
+The derivation never changes the query text sent to providers. An explicit
+`intent` always wins and suppresses both fields. If you need a specific prior,
+say it explicitly rather than relying on the guess.
+
+Repeated identical searches within `[search].cache_ttl_seconds` (default 300)
+are served from the process-local result cache without re-querying providers,
+and concurrent identical calls share one fan-out. A cache hit is
+byte-identical to a fresh call except that it records no provider health
+evidence. Lower the TTL or use distinct constraints when freshness matters
+more than latency.
+
 ## 2d. General Search With Safe-Search/Language/News Constraints (Tavily)
 
 ```jsonc

@@ -23,6 +23,8 @@ pub mod evidence_bundle;
 pub mod fetch_ranking;
 pub mod forge_adapter;
 mod grouping;
+/// Deterministic retrieval-intent derivation with reported reason codes.
+pub(crate) mod intent;
 /// Local workspace subsystem facade: ownership map for the `local_*`
 /// backend/inventory/cache/symbol modules (007-D).
 pub mod local;
@@ -49,6 +51,8 @@ pub mod planner;
 pub mod probe;
 /// Provider health tracking, routing decisions, and capability enforcement telemetry.
 pub mod provider_diagnostics;
+/// Serializable provider health view and parse-shape diagnostic types.
+pub mod provider_health_view;
 /// Built-in recipe catalog and capability-to-recipe gating.
 pub mod recipe_catalog;
 pub mod repo_grouping;
@@ -62,6 +66,8 @@ pub mod research_workflow;
 pub mod response;
 /// Race-resistant file opening using component-wise path walking.
 pub mod safe_open;
+/// Process-local cache and single-flight coalescer for `web_search` fan-outs.
+pub mod search_cache;
 pub mod security_grouping;
 pub mod security_search;
 pub mod security_suggested_fetches;

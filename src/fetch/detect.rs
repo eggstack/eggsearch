@@ -77,6 +77,20 @@ pub fn classify(content_type: Option<&str>, url: &str, body: &[u8]) -> DetectedC
     }
 }
 
+/// Returns `true` when the Content-Type names a Markdown representation.
+pub fn is_markdown_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "text/markdown" | "text/x-markdown"
+    )
+}
+
 /// Detect document kind from Content-Type header.
 fn detect_from_content_type(ct: &str) -> Option<DocumentKind> {
     let ct_lower = ct.to_lowercase();

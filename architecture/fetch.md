@@ -74,9 +74,10 @@ reported via `FetchTransform`.
    `max_chars_raw = max_chars_cap` budget for `raw_text` so internal consumers
    (`repo_fetch` line/span selection) see full source text while tool output
    stays clamped to the caller budget.
-3. Loop: validate current URL with resolved addresses → send → on 3xx require a
-   non-empty `Location`, resolve relative targets, reject past `redirect_limit`,
-   re-validate the target (failures map to `RedirectTargetBlocked`), continue.
+3. Loop: validate current URL with resolved addresses → send (with the selected `Accept` policy on
+   every hop; conditional `ETag`/`Last-Modified` stay first-hop-only) → on 3xx require a non-empty
+   `Location`, resolve relative targets, reject past `redirect_limit`, re-validate the target
+   (failures map to `RedirectTargetBlocked`), continue.
 4. On the final response, harvest `etag` / `last-modified` / `cache-control` /
    `expires` / `vary` for the cache layer.
 5. `Content-Length` pre-check: a declared length above `max_bytes` fails fast
@@ -92,6 +93,30 @@ reported via `FetchTransform`.
 `fetch_conditional` repeats the loop with caller conditional headers for stale
 revalidation; a 304 returns empty-body status so the cache layer can refresh
 validators in place.
+
+### Representation negotiation (`accept.rs`, `negotiate.rs`)
+
+Every HTML-ish fetch asks for Markdown first, because the efficient representation is the happy
+path:
+
+`Accept: text/markdown;q=1.0, text/html;q=0.9, */*;q=0.1`
+
+`accept.rs` classifies the target before the request: extension-less and unknown targets, plus
+ordinary `.html`/`.php`-style pages, use the Markdown policy; PDF and binary/media/archive targets,
+JSON/XML/CSV/YAML/TOML and source/config extensions, code-host URLs rewritten to raw content, and
+`metadata_only` fetches use the plain HTML policy. `metadata_only` is excluded because page metadata
+lives in the HTML head. Browser transport is unchanged.
+
+`AcceptPolicy` (`md1` / `html1`) is the short policy token carried into the raw cache key.
+`negotiate.rs` owns the bounded fallback: a Markdown attempt that returns 406/415, an unsupported
+content type, or an empty extracted body is retried **once** with the HTML policy on the same
+origin-permit and redirect-safety path. Two requests maximum per fetch; `attempt_count` records the
+real count. An origin that ignores the header and answers HTML or plain text is already usable and
+is not retried — retrying 404/5xx under a second policy would only double traffic. The discarded
+Markdown attempt is never stored.
+
+Responses carry `representation: markdown | html`, and `FetchRenderMetadata` surfaces
+`x-markdown-tokens` / `x-original-tokens` when the origin sends them.
 
 ### Timeout / byte / redirect / content-type policy
 
@@ -124,8 +149,10 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 
 ### Raw tier: transport bytes
 
-- `RawCacheKey { url, scope }` where `url` is the canonicalized form from
-  `core::identity::canonicalize_url` (`build_raw_cache_key`).
+- `RawCacheKey { url, scope, accept_policy }` where `url` is the canonicalized form from
+  `core::identity::canonicalize_url` (`build_raw_cache_key`) and `accept_policy` is `md1` or
+  `html1`. The policy is a cache dimension, so a Markdown body can never be served for an HTML key
+  or vice versa, including after a 304 revalidation.
 - `RawFetchCacheEntry` stores `final_url`, `status`, filtered headers, `body:
   Arc<[u8]>`, `fetched_at`, `freshness`, `validators`, `scope`, content-type,
   content-length, redirect count, `representation` (`Http` vs `BrowserDom`),
@@ -139,7 +166,8 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 - `DerivedCacheKey { scope, raw_content_hash, extraction_key }` where the hash
   is `xxh3_64(body)` (`build_raw_response_hash`) and `ExtractionCacheKey`
   covers `extract_mode`, exact `max_chars`, `include_links`, `pdf_pages`,
-  `pdf_ocr`, `include_media`, `renderer_version: 1`, and `sanitize_output`.
+  `pdf_ocr`, `include_media`, `renderer_version: 2`, and `sanitize_output`. The version bump
+  isolates entries written before representation negotiation existed.
 - `DerivedDocumentCacheEntry` stores the extracted title/description/text,
   `raw_text`, links, truncation flags, the structured `FetchDocument` (blocks,
   outline, chunks), trust markers, and transport tag.
@@ -160,8 +188,9 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
   `vary`. `is_fresh` requires an explicit origin lifetime — entries without
   freshness headers are stale (no default TTL).
 - `should_cache_response` refuses `no-store`, non-2xx, `private` in anonymous
-  scope, any `Vary` token besides `Accept-Encoding`, and image/audio/video plus
-  `application/octet-stream` bodies.
+  scope, any `Vary` token besides `Accept-Encoding` and `Accept`, and image/audio/video plus
+  `application/octet-stream` bodies. `Accept` is supported because the request value is fixed
+  server policy carried in the cache key, not caller input.
 - Stale entries with validators revalidate with `If-None-Match` (preferred) or
   `If-Modified-Since` (`build_request_conditional_headers`); 304 merges only
   supplied fields per RFC 9111 §4.3.4 (`apply_304_headers`). `CacheStatus`
@@ -244,6 +273,13 @@ stripping, depth-capped recursion, non-UTF-8 lossy fallback with
 `SecurityAdvisory`, `Documentation` / `ApiReference`, `SameDomain`, or
 `External`, plus `same_domain` and `rel` fields.
 
+`extract_links_from_markdown` mirrors that contract for a negotiated Markdown
+representation: `pulldown-cmark` link events, the same resolution and
+classification rules, the same `MAX_LINKS` cap, and the same
+`(links, total_seen, truncated)` triple. Without it `include_links` would
+silently return an empty list on every origin that honours `Accept:
+text/markdown`.
+
 ---
 
 ## 6. Render Subsystem (`render/`, 8 files)
@@ -257,7 +293,7 @@ stripping, depth-capped recursion, non-UTF-8 lossy fallback with
 | `code.rs` | `render_code` / `render_diff` / `render_plaintext` — line-preserving renderers with 1-based line ranges |
 | `csv.rs` | `render_csv` — bounded table preview (100-row cap, column-count header) |
 | `notebook.rs` | `render_notebook` — Jupyter cells to `[cell N (type)]` blocks; never executes code, outputs skipped |
-| `markdown_source.rs` | `render_markdown_source` — pulldown-cmark parse of `.md` sources (tables, strikethrough) |
+| `markdown_source.rs` | `render_markdown_source` — pulldown-cmark parse of `.md` sources (tables, tight/loose list items, strikethrough); previously dropped table and list-item content entirely |
 
 `blocks::render_blocks(html, base_url, max_chars, markdown)` returns
 `(title, description, RenderedBlocks, warnings, non_utf8)`:

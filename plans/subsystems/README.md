@@ -16,16 +16,24 @@ and repository revisions. Commit-specific mechanics belong in
 Current subsystems:
 
 ```text
-search-capability-roadmap.md
+agentic-retrieval-integrity-roadmap.md
 binary-distribution-deployment-roadmap.md
-maintenance-codegg-quality-roadmap.md
-transport-consolidation-roadmap.md
-performance-optimization-roadmap.md
-optional-outbound-routing-roadmap.md
-tool-surface-consolidation-roadmap.md
-deterministic-retrieval-quality-roadmap.md
+codegg-legacy-search-parity-corrective-addendum.md
 dependency-evidence-hardening-roadmap.md
+deterministic-retrieval-quality-roadmap.md
+eggpack-release-adoption-roadmap.md
+maintenance-codegg-quality-roadmap.md
+mode-off-repository-locality-corrective-roadmap.md
+optional-outbound-routing-roadmap.md
+performance-optimization-roadmap.md
+python-native-library-roadmap.md
+python-pypi-distribution-roadmap.md
 repository-hardening-roadmap.md
+retrieval-quality-evidence-extension-roadmap.md
+search-capability-roadmap.md
+standalone-mcp-local-inference-roadmap.md
+tool-surface-consolidation-roadmap.md
+transport-consolidation-roadmap.md
 ```
 
 ## Required roadmap structure

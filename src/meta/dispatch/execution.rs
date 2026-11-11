@@ -460,6 +460,10 @@ pub(crate) async fn dispatch_parallel(
                                         RetrievalAttemptOutcome::Failed,
                                         Some("parse_error".to_string()),
                                     ),
+                                    EngineError::Blocked { .. } => (
+                                        RetrievalAttemptOutcome::Failed,
+                                        Some("blocked".to_string()),
+                                    ),
                                     EngineError::NetworkError { .. } => (
                                         RetrievalAttemptOutcome::Failed,
                                         Some("network_error".to_string()),

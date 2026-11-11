@@ -1,0 +1,399 @@
+{
+  "schema_version": 2,
+  "corpus_revision": "candidate-snapshots-v1",
+  "tier": "structured_synthetic",
+  "provenance": "Structured-synthetic candidate snapshots authored for eggsearch. Each case records per-provider candidate lists (provider id, rank, title, canonical URL) that are written for this corpus and do not reproduce any provider response. Relevance judgments were written before the provider lists and are not derived from any ranker. No page bodies, credentials, or personal data are stored; titles, URLs, ranks, and provider ids only.",
+  "annotation_uncertainty": "One synthetic author, no independent adjudication. Grades state the intended answer for the query (3 = authoritative primary source, 2 = supporting source, 1 = partially useful) and are fixed before replay, so a failing case is reported as a failure rather than re-graded. Structure is controlled: rank inversions, duplicate clusters, domain concentration, provider agreement and disagreement, and authoritative documents just outside the naive top-k.",
+  "cases": [
+    {
+      "id": "rank-inversion-001",
+      "category": "generic_web",
+      "partition": "train",
+      "query": "http client retry budget and backoff policy",
+      "language": "en",
+      "region": "US",
+      "intent": "web",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "retry-policy-reference", "urls": ["https://docs.example.test/networking/retry-policy"], "grade": 3, "passages": []},
+        {"id": "retry-budget-note", "urls": ["https://standards.example.test/http/retry-budget"], "grade": 2, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Retry loops considered harmful", "url": "https://blog.example.test/retry-loops"},
+          {"rank": 2, "title": "Retry policy reference", "url": "https://docs.example.test/networking/retry-policy"},
+          {"rank": 3, "title": "Forum: retry storm postmortem", "url": "https://forum.example.test/retry-storm"},
+          {"rank": 4, "title": "Choosing a retry budget for HTTP clients", "url": "https://standards.example.test/http/retry-budget"},
+          {"rank": 5, "title": "Vendor retry SDK overview", "url": "https://vendor.example.test/retry-sdk"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Choosing a retry budget for HTTP clients", "url": "https://standards.example.test/http/retry-budget"},
+          {"rank": 2, "title": "Mirror: retry article", "url": "https://mirror.example.test/retry-article"},
+          {"rank": 3, "title": "Retry policy reference", "url": "https://docs.example.test/networking/retry-policy"},
+          {"rank": 4, "title": "Forum: retry storm postmortem", "url": "https://forum.example.test/retry-storm"},
+          {"rank": 5, "title": "Retry loops considered harmful", "url": "https://blog.example.test/retry-loops"}
+        ]}
+      ]
+    },
+    {
+      "id": "duplicate-cluster-001",
+      "category": "generic_web",
+      "partition": "train",
+      "query": "background job processing without blocking web requests",
+      "language": "en",
+      "region": "US",
+      "intent": "web",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "background-jobs-guide", "urls": ["https://example.test/guides/background-jobs", "https://EXAMPLE.TEST/guides/background-jobs/", "HTTPS://example.test/guides/background-jobs#overview"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Background jobs guide", "url": "https://example.test/guides/background-jobs"},
+          {"rank": 2, "title": "Offloading work to a job queue", "url": "https://docs2.example.test/job-queue-offload"},
+          {"rank": 3, "title": "Sizing a worker pool", "url": "https://blog.example.test/worker-pool-sizing"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Background jobs guide", "url": "https://EXAMPLE.TEST/guides/background-jobs/"},
+          {"rank": 2, "title": "Background job FAQ", "url": "https://qa.example.test/job-faq"},
+          {"rank": 3, "title": "Sizing a worker pool", "url": "https://blog.example.test/worker-pool-sizing"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Background jobs guide", "url": "HTTPS://example.test/guides/background-jobs#overview"},
+          {"rank": 2, "title": "Offloading work to a job queue", "url": "https://docs2.example.test/job-queue-offload"}
+        ]}
+      ]
+    },
+    {
+      "id": "domain-concentration-001",
+      "category": "generic_web",
+      "partition": "held_out",
+      "query": "shared rate limit implementation notes",
+      "language": "en",
+      "region": "US",
+      "intent": "web",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "rate-limit-reference", "urls": ["https://docs.example.test/api/rate-limits"], "grade": 3, "passages": []},
+        {"id": "rate-limit-budget", "urls": ["https://standards.example.test/api/rate-limit-budget"], "grade": 2, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 101: rate limit hit on upload", "url": "https://forum.example.test/thread/101"},
+          {"rank": 2, "title": "Thread 102: retry after 429", "url": "https://forum.example.test/thread/102"},
+          {"rank": 3, "title": "Working notes on shared rate limits", "url": "https://docs.example.test/api/rate-limits"},
+          {"rank": 4, "title": "Thread 103: rate limit headers", "url": "https://forum.example.test/thread/103"},
+          {"rank": 5, "title": "Thread 104: burst allowance", "url": "https://forum.example.test/thread/104"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Thread 101: rate limit hit on upload", "url": "https://forum.example.test/thread/101"},
+          {"rank": 2, "title": "Thread 105: quota exhaustion", "url": "https://forum.example.test/thread/105"},
+          {"rank": 3, "title": "Thread 102: retry after 429", "url": "https://forum.example.test/thread/102"},
+          {"rank": 4, "title": "Writing a rate-limit budget", "url": "https://standards.example.test/api/rate-limit-budget"},
+          {"rank": 5, "title": "Thread 103: rate limit headers", "url": "https://forum.example.test/thread/103"}
+        ]}
+      ]
+    },
+    {
+      "id": "provider-agreement-001",
+      "category": "generic_web",
+      "partition": "train",
+      "query": "secure TLS configuration for internal services",
+      "language": "en",
+      "region": "US",
+      "intent": "web",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "tls-config-reference", "urls": ["https://docs.example.test/tls/secure-config"], "grade": 3, "passages": []},
+        {"id": "tls-quick-tip", "urls": ["https://notes.example.test/tls/quick-tip"], "grade": 2, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Quick TLS tip", "url": "https://notes.example.test/tls/quick-tip"},
+          {"rank": 2, "title": "Bad TLS defaults", "url": "https://blog.example.test/tls-defaults"},
+          {"rank": 3, "title": "Working with TLS configuration", "url": "https://docs.example.test/tls/secure-config"},
+          {"rank": 4, "title": "Legacy TLS notes", "url": "https://legacy.example.test/tls-notes"},
+          {"rank": 5, "title": "TLS tooling", "url": "https://tools.example.test/tls-tooling"}
+        ]},
+        {"provider_id": "mojeek", "results": [
+          {"rank": 1, "title": "Bad TLS defaults", "url": "https://blog.example.test/tls-defaults"},
+          {"rank": 2, "title": "TLS handshake thread", "url": "https://forum.example.test/tls-handshake"},
+          {"rank": 3, "title": "Working with TLS configuration", "url": "https://docs.example.test/tls/secure-config"},
+          {"rank": 4, "title": "TLS tooling", "url": "https://tools.example.test/tls-tooling"},
+          {"rank": 5, "title": "Legacy TLS notes", "url": "https://legacy.example.test/tls-notes"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Quick TLS tip", "url": "https://notes.example.test/tls/quick-tip"},
+          {"rank": 2, "title": "Legacy TLS notes", "url": "https://legacy.example.test/tls-notes"},
+          {"rank": 3, "title": "Working with TLS configuration", "url": "https://docs.example.test/tls/secure-config"},
+          {"rank": 4, "title": "Bad TLS defaults", "url": "https://blog.example.test/tls-defaults"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Quick TLS tip", "url": "https://notes.example.test/tls/quick-tip"},
+          {"rank": 2, "title": "TLS handshake thread", "url": "https://forum.example.test/tls-handshake"},
+          {"rank": 3, "title": "Working with TLS configuration", "url": "https://docs.example.test/tls/secure-config"}
+        ]}
+      ]
+    },
+    {
+      "id": "provider-disagreement-001",
+      "category": "generic_web",
+      "partition": "held_out",
+      "query": "limiting container memory with cgroups v2",
+      "language": "en",
+      "region": "US",
+      "intent": "web",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "cgroups-limit-guide", "urls": ["https://docs.example.test/containers/cgroups-memory"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Container tuning at scale", "url": "https://blog.example.test/container-tuning"},
+          {"rank": 2, "title": "Orchestrator FAQ", "url": "https://qa.example.test/orchestrator-faq"},
+          {"rank": 3, "title": "Limiting memory with cgroup v2", "url": "https://docs.example.test/containers/cgroups-memory"},
+          {"rank": 4, "title": "Scheduler deep dive", "url": "https://kernel.example.test/scheduler"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Kernel memory docs", "url": "https://kernel.example.test/memory"},
+          {"rank": 2, "title": "Container tuning at scale", "url": "https://blog.example.test/container-tuning"},
+          {"rank": 3, "title": "VM scheduling notes", "url": "https://kernel.example.test/vm-scheduling"},
+          {"rank": 4, "title": "Orchestrator FAQ", "url": "https://qa.example.test/orchestrator-faq"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Scheduler deep dive", "url": "https://kernel.example.test/scheduler"},
+          {"rank": 2, "title": "Kernel memory docs", "url": "https://kernel.example.test/memory"},
+          {"rank": 3, "title": "VM scheduling notes", "url": "https://kernel.example.test/vm-scheduling"}
+        ]}
+      ]
+    },
+    {
+      "id": "authoritative-promotion-001",
+      "category": "generic_web",
+      "partition": "train",
+      "query": "avoid blocking the async runtime in rust",
+      "language": "en",
+      "region": "US",
+      "intent": "docs",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "sleep-reference", "urls": ["https://doc.rust-lang.org/std/thread/fn.sleep.html"], "grade": 3, "passages": []},
+        {"id": "spawn-blocking-reference", "urls": ["https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html"], "grade": 2, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Blocking in async code", "url": "https://blog.example.test/blocking-async"},
+          {"rank": 2, "title": "Async runtime thread", "url": "https://forum.example.test/async-runtime"},
+          {"rank": 3, "title": "Tutorial: blocking calls", "url": "https://tutorial.example.test/blocking-calls"},
+          {"rank": 4, "title": "Video: runtime talk", "url": "https://video.example.test/runtime-talk"},
+          {"rank": 5, "title": "Reddit: sleep or spawn", "url": "https://reddit.example.test/sleep-spawn"},
+          {"rank": 6, "title": "Sleeping without blocking the reactor", "url": "https://doc.rust-lang.org/std/thread/fn.sleep.html"},
+          {"rank": 7, "title": "Spawning blocking work on the runtime", "url": "https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html"},
+          {"rank": 8, "title": "Misc blog post", "url": "https://blog.example.test/misc"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Mirror: async guide", "url": "https://mirror.example.test/async-guide"},
+          {"rank": 2, "title": "Podcast: runtime", "url": "https://podcast.example.test/runtime"},
+          {"rank": 3, "title": "QA: blocking call", "url": "https://qa.example.test/blocking-call"}
+        ]}
+      ]
+    },
+    {
+      "id": "code-intent-promotion-001",
+      "category": "repo_symbol",
+      "partition": "held_out",
+      "query": "runtime blocking scheduler source",
+      "language": "en",
+      "region": "US",
+      "intent": "code",
+      "freshness": "any",
+      "retrieval_scope": "repository",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "runtime-blocking-source", "urls": ["https://github.com/example/runtime/blob/main/src/blocking.rs"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Blog: async runtime internals", "url": "https://blog.example.test/runtime-internals"},
+          {"rank": 2, "title": "Forum: async question", "url": "https://forum.example.test/async-question"},
+          {"rank": 3, "title": "Video: runtime talk", "url": "https://video.example.test/runtime-talk-2"},
+          {"rank": 4, "title": "Tutorial: futures", "url": "https://tutorial.example.test/futures"},
+          {"rank": 5, "title": "QA: scheduler", "url": "https://qa.example.test/scheduler"},
+          {"rank": 6, "title": "runtime: blocking scheduler", "url": "https://github.com/example/runtime/blob/main/src/blocking.rs"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Mirror: runtime docs", "url": "https://mirror.example.test/runtime-docs"},
+          {"rank": 2, "title": "Podcast: async", "url": "https://podcast.example.test/async"}
+        ]}
+      ]
+    },
+    {
+      "id": "security-derived-promotion-001",
+      "category": "security_advisory",
+      "partition": "train",
+      "query": "CVE-2024-1234 openssl vulnerability",
+      "language": "en",
+      "region": "US",
+      "intent": "security",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "osv-advisory", "urls": ["https://osv.dev/vulnerability/CVE-2024-1234"], "grade": 3, "passages": []},
+        {"id": "rotation-checklist", "urls": ["https://blog.example.test/openssl-cert-rotation"], "grade": 2, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Patch cadence for crypto libraries", "url": "https://notes.example.test/crypto-patch-cadence"},
+          {"rank": 2, "title": "TLS certificate rotation checklist", "url": "https://blog.example.test/openssl-cert-rotation"},
+          {"rank": 3, "title": "Reading an advisory feed", "url": "https://handbook.example.test/advisory-feed"},
+          {"rank": 4, "title": "Vendor patching policy", "url": "https://vendor.example.test/patching-policy"},
+          {"rank": 5, "title": "Designing a triage queue", "url": "https://qa.example.test/triage-queue"},
+          {"rank": 6, "title": "CVE-2024-1234: heap overflow in X.509 name parsing", "url": "https://osv.dev/vulnerability/CVE-2024-1234"},
+          {"rank": 7, "title": "Crypto upgrade checklist", "url": "https://mirror.example.test/crypto-upgrade"},
+          {"rank": 8, "title": "Maintenance log archive", "url": "https://archive.example.test/maintenance-log"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Patch cadence for crypto libraries", "url": "https://notes.example.test/crypto-patch-cadence"},
+          {"rank": 2, "title": "Advisory roundup archive", "url": "https://archive.example.test/advisory-roundup"},
+          {"rank": 3, "title": "Patch management overview", "url": "https://notes2.example.test/patch-management"},
+          {"rank": 4, "title": "Dependency hygiene notes", "url": "https://notes3.example.test/dependency-hygiene"}
+        ]}
+      ]
+    },
+    {
+      "id": "releases-derived-promotion-001",
+      "category": "release_notes",
+      "partition": "held_out",
+      "query": "axum release notes",
+      "language": "en",
+      "region": "US",
+      "intent": "releases",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "axum-changelog", "urls": ["https://example.test/projects/axum/CHANGELOG.md"], "grade": 3, "passages": []},
+        {"id": "axum-lifecycle", "urls": ["https://blog.example.test/axum-request-lifecycle"], "grade": 2, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Extractor design notes", "url": "https://notes.example.test/extractor-design"},
+          {"rank": 2, "title": "Request lifecycle in axum", "url": "https://blog.example.test/axum-request-lifecycle"},
+          {"rank": 3, "title": "Middleware composition patterns", "url": "https://handbook.example.test/middleware-composition"},
+          {"rank": 4, "title": "Routing benchmarks", "url": "https://bench.example.test/routing-benchmarks"},
+          {"rank": 5, "title": "Community thread: router tips", "url": "https://forum.example.test/router-tips"},
+          {"rank": 6, "title": "axum changelog", "url": "https://example.test/projects/axum/CHANGELOG.md"},
+          {"rank": 7, "title": "Talk: axum internals", "url": "https://video.example.test/axum-internals"},
+          {"rank": 8, "title": "Porting notes archive", "url": "https://archive.example.test/porting-notes"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Extractor design notes", "url": "https://notes.example.test/extractor-design"},
+          {"rank": 2, "title": "Router API overview", "url": "https://notes2.example.test/router-api"},
+          {"rank": 3, "title": "Extractor FAQ", "url": "https://qa.example.test/extractor-faq"},
+          {"rank": 4, "title": "Benchmark dashboard", "url": "https://bench2.example.test/dashboard"}
+        ]}
+      ]
+    },
+    {
+      "id": "docs-derived-promotion-001",
+      "category": "official_docs",
+      "partition": "train",
+      "query": "tower-http trace layer documentation",
+      "language": "en",
+      "region": "US",
+      "intent": "docs",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "trace-layer-reference", "urls": ["https://docs.rs/tower-http/latest/tower_http/trace/index.html"], "grade": 3, "passages": []},
+        {"id": "middleware-composition", "urls": ["https://blog.example.test/middleware-composition"], "grade": 1, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Caching layers behind a proxy", "url": "https://notes.example.test/proxy-caching"},
+          {"rank": 2, "title": "Composing middleware in a service", "url": "https://blog.example.test/middleware-composition"},
+          {"rank": 3, "title": "tower-http trace layer reference", "url": "https://docs.rs/tower-http/latest/tower_http/trace/index.html"},
+          {"rank": 4, "title": "Service layer checklist", "url": "https://handbook.example.test/service-layers"},
+          {"rank": 5, "title": "Proxy SDK overview", "url": "https://vendor.example.test/proxy-sdk"},
+          {"rank": 6, "title": "Layer notes mirror", "url": "https://mirror.example.test/layer-notes"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Caching layers behind a proxy", "url": "https://notes.example.test/proxy-caching"},
+          {"rank": 2, "title": "Composing middleware in a service", "url": "https://blog.example.test/middleware-composition"},
+          {"rank": 3, "title": "tower-http trace layer reference", "url": "https://docs.rs/tower-http/latest/tower_http/trace/index.html"},
+          {"rank": 4, "title": "Community thread: layers", "url": "https://forum.example.test/layer-thread"}
+        ]}
+      ]
+    },
+    {
+      "id": "code-derived-promotion-001",
+      "category": "repo_symbol",
+      "partition": "held_out",
+      "query": "Router::layer middleware ordering",
+      "language": "en",
+      "region": "US",
+      "intent": "code",
+      "freshness": "any",
+      "retrieval_scope": "repository",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "router-layer-source", "urls": ["https://github.com/example/router/blob/main/src/layer.rs"], "grade": 3, "passages": []},
+        {"id": "router-layer-explainer", "urls": ["https://blog.example.test/router-layer-explained"], "grade": 1, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Ordering middleware correctly", "url": "https://notes.example.test/middleware-ordering"},
+          {"rank": 2, "title": "Explaining middleware layers", "url": "https://blog.example.test/router-layer-explained"},
+          {"rank": 3, "title": "Router design overview", "url": "https://handbook.example.test/router-design"},
+          {"rank": 4, "title": "Layer composition talk", "url": "https://video.example.test/layer-composition"},
+          {"rank": 5, "title": "Middleware thread", "url": "https://forum.example.test/middleware-thread"},
+          {"rank": 6, "title": "router: layer ordering", "url": "https://github.com/example/router/blob/main/src/layer.rs"},
+          {"rank": 7, "title": "Porting notes archive", "url": "https://archive.example.test/porting-notes"},
+          {"rank": 8, "title": "Vendor router SDK", "url": "https://vendor.example.test/router-sdk"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Ordering middleware correctly", "url": "https://notes.example.test/middleware-ordering"},
+          {"rank": 2, "title": "Layer FAQ", "url": "https://qa.example.test/layer-faq"},
+          {"rank": 3, "title": "Ordering explainer", "url": "https://notes2.example.test/ordering-explainer"},
+          {"rank": 4, "title": "Ordering audio note", "url": "https://podcast.example.test/ordering-note"}
+        ]}
+      ]
+    }
+  ]
+}

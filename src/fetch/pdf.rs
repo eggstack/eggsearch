@@ -1095,6 +1095,8 @@ pub fn extract_pdf_text(
             redirects_followed: 0,
             source_extension: Some("pdf".to_string()),
             detected_language: None,
+            markdown_tokens: None,
+            original_tokens: None,
         }),
         outline,
         blocks,

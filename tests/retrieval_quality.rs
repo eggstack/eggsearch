@@ -2,19 +2,35 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::Deserialize;
 
+#[cfg(feature = "mock")]
+use eggsearch::core::query::SearchIntent;
+#[cfg(feature = "mock")]
+use std::sync::Arc;
+
 const CORPUS: &str = include_str!("fixtures/retrieval_quality/cases.json");
 const K: usize = 5;
 const PASSAGE_BUDGET_CHARS: usize = 1200;
 const EVALUATOR_REVISION: &str = "retrieval-quality-evaluator-v1";
+#[cfg(feature = "mock")]
+const SNAPSHOT_EVALUATOR_REVISION: &str = "retrieval-quality-candidate-snapshot-v1";
 const PROVIDER_SCENARIO: &str =
     include_str!("fixtures/retrieval_quality/provider_contribution.json");
+const CANDIDATE_SNAPSHOTS: &str =
+    include_str!("fixtures/retrieval_quality/candidate_snapshots.json");
+const RECORDED_SNAPSHOTS: &str = include_str!("fixtures/retrieval_quality/recorded_snapshots.json");
+const SNAPSHOT_OUTPUT_ROOT: &str = "target/snapshots";
+const RECORDER_MAX_RESULTS_PER_PROVIDER: usize = 20;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct Corpus {
     schema_version: u32,
     corpus_revision: String,
     provenance: String,
     annotation_uncertainty: String,
+    #[serde(default)]
+    tier: Option<String>,
+    #[serde(default)]
+    pending: Option<String>,
     cases: Vec<Case>,
 }
 
@@ -37,8 +53,31 @@ struct Case {
     expected_state: String,
     #[serde(default)]
     actual_state: Option<String>,
+    #[serde(default)]
+    freshness: Option<String>,
+    #[serde(default)]
+    observed_at: Option<String>,
+    #[serde(default)]
+    #[cfg(feature = "mock")]
+    provider_lists: Vec<ProviderList>,
     relevant_documents: Vec<Judgment>,
+    #[serde(default)]
     results: Vec<ResultEnvelope>,
+}
+
+#[cfg(feature = "mock")]
+#[derive(Clone, Debug, Deserialize)]
+struct ProviderList {
+    provider_id: String,
+    results: Vec<ProviderRank>,
+}
+
+#[cfg(feature = "mock")]
+#[derive(Clone, Debug, Deserialize)]
+struct ProviderRank {
+    rank: usize,
+    title: String,
+    url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -63,7 +102,7 @@ struct Passage {
     text: String,
 }
 
-#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, serde::Serialize)]
 struct ResultEnvelope {
     id: String,
     url: String,
@@ -92,6 +131,12 @@ struct Metrics {
     judged_results: usize,
     precision_denominator: usize,
     relevant_documents: usize,
+    top_slots: usize,
+    duplicate_slots: usize,
+    distinct_domains_sum: f64,
+    distinct_domains_cases: usize,
+    authoritative_retained: usize,
+    authoritative_documents: usize,
 }
 
 impl Metrics {
@@ -160,6 +205,25 @@ impl Metrics {
         } else {
             sources.len() as f64 / top.len() as f64
         };
+        let mut clusters: HashSet<String> = HashSet::new();
+        let mut duplicate_slots = 0usize;
+        for result in &top {
+            if !clusters.insert(normalized_cluster(&result.url)) {
+                duplicate_slots += 1;
+            }
+        }
+        let authoritative: Vec<&Judgment> = relevant
+            .iter()
+            .copied()
+            .filter(|judgment| judgment.grade >= 2)
+            .collect();
+        let authoritative_retained = authoritative
+            .iter()
+            .filter(|judgment| {
+                top.iter()
+                    .any(|result| matches_case_document(case, judgment, result))
+            })
+            .count();
         let passage_hits = relevant
             .iter()
             .filter(|judgment| {
@@ -191,8 +255,14 @@ impl Metrics {
         self.passage_denominator += relevant.iter().filter(|j| !j.passages.is_empty()).count();
         if !top.is_empty() {
             self.diversity_sum += diversity;
+            self.distinct_domains_sum += sources.len() as f64;
             self.diversity_cases += 1;
+            self.distinct_domains_cases += 1;
         }
+        self.top_slots += top.len();
+        self.duplicate_slots += duplicate_slots;
+        self.authoritative_retained += authoritative_retained;
+        self.authoritative_documents += authoritative.len();
         self.status_correct += usize::from(status);
         self.cases += 1;
         self.judged_results += judged;
@@ -212,7 +282,9 @@ impl Metrics {
                 "judged_results": self.judged_results,
                 "precision_at_5": self.precision_denominator,
                 "relevant_documents": self.relevant_documents,
-                "passages": self.passage_denominator
+                "passages": self.passage_denominator,
+                "top_slots": self.top_slots,
+                "authoritative_documents": self.authoritative_documents
             },
             "precision_at_5": self.precision_sum / ranking_cases,
             "recall_at_5": self.recall_sum / ranking_cases,
@@ -221,6 +293,11 @@ impl Metrics {
             "passage_hit_at_1200_chars": ratio(self.passage_hits, self.passage_denominator),
             "passage_hit_wilson_95": passage_interval,
             "source_diversity_at_5": self.diversity_sum / diversity_cases,
+            "distinct_domains_topk": self.distinct_domains_sum
+                / self.distinct_domains_cases.max(1) as f64,
+            "duplicate_slots": self.duplicate_slots,
+            "duplicate_slot_rate": ratio(self.duplicate_slots, self.top_slots),
+            "authoritative_survival": ratio(self.authoritative_retained, self.authoritative_documents),
             "evidence_coverage": self.evidence_coverage_sum / ranking_cases,
             "status_accuracy": self.status_correct as f64 / self.cases.max(1) as f64,
             "status_accuracy_wilson_95": status_interval
@@ -255,6 +332,10 @@ fn ratio(numerator: usize, denominator: usize) -> f64 {
 
 fn canonical_url(url: &str) -> String {
     eggsearch::core::identity::canonicalize_url(url)
+}
+
+fn normalized_cluster(url: &str) -> String {
+    eggsearch::meta::engines::normalizer::normalize(url).unwrap_or_else(|| canonical_url(url))
 }
 
 fn matches_document(judgment: &Judgment, result: &ResultEnvelope) -> bool {
@@ -747,6 +828,963 @@ async fn synthetic_reference_envelope_replays_through_search_adapter_and_tool_ha
     assert_eq!(metrics.report()["recall_at_5"], 1.0);
 }
 
+#[cfg(feature = "mock")]
+fn replay_case(
+    case: &Case,
+    knobs: eggsearch::selection_test::SelectionKnobs,
+) -> Vec<ResultEnvelope> {
+    replay_case_with_intent(case, knobs, live_intent(&case.intent))
+}
+
+#[cfg(feature = "mock")]
+fn replay_case_with_intent(
+    case: &Case,
+    knobs: eggsearch::selection_test::SelectionKnobs,
+    intent: eggsearch::core::query::SearchIntent,
+) -> Vec<ResultEnvelope> {
+    use eggsearch::meta::engines::models::{ResultMetadata, SearchResult};
+
+    assert!(
+        case.results.is_empty(),
+        "snapshot case {} must score selection output, not a recorded result list",
+        case.id
+    );
+    assert!(
+        !case.provider_lists.is_empty(),
+        "snapshot case {} has no provider lists",
+        case.id
+    );
+    assert_eq!(
+        case.freshness.as_deref(),
+        Some("any"),
+        "snapshot replay cannot exercise freshness: recorded rows carry no timestamps"
+    );
+    let mut lists: Vec<(String, Vec<SearchResult>)> = Vec::new();
+    for list in &case.provider_lists {
+        assert!(
+            eggsearch::core::provider::KNOWN_PROVIDER_IDS.contains(&list.provider_id.as_str()),
+            "snapshot case {} uses unknown provider {}",
+            case.id,
+            list.provider_id
+        );
+        let mut ranked: Vec<&ProviderRank> = list.results.iter().collect();
+        ranked.sort_by_key(|entry| entry.rank);
+        let ranks: Vec<usize> = ranked.iter().map(|entry| entry.rank).collect();
+        let expected: Vec<usize> = (1..=ranked.len()).collect();
+        assert_eq!(
+            ranks, expected,
+            "provider ranks must be contiguous from 1 in {}",
+            list.provider_id
+        );
+        let results: Vec<SearchResult> = ranked
+            .into_iter()
+            .map(|entry| SearchResult {
+                title: entry.title.clone(),
+                url: entry.url.clone(),
+                snippet: None,
+                source_engine: list.provider_id.clone(),
+                metadata: ResultMetadata::None,
+                excerpts: Vec::new(),
+                published_at: None,
+            })
+            .collect();
+        lists.push((list.provider_id.clone(), results));
+    }
+    let rows = if knobs == eggsearch::selection_test::SelectionKnobs::production() {
+        eggsearch::selection_test::select(lists, case.max_results, intent)
+    } else {
+        eggsearch::selection_test::select_with_knobs(lists, case.max_results, intent, knobs)
+    };
+    rows.into_iter()
+        .map(|row| ResultEnvelope {
+            id: row.stable_id,
+            url: row.url,
+            title: row.title,
+            snippet: String::new(),
+            published_at: None,
+            passages: Vec::new(),
+        })
+        .collect()
+}
+
+#[cfg(feature = "mock")]
+fn replay_corpus(corpus: &Corpus, knobs: eggsearch::selection_test::SelectionKnobs) -> Corpus {
+    let mut replayed = corpus.clone();
+    for case in &mut replayed.cases {
+        if !case.provider_lists.is_empty() {
+            case.results = replay_case(case, knobs);
+        }
+    }
+    replayed
+}
+
+#[cfg(feature = "mock")]
+fn replay_corpus_with_intent<F>(
+    corpus: &Corpus,
+    knobs: eggsearch::selection_test::SelectionKnobs,
+    intent_for: F,
+) -> Corpus
+where
+    F: Fn(&Case) -> eggsearch::core::query::SearchIntent,
+{
+    let mut replayed = corpus.clone();
+    for case in &mut replayed.cases {
+        if !case.provider_lists.is_empty() {
+            let intent = intent_for(case);
+            case.results = replay_case_with_intent(case, knobs, intent);
+        }
+    }
+    replayed
+}
+
+#[cfg(feature = "mock")]
+fn case_metrics(corpus: &Corpus, id: &str) -> serde_json::Value {
+    let case = corpus
+        .cases
+        .iter()
+        .find(|case| case.id == id)
+        .unwrap_or_else(|| panic!("missing case {id}"));
+    let mut metrics = Metrics::default();
+    metrics.add(case);
+    metrics.report()
+}
+
+#[cfg(feature = "mock")]
+fn metric(value: &serde_json::Value, key: &str) -> f64 {
+    value[key]
+        .as_f64()
+        .unwrap_or_else(|| panic!("metric {key} is not a number: {value}"))
+}
+
+#[cfg(feature = "mock")]
+fn snapshot_report(corpus: &Corpus, aggregate: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "schema_version": 1,
+        "corpus_revision": corpus.corpus_revision,
+        "tier": corpus.tier,
+        "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
+        "algorithm_revision": SNAPSHOT_EVALUATOR_REVISION,
+        "build_features": ["mock"],
+        "tie_break_seed": null,
+        "aggregate": aggregate,
+        "per_case": corpus
+            .cases
+            .iter()
+            .map(|case| (case.id.clone(), case_metrics(corpus, &case.id)))
+            .collect::<BTreeMap<_, _>>(),
+    })
+}
+
+#[cfg(feature = "mock")]
+struct SignalCase {
+    case_id: &'static str,
+    annotated_intent: &'static str,
+    intent_document_url: &'static str,
+    competitor_url: &'static str,
+    promotes_into_window: bool,
+}
+
+#[cfg(feature = "mock")]
+const SIGNAL_CASES: [SignalCase; 4] = [
+    SignalCase {
+        case_id: "security-derived-promotion-001",
+        annotated_intent: "security",
+        intent_document_url: "https://osv.dev/vulnerability/CVE-2024-1234",
+        competitor_url: "https://blog.example.test/openssl-cert-rotation",
+        promotes_into_window: true,
+    },
+    SignalCase {
+        case_id: "releases-derived-promotion-001",
+        annotated_intent: "releases",
+        intent_document_url: "https://example.test/projects/axum/CHANGELOG.md",
+        competitor_url: "https://blog.example.test/axum-request-lifecycle",
+        promotes_into_window: true,
+    },
+    SignalCase {
+        case_id: "docs-derived-promotion-001",
+        annotated_intent: "docs",
+        intent_document_url: "https://docs.rs/tower-http/latest/tower_http/trace/index.html",
+        competitor_url: "https://blog.example.test/middleware-composition",
+        promotes_into_window: false,
+    },
+    SignalCase {
+        case_id: "code-derived-promotion-001",
+        annotated_intent: "code",
+        intent_document_url: "https://github.com/example/router/blob/main/src/layer.rs",
+        competitor_url: "https://blog.example.test/router-layer-explained",
+        promotes_into_window: true,
+    },
+];
+
+#[cfg(feature = "mock")]
+fn row_rank(rows: &[ResultEnvelope], url: &str) -> Option<usize> {
+    let target = canonical_url(url);
+    rows.iter()
+        .position(|row| canonical_url(&row.url) == target)
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn candidate_snapshot_corpus_is_structured_and_replays_deterministically() {
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    assert_eq!(corpus.schema_version, 2);
+    assert_eq!(corpus.corpus_revision, "candidate-snapshots-v1");
+    assert_eq!(corpus.tier.as_deref(), Some("structured_synthetic"));
+    assert!(corpus
+        .provenance
+        .contains("do not reproduce any provider response"));
+    assert!(corpus.provenance.contains("page bodies"));
+    assert!(!corpus.annotation_uncertainty.is_empty());
+    assert!(corpus.cases.len() >= 7);
+    let ids: BTreeSet<&str> = corpus.cases.iter().map(|case| case.id.as_str()).collect();
+    assert_eq!(ids.len(), corpus.cases.len());
+    let partitions: BTreeSet<&str> = corpus
+        .cases
+        .iter()
+        .map(|case| case.partition.as_str())
+        .collect();
+    assert_eq!(partitions.len(), 2);
+    for case in &corpus.cases {
+        assert!(aliases_are_unambiguous(case));
+        assert!(!case.query.is_empty());
+        assert!(case.max_results > 0);
+        assert!(matches!(
+            case.expected_state.as_str(),
+            "results" | "absence"
+        ));
+        assert_eq!(case.freshness.as_deref(), Some("any"));
+        assert!(!case.provider_lists.is_empty());
+        assert!(case.provider_lists.len() >= 2);
+        for judgment in &case.relevant_documents {
+            assert!((1..=3).contains(&judgment.grade));
+            assert!(!judgment.urls.is_empty());
+        }
+        assert!(case
+            .relevant_documents
+            .iter()
+            .any(|judgment| judgment.grade == 3));
+        for list in &case.provider_lists {
+            assert!(
+                case.provider_lists
+                    .iter()
+                    .filter(|other| other.provider_id == list.provider_id)
+                    .count()
+                    == 1
+            );
+            assert!(!list.results.is_empty());
+            for entry in &list.results {
+                assert!(!entry.title.is_empty());
+                assert!(!entry.url.is_empty());
+            }
+        }
+    }
+
+    let mut signal_rows = Vec::new();
+    for signal in &SIGNAL_CASES {
+        let case = corpus
+            .cases
+            .iter()
+            .find(|case| case.id == signal.case_id)
+            .unwrap_or_else(|| panic!("signal case {} is missing", signal.case_id));
+        assert_eq!(
+            case.intent, signal.annotated_intent,
+            "signal case {} must be annotated with the intent it exercises",
+            case.id
+        );
+        let derived = eggsearch::selection_test::derive_intent(&case.query);
+        assert_eq!(
+            derived.intent.as_str(),
+            signal.annotated_intent,
+            "signal case {} must derive its annotated intent; classifier said {:?} with reasons {:?}",
+            case.id,
+            derived.intent,
+            derived.reasons
+        );
+        assert!(
+            !derived.reasons.is_empty() && derived.reasons != vec!["no_signal"],
+            "signal case {} must carry lexical intent evidence, got {:?}",
+            case.id,
+            derived.reasons
+        );
+
+        let window = case.max_results.min(K);
+        let web_rows = replay_case_with_intent(
+            case,
+            eggsearch::selection_test::SelectionKnobs::production(),
+            SearchIntent::Web,
+        );
+        let derived_rows = replay_case_with_intent(
+            case,
+            eggsearch::selection_test::SelectionKnobs::production(),
+            derived.intent,
+        );
+        let web_rank = row_rank(&web_rows, signal.intent_document_url);
+        let derived_rank = row_rank(&derived_rows, signal.intent_document_url)
+            .unwrap_or_else(|| panic!("{} must return its intent document", case.id));
+        let web_competitor_rank = row_rank(&web_rows, signal.competitor_url)
+            .unwrap_or_else(|| panic!("{} must return its competitor document", case.id));
+        let derived_competitor_rank = row_rank(&derived_rows, signal.competitor_url)
+            .unwrap_or_else(|| panic!("{} must return its competitor document", case.id));
+
+        assert!(
+            derived_rank < derived_competitor_rank,
+            "{} must place its intent document above the generic competitor once the intent boosts it: intent={derived_rank} competitor={derived_competitor_rank}",
+            case.id
+        );
+        assert!(
+            derived_rank < window,
+            "{} must promote its intent document into the final window: derived={derived_rank} window={window}",
+            case.id
+        );
+        if signal.promotes_into_window {
+            assert!(
+                web_rank.is_none() && web_competitor_rank < window,
+                "{} must keep its intent document outside the returned window under the neutral prior: intent={web_rank:?} competitor={web_competitor_rank} window={window}",
+                case.id
+            );
+        } else {
+            let web_rank = web_rank.unwrap_or_else(|| {
+                panic!(
+                    "{} must return its intent document under the neutral prior",
+                    case.id
+                )
+            });
+            assert!(
+                web_competitor_rank < web_rank,
+                "{} must place its intent document below the generic competitor under the neutral prior: competitor={web_competitor_rank} intent={web_rank}",
+                case.id
+            );
+            assert!(
+                derived_rank < web_rank,
+                "{} must promote its intent document: web={web_rank} derived={derived_rank}",
+                case.id
+            );
+        }
+        signal_rows.push(serde_json::json!({
+            "case": case.id,
+            "annotated_intent": case.intent,
+            "derived_intent": derived.intent.as_str(),
+            "derived_reasons": derived.reasons,
+            "derived_confidence": derived.confidence,
+            "window": window,
+            "intent_document": {
+                "url": signal.intent_document_url,
+                "intent_web_rank": web_rank,
+                "derived_rank": derived_rank
+            },
+            "competitor": {
+                "url": signal.competitor_url,
+                "intent_web_rank": web_competitor_rank,
+                "derived_rank": derived_competitor_rank
+            }
+        }));
+    }
+    println!(
+        "retrieval-quality-signal-promotion {}",
+        serde_json::to_string(&serde_json::json!({
+            "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
+            "cases": signal_rows
+        }))
+        .unwrap()
+    );
+
+    let first = replay_corpus(
+        &corpus,
+        eggsearch::selection_test::SelectionKnobs::production(),
+    );
+    let second = replay_corpus(
+        &corpus,
+        eggsearch::selection_test::SelectionKnobs::production(),
+    );
+    for (left, right) in first.cases.iter().zip(&second.cases) {
+        assert_eq!(left.results, right.results, "replay order must be stable");
+    }
+    let (aggregate, _) = evaluate(&first, None);
+    let (repeated, _) = evaluate(&second, None);
+    assert_eq!(aggregate, repeated);
+
+    let inversion = case_metrics(&first, "rank-inversion-001");
+    assert_eq!(metric(&inversion, "recall_at_5"), 1.0);
+    assert_eq!(metric(&inversion, "mrr_at_5"), 1.0);
+    assert!(
+        metric(&inversion, "ndcg_at_5") < 0.9,
+        "the swapped authoritative document must cost graded ranking: {inversion}"
+    );
+
+    let duplicates = case_metrics(&first, "duplicate-cluster-001");
+    assert_eq!(metric(&duplicates, "recall_at_5"), 1.0);
+    assert_eq!(metric(&duplicates, "duplicate_slots"), 0.0);
+    assert_eq!(metric(&duplicates, "distinct_domains_topk"), 4.0);
+
+    let concentration = case_metrics(&first, "domain-concentration-001");
+    assert_eq!(metric(&concentration, "recall_at_5"), 0.5);
+    assert_eq!(metric(&concentration, "distinct_domains_topk"), 2.0);
+    assert_eq!(metric(&concentration, "authoritative_survival"), 0.5);
+
+    let agreement = case_metrics(&first, "provider-agreement-001");
+    assert_eq!(metric(&agreement, "recall_at_5"), 1.0);
+    assert_eq!(metric(&agreement, "mrr_at_5"), 1.0);
+    assert_eq!(metric(&agreement, "distinct_domains_topk"), 5.0);
+
+    let disagreement = case_metrics(&first, "provider-disagreement-001");
+    assert!(
+        metric(&disagreement, "recall_at_5") < 1.0,
+        "provider-disagreement case must remain a consensus-bias stress: {disagreement}"
+    );
+
+    for id in ["authoritative-promotion-001", "code-intent-promotion-001"] {
+        let promotion = case_metrics(&first, id);
+        assert_eq!(
+            metric(&promotion, "authoritative_survival"),
+            1.0,
+            "{id} must be promoted into the final window: {promotion}"
+        );
+        assert_eq!(metric(&promotion, "recall_at_5"), 1.0, "{id}");
+    }
+
+    for case in &first.cases {
+        let metrics = case_metrics(&first, &case.id);
+        assert!(
+            metric(&metrics, "ndcg_at_5") <= 1.0,
+            "nDCG above 1 means a document matched more than once: {} {metrics}",
+            case.id
+        );
+    }
+
+    assert_eq!(metric(&aggregate, "duplicate_slots"), 0.0);
+    assert!(metric(&aggregate, "authoritative_survival") > 0.5);
+    println!(
+        "retrieval-quality-candidate-snapshot-report {}",
+        serde_json::to_string(&snapshot_report(&first, aggregate)).unwrap()
+    );
+}
+
+#[test]
+fn recorded_snapshot_tier_is_explicit_about_its_provenance() {
+    let corpus: Corpus = serde_json::from_str(RECORDED_SNAPSHOTS).expect("recorded corpus parses");
+    assert_eq!(corpus.schema_version, 1);
+    assert_eq!(corpus.corpus_revision, "candidate-snapshots-recorded-v1");
+    assert_eq!(corpus.tier.as_deref(), Some("recorded_real"));
+    assert!(corpus.provenance.contains("page bodies"));
+    if corpus.cases.is_empty() {
+        assert!(
+            corpus
+                .pending
+                .as_deref()
+                .is_some_and(|pending| pending.contains("recorder")),
+            "an empty recorded tier must name the recorder that populates it"
+        );
+        println!(
+            "retrieval-quality-recorded-snapshots state=empty reason={}",
+            corpus.pending.unwrap_or_default()
+        );
+        return;
+    }
+    for case in &corpus.cases {
+        let observed_at = case
+            .observed_at
+            .as_deref()
+            .unwrap_or_else(|| panic!("recorded case {} must record a UTC date", case.id));
+        assert!(
+            observed_at.len() == 10
+                && observed_at.as_bytes()[4] == b'-'
+                && observed_at.as_bytes()[7] == b'-',
+            "recorded case {} must record a YYYY-MM-DD UTC date, got {observed_at}",
+            case.id
+        );
+        assert_eq!(case.freshness.as_deref(), Some("any"));
+    }
+    #[cfg(feature = "mock")]
+    {
+        for case in &corpus.cases {
+            assert!(
+                !case.provider_lists.is_empty(),
+                "recorded case {} must record provider lists",
+                case.id
+            );
+        }
+        let replayed = replay_corpus(
+            &corpus,
+            eggsearch::selection_test::SelectionKnobs::production(),
+        );
+        let (aggregate, _) = evaluate(&replayed, None);
+        assert_eq!(aggregate["cases"], corpus.cases.len());
+        println!(
+            "retrieval-quality-recorded-snapshot-report {}",
+            serde_json::to_string(&snapshot_report(&replayed, aggregate)).unwrap()
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn seeded_selector_regressions_are_detected_on_candidate_snapshots() {
+    use eggsearch::selection_test::SelectionKnobs;
+
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let production_knobs = SelectionKnobs::production();
+    let production_corpus = replay_corpus(&corpus, production_knobs);
+    let (production, _) = evaluate(&production_corpus, None);
+
+    let degenerate_corpus = replay_corpus(
+        &corpus,
+        SelectionKnobs {
+            rrf_k: f64::INFINITY,
+            ..production_knobs
+        },
+    );
+    let (degenerate, _) = evaluate(&degenerate_corpus, None);
+
+    let dedup_off_corpus = replay_corpus(
+        &corpus,
+        SelectionKnobs {
+            dedup: false,
+            ..production_knobs
+        },
+    );
+    let (dedup_off, _) = evaluate(&dedup_off_corpus, None);
+
+    let truncated_corpus = replay_corpus(
+        &corpus,
+        SelectionKnobs {
+            truncate_before_rerank: true,
+            ..production_knobs
+        },
+    );
+    let (truncated, _) = evaluate(&truncated_corpus, None);
+
+    let production_survival = metric(&production, "authoritative_survival");
+    let production_mrr = metric(&production, "mrr_at_5");
+    let production_duplicates = metric(&production, "duplicate_slots");
+
+    assert_eq!(production_duplicates, 0.0);
+    assert!(
+        metric(&dedup_off, "duplicate_slots") >= production_duplicates + 4.0,
+        "dedup disabled must occupy duplicate slots: {dedup_off}"
+    );
+    assert_eq!(
+        metric(
+            &case_metrics(&dedup_off_corpus, "duplicate-cluster-001"),
+            "duplicate_slots"
+        ),
+        2.0
+    );
+
+    assert!(
+        metric(&degenerate, "authoritative_survival") < production_survival - 0.2,
+        "degenerate RRF constant must collapse authoritative survival: prod={production_survival} degenerate={}",
+        metric(&degenerate, "authoritative_survival")
+    );
+    assert!(
+        metric(&degenerate, "mrr_at_5") < production_mrr - 0.2,
+        "degenerate RRF constant must collapse rank ordering: prod={production_mrr} degenerate={}",
+        metric(&degenerate, "mrr_at_5")
+    );
+    let production_concentration = case_metrics(&production_corpus, "domain-concentration-001");
+    let degenerate_concentration = case_metrics(&degenerate_corpus, "domain-concentration-001");
+    assert!(
+        metric(&degenerate_concentration, "distinct_domains_topk")
+            < metric(&production_concentration, "distinct_domains_topk"),
+        "degenerate RRF constant must collapse domain diversity: prod={production_concentration} degenerate={degenerate_concentration}"
+    );
+
+    for id in ["authoritative-promotion-001", "code-intent-promotion-001"] {
+        assert_eq!(
+            metric(
+                &case_metrics(&production_corpus, id),
+                "authoritative_survival"
+            ),
+            1.0
+        );
+        assert_eq!(
+            metric(
+                &case_metrics(&truncated_corpus, id),
+                "authoritative_survival"
+            ),
+            0.0,
+            "{id} must lose its authoritative document when the pool is cut before reranking"
+        );
+    }
+    assert!(
+        metric(&truncated, "authoritative_survival") < production_survival - 0.25,
+        "truncation before reranking must lower authoritative survival: prod={production_survival} truncated={}",
+        metric(&truncated, "authoritative_survival")
+    );
+
+    println!(
+        "retrieval-quality-negative-controls {}",
+        serde_json::json!({
+            "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
+            "production": {
+                "duplicate_slots": production_duplicates,
+                "distinct_domains_topk": metric(&production, "distinct_domains_topk"),
+                "authoritative_survival": production_survival,
+                "mrr_at_5": production_mrr,
+                "ndcg_at_5": metric(&production, "ndcg_at_5")
+            },
+            "case_probes": {
+                "domain_concentration_distinct_domains": {
+                    "production": metric(&production_concentration, "distinct_domains_topk"),
+                    "degenerate_rrf_constant": metric(
+                        &degenerate_concentration,
+                        "distinct_domains_topk"
+                    )
+                },
+                "duplicate_cluster_duplicate_slots": {
+                    "production": metric(
+                        &case_metrics(&production_corpus, "duplicate-cluster-001"),
+                        "duplicate_slots"
+                    ),
+                    "dedup_disabled": metric(
+                        &case_metrics(&dedup_off_corpus, "duplicate-cluster-001"),
+                        "duplicate_slots"
+                    )
+                },
+                "authoritative_promotion_survival": {
+                    "production": metric(
+                        &case_metrics(&production_corpus, "authoritative-promotion-001"),
+                        "authoritative_survival"
+                    ),
+                    "truncate_before_rerank": metric(
+                        &case_metrics(&truncated_corpus, "authoritative-promotion-001"),
+                        "authoritative_survival"
+                    )
+                },
+                "code_intent_promotion_survival": {
+                    "production": metric(
+                        &case_metrics(&production_corpus, "code-intent-promotion-001"),
+                        "authoritative_survival"
+                    ),
+                    "truncate_before_rerank": metric(
+                        &case_metrics(&truncated_corpus, "code-intent-promotion-001"),
+                        "authoritative_survival"
+                    )
+                }
+            },
+            "degenerate_rrf_constant": {
+                "rrf_k": "infinity",
+                "duplicate_slots": metric(&degenerate, "duplicate_slots"),
+                "distinct_domains_topk": metric(&degenerate, "distinct_domains_topk"),
+                "authoritative_survival": metric(&degenerate, "authoritative_survival"),
+                "mrr_at_5": metric(&degenerate, "mrr_at_5"),
+                "ndcg_at_5": metric(&degenerate, "ndcg_at_5")
+            },
+            "dedup_disabled": {
+                "duplicate_slots": metric(&dedup_off, "duplicate_slots"),
+                "distinct_domains_topk": metric(&dedup_off, "distinct_domains_topk"),
+                "authoritative_survival": metric(&dedup_off, "authoritative_survival"),
+                "mrr_at_5": metric(&dedup_off, "mrr_at_5"),
+                "ndcg_at_5": metric(&dedup_off, "ndcg_at_5")
+            },
+            "truncate_before_rerank": {
+                "duplicate_slots": metric(&truncated, "duplicate_slots"),
+                "distinct_domains_topk": metric(&truncated, "distinct_domains_topk"),
+                "authoritative_survival": metric(&truncated, "authoritative_survival"),
+                "mrr_at_5": metric(&truncated, "mrr_at_5"),
+                "ndcg_at_5": metric(&truncated, "ndcg_at_5")
+            }
+        })
+    );
+}
+
+#[cfg(feature = "mock")]
+struct QueryRecordingEngine {
+    results: Vec<eggsearch::meta::engines::models::SearchResult>,
+    queries: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+#[cfg(feature = "mock")]
+impl eggsearch::meta::engines::SearchEngine for QueryRecordingEngine {
+    fn name(&self) -> &'static str {
+        "mock_a"
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a eggsearch::meta::engines::EngineSearchRequest,
+    ) -> eggsearch::meta::engines::BoxFuture<
+        'a,
+        Result<
+            Vec<eggsearch::meta::engines::models::SearchResult>,
+            eggsearch::meta::engines::error::EngineError,
+        >,
+    > {
+        if let Ok(mut seen) = self.queries.lock() {
+            seen.push(request.query.clone());
+        }
+        let results = self.results.clone();
+        Box::pin(async move { Ok(results) })
+    }
+}
+
+#[cfg(feature = "mock")]
+async fn recorded_provider_queries(
+    query: &str,
+    caller_intent: Option<SearchIntent>,
+) -> Vec<String> {
+    use eggsearch::core::WebSearchRequest;
+    use eggsearch::meta::MetadataSearchAdapter;
+
+    let queries = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let engine = QueryRecordingEngine {
+        results: vec![eggsearch::meta::engines::models::SearchResult {
+            title: "Example".to_string(),
+            url: "https://example.test/page".to_string(),
+            snippet: None,
+            source_engine: "mock_a".to_string(),
+            metadata: Default::default(),
+            excerpts: Vec::new(),
+            published_at: None,
+        }],
+        queries: Arc::clone(&queries),
+    };
+    let adapter = MetadataSearchAdapter::from_engines(
+        vec![Arc::new(engine) as Arc<dyn eggsearch::meta::engines::SearchEngine>],
+        std::time::Duration::from_secs(2),
+    );
+    let mut req = WebSearchRequest::new(query);
+    req.providers = vec!["mock_a".to_string()];
+    adapter
+        .web_search_with_intent(&req, 5, 50, caller_intent)
+        .await;
+    let seen = queries.lock().map(|seen| seen.clone()).unwrap_or_default();
+    seen
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn derived_intent_keeps_planner_output_and_provider_query_text() {
+    use eggsearch::core::query::SearchIntent;
+    use eggsearch::core::WebSearchRequest;
+    use eggsearch::meta::build_search_plan;
+    use eggsearch::selection_test::derive_intent;
+
+    let snapshot: Corpus =
+        serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let mut queries: Vec<String> = snapshot
+        .cases
+        .iter()
+        .map(|case| case.query.clone())
+        .collect();
+    queries.extend(
+        [
+            "Router::layer middleware ordering",
+            "rust E0277 trait bound",
+            "CVE-2024-1234 openssl",
+            "serde == 1.0.200 features",
+            "tokio release notes",
+            "axum websocket issue",
+            "tokio documentation runtime",
+            "latest database news",
+        ]
+        .into_iter()
+        .map(str::to_string),
+    );
+
+    let mut derived_cases = 0usize;
+    for query in &queries {
+        let derived = derive_intent(query);
+        if derived.intent != SearchIntent::Web {
+            derived_cases += 1;
+        }
+        let mut req = WebSearchRequest::new(query.clone());
+        req.providers = vec!["mock_a".to_string()];
+        let plan = build_search_plan(&req, &[]);
+        assert_eq!(
+            plan.generic_query,
+            query.trim(),
+            "derived {:?} must not rewrite the planned query",
+            derived.reasons
+        );
+        assert!(plan.provider_queries.is_empty());
+
+        let implicit = recorded_provider_queries(query, None).await;
+        let explicit = recorded_provider_queries(query, Some(SearchIntent::Web)).await;
+        assert_eq!(
+            implicit, explicit,
+            "omitted intent must dispatch the same provider query text for {query:?}"
+        );
+        assert_eq!(implicit, vec![query.trim().to_string()]);
+    }
+    assert!(
+        derived_cases >= 6,
+        "the invariance corpus must include derived non-web intents, got {derived_cases}"
+    );
+}
+
+#[cfg(feature = "mock")]
+struct RolloutMetric {
+    key: &'static str,
+    higher_is_better: bool,
+}
+
+#[cfg(feature = "mock")]
+const ROLLOUT_METRICS: [RolloutMetric; 6] = [
+    RolloutMetric {
+        key: "recall_at_5",
+        higher_is_better: true,
+    },
+    RolloutMetric {
+        key: "mrr_at_5",
+        higher_is_better: true,
+    },
+    RolloutMetric {
+        key: "ndcg_at_5",
+        higher_is_better: true,
+    },
+    RolloutMetric {
+        key: "authoritative_survival",
+        higher_is_better: true,
+    },
+    RolloutMetric {
+        key: "duplicate_slots",
+        higher_is_better: false,
+    },
+    RolloutMetric {
+        key: "distinct_domains_topk",
+        higher_is_better: true,
+    },
+];
+
+#[cfg(feature = "mock")]
+#[test]
+fn derived_intent_rollout_gate_matches_the_recorded_decision() {
+    use eggsearch::core::query::SearchIntent;
+    use eggsearch::selection_test::{derive_intent, reranking_uses_derived_intent, SelectionKnobs};
+
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let web_corpus = replay_corpus_with_intent(&corpus, SelectionKnobs::production(), |_case| {
+        SearchIntent::Web
+    });
+    let derived_corpus = replay_corpus_with_intent(&corpus, SelectionKnobs::production(), |case| {
+        derive_intent(&case.query).intent
+    });
+    let (web, _) = evaluate(&web_corpus, None);
+    let (derived, _) = evaluate(&derived_corpus, None);
+
+    let mut aggregate_improved = false;
+    let mut aggregate_worsened: Vec<&'static str> = Vec::new();
+    let mut aggregate_rows = Vec::new();
+    for spec in &ROLLOUT_METRICS {
+        let base = metric(&web, spec.key);
+        let candidate = metric(&derived, spec.key);
+        let delta = candidate - base;
+        let improvement = if spec.higher_is_better { delta } else { -delta };
+        if improvement > 1e-9 {
+            aggregate_improved = true;
+        }
+        if improvement < -1e-9 {
+            aggregate_worsened.push(spec.key);
+        }
+        aggregate_rows.push(serde_json::json!({
+            "metric": spec.key,
+            "higher_is_better": spec.higher_is_better,
+            "intent_web": base,
+            "derived": candidate,
+            "delta": delta
+        }));
+    }
+
+    let mut case_rows = Vec::new();
+    let mut signal_improved: Vec<String> = Vec::new();
+    let mut case_worsened: Vec<String> = Vec::new();
+    for case in corpus
+        .cases
+        .iter()
+        .filter(|case| !case.provider_lists.is_empty())
+    {
+        let derived_intent = derive_intent(&case.query);
+        let web_case = case_metrics(&web_corpus, &case.id);
+        let derived_case = case_metrics(&derived_corpus, &case.id);
+        let signal = SIGNAL_CASES.iter().find(|signal| signal.case_id == case.id);
+        let ranks = signal.map(|signal| {
+            let web_rows = &web_corpus
+                .cases
+                .iter()
+                .find(|replayed| replayed.id == case.id)
+                .expect("replayed case")
+                .results;
+            let derived_rows = &derived_corpus
+                .cases
+                .iter()
+                .find(|replayed| replayed.id == case.id)
+                .expect("replayed case")
+                .results;
+            serde_json::json!({
+                "intent_document_url": signal.intent_document_url,
+                "intent_document_rank": {
+                    "intent_web": row_rank(web_rows, signal.intent_document_url),
+                    "derived": row_rank(derived_rows, signal.intent_document_url)
+                },
+                "competitor_url": signal.competitor_url,
+                "competitor_rank": {
+                    "intent_web": row_rank(web_rows, signal.competitor_url),
+                    "derived": row_rank(derived_rows, signal.competitor_url)
+                }
+            })
+        });
+        for spec in &ROLLOUT_METRICS {
+            let base = metric(&web_case, spec.key);
+            let candidate = metric(&derived_case, spec.key);
+            let delta = candidate - base;
+            let improvement = if spec.higher_is_better { delta } else { -delta };
+            if improvement > 1e-9 && signal.is_some() {
+                signal_improved.push(format!("{}:{}", case.id, spec.key));
+            }
+            if improvement < -1e-9 {
+                case_worsened.push(format!("{}:{}", case.id, spec.key));
+            }
+            case_rows.push(serde_json::json!({
+                "case": case.id,
+                "annotated_intent": case.intent,
+                "derived_intent": derived_intent.intent.as_str(),
+                "derived_reasons": derived_intent.reasons,
+                "derived_confidence": derived_intent.confidence,
+                "metric": spec.key,
+                "intent_web": base,
+                "derived": candidate,
+                "delta": delta,
+                "signal_case": signal.is_some(),
+                "ranks": ranks,
+            }));
+        }
+    }
+
+    let should_apply = aggregate_improved
+        && aggregate_worsened.is_empty()
+        && case_worsened.is_empty()
+        && !signal_improved.is_empty();
+    assert_eq!(
+        reranking_uses_derived_intent(),
+        should_apply,
+        "the applied/observe-only switch must follow the snapshot evidence: \
+         aggregate_worsened={aggregate_worsened:?} case_worsened={case_worsened:?} \
+         signal_improved={signal_improved:?} aggregate_improved={aggregate_improved} \
+         aggregate={aggregate_rows:?}"
+    );
+    if should_apply {
+        assert!(
+            signal_improved.len() >= SIGNAL_CASES.len(),
+            "every signal case must improve at least one ranking metric, improved={signal_improved:?}"
+        );
+    }
+
+    println!(
+        "retrieval-quality-derived-intent-rollout {}",
+        serde_json::to_string(&serde_json::json!({
+            "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
+            "decision": if should_apply { "applied" } else { "observe_only" },
+            "improved_any_metric": aggregate_improved,
+            "worsened_metrics": aggregate_worsened,
+            "case_worsened_metrics": case_worsened,
+            "signal_improved_metrics": signal_improved,
+            "aggregate": aggregate_rows,
+            "per_case": case_rows
+        }))
+        .unwrap()
+    );
+}
+
 #[tokio::test]
 #[ignore = "opt-in live observation; configure providers and an explicit task allowlist"]
 async fn retrieval_quality_live_observation() {
@@ -1041,5 +2079,258 @@ async fn retrieval_quality_live_observation() {
     println!(
         "retrieval-quality-live-report {}",
         serde_json::to_string(&report).unwrap()
+    );
+}
+
+fn snapshot_output_path() -> std::path::PathBuf {
+    use std::path::{Component, PathBuf};
+
+    let raw = std::env::var("EGGSEARCH_RETRIEVAL_SNAPSHOT_OUT")
+        .expect("set EGGSEARCH_RETRIEVAL_SNAPSHOT_OUT to a .json path under target/snapshots/");
+    let path = PathBuf::from(&raw);
+    assert!(
+        !path.is_absolute(),
+        "snapshot output must be relative to the repository, not absolute: {raw}"
+    );
+    assert!(
+        path.starts_with(SNAPSHOT_OUTPUT_ROOT),
+        "snapshot output must live under {SNAPSHOT_OUTPUT_ROOT}/: {raw}"
+    );
+    assert!(
+        path.extension()
+            .is_some_and(|extension| extension == "json"),
+        "snapshot output must be a .json file: {raw}"
+    );
+    assert!(
+        path.components()
+            .all(|component| matches!(component, Component::Normal(_))),
+        "snapshot output must not contain . or .. components: {raw}"
+    );
+    path
+}
+
+#[tokio::test]
+#[ignore = "opt-in live recorder; writes an untracked candidate snapshot under target/snapshots/"]
+async fn retrieval_quality_candidate_snapshot_recorder() {
+    use std::sync::Arc;
+
+    use eggsearch::core::config::AppConfig;
+    use eggsearch::core::query::{Freshness, SearchIntent};
+    use eggsearch::mcp::state::ServerState;
+    use eggsearch::mcp::tools::{run_web_search, WebSearchArgs};
+
+    let output = snapshot_output_path();
+    assert_eq!(
+        std::env::var("EGGSEARCH_RETRIEVAL_LIVE").unwrap_or_default(),
+        "1",
+        "set EGGSEARCH_RETRIEVAL_LIVE=1 to authorize live queries"
+    );
+    let providers = std::env::var("EGGSEARCH_RETRIEVAL_PROVIDERS")
+        .expect("set an explicit comma-separated provider allowlist");
+    let provider_ids: Vec<String> = providers
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .collect();
+    assert!(!provider_ids.is_empty());
+    assert_eq!(
+        provider_ids.iter().collect::<HashSet<_>>().len(),
+        provider_ids.len(),
+        "provider IDs must not be duplicated"
+    );
+    assert!(
+        provider_ids.len() <= 8,
+        "live provider ceiling is 8 providers"
+    );
+    assert!(
+        provider_ids
+            .iter()
+            .all(|id| eggsearch::core::provider::KNOWN_PROVIDER_IDS.contains(&id.as_str())),
+        "provider IDs must be registered providers"
+    );
+    let paid = std::env::var("EGGSEARCH_RETRIEVAL_PAID_PROVIDERS")
+        .expect("set paid provider IDs explicitly, or set this to an empty string");
+    let paid_ids: HashSet<String> = paid
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+        .collect();
+    assert!(
+        paid_ids.iter().all(|id| provider_ids.contains(id)),
+        "paid provider IDs must be included in the provider allowlist"
+    );
+    if !paid_ids.is_empty() {
+        assert_eq!(
+            std::env::var("EGGSEARCH_RETRIEVAL_ALLOW_BILLING").as_deref(),
+            Ok("1"),
+            "set EGGSEARCH_RETRIEVAL_ALLOW_BILLING=1 to explicitly authorize billable references"
+        );
+    }
+    let source_sha = std::env::var("EGGSEARCH_BENCH_SOURCE_SHA").expect("set the exact source SHA");
+    assert!(
+        source_sha.len() == 40 && source_sha.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "source SHA must be a 40-character hexadecimal commit ID"
+    );
+    let locale =
+        std::env::var("EGGSEARCH_RETRIEVAL_LOCALE").expect("set the locale for this live cohort");
+
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let requested = std::env::var("EGGSEARCH_RETRIEVAL_CASES").expect("set case IDs to record");
+    let allowed: HashSet<String> = requested
+        .split(',')
+        .map(str::trim)
+        .map(str::to_owned)
+        .collect();
+    let cases: Vec<&Case> = corpus
+        .cases
+        .iter()
+        .filter(|case| allowed.contains(&case.id))
+        .collect();
+    assert_eq!(
+        cases.len(),
+        allowed.len(),
+        "all recorded case IDs must exist"
+    );
+    assert!(!cases.is_empty(), "select at least one case to record");
+
+    let mut config = AppConfig::default();
+    config.search.providers = provider_ids.iter().map(|id| (id.clone(), true)).collect();
+    config.search.sanitize_output = false;
+    let state = Arc::new(ServerState::build(config).expect("configured state builds"));
+
+    let observed_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let mut recorded = Vec::new();
+    let mut failures: Vec<serde_json::Value> = Vec::new();
+    let mut candidate_results = 0usize;
+    let mut provider_lists = 0usize;
+    for case in &cases {
+        let mut lists = Vec::new();
+        for provider in &provider_ids {
+            let response = run_web_search(
+                state.clone(),
+                WebSearchArgs {
+                    query: case.query.clone(),
+                    max_results: Some(RECORDER_MAX_RESULTS_PER_PROVIDER),
+                    providers: vec![provider.clone()],
+                    safe_search: None,
+                    timeout_ms: Some(10_000),
+                    intent: Some(SearchIntent::Web),
+                    freshness: Some(Freshness::Any),
+                    date_range: None,
+                    include_domains: Vec::new(),
+                    exclude_domains: Vec::new(),
+                    language: Some(case.language.clone()),
+                    region: Some(case.region.clone()),
+                    excerpt_count: None,
+                    response_detail: None,
+                },
+            )
+            .await;
+            let response = match response {
+                Ok(response) => response,
+                Err(error) => {
+                    failures.push(serde_json::json!({
+                        "case_id": case.id,
+                        "provider_id": provider,
+                        "error": error.to_string()
+                    }));
+                    continue;
+                }
+            };
+            let ranked: Vec<serde_json::Value> = response
+                .get("results")
+                .and_then(serde_json::Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, item)| {
+                            let url = item.get("url").and_then(serde_json::Value::as_str)?;
+                            let normalized = eggsearch::meta::engines::normalizer::normalize(url)
+                                .unwrap_or_else(|| url.to_owned());
+                            let title = item
+                                .get("title")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default();
+                            Some(serde_json::json!({
+                                "rank": index + 1,
+                                "title": title,
+                                "url": normalized
+                            }))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            if ranked.is_empty() {
+                continue;
+            }
+            candidate_results += ranked.len();
+            provider_lists += 1;
+            lists.push(serde_json::json!({
+                "provider_id": provider,
+                "results": ranked
+            }));
+        }
+        recorded.push(serde_json::json!({
+            "id": case.id,
+            "category": case.category,
+            "partition": "recorded",
+            "query": case.query,
+            "language": case.language,
+            "region": case.region,
+            "intent": case.intent,
+            "freshness": "any",
+            "retrieval_scope": case.retrieval_scope,
+            "max_results": case.max_results,
+            "judgments_complete": false,
+            "expected_state": case.expected_state,
+            "actual_state": if lists.is_empty() { Some("absence") } else { None },
+            "observed_at": observed_at,
+            "relevant_documents": [],
+            "provider_lists": lists
+        }));
+    }
+    assert!(
+        candidate_results > 0,
+        "live dispatch produced no candidate rows for any provider; refusing to write an empty recorded snapshot: {}",
+        serde_json::to_string(&failures).unwrap_or_default()
+    );
+
+    let document = serde_json::json!({
+        "schema_version": 1,
+        "corpus_revision": "candidate-snapshots-recorded-v1",
+        "tier": "recorded_real",
+        "provenance": "Recorded-real candidate snapshots from an opt-in live run. Only provider id, query, UTC observation date, rank, title, and normalized URL are stored; page bodies are never written.",
+        "annotation_uncertainty": "Recorded provider order is not relevance truth. Cases stay unjudged until a hand-written gold set is added without reading the recorded order.",
+        "source_sha": source_sha,
+        "observed_at": observed_at,
+        "locale": locale,
+        "eggsearch_version": env!("CARGO_PKG_VERSION"),
+        "providers": provider_ids,
+        "paid_reference_providers": paid_ids,
+        "recorded_case_count": recorded.len(),
+        "provider_list_count": provider_lists,
+        "candidate_row_count": candidate_results,
+        "provider_failures": failures,
+        "cases": recorded
+    });
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent).expect("snapshot output directory is creatable");
+    }
+    std::fs::write(
+        &output,
+        serde_json::to_vec_pretty(&document).expect("snapshot serializes"),
+    )
+    .expect("snapshot output is writable");
+    println!(
+        "retrieval-quality-candidate-snapshot-recorder {}",
+        serde_json::json!({
+            "output": output.display().to_string(),
+            "cases": recorded.len(),
+            "provider_lists": provider_lists,
+            "candidate_rows": candidate_results
+        })
     );
 }

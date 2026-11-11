@@ -62,13 +62,15 @@ pub async fn run_web_search(
         )));
     }
 
+    let caller_intent = args.intent;
+
     let mut req = WebSearchRequest {
         query: args.query.clone(),
         max_results: args.max_results,
         providers: args.providers.clone(),
         safe_search: args.safe_search,
         timeout_ms: args.timeout_ms,
-        intent: args.intent.unwrap_or_default(),
+        intent: caller_intent.unwrap_or_default(),
         freshness: args.freshness.unwrap_or_default(),
         date_range: args.date_range.clone(),
         include_domains: args.include_domains.clone(),
@@ -106,10 +108,11 @@ pub async fn run_web_search(
 
     let mut resp = state
         .adapter
-        .web_search(
+        .web_search_with_intent(
             &req,
             resolution.effective,
             state.config.search.max_results_cap,
+            caller_intent,
         )
         .await;
 
@@ -255,7 +258,7 @@ pub async fn run_web_search(
         )));
     }
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "query": resp.query,
         "mode": resp.mode,
         "results": resp.results,
@@ -274,6 +277,20 @@ pub async fn run_web_search(
         "evidence_role_summary": resp.evidence_postprocess.as_ref().and_then(|ep| ep.evidence_role_summary.as_ref()),
         "capability_enforcement": resp.capability_enforcement.as_ref().map(|t| serde_json::to_value(t).unwrap_or(serde_json::json!({}))).unwrap_or(serde_json::json!({})),
     });
+    if let Some(object) = payload.as_object_mut() {
+        if let Some(derived_intent) = resp.derived_intent {
+            object.insert(
+                "derived_intent".to_string(),
+                serde_json::Value::String(derived_intent),
+            );
+        }
+        if let Some(derived_intent_reasons) = resp.derived_intent_reasons {
+            object.insert(
+                "derived_intent_reasons".to_string(),
+                serde_json::json!(derived_intent_reasons),
+            );
+        }
+    }
 
     let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
         args.response_detail,

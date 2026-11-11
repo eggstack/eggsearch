@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5694 | 24 |
-| `--features mock` | 5423 | 2 |
+| `--all-features` | 5848 | 26 |
+| `--features mock` | 5577 | 3 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -16,7 +16,8 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | Suite | Feature Gate | Focus |
 |-------|-------------|-------|
 | `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
-| `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection |
+| `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection, derived-intent reporting and applied reranking, search-result cache hit/miss/coalesce equivalence and partial-fan-out bypass, blocked-provider classification |
+| `engine_parse_conformance` | `mock` | Captured-fixture conformance for the five HTML scrapers: parsed rows, explicit empty state, block classification, and a seeded-drift negative control that requires `parse_error` |
 | `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds |
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey |
@@ -25,12 +26,12 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
 | `evidence_contract` | `mock` (mostly) | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
-| `config_validation` | None | Config rules and validation |
+| `config_validation` | None | Config rules and validation, including `[search]` search-cache TTL/entry bounds |
 | `keyless_core` | None | Keyless-core runtime invariant |
 | `local_workspace_integration` | `mock` | Local workspace search backend |
 | `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
 | `retrieval_attempt_ledger` | None | Attempt ledger validation |
-| `retrieval_quality` | `mock` (live observation ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, opt-in bounded provider observations |
+| `retrieval_quality` | `mock` (live observation and recorder ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, candidate-snapshot replay through the production selection path (tier-1 synthetic, tier-2 recorded, tier-3 recorded into `target/snapshots/`), duplicate-slot/domain/authoritative-survival metrics, three seeded negative controls, derived-intent rollout gate, opt-in bounded provider observations |
 | `conflict_source_attribution` | None | Conflict source attribution |
 | `bounded_command` | `mock` | Bounded git command execution (caps, timeout, termination) |
 | `firecrawl_developer` | None | Developer-index adapter behavior |
@@ -62,7 +63,7 @@ Placement authority is the table in `architecture/testing.md`.
 | `property_local_fs_extended` | None | 35 | Symlinks, path traversal, hidden paths, root containment, permission denied |
 | `property_forge_url` | None | 17 | Forge URL validation, credential rejection, loopback, private ranges |
 | `property_conflict` | None | 24 | Conflict detection, entity scoping, source attribution |
-| `property_retrieval` | None | 44 | Retrieval attempt ledger, absence kinds, truncation evidence |
+| `property_retrieval` | None | 47 | Retrieval attempt ledger, absence kinds, truncation evidence, derived-intent determinism/bounds/reason-code shape |
 | `property_dependency_parse` | None | 8 | Dispatch determinism, per-file budgets, identity/provenance invariants, line bounds, canonicalization |
 
 ## Fault Injection & Adversarial
@@ -73,7 +74,7 @@ Placement authority is the table in `architecture/testing.md`.
 | `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
 | `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
 | `provider_request_contract` | `mock` | 36 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, credentialed-provider wire contracts (SerpApi pinned engine/no extra verticals/query-parameter credential; Kagi v1 POST + bearer + search-only collection, terminal quota), provider-scoped failures, credential redaction in every error path, and oversized-body rejection |
-| `extract_fetch_contract` | `mock` (1 test) | 13 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls |
+| `extract_fetch_contract` | `mock` (1 test) | 24 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls, markdown-first negotiation (Accept policy, cache-key isolation, bounded fallback, `Vary: Accept`, markdown link extraction, controlled A/B) |
 | `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
 | `provider_capability_contract` | None | 23 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl/serpapi/kagi), HTML-scraper none, domain-filter exclusivity, keyless source-provider inventory/keyless/default-exclusion/timestamp/freshness claims (incl. `nvd` freshness non-enforcement), credentialed-provider required-key posture/opt-in exclusion/engine-builder reachability with typed missing-key skips, `structured_api` exclusivity, AGENTS.md prose agreement |
 | `provider_workstream_regression` | `mock` | 7 | Provider inventory (44 IDs), capability descriptors, constraint enforcement matrix, keyless vs optional-credential posture, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |

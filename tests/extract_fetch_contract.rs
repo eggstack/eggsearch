@@ -552,3 +552,617 @@ async fn web_search_excerpt_demand_is_additive() {
         "excerpts must not alter stable IDs"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Markdown-first content negotiation (M003)
+// ---------------------------------------------------------------------------
+
+fn markdown_document() -> &'static str {
+    "# Retry Guide\n\n## Backoff\n\nUse an idempotency key for every retry so a duplicate request is safe.\n\n| Attempt | Delay |\n| --- | --- |\n| 1 | 100 ms |\n| 2 | 200 ms |\n\n```rust\nfn retry() {\n    let budget = 3;\n    println!(\"budget {budget}\");\n}\n```\n\n[the inline note](https://example.com/inline)\n\n[the reference note][ref]\n\n[ref]: https://example.com/reference\n"
+}
+
+fn html_document() -> &'static str {
+    "<!DOCTYPE html><html><head><title>Retry Guide</title></head><body>\
+     <h1>Retry Guide</h1>\
+     <h2>Backoff</h2>\
+     <p>Use an idempotency key for every retry so a duplicate request is safe.</p>\
+     <table><tr><th>Attempt</th><th>Delay</th></tr>\
+     <tr><td>1</td><td>100 ms</td></tr><tr><td>2</td><td>200 ms</td></tr></table>\
+     <pre><code class=\"language-rust\">fn retry() {\n    let budget = 3;\n    println!(\"budget {budget}\");\n}</code></pre>\
+     <p><a href=\"https://example.com/inline\">the inline note</a></p>\
+     <p><a href=\"https://example.com/reference\">the reference note</a></p>\
+     </body></html>"
+}
+
+fn block_text_chars(payload: &serde_json::Value) -> usize {
+    payload["document"]["blocks"]
+        .as_array()
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter_map(|block| block["text"].as_str())
+                .map(|text| text.chars().count())
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+#[tokio::test]
+async fn markdown_policy_header_is_sent_for_html_targets() {
+    use eggsearch::fetch::accept::MARKDOWN_ACCEPT_POLICY;
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/guide")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .body("# Guide\n\nNegotiated body.\n");
+    });
+
+    let v = run_web_fetch(localhost_state(), fetch_args(server.url("/guide")))
+        .await
+        .expect("negotiated fetch works");
+
+    mock.assert_hits(1);
+    assert_eq!(v["representation"], "markdown");
+    assert_eq!(v["attempt_count"], 1);
+    assert!(v["text"]
+        .as_str()
+        .unwrap_or("")
+        .contains("Negotiated body."));
+}
+
+#[tokio::test]
+async fn non_html_targets_keep_the_html_policy() {
+    use eggsearch::fetch::accept::MARKDOWN_ACCEPT_POLICY;
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let markdown_accept = server.mock(|when, then| {
+        when.method(GET)
+            .path("/data.json")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/markdown")
+            .body("# must not be requested\n");
+    });
+    let data = server.mock(|when, then| {
+        when.method(GET).path("/data.json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"ok":true}"#);
+    });
+
+    let v = run_web_fetch(localhost_state(), fetch_args(server.url("/data.json")))
+        .await
+        .expect("json fetch works");
+
+    data.assert_hits(1);
+    assert_eq!(
+        markdown_accept.hits(),
+        0,
+        "a .json target must never send the markdown policy"
+    );
+    assert!(v["representation"].is_null());
+    assert!(v["text"].as_str().unwrap_or("").contains("\"ok\""));
+}
+
+#[tokio::test]
+async fn metadata_only_keeps_the_html_policy() {
+    use eggsearch::fetch::accept::MARKDOWN_ACCEPT_POLICY;
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let markdown_accept = server.mock(|when, then| {
+        when.method(GET)
+            .path("/meta-page")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/markdown")
+            .body("# head metadata would be lost\n");
+    });
+    let html = server.mock(|when, then| {
+        when.method(GET).path("/meta-page");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Meta Title</title><meta name=\"description\" content=\"Meta Desc\"></head><body><p>body</p></body></html>");
+    });
+
+    let mut args = fetch_args(server.url("/meta-page"));
+    args.extract_mode = Some(ExtractMode::MetadataOnly);
+    let v = run_web_fetch(localhost_state(), args)
+        .await
+        .expect("metadata fetch works");
+
+    html.assert_hits(1);
+    assert_eq!(
+        markdown_accept.hits(),
+        0,
+        "metadata_only must never negotiate away the HTML head"
+    );
+    assert!(v["title"].as_str().unwrap_or("").contains("Meta Title"));
+    assert!(v["text"].is_null());
+}
+
+#[tokio::test]
+async fn ignored_markdown_preference_does_not_trigger_a_second_request() {
+    use eggsearch::fetch::accept::{HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let ignoring = server.mock(|when, then| {
+        when.method(GET)
+            .path("/ignoring")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>primary html body</p></body></html>");
+    });
+    let html_policy = server.mock(|when, then| {
+        when.method(GET)
+            .path("/ignoring")
+            .header("accept", HTML_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>second html body</p></body></html>");
+    });
+
+    let v = run_web_fetch(localhost_state(), fetch_args(server.url("/ignoring")))
+        .await
+        .expect("fetch works");
+
+    ignoring.assert_hits(1);
+    assert_eq!(
+        html_policy.hits(),
+        0,
+        "an origin that ignored the header already served a usable representation"
+    );
+    assert_eq!(v["attempt_count"], 1);
+    assert_eq!(v["representation"], "html");
+    assert!(v["text"]
+        .as_str()
+        .unwrap_or("")
+        .contains("primary html body"));
+}
+
+#[tokio::test]
+async fn markdown_fallback_on_406_uses_one_extra_request() {
+    use eggsearch::fetch::accept::{HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let rejecting = server.mock(|when, then| {
+        when.method(GET)
+            .path("/not-acceptable")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(406).body("not acceptable");
+    });
+    let fallback = server.mock(|when, then| {
+        when.method(GET)
+            .path("/not-acceptable")
+            .header("accept", HTML_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><body><p>html fallback content</p></body></html>");
+    });
+
+    let v = run_web_fetch(localhost_state(), fetch_args(server.url("/not-acceptable")))
+        .await
+        .expect("fallback returns usable content");
+
+    rejecting.assert_hits(1);
+    fallback.assert_hits(1);
+    assert_eq!(v["attempt_count"], 2);
+    assert_eq!(v["status"], 200);
+    assert_eq!(v["representation"], "html");
+    assert!(v["text"]
+        .as_str()
+        .unwrap_or("")
+        .contains("html fallback content"));
+}
+
+#[tokio::test]
+async fn markdown_fallback_on_empty_body_uses_the_html_representation() {
+    use eggsearch::fetch::accept::{HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let empty = server.mock(|when, then| {
+        when.method(GET)
+            .path("/empty-markdown")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .body("");
+    });
+    let fallback = server.mock(|when, then| {
+        when.method(GET)
+            .path("/empty-markdown")
+            .header("accept", HTML_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Recovered</title></head><body><p>recovered body</p></body></html>");
+    });
+
+    let v = run_web_fetch(localhost_state(), fetch_args(server.url("/empty-markdown")))
+        .await
+        .expect("empty markdown falls back");
+
+    empty.assert_hits(1);
+    fallback.assert_hits(1);
+    assert_eq!(v["attempt_count"], 2);
+    assert!(v["text"].as_str().unwrap_or("").contains("recovered body"));
+}
+
+#[tokio::test]
+async fn markdown_representation_extracts_inline_and_reference_links() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/linked-md");
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .body(markdown_document());
+    });
+
+    let mut args = fetch_args(server.url("/linked-md"));
+    args.include_links = Some(true);
+    let v = run_web_fetch(localhost_state(), args)
+        .await
+        .expect("markdown link fetch works");
+
+    let links = v["links"].as_array().expect("links array");
+    let mut urls: Vec<&str> = links.iter().filter_map(|l| l["url"].as_str()).collect();
+    urls.sort_unstable();
+    assert_eq!(
+        urls,
+        vec![
+            "https://example.com/inline",
+            "https://example.com/reference"
+        ],
+        "inline and reference links must both be extracted"
+    );
+    assert_eq!(v["links_seen"], 2);
+    assert_eq!(v["links_truncated"], false);
+}
+
+#[tokio::test]
+async fn markdown_and_html_policy_cache_entries_stay_isolated() {
+    use eggsearch::fetch::accept::{HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let markdown = server.mock(|when, then| {
+        when.method(GET)
+            .path("/isolated")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .header("cache-control", "max-age=300")
+            .header("etag", "\"md\"")
+            .body("# Markdown body\n\nmarkdown-only text\n");
+    });
+    let html = server.mock(|when, then| {
+        when.method(GET)
+            .path("/isolated")
+            .header("accept", HTML_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=300")
+            .header("etag", "\"html\"")
+            .body("<html><head><title>Html Title</title></head><body><p>html-only text</p></body></html>");
+    });
+
+    let state = localhost_state();
+    let first = run_web_fetch(state.clone(), fetch_args(server.url("/isolated")))
+        .await
+        .expect("markdown fetch works");
+    assert_eq!(first["cache_status"], "miss");
+    assert_eq!(first["representation"], "markdown");
+    assert_eq!(markdown.hits(), 1);
+    assert_eq!(html.hits(), 0);
+
+    let metadata_args = || {
+        let mut args = fetch_args(server.url("/isolated"));
+        args.extract_mode = Some(ExtractMode::MetadataOnly);
+        args
+    };
+    let metadata = run_web_fetch(state.clone(), metadata_args())
+        .await
+        .expect("html policy fetch works");
+    assert_eq!(
+        html.hits(),
+        1,
+        "the html key must not reuse the markdown entry"
+    );
+    assert_eq!(
+        markdown.hits(),
+        1,
+        "the html request must not repeat the markdown request"
+    );
+    assert!(
+        metadata["title"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Html Title"),
+        "a markdown body must never be served for the html key"
+    );
+
+    let metadata_again = run_web_fetch(state.clone(), metadata_args())
+        .await
+        .expect("html policy cache hit");
+    assert_eq!(metadata_again["cache_status"], "hit");
+    assert_eq!(html.hits(), 1, "the html key caches under its own policy");
+
+    let markdown_again = run_web_fetch(state, fetch_args(server.url("/isolated")))
+        .await
+        .expect("markdown cache hit");
+    assert_eq!(markdown_again["cache_status"], "hit");
+    assert_eq!(markdown.hits(), 1);
+    assert_eq!(
+        markdown_again["representation"], "markdown",
+        "an html body must never be served for the markdown key"
+    );
+    assert!(markdown_again["text"]
+        .as_str()
+        .unwrap_or("")
+        .contains("markdown-only text"));
+}
+
+#[tokio::test]
+async fn conditional_revalidation_replays_the_markdown_policy() {
+    use eggsearch::core::fetch::FetchCachePolicy;
+    use eggsearch::fetch::accept::{HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mut prime = server.mock(|when, then| {
+        when.method(GET)
+            .path("/revalidate")
+            .header("accept", MARKDOWN_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .header("cache-control", "max-age=300")
+            .header("etag", "\"v1\"")
+            .body("# Revalidated\n\nstill markdown\n");
+    });
+    let state = localhost_state();
+    run_web_fetch(state.clone(), fetch_args(server.url("/revalidate")))
+        .await
+        .expect("prime works");
+    prime.delete();
+
+    let conditional = server.mock(|when, then| {
+        when.method(GET)
+            .path("/revalidate")
+            .header("accept", MARKDOWN_ACCEPT_POLICY)
+            .header("If-None-Match", "\"v1\"");
+        then.status(304)
+            .header("cache-control", "max-age=300")
+            .header("etag", "\"v1\"");
+    });
+    let wrong_policy = server.mock(|when, then| {
+        when.method(GET)
+            .path("/revalidate")
+            .header("accept", HTML_ACCEPT_POLICY);
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=300")
+            .body("<html><head><title>Html Only</title></head><body><p>html replacement body</p></body></html>");
+    });
+
+    let mut args = fetch_args(server.url("/revalidate"));
+    args.cache_policy = Some(FetchCachePolicy::Refresh);
+    let v = run_web_fetch(state.clone(), args)
+        .await
+        .expect("revalidation works");
+
+    conditional.assert_hits(1);
+    assert_eq!(
+        wrong_policy.hits(),
+        0,
+        "revalidation must replay the policy that produced the entry"
+    );
+    assert_eq!(v["cache_status"], "revalidated");
+    assert_eq!(v["representation"], "markdown");
+    assert!(v["text"].as_str().unwrap_or("").contains("still markdown"));
+
+    let mut metadata_args = fetch_args(server.url("/revalidate"));
+    metadata_args.extract_mode = Some(ExtractMode::MetadataOnly);
+    let metadata = run_web_fetch(state, metadata_args)
+        .await
+        .expect("html policy fetch after revalidation works");
+    assert_eq!(
+        wrong_policy.hits(),
+        1,
+        "the html key must fetch its own representation after a 304 refresh"
+    );
+    assert!(
+        metadata["title"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Html Only"),
+        "a revalidated markdown body must never answer the html key"
+    );
+}
+
+#[tokio::test]
+async fn markdown_representation_ab_reduces_bytes_and_keeps_structure() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/ab-markdown");
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .header("x-markdown-tokens", "64")
+            .header("x-original-tokens", "180")
+            .body(markdown_document());
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/ab-html");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(html_document());
+    });
+
+    let state = localhost_state();
+    let mut markdown_args = fetch_args(server.url("/ab-markdown"));
+    markdown_args.include_links = Some(true);
+    markdown_args.focus = Some("idempotency key".to_string());
+    let markdown = run_web_fetch(state.clone(), markdown_args)
+        .await
+        .expect("markdown arm works");
+
+    let mut html_args = fetch_args(server.url("/ab-html"));
+    html_args.include_links = Some(true);
+    html_args.focus = Some("idempotency key".to_string());
+    let html = run_web_fetch(state, html_args)
+        .await
+        .expect("html arm works");
+
+    assert_eq!(markdown["representation"], "markdown");
+    assert_eq!(html["representation"], "html");
+
+    let markdown_bytes = markdown["document"]["metadata"]["bytes_read"]
+        .as_u64()
+        .expect("markdown bytes_read");
+    let html_bytes = html["document"]["metadata"]["bytes_read"]
+        .as_u64()
+        .expect("html bytes_read");
+    assert!(
+        markdown_bytes < html_bytes,
+        "markdown representation must return fewer body characters than html: {markdown_bytes} vs {html_bytes}"
+    );
+
+    let markdown_block_chars = block_text_chars(&markdown);
+    let html_block_chars = block_text_chars(&html);
+    assert!(
+        markdown_block_chars <= html_block_chars,
+        "extracted markdown text must not exceed html text: {markdown_block_chars} vs {html_block_chars}"
+    );
+
+    let outline_titles = |payload: &serde_json::Value| -> Vec<String> {
+        payload["document"]["outline"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|e| e["title"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    assert_eq!(outline_titles(&markdown), vec!["Retry Guide", "Backoff"]);
+    assert_eq!(outline_titles(&markdown), outline_titles(&html));
+
+    let table_text = |payload: &serde_json::Value| -> String {
+        payload["document"]["blocks"]
+            .as_array()
+            .map(|blocks| {
+                blocks
+                    .iter()
+                    .filter(|b| b["kind"] == "table")
+                    .filter_map(|b| b["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    };
+    for payload in [&markdown, &html] {
+        let table = table_text(payload);
+        assert!(table.contains("| Attempt | Delay |"), "{table}");
+        assert!(table.contains("| 1 | 100 ms |"), "{table}");
+        assert!(table.contains("| 2 | 200 ms |"), "{table}");
+    }
+
+    let code_text = |payload: &serde_json::Value| -> String {
+        payload["document"]["blocks"]
+            .as_array()
+            .map(|blocks| {
+                blocks
+                    .iter()
+                    .filter(|b| b["kind"] == "code")
+                    .filter_map(|b| b["text"].as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
+    };
+    for payload in [&markdown, &html] {
+        let code = code_text(payload);
+        assert!(code.contains("fn retry() {"), "{code}");
+        assert!(code.contains("let budget = 3;"), "{code}");
+        assert!(code.contains("println!(\"budget {budget}\");"), "{code}");
+        assert_eq!(code.lines().count(), 4, "{code}");
+    }
+
+    let link_urls = |payload: &serde_json::Value| -> Vec<String> {
+        let mut urls: Vec<String> = payload["links"]
+            .as_array()
+            .map(|links| {
+                links
+                    .iter()
+                    .filter_map(|l| l["url"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        urls.sort_unstable();
+        urls
+    };
+    assert_eq!(link_urls(&markdown).len(), 2);
+    assert_eq!(link_urls(&markdown), link_urls(&html));
+
+    for payload in [&markdown, &html] {
+        let chunks = payload["focus"]["chunks"].as_array().expect("focus chunks");
+        assert!(!chunks.is_empty(), "focus query must hit a chunk");
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk["text"].as_str().unwrap_or("").contains("idempotency")),
+            "focus chunk must carry the matched paragraph"
+        );
+    }
+
+    assert_eq!(
+        markdown["document"]["metadata"]["x-markdown-tokens"], 64,
+        "origin token estimate must be surfaced"
+    );
+    assert_eq!(
+        markdown["document"]["metadata"]["x-original-tokens"], 180,
+        "origin original-token estimate must be surfaced"
+    );
+
+    eprintln!(
+        "M003 A/B: markdown body_chars={markdown_bytes} block_chars={markdown_block_chars} \
+         approx_tokens={} | html body_chars={html_bytes} block_chars={html_block_chars} \
+         approx_tokens={}",
+        markdown_block_chars.div_ceil(4),
+        html_block_chars.div_ceil(4)
+    );
+}
+
+#[tokio::test]
+async fn unparseable_token_headers_are_omitted() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/bad-tokens");
+        then.status(200)
+            .header("content-type", "text/markdown; charset=utf-8")
+            .header("x-markdown-tokens", "not-a-number")
+            .header("x-original-tokens", "-5")
+            .body("# Tokens\n\nbody\n");
+    });
+
+    let v = run_web_fetch(localhost_state(), fetch_args(server.url("/bad-tokens")))
+        .await
+        .expect("fetch works");
+    assert!(v["document"]["metadata"]["x-markdown-tokens"].is_null());
+    assert!(v["document"]["metadata"]["x-original-tokens"].is_null());
+}

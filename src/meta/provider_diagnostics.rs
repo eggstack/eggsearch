@@ -15,6 +15,7 @@ use crate::core::provider::{
     built_in_provider_descriptor, provider_configured_state, ProviderSkipCode, KNOWN_PROVIDER_IDS,
 };
 use crate::core::repo_search::SearchProfile;
+pub use crate::meta::provider_health_view::{ParseShape, ProviderHealthStatus, ProviderHealthView};
 
 /// Coarse error class for health tracking. Matches `ErrorClass` from adapter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +26,10 @@ pub enum FailureClass {
     HttpStatus,
     /// The engine responded but the HTML could not be parsed.
     ParseError,
+    /// The upstream served a challenge, consent, or anti-bot interstitial
+    /// instead of a results page. Cooldown matches rate limiting: the
+    /// provider is not retried until that window expires.
+    Blocked,
     /// A network-level error (DNS, TLS, connection reset, etc.).
     NetworkError,
     /// The engine returned HTTP 429 (rate-limited).
@@ -65,6 +70,7 @@ impl FailureClass {
             Self::Timeout => "timeout",
             Self::HttpStatus => "http_status",
             Self::ParseError => "parse_error",
+            Self::Blocked => "blocked",
             Self::NetworkError => "network_error",
             Self::RateLimited => "rate_limited",
             Self::Panic => "panic",
@@ -79,6 +85,7 @@ impl FailureClass {
             "timeout" => Self::Timeout,
             "http_status" => Self::HttpStatus,
             "parse_error" => Self::ParseError,
+            "blocked" => Self::Blocked,
             "network_error" => Self::NetworkError,
             "rate_limited" => Self::RateLimited,
             "panic" => Self::Panic,
@@ -93,60 +100,13 @@ impl From<crate::meta::adapter::ErrorClass> for FailureClass {
             crate::meta::adapter::ErrorClass::Timeout => Self::Timeout,
             crate::meta::adapter::ErrorClass::HttpStatus => Self::HttpStatus,
             crate::meta::adapter::ErrorClass::ParseError => Self::ParseError,
+            crate::meta::adapter::ErrorClass::Blocked => Self::Blocked,
             crate::meta::adapter::ErrorClass::NetworkError => Self::NetworkError,
             crate::meta::adapter::ErrorClass::RateLimited => Self::RateLimited,
             crate::meta::adapter::ErrorClass::Panic => Self::Panic,
             crate::meta::adapter::ErrorClass::Unknown => Self::Unknown,
         }
     }
-}
-
-/// Health status for a provider, derived from the health entry.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderHealthStatus {
-    /// No recent failures; provider is operating normally.
-    Healthy,
-    /// Some recent failures but not in cooldown.
-    Degraded,
-    /// Provider is in cooldown after repeated failures.
-    Cooldown,
-    /// No health data recorded yet.
-    Unknown,
-}
-
-/// A compact per-provider health view embedded in provider descriptors.
-///
-/// Distinct from [`ProviderHealthSnapshot`] which mixes config state
-/// (enabled, configured) with health. This view is purely health-focused
-/// and designed to be embedded in provider status output.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderHealthView {
-    /// Derived health status.
-    pub status: ProviderHealthStatus,
-    /// Number of consecutive failures (0 if last call succeeded).
-    pub consecutive_failures: u32,
-    /// Error class of the most recent failure, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error_class: Option<String>,
-    /// Bounded human-readable message of the most recent failure.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error_message: Option<String>,
-    /// When the provider will exit cooldown, if in cooldown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cooldown_until: Option<String>,
-    /// Reason for the current cooldown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cooldown_reason: Option<String>,
-    /// Latency of the most recent call in milliseconds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_latency_ms: Option<u64>,
-    /// When the last successful call occurred (ISO 8601 / RFC 3339).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_success_at: Option<String>,
-    /// When the last failed call occurred (ISO 8601 / RFC 3339).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_failure_at: Option<String>,
 }
 
 /// A serializable snapshot of a single provider's health state.
@@ -190,6 +150,7 @@ struct ProviderHealthEntry {
     consecutive_failures: u32,
     cooldown_until: Option<Instant>,
     cooldown_reason: Option<String>,
+    last_parse_shape: Option<ParseShape>,
 }
 
 impl ProviderHealthEntry {
@@ -203,6 +164,7 @@ impl ProviderHealthEntry {
             consecutive_failures: 0,
             cooldown_until: None,
             cooldown_reason: None,
+            last_parse_shape: None,
         }
     }
 
@@ -248,6 +210,7 @@ impl ProviderHealthEntry {
                 let elapsed = t.elapsed().as_secs();
                 format!("{elapsed}s ago")
             }),
+            parse_shape: self.last_parse_shape,
         }
     }
 }
@@ -288,7 +251,7 @@ impl ProviderHealthRegistry {
     }
 
     /// Record a successful provider call.
-    pub fn record_success(&self, provider_id: &str, latency_ms: u64) {
+    pub fn record_success(&self, provider_id: &str, latency_ms: u64, result_count: usize) {
         let mut entries = self.lock_entries();
         let entry = entries
             .entry(provider_id.to_string())
@@ -298,6 +261,11 @@ impl ProviderHealthRegistry {
         entry.last_latency_ms = Some(latency_ms);
         entry.cooldown_until = None;
         entry.cooldown_reason = None;
+        entry.last_parse_shape = Some(if result_count == 0 {
+            ParseShape::Empty
+        } else {
+            ParseShape::Ok
+        });
     }
 
     /// Record a failed provider call.
@@ -319,6 +287,9 @@ impl ProviderHealthRegistry {
         entry.last_failure_message = bounded;
         entry.last_latency_ms = Some(latency_ms);
         entry.consecutive_failures += 1;
+        if failure_class == FailureClass::ParseError {
+            entry.last_parse_shape = Some(ParseShape::Shifted);
+        }
 
         // Enter cooldown after threshold consecutive failures. An
         // expired previous cooldown is eligible for re-entry so the
@@ -327,6 +298,7 @@ impl ProviderHealthRegistry {
         if entry.consecutive_failures >= COOLDOWN_THRESHOLD && cooldown_expired {
             let (duration, reason) = match failure_class {
                 FailureClass::RateLimited => (RATE_LIMIT_COOLDOWN, "rate limited"),
+                FailureClass::Blocked => (RATE_LIMIT_COOLDOWN, "blocked by upstream"),
                 FailureClass::Timeout => (TIMEOUT_COOLDOWN, "repeated timeouts"),
                 FailureClass::NetworkError | FailureClass::HttpStatus => {
                     (TRANSPORT_COOLDOWN, "transport failures")
@@ -366,6 +338,7 @@ impl ProviderHealthRegistry {
                 last_latency_ms: None,
                 last_success_at: None,
                 last_failure_at: None,
+                parse_shape: None,
             })
     }
 
@@ -1272,7 +1245,7 @@ mod tests {
     #[test]
     fn health_registry_record_success() {
         let registry = ProviderHealthRegistry::new();
-        registry.record_success("duckduckgo", 150);
+        registry.record_success("duckduckgo", 150, 1);
 
         let snapshot = registry.snapshot("duckduckgo", true, true);
         assert_eq!(snapshot.status, ProviderHealthStatus::Healthy);
@@ -1311,7 +1284,7 @@ mod tests {
         }
         assert!(registry.is_in_cooldown("brave"));
 
-        registry.record_success("brave", 200);
+        registry.record_success("brave", 200, 1);
         assert!(!registry.is_in_cooldown("brave"));
         let snapshot = registry.snapshot("brave", true, true);
         assert_eq!(snapshot.status, ProviderHealthStatus::Healthy);
@@ -1354,7 +1327,7 @@ mod tests {
         }));
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            registry.record_success("duckduckgo", 100);
+            registry.record_success("duckduckgo", 100, 1);
         }));
         assert!(result.is_ok());
     }
@@ -2023,7 +1996,7 @@ mod tests {
     #[test]
     fn health_view_healthy_after_success() {
         let registry = ProviderHealthRegistry::new();
-        registry.record_success("brave", 150);
+        registry.record_success("brave", 150, 1);
         let view = registry.health_view("brave");
         assert_eq!(view.status, ProviderHealthStatus::Healthy);
         assert_eq!(view.consecutive_failures, 0);
@@ -2074,7 +2047,7 @@ mod tests {
         for _ in 0..3 {
             registry.record_failure("brave", FailureClass::Timeout, "timed out", 100);
         }
-        registry.record_success("brave", 200);
+        registry.record_success("brave", 200, 1);
         let view = registry.health_view("brave");
         assert_eq!(view.status, ProviderHealthStatus::Healthy);
         assert!(view.cooldown_until.is_none());
@@ -2157,12 +2130,15 @@ mod tests {
             last_latency_ms: Some(150),
             last_success_at: Some("5s ago".to_string()),
             last_failure_at: None,
+            parse_shape: Some(ParseShape::Empty),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("healthy"));
         assert!(json.contains("150"));
+        assert!(json.contains("\"parse_shape\":\"empty\""));
         let parsed: ProviderHealthView = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.status, ProviderHealthStatus::Healthy);
         assert_eq!(parsed.last_latency_ms, Some(150));
+        assert_eq!(parsed.parse_shape, Some(ParseShape::Empty));
     }
 }

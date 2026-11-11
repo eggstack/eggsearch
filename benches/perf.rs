@@ -809,6 +809,7 @@ fn bench_derived_cache_hits(c: &mut Criterion) {
                 trust_markers: Default::default(),
                 transport: Some("http".to_string()),
                 browser_escalated: false,
+                representation: None,
             },
             created_at: SystemTime::now(),
         }

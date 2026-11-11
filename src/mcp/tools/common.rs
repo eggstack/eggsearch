@@ -724,6 +724,7 @@ pub(crate) fn cached_document_response(
         title: document.title.clone(),
         description: document.description.clone(),
         content_type: raw.content_type.clone(),
+        representation: document.representation,
         status: raw.status,
         fetched: true,
         truncated: document.truncated,
@@ -752,6 +753,7 @@ pub(crate) fn cached_document_response(
         response_headers: (!raw.headers.is_empty()).then(|| raw.headers.clone()),
         transport: document.transport.clone(),
         browser_escalated: document.browser_escalated,
+        accept_policy: None,
         manual_interaction_required: false,
         focus: None,
         raw_body: None,
@@ -781,6 +783,7 @@ pub(crate) fn derived_cache_entry(
             trust_markers: response.trust_markers.clone(),
             transport: response.transport.clone(),
             browser_escalated: response.browser_escalated,
+            representation: response.representation,
         },
         created_at: std::time::SystemTime::now(),
     }

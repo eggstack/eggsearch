@@ -62,6 +62,8 @@ Package registries (crates.io, PyPI, npm, Go, Maven Central, NuGet, RubyGems, Pa
 
 Profiles are advisory; unavailable providers are skipped with warnings.
 
+HTML scrape engines (`brave`, `duckduckgo`, `mojeek`, `startpage`, `yahoo`) are first-class per ADR-0006, not a legacy fallback awaiting an API. Treat parser fidelity as a correctness surface: `finalize_scrape()` in `src/meta/engines/mod.rs` enforces the contract that every parser distinguishes results, an explicit empty state, a structural break (`ParseFailed`), and a block (`EngineError::Blocked`), with captured fixtures under `tests/fixtures/engines/<provider>/` and table-driven conformance in `tests/engine_parse_conformance.rs`. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) so drift is visible without logs. A parser that returns empty rows because a selector stopped matching reports absence instead of failure, which is a defect. Never replace or hide a scraper behind an API as a "reliability" fix. Detail: `architecture/engines.md` § Scraper Fidelity.
+
 ## HTTP Transport Ownership
 
 All eggsearch-owned outbound HTTP goes through `eggfetch-core` 0.2.0 (MSRV 1.89):

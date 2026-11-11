@@ -1385,14 +1385,13 @@ fn orchestration_module_size_ratchet() {
         // Over the ordinary 1600-line / 80 KB ceiling. Frozen here so the debt
         // is explicit and cannot grow; split when touched.
         ("src/core/security.rs", 3000, 115_000),
-        ("src/core/config.rs", 3000, 115_000),
+        ("src/core/config.rs", 1900, 76_000),
         ("src/core/provider.rs", 2800, 115_000),
         ("src/fetch/span.rs", 2750, 81_920),
         ("src/fetch/client.rs", 2600, 100_000),
         ("src/core/retrieval_status.rs", 2300, 95_000),
         ("src/fetch/pdf.rs", 2100, 70_000),
         ("src/startup.rs", 1800, 62_000),
-        ("src/fetch/cache.rs", 1750, 57_000),
         ("src/core/identity.rs", 1750, 60_000),
         ("src/core/repo_fetch.rs", 1650, 60_000),
     ];

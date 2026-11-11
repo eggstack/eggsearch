@@ -3,6 +3,7 @@
 //! Fetches a single HTTP(S) URL, enforces size/time/content limits,
 //! extracts readable text/metadata, and returns bounded structured output.
 
+pub mod accept;
 #[cfg(feature = "browser")]
 #[allow(missing_docs)]
 pub mod browser;
@@ -13,6 +14,7 @@ pub mod detect;
 pub mod egress;
 pub mod extract;
 pub mod limits;
+mod negotiate;
 #[allow(missing_docs)]
 pub mod origin;
 /// PDF text extraction (requires the `pdf` Cargo feature).
@@ -26,6 +28,7 @@ pub mod types;
 
 pub(crate) const MAX_TREE_WALK_DEPTH: usize = 256;
 
+pub use accept::{select_accept_policy, AcceptPolicy, HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
 #[cfg(feature = "browser")]
 pub use browser::{
     browser_capability_report, browser_fetch, browser_fetch_with_policy,

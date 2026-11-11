@@ -935,3 +935,90 @@ fn load_missing_file_returns_defaults() {
     let cfg = AppConfig::load(path).unwrap();
     assert_eq!(cfg.search.mode, Mode::default());
 }
+
+#[test]
+fn search_cache_defaults_are_documented_values() {
+    let cfg = default_config();
+    assert_eq!(cfg.search.cache_ttl_seconds, 300);
+    assert_eq!(cfg.search.cache_max_entries, 128);
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn search_cache_fields_default_when_absent_from_toml() {
+    let toml = r#"
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo"]
+"#;
+    let cfg: AppConfig = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.search.cache_ttl_seconds, 300);
+    assert_eq!(cfg.search.cache_max_entries, 128);
+}
+
+#[test]
+fn zero_cache_ttl_disables_the_cache_and_validates() {
+    let mut config = AppConfig::default();
+    config.search.cache_ttl_seconds = 0;
+    assert!(config.validate().is_ok());
+
+    let parsed: AppConfig = toml::from_str(
+        r#"
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo"]
+cache_ttl_seconds = 0
+"#,
+    )
+    .unwrap();
+    assert_eq!(parsed.search.cache_ttl_seconds, 0);
+}
+
+#[test]
+fn cache_ttl_upper_bound_is_enforced() {
+    let mut config = AppConfig::default();
+    config.search.cache_ttl_seconds = 86_400;
+    assert!(config.validate().is_ok());
+
+    config.search.cache_ttl_seconds = 86_401;
+    let err = config.validate().expect_err("expected ttl failure");
+    assert!(err.to_string().contains("cache_ttl_seconds"), "got: {err}");
+}
+
+#[test]
+fn cache_max_entries_bounds_are_enforced() {
+    let mut config = AppConfig::default();
+
+    config.search.cache_max_entries = 1;
+    assert!(config.validate().is_ok());
+
+    config.search.cache_max_entries = 4096;
+    assert!(config.validate().is_ok());
+
+    config.search.cache_max_entries = 0;
+    let err = config.validate().expect_err("expected lower-bound failure");
+    assert!(err.to_string().contains("cache_max_entries"), "got: {err}");
+
+    config.search.cache_max_entries = 4097;
+    let err = config.validate().expect_err("expected upper-bound failure");
+    assert!(err.to_string().contains("cache_max_entries"), "got: {err}");
+}
+
+#[test]
+fn search_cache_fields_round_trip() {
+    let mut config = AppConfig::default();
+    config.search.cache_ttl_seconds = 42;
+    config.search.cache_max_entries = 7;
+    let text = toml::to_string(&config).unwrap();
+    let parsed: AppConfig = toml::from_str(&text).unwrap();
+    assert_eq!(parsed.search.cache_ttl_seconds, 42);
+    assert_eq!(parsed.search.cache_max_entries, 7);
+}

@@ -341,7 +341,7 @@ async fn health_cooldown_cleared_by_success() {
     }
     assert!(health.is_in_cooldown("alpha"));
 
-    health.record_success("alpha", 50);
+    health.record_success("alpha", 50, 1);
     assert!(
         !health.is_in_cooldown("alpha"),
         "success should clear cooldown"

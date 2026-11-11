@@ -8,6 +8,7 @@
 use crate::core::config::ApiProviderConfig;
 use crate::meta::engines::SearchEngine;
 use crate::meta::provider_diagnostics::ProviderHealthRegistry;
+use crate::meta::search_cache::{SearchCache, SearchCacheSettings, SearchCacheStats};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::warn;
@@ -109,6 +110,8 @@ pub struct MetadataSearchAdapter {
     multiquery_provider_concurrency: usize,
     /// Process-local provider health registry for cooldown and diagnostics.
     health: Arc<ProviderHealthRegistry>,
+    /// Process-local `web_search` fan-out cache. `None` when disabled.
+    search_cache: Option<Arc<SearchCache>>,
 }
 
 impl std::fmt::Debug for MetadataSearchAdapter {
@@ -118,6 +121,7 @@ impl std::fmt::Debug for MetadataSearchAdapter {
             .field("global_timeout_ms", &self.global_timeout.as_millis())
             .field("sanitize_output", &self.sanitize_output)
             .field("health", &self.health)
+            .field("search_cache", &self.search_cache.is_some())
             .finish()
     }
 }
@@ -148,6 +152,7 @@ impl MetadataSearchAdapter {
         api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
         multiquery_concurrency: usize,
         multiquery_provider_concurrency: usize,
+        search_cache: SearchCacheSettings,
     ) -> anyhow::Result<Self> {
         Self::new_with_egress(
             enabled_providers,
@@ -160,6 +165,7 @@ impl MetadataSearchAdapter {
             multiquery_concurrency,
             multiquery_provider_concurrency,
             &crate::core::config::EgressSection::default(),
+            search_cache,
         )
     }
 
@@ -176,6 +182,7 @@ impl MetadataSearchAdapter {
         multiquery_concurrency: usize,
         multiquery_provider_concurrency: usize,
         egress: &crate::core::config::EgressSection,
+        search_cache: SearchCacheSettings,
     ) -> anyhow::Result<Self> {
         let searxng_configured = searxng_base_url.as_deref().is_some_and(|s| !s.is_empty());
         let (engines, skipped) = builders::build_default_engines_with_egress(
@@ -219,6 +226,9 @@ impl MetadataSearchAdapter {
             multiquery_concurrency,
             multiquery_provider_concurrency,
             health: Arc::new(ProviderHealthRegistry::new()),
+            search_cache: search_cache
+                .is_enabled()
+                .then(|| Arc::new(SearchCache::new(search_cache))),
         })
     }
 
@@ -244,6 +254,7 @@ impl MetadataSearchAdapter {
             multiquery_concurrency: 8,
             multiquery_provider_concurrency: 2,
             health: Arc::new(ProviderHealthRegistry::new()),
+            search_cache: None,
         }
     }
 
@@ -272,7 +283,25 @@ impl MetadataSearchAdapter {
             multiquery_concurrency: 8,
             multiquery_provider_concurrency: 2,
             health: Arc::new(ProviderHealthRegistry::new()),
+            search_cache: None,
         }
+    }
+
+    /// Like [`Self::from_engines`] but with a process-local `web_search`
+    /// fan-out cache. Only available with the `mock` feature so that
+    /// integration tests can exercise cache hits, coalescing, and
+    /// bypass behavior on injected engines.
+    #[cfg(feature = "mock")]
+    pub fn from_engines_with_cache(
+        engines: Vec<Arc<dyn SearchEngine>>,
+        global_timeout: Duration,
+        search_cache: SearchCacheSettings,
+    ) -> Self {
+        let mut adapter = Self::from_engines(engines, global_timeout);
+        adapter.search_cache = search_cache
+            .is_enabled()
+            .then(|| Arc::new(SearchCache::new(search_cache)));
+        adapter
     }
 
     #[cfg(test)]
@@ -321,6 +350,12 @@ impl MetadataSearchAdapter {
         &self.health
     }
 
+    /// Diagnostic counters for the process-local `web_search` fan-out
+    /// cache, or `None` when the cache is disabled.
+    pub(crate) fn search_cache_stats(&self) -> Option<SearchCacheStats> {
+        self.search_cache.as_ref().map(|cache| cache.stats())
+    }
+
     /// Whether the SearXNG provider has a valid base URL.
     pub fn searxng_configured(&self) -> bool {
         self.searxng_configured
@@ -362,6 +397,9 @@ pub(crate) mod normalization;
 mod repo;
 mod research;
 mod security;
+mod selection;
+#[cfg(feature = "mock")]
+pub mod selection_test_harness;
 mod status;
 mod web;
 

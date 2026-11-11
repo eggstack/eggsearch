@@ -1,6 +1,6 @@
 # Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (49 files: 43 engine implementations plus 6 support modules)
+**Location:** `src/meta/engines/` (50 files: 43 engine implementations plus 7 support modules)
 **Purpose:** One self-contained implementation per upstream provider. Engines are internal to the
 metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive
 `crate::core::SourceCard` values. MCP tools call the adapter, never engines directly.
@@ -19,12 +19,13 @@ workspace backend (`src/meta/local_backend.rs`), not an engine file.
 | `request.rs` | `EngineSearchRequest` — provider-neutral structured request; `RepoScope` (`owner`/`repo`, never reparsed from free text) |
 | `models.rs` | `SearchResult`, `ResultMetadata` (issue/release/advisory/code-search merge), `AggregatedResult`, `EngineSearchBatch` / `EngineRetrievalMetadata` / `ScopeIndexStatus` |
 | `normalizer.rs` | URL canonicalization: fragment strip, tracking-param strip, query-param sort, locale-prefix strip, index-file strip, trailing-slash trim, scheme/host lowercase |
-| `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `NetworkError`, `Unsupported` |
+| `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `Blocked`, `NetworkError`, `Unsupported` |
+| `test_harness.rs` | `mock`-gated `parse_html(provider_id, html, max_results)` used by the captured-fixture conformance suite; absent from default builds |
 | `kev.rs` | Shared `KevClient`: fetches and caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
 | `<provider>.rs` × 43 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
 
-Verify the count with `ls src/meta/engines | wc -l` (49, including `mod.rs`, `request.rs`,
-`models.rs`, `normalizer.rs`, `error.rs`, `kev.rs`).
+Verify the count with `ls src/meta/engines | wc -l` (50, including `mod.rs`, `request.rs`,
+`models.rs`, `normalizer.rs`, `error.rs`, `kev.rs`, `test_harness.rs`).
 
 ---
 
@@ -141,6 +142,59 @@ in `engines/mod.rs`, and cloned into each engine struct. Consequences:
 - The default user agent is a browser-like fallback used only when the operator has not configured
   their own; HTML scrape engines rely on automatic gzip/Brotli negotiation and transparent
   decompression on every search request.
+
+---
+
+## Scraper Fidelity
+
+Keyless HTML scraping is a first-class product capability, not a fallback awaiting an API
+(ADR-0006). The shipped defaults are HTML engines, and upstream markup changes are a normal
+maintenance cost of the design. Five engines parse HTML: `brave`, `duckduckgo`, `mojeek`,
+`startpage`, `yahoo`. `searxng` is a JSON API and is not part of this contract.
+
+Every HTML parser MUST distinguish three outcomes, because the retrieval ledger treats them
+differently:
+
+| Outcome | Return | Ledger effect |
+|---|---|---|
+| Results parsed | `Ok(rows)` | `SuccessWithResults` |
+| Documented empty-state marker matched | `Ok(vec![])` | `SuccessZeroResults` → evidence absence |
+| Neither results nor an empty marker | `Err(EngineError::ParseFailed { reason })` | provider failure → coverage indeterminate |
+| Block, consent wall, or challenge page | `Err(EngineError::Blocked { reason })` | provider failure, non-retryable |
+
+Returning `Ok(vec![])` because a selector stopped matching is a correctness defect: it converts a
+broken provider into a confident claim that no evidence exists, which is the one distinction the
+product exists to preserve. An empty-state marker is a literal string or container captured from
+real markup, never a guess.
+
+**Implementation.** `mod.rs` owns `ScrapeShape` (result container plus empty and blocked markers),
+`PageMarker` (a CSS selector or a literal run of rendered page text), and `finalize_scrape()`. Each
+scraper declares a `SHAPE` constant next to its parser and returns `finalize_scrape(...)`, so the
+three-outcome decision has exactly one implementation. Text markers are matched against rendered
+text with `<script>` and `<style>` content excluded, so a locale bundle cannot masquerade as an
+empty-state marker. Ordering: parsed rows win; then a blocked marker; then an empty marker; then
+`ParseFailed` with a reason that names the container (`missing` versus `produced no parseable
+results`).
+
+`EngineError::Blocked` classifies as `ErrorClass::Blocked` (`blocked`) and mirrors as
+`FailureClass::Blocked`; it is a provider failure with a rate-limit cooldown, never absence.
+`ParseFailed` maps to `parse_error` and to `parse_shape = shifted`.
+
+`provider_status` reports `parse_shape` (`ok`, `empty`, `shifted`) per provider, derived from the
+most recent classified outcome: `ok` when rows were returned, `empty` on success-with-zero-results,
+`shifted` on a structural parse failure. The field is omitted for providers with no observation, so
+operators see drift without reading logs.
+
+Requirements for any change to an HTML parser:
+
+- Captured fixtures under `tests/fixtures/engines/<provider>/`: `results.html`, `empty.html`, and
+  `blocked.html`. Redact cookies, tokens, and identifiers; keep files small. The fixture README
+  records which files are live-captured (with URL, UTC date, and status) and which are synthetic
+  reconstructions — never claim a capture that did not happen.
+- `tests/engine_parse_conformance.rs` is table-driven over all five scrapers and asserts parsed
+  rows, explicit empty state, block classification, and a seeded-drift case that renames the
+  result container and requires `ParseFailed`. A parser that reverts to bare empty output fails it.
+- No CAPTCHA solving, user-agent spoofing, proxy rotation, or retry widening to conceal an outage.
 
 ---
 
@@ -361,7 +415,8 @@ Dispatch never silently omits an unsupported capability. For each `(subquery, pr
    request from `&EngineSearchRequest`, read via `read_bounded_body` (never bare `.text()` /
    `.bytes()`), sanitize untrusted text, and return `SearchResult` rows. Reuse the defaulted
    advisory methods unless the upstream serves advisories; leave unsupported constraints
-   unmapped (explicit, never silent).
+   unmapped (explicit, never silent). HTML parsers must implement the three-outcome contract in
+   § Scraper Fidelity from the start, with captured fixtures.
 2. Declare the module in `engines/mod.rs` and add the engine struct plus its `SearchEngine` impl
    (shared `Arc<eggfetch_core::Client>`; keyed engines take their key at construction).
 3. Add the ID to `KNOWN_PROVIDER_IDS` in `src/core/provider.rs` and declare its 24-flag
@@ -373,7 +428,8 @@ Dispatch never silently omits an unsupported capability. For each `(subquery, pr
 6. Document the native-vs-local enforcement in `docs/provider-setup.md` without inventing names.
 7. Extend `tests/provider_capability_contract.rs` with the new provider's capability assertions,
    add behavioral coverage in the relevant suite (`web_search` integration, `provider_routing`,
-   `provider_probe_conformance`, workflow suites), and keep the docs inventory tests green.
+   `provider_probe_conformance`, workflow suites), add captured parser fixtures for HTML
+   scrapers, and keep the docs inventory tests green.
 
 ---
 

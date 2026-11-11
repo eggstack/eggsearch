@@ -268,6 +268,11 @@ impl ServerState {
             None
         };
 
+        let search_cache = crate::meta::search_cache::SearchCacheSettings {
+            ttl: Duration::from_secs(config.search.cache_ttl_seconds),
+            max_entries: config.search.cache_max_entries,
+        };
+
         let adapter = MetadataSearchAdapter::new_with_egress(
             enabled,
             global_timeout,
@@ -279,6 +284,7 @@ impl ServerState {
             config.search.multiquery_concurrency,
             config.search.multiquery_provider_concurrency,
             &config.egress,
+            search_cache,
         )?;
 
         let misconfigured = config.misconfigured_default_providers();

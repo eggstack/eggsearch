@@ -840,10 +840,12 @@ fn make_batch_fetch_future(
                     .map_err(|e| ToolError::internal(format!("semaphore closed: {e}")))?;
                 let web_client = client;
 
+                use crate::fetch::accept::select_accept_policy;
                 use crate::fetch::cache::{
                     build_raw_cache_key, build_raw_response_hash, should_cache_response, CacheScope,
                 };
                 use crate::fetch::origin::OriginKey;
+                let accept_policy = select_accept_policy(&url, mode);
                 let origin_key = match OriginKey::from_url(
                     &url::Url::parse(&url)
                         .map_err(|e| ToolError::internal(format!("invalid URL: {e}")))?,
@@ -871,7 +873,7 @@ fn make_batch_fetch_future(
                 let caller_max_age = item_max_age.map(std::time::Duration::from_secs);
                 if !bypass_cache {
                     if let Some(ref cache) = state.fetch_cache {
-                        let raw_key = build_raw_cache_key(&url, &scope);
+                        let raw_key = build_raw_cache_key(&url, &scope, accept_policy);
                         if let Some(raw_entry) = cache.get_raw(&raw_key).await {
                             let age_ok = match caller_max_age {
                                 None => true,
@@ -906,6 +908,7 @@ fn make_batch_fetch_future(
                                         "title": derived.response.title,
                                         "description": derived.response.description,
                                         "content_type": raw_entry.content_type,
+                                        "representation": derived.response.representation,
                                         "status": raw_entry.status,
                                         "fetched": true,
                                         "truncated": derived.response.truncated,
@@ -999,8 +1002,13 @@ fn make_batch_fetch_future(
                                             &raw_entry.validators,
                                         );
                                     if !conditional.is_empty() {
-                                        if let Ok((status, _headers, _body, _)) =
-                                            web_client.fetch_conditional(&url, &conditional).await
+                                        if let Ok((status, _headers, _body, _)) = web_client
+                                            .fetch_conditional(
+                                                &url,
+                                                &conditional,
+                                                raw_key.accept_policy,
+                                            )
+                                            .await
                                         {
                                             if status == 304 {
                                                 let derived_key =
@@ -1035,6 +1043,7 @@ fn make_batch_fetch_future(
                                                         "title": derived.response.title,
                                                         "description": derived.response.description,
                                                         "content_type": raw_entry.content_type,
+                                                        "representation": derived.response.representation,
                                                         "status": raw_entry.status,
                                                         "fetched": true,
                                                         "truncated": derived.response.truncated,
@@ -1237,7 +1246,11 @@ fn make_batch_fetch_future(
                 match response {
                     Some(resp) => {
                         if let Some(ref cache) = state.fetch_cache {
-                            let raw_key = build_raw_cache_key(&url, &scope);
+                            let raw_key = build_raw_cache_key(
+                                &url,
+                                &scope,
+                                resp.accept_policy.unwrap_or(accept_policy),
+                            );
                             let raw_body_bytes = resp.raw_body.as_deref().unwrap_or(&[]);
                             let raw_hash = build_raw_response_hash(raw_body_bytes);
 
@@ -1344,6 +1357,7 @@ fn make_batch_fetch_future(
                             "title": resp.title,
                             "description": resp.description,
                             "content_type": resp.content_type,
+                            "representation": resp.representation,
                             "status": resp.status,
                             "fetched": resp.fetched,
                             "truncated": resp.truncated,
@@ -1359,7 +1373,8 @@ fn make_batch_fetch_future(
                             "fetch_transform": resp.fetch_transform,
                             "structured_warnings": structured,
                             "cache_status": cache_status,
-                            "attempt_count": attempts_made,
+                            "attempt_count": attempts_made
+                                + resp.attempt_count.unwrap_or(1).saturating_sub(1),
                             "retry_after_ms": retry_after_ms,
                             "origin_backoff_ms": serde_json::Value::Null,
                             "browser_profile": serde_json::Value::Null,

@@ -5,9 +5,11 @@ use std::time::Duration;
 use eggfetch_core::{Client, Timeout};
 use futures::StreamExt;
 
+use super::accept::AcceptPolicy;
 use super::detect;
-use super::extract::{extract_links_from_html, LinkExtractionResult};
+use super::extract::{extract_links_from_html, extract_links_from_markdown, LinkExtractionResult};
 use super::limits::{validate_fetch_target_with_resolved_addrs, validate_url, FetchLimits};
+use super::negotiate::{classify_content_type, parse_token_header, representation_of};
 use super::render;
 use super::types::FetchError;
 use crate::core::code_host_fetch::resolve_code_host_fetch_target;
@@ -15,64 +17,11 @@ use crate::core::document::{
     build_document_chunks, DocumentKind, DocumentOutlineEntry, FetchDocument, FetchRenderMetadata,
     RenderFormat,
 };
-use crate::core::fetch::{ExtractMode, FetchTrust, WebFetchResponse};
+use crate::core::fetch::{ExtractMode, FetchRepresentation, FetchTrust, WebFetchResponse};
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers,
     SNIPPET_MAX_CHARS, TITLE_MAX_CHARS,
 };
-
-/// Classification of the response body for the content extraction
-/// pipeline. Returned by [`classify_content_type`] so both the
-/// pre-body and post-body classification steps share a single source
-/// of truth and cannot drift.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ContentKind {
-    pub is_html: bool,
-    pub is_pdf: bool,
-    pub is_text: bool,
-}
-
-fn classify_content_type(
-    content_type: Option<&str>,
-    final_url: &str,
-    body_starts_with_pdf: bool,
-) -> ContentKind {
-    let base = content_type
-        .map(|ct| {
-            let ct_lower = ct.to_lowercase();
-            ct_lower.split(';').next().unwrap_or("").trim().to_string()
-        })
-        .unwrap_or_default();
-
-    let is_html = base == "text/html" || base == "application/xhtml+xml";
-    let is_pdf_by_ct = base == "application/pdf";
-    let is_pdf_by_url = !is_pdf_by_ct
-        && url::Url::parse(final_url)
-            .ok()
-            .map(|u| u.path().to_ascii_lowercase().ends_with(".pdf"))
-            .unwrap_or(false);
-    let mut is_pdf = is_pdf_by_ct || is_pdf_by_url;
-    if !is_pdf && body_starts_with_pdf {
-        is_pdf = true;
-    }
-    let is_text = base.starts_with("text/")
-        || base == "application/json"
-        || base == "application/ld+json"
-        || (base.starts_with("application/") && base.ends_with("+json"))
-        || base == "application/toml"
-        || base == "application/x-yaml"
-        || base == "application/yaml"
-        || base == "application/javascript"
-        || base == "application/typescript"
-        || base == "application/x-sh"
-        || base == "application/xml";
-
-    ContentKind {
-        is_html,
-        is_pdf,
-        is_text,
-    }
-}
 
 /// HTTP client for fetching URLs.
 pub struct FetchClient {
@@ -198,7 +147,7 @@ impl FetchClient {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn fetch_internal(
+    pub(crate) async fn fetch_once(
         &self,
         url_str: &str,
         max_chars: Option<usize>,
@@ -208,6 +157,7 @@ impl FetchClient {
             &crate::core::fetch::PdfFetchOptions,
         >,
         origin_controller: Option<&super::origin::OriginController>,
+        accept_policy: AcceptPolicy,
     ) -> Result<WebFetchResponse, FetchError> {
         // Validate the initial URL (scheme, length, localhost literals,
         // obvious private-network literals, credentials).
@@ -287,6 +237,7 @@ impl FetchClient {
                 .get(current_url.as_str())
                 .map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
             let builder = builder.timeout(client_timeout(self.limits.timeout_ms));
+            let builder = builder.header("accept", accept_policy.header_value());
             let builder = match resolved_addrs {
                 Some(addrs) if !addrs.is_empty() => builder.resolved_addresses(addrs),
                 _ => builder,
@@ -379,7 +330,13 @@ impl FetchClient {
             .filter(|(k, _)| {
                 matches!(
                     k.as_str(),
-                    "etag" | "last-modified" | "cache-control" | "expires" | "vary"
+                    "etag"
+                        | "last-modified"
+                        | "cache-control"
+                        | "expires"
+                        | "vary"
+                        | "x-markdown-tokens"
+                        | "x-original-tokens"
                 )
             })
             .filter_map(|(k, v)| {
@@ -549,6 +506,10 @@ impl FetchClient {
             return Err(FetchError::PdfDisabled);
         }
 
+        let representation = representation_of(content_type.as_deref(), kind);
+        let markdown_tokens = parse_token_header(&cache_headers, "x-markdown-tokens");
+        let original_tokens = parse_token_header(&cache_headers, "x-original-tokens");
+
         // --- PDF extraction path (early return) ---
         // PDFs are handled as a completely separate path because the
         // extraction, sanitization, and document construction differ
@@ -607,6 +568,7 @@ impl FetchClient {
                     title: None,
                     description: None,
                     content_type,
+                    representation,
                     status,
                     fetched: true,
                     truncated,
@@ -636,6 +598,8 @@ impl FetchClient {
                             redirects_followed: redirect_count,
                             source_extension,
                             detected_language: None,
+                            markdown_tokens: None,
+                            original_tokens: None,
                         }),
                         outline: Vec::new(),
                         blocks: Vec::new(),
@@ -658,6 +622,7 @@ impl FetchClient {
                     },
                     transport: Some("http".to_string()),
                     browser_escalated: false,
+                    accept_policy: None,
                     manual_interaction_required: false,
                     focus: None,
                     raw_body: Some(body),
@@ -765,6 +730,7 @@ impl FetchClient {
                 title,
                 description: None,
                 content_type,
+                representation,
                 status,
                 fetched: true,
                 truncated,
@@ -797,6 +763,7 @@ impl FetchClient {
                 },
                 transport: Some("http".to_string()),
                 browser_escalated: false,
+                accept_policy: None,
                 manual_interaction_required: false,
                 focus: None,
                 raw_body: Some(body),
@@ -887,7 +854,29 @@ impl FetchClient {
                 }
                 text.push(ch);
             }
-            (None, None, Some(text), Vec::new(), Vec::new(), tt, 0, false)
+            let LinkExtractionResult {
+                links,
+                total_seen,
+                truncated,
+            } = if include_links && representation == Some(FetchRepresentation::Markdown) {
+                extract_links_from_markdown(decoded.as_ref(), &final_url)
+            } else {
+                LinkExtractionResult {
+                    links: Vec::new(),
+                    total_seen: 0,
+                    truncated: false,
+                }
+            };
+            (
+                None,
+                None,
+                Some(text),
+                links,
+                Vec::new(),
+                tt,
+                total_seen,
+                truncated,
+            )
         };
 
         let mut warnings = extract_warnings;
@@ -1140,6 +1129,8 @@ impl FetchClient {
                     redirects_followed: redirect_count,
                     source_extension,
                     detected_language: detected.language,
+                    markdown_tokens,
+                    original_tokens,
                 }),
                 outline,
                 blocks,
@@ -1165,6 +1156,7 @@ impl FetchClient {
             title,
             description,
             content_type,
+            representation,
             status,
             fetched: true,
             truncated,
@@ -1201,6 +1193,7 @@ impl FetchClient {
             },
             transport: Some("http".to_string()),
             browser_escalated: false,
+            accept_policy: None,
             manual_interaction_required: false,
             focus: None,
             raw_body: Some(body),
@@ -1211,11 +1204,14 @@ impl FetchClient {
     ///
     /// Returns the HTTP status, response headers as a HashMap, and the
     /// raw body bytes. Used by the cache layer for stale revalidation
-    /// (304 Not Modified handling).
+    /// (304 Not Modified handling). `accept_policy` must be the policy
+    /// stored in the raw cache key being revalidated, so the origin
+    /// answers for the same negotiated representation.
     pub async fn fetch_conditional(
         &self,
         url_str: &str,
         conditional_headers: &[(String, String)],
+        accept_policy: AcceptPolicy,
     ) -> Result<
         (
             u16,
@@ -1263,6 +1259,7 @@ impl FetchClient {
                 _ => builder,
             };
             let mut req = builder;
+            req = req.header("accept", accept_policy.header_value());
             // ETag and Last-Modified are origin-scoped credentials for the cached
             // entry. Replaying them after a cross-origin redirect would disclose
             // one origin's cache state to another, so send them on the first hop
@@ -1332,7 +1329,13 @@ impl FetchClient {
             .filter(|(k, _)| {
                 matches!(
                     k.as_str(),
-                    "etag" | "last-modified" | "cache-control" | "expires" | "vary"
+                    "etag"
+                        | "last-modified"
+                        | "cache-control"
+                        | "expires"
+                        | "vary"
+                        | "x-markdown-tokens"
+                        | "x-original-tokens"
                 )
             })
             .filter_map(|(k, v)| {

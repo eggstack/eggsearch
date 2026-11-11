@@ -5,10 +5,21 @@ use scraper::Html;
 
 use super::error::EngineError;
 use super::models::SearchResult;
+use super::{PageMarker, ScrapeShape};
 
 const ENGINE: &str = "startpage";
 const STARTPAGE_URL: &str = "https://www.startpage.com/search";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+const SHAPE: ScrapeShape = ScrapeShape {
+    result_container: "div.result",
+    empty_markers: &[
+        PageMarker::Selector("div.no-results"),
+        PageMarker::Text("No search results were found"),
+        PageMarker::Text("No results found for"),
+    ],
+    blocked_markers: &[PageMarker::Text("Access Denied - Startpage")],
+};
 
 pub async fn search(
     client: &Client,
@@ -40,13 +51,13 @@ pub async fn search(
     parse(&body, max_results)
 }
 
-fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
+pub(super) fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
     let document = Html::parse_document(html);
 
-    let result_sel = sel(ENGINE, "div.result")?;
-    let link_sel = sel(ENGINE, "a.result-title")?;
-    let title_sel = sel(ENGINE, "h2.wgl-title")?;
-    let snippet_sel = sel(ENGINE, "p.description")?;
+    let result_sel = super::sel(ENGINE, SHAPE.result_container)?;
+    let link_sel = super::sel(ENGINE, "a.result-title")?;
+    let title_sel = super::sel(ENGINE, "h2.wgl-title")?;
+    let snippet_sel = super::sel(ENGINE, "p.description")?;
 
     let mut results = Vec::new();
 
@@ -89,14 +100,7 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         });
     }
 
-    Ok(results)
-}
-
-fn sel(engine: &'static str, s: &str) -> Result<scraper::Selector, EngineError> {
-    scraper::Selector::parse(s).map_err(|e| EngineError::ParseFailed {
-        engine,
-        reason: format!("invalid selector '{s}': {e:?}"),
-    })
+    super::finalize_scrape(ENGINE, &document, &SHAPE, results)
 }
 
 #[cfg(test)]

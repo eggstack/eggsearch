@@ -43,6 +43,38 @@ does not perform HTTP, call an inference service, or use Python. The fixtures
 characterize evaluator behavior; they are not provider search snapshots and
 must not be reported as a measured Eggsearch quality baseline.
 
+### Candidate snapshot lane
+
+`cases.json` scores a pre-merged result list, so it cannot distinguish two
+rankers. The snapshot lane does: a case may carry `provider_lists`
+(`[{ provider_id, results: [{ rank, title, url }] }]`), and the harness then
+builds the real per-provider lists and replays them through
+`adapter/selection.rs::select()` — the production RRF, conversion, local domain
+filter, intent/freshness rerank, and truncation sequence. Results are derived
+from selection rather than authored, so a fusion or dedup change produces a
+metric delta.
+
+Three tiers keep the lane honest:
+
+| Tier | File | Purpose |
+|---|---|---|
+| 1 — structured synthetic | `tests/fixtures/retrieval_quality/candidate_snapshots.json` (committed) | CI gate; controlled rank inversions, duplicate clusters across hosts, domain concentration, provider agreement/disagreement, and window promotion cases, plus four lexical-intent cases |
+| 2 — recorded real | `tests/fixtures/retrieval_quality/recorded_snapshots.json` (committed, small) | Real provider lists with provenance; ranks, titles, and normalized URLs only, never page bodies |
+| 3 — recorded, untracked | `target/snapshots/` | Larger release-qualification runs written by the `#[ignore]`d recorder; never tracked |
+
+Additional metrics target fusion defects directly: `duplicate_slots`,
+`distinct_domains_topk`, and `authoritative_survival` (grade ≥ 2 documents kept
+in the top k). Three seeded negative controls must each degrade their asserted
+metric — a degenerate RRF constant, dedup disabled, and truncation before
+rerank. A harness that cannot fail is rejected.
+
+The same lane gates intent policy: `intent=web` is compared against the intent
+`derive_intent` produces for each case. The recorded decision is applied
+reranking, backed by +0.136 recall@5, +0.076 MRR@5, +0.176 nDCG@5, and +0.176
+authoritative survival with no aggregate or per-case regression;
+`derived_intent_rollout_gate_matches_the_recorded_decision` fails if the switch
+disagrees with a fresh run.
+
 ### Frozen synthetic evaluator baseline
 
 M001 candidate SHA: `310611b733c2067ddeab184618156ef072934a6e`.

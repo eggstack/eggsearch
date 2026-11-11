@@ -140,8 +140,25 @@ pub(crate) fn merge_published_at(existing: &mut Option<String>, incoming: &Optio
 }
 
 pub(crate) fn aggregate_rrf(
+    engine_results: Vec<(String, Vec<SearchResult>)>,
+    max_results: usize,
+) -> Vec<AggregatedResult> {
+    aggregate_rrf_with(engine_results, max_results, RRF_K, true)
+}
+
+/// Aggregate per-provider result lists with an explicit RRF constant
+/// and dedup policy.
+///
+/// `dedup = false` keeps one row per provider occurrence instead of
+/// collapsing rows that normalize to the same URL. The rows are
+/// drained in ascending normalized-key order before the score sort so
+/// that exact `(score, title, url)` ties never inherit hash-map
+/// iteration order.
+pub(crate) fn aggregate_rrf_with(
     mut engine_results: Vec<(String, Vec<SearchResult>)>,
     max_results: usize,
+    rrf_k: f64,
+    dedup: bool,
 ) -> Vec<AggregatedResult> {
     engine_results.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -150,14 +167,19 @@ pub(crate) fn aggregate_rrf(
     for (engine_name, results) in engine_results {
         for (index, mut result) in results.into_iter().enumerate() {
             let rank = index + 1;
-            let rrf_score = 1.0 / (RRF_K + rank as f64);
+            let rrf_score = 1.0 / (rrf_k + rank as f64);
 
-            let key = match crate::meta::engines::normalizer::normalize(&result.url) {
+            let normalized = match crate::meta::engines::normalizer::normalize(&result.url) {
                 Some(k) => k,
                 None => {
                     debug!(url = %result.url, "skipping result with un-normalizable URL");
                     continue;
                 }
+            };
+            let key = if dedup {
+                normalized
+            } else {
+                format!("{engine_name}\u{1}{index}\u{1}{normalized}")
             };
 
             match map.get_mut(&key) {
@@ -216,7 +238,9 @@ pub(crate) fn aggregate_rrf(
         }
     }
 
-    let mut ranked: Vec<AggregatedResult> = map.into_values().collect();
+    let mut drained: Vec<(String, AggregatedResult)> = map.into_iter().collect();
+    drained.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut ranked: Vec<AggregatedResult> = drained.into_iter().map(|(_, result)| result).collect();
 
     ranked.sort_by(|a, b| {
         cmp_score_desc(Some(a.score), Some(b.score))

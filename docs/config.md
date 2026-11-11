@@ -13,6 +13,8 @@ max_query_chars = 512
 timeout_ms = 8000
 default_providers = ["duckduckgo", "startpage", "yahoo"]
 sanitize_output = true
+cache_ttl_seconds = 300
+cache_max_entries = 128
 
 [search.providers]
 duckduckgo = true
@@ -135,6 +137,8 @@ credentials are absent.
 | `max_query_chars` | `512` |
 | `timeout_ms` | `8000` |
 | `sanitize_output` | `true` |
+| `cache_ttl_seconds` | `300` (`0` disables; max `86400`) |
+| `cache_max_entries` | `128` (`1`–`4096`) |
 
 Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`, and `research`. eggsearch skips unavailable providers and reports warnings instead of failing the request.
 

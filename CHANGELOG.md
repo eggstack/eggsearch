@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Keyless HTML scrapers (`brave`, `duckduckgo`, `mojeek`, `startpage`, `yahoo`)
+  now distinguish parsed results, an explicit empty state, a structural break
+  (`parse_error`), and a block or challenge page (`error_class: blocked`)
+  instead of reporting every non-result as absence. Captured fixtures live under
+  `tests/fixtures/engines/`, and `provider_status` reports a per-provider
+  `parse_shape` (`ok`, `empty`, `shifted`).
+- `web_search` results are cached for `[search].cache_ttl_seconds` (default
+  300) with `[search].cache_max_entries` (default 128) and single-flight
+  coalescing. Partial or deadline-interrupted fan-outs are never cached, and a
+  cache hit records no provider health evidence. `provider_status` exposes a
+  `search_cache` counter block.
+- Fetches request `text/markdown` ahead of `text/html` by default and fall back
+  once to HTML on 406/415 or an empty Markdown body. The representation is a
+  cache dimension, `Vary: Accept` is honoured, and responses report
+  `representation` plus origin token headers when present.
+- `web_search` derives `intent` from the query when the caller omits it and
+  reports `derived_intent` / `derived_intent_reasons`. Query text sent to
+  providers is unchanged; an explicit `intent` remains authoritative.
+
+### Changed
+
+- The post-dispatch selection sequence (RRF, conversion, domain filter,
+  reranking, truncation) has one implementation in
+  `src/meta/adapter/selection.rs`, shared by production and the offline
+  candidate-snapshot benchmark. No ranking behaviour changed.
+- Derived-intent reranking is applied on measured candidate-snapshot evidence
+  (+0.136 recall@5, +0.176 nDCG@5, no regression).
+
 ## [0.4.4] - 2026-10-19
 
 ### Added

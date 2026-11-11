@@ -5,10 +5,24 @@ use scraper::Html;
 
 use super::error::EngineError;
 use super::models::SearchResult;
+use super::{PageMarker, ScrapeShape};
 
 const ENGINE: &str = "mojeek";
 const MOJEEK_URL: &str = "https://www.mojeek.com/search";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+const SHAPE: ScrapeShape = ScrapeShape {
+    result_container: "ul.results-standard, ol.results-standard",
+    empty_markers: &[
+        PageMarker::Selector("div.no-results"),
+        PageMarker::Text("No pages found"),
+    ],
+    blocked_markers: &[
+        PageMarker::Selector("div.captcha-wrap"),
+        PageMarker::Text("JavaScript is required to complete this challenge"),
+        PageMarker::Text("your network appears to be sending automated queries"),
+    ],
+};
 
 pub async fn search(
     client: &Client,
@@ -41,18 +55,18 @@ pub async fn search(
     parse(&body, max_results)
 }
 
-fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
+pub(super) fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
     let document = Html::parse_document(html);
 
-    let list_sel = sel(ENGINE, "ul.results-standard, ol.results-standard")?;
-    let item_sel = sel(ENGINE, "li")?;
-    let title_sel = sel(ENGINE, "h2 a.title, h2 a")?;
-    let snippet_sel = sel(ENGINE, "p.s")?;
+    let list_sel = super::sel(ENGINE, SHAPE.result_container)?;
+    let item_sel = super::sel(ENGINE, "li")?;
+    let title_sel = super::sel(ENGINE, "h2 a.title, h2 a")?;
+    let snippet_sel = super::sel(ENGINE, "p.s")?;
 
     let mut results = Vec::new();
 
     let Some(list) = document.select(&list_sel).next() else {
-        return Ok(results);
+        return super::finalize_scrape(ENGINE, &document, &SHAPE, results);
     };
 
     for element in list.select(&item_sel) {
@@ -105,14 +119,7 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         });
     }
 
-    Ok(results)
-}
-
-fn sel(engine: &'static str, s: &str) -> Result<scraper::Selector, EngineError> {
-    scraper::Selector::parse(s).map_err(|e| EngineError::ParseFailed {
-        engine,
-        reason: format!("invalid selector '{s}': {e:?}"),
-    })
+    super::finalize_scrape(ENGINE, &document, &SHAPE, results)
 }
 
 #[cfg(test)]
@@ -222,9 +229,22 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_returns_empty_when_no_list() {
-        let html = "<html><body><p>No results</p></body></html>";
+    fn test_parse_returns_empty_when_marker_present() {
+        let html = r#"<html><body><div class="no-results">No pages found.</div></body></html>"#;
         let results = parse(html, 10).unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_parse_fails_when_no_list_and_no_marker() {
+        let html = "<html><body><p>No results</p></body></html>";
+        let err = parse(html, 10).expect_err("missing list without marker must fail");
+        assert!(matches!(
+            err,
+            EngineError::ParseFailed {
+                engine: "mojeek",
+                ..
+            }
+        ));
     }
 }

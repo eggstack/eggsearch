@@ -6,6 +6,7 @@
 #![allow(missing_docs)]
 
 use std::future::pending;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -64,6 +65,7 @@ pub enum MockFailure {
     Timeout,
     HttpStatus(u16),
     Parse,
+    Blocked,
     Network,
     Panic,
 }
@@ -76,6 +78,10 @@ impl MockFailure {
             MockFailure::Parse => EngineError::ParseFailed {
                 engine,
                 reason: "mock parse failure".to_string(),
+            },
+            MockFailure::Blocked => EngineError::Blocked {
+                engine,
+                reason: "mock challenge page".to_string(),
             },
             MockFailure::Network => EngineError::NetworkError {
                 engine,
@@ -253,6 +259,85 @@ impl SearchEngine for RecordingMockEngine {
         let results = self.results.clone();
         let limit = request.max_results;
         Box::pin(async move {
+            let mut out = results;
+            out.truncate(limit);
+            Ok(out)
+        })
+    }
+}
+
+/// A mock engine that counts dispatched calls and can be delayed or made
+/// to fail. Used by cache and coalescing tests to observe fan-out counts.
+pub struct CountingMockEngine {
+    name: &'static str,
+    results: Vec<SearchResult>,
+    calls: Arc<AtomicUsize>,
+    delay: Option<Duration>,
+    failure: Option<MockFailure>,
+}
+
+impl CountingMockEngine {
+    pub fn new(name: &'static str, results: Vec<MockResult>, calls: Arc<AtomicUsize>) -> Self {
+        let rs = results
+            .into_iter()
+            .map(|r| SearchResult {
+                title: r.title,
+                url: r.url,
+                snippet: r.snippet,
+                source_engine: r.source_engine,
+                metadata: Default::default(),
+                excerpts: r.excerpts,
+                published_at: r.published_at,
+            })
+            .collect();
+        Self {
+            name,
+            results: rs,
+            calls,
+            delay: None,
+            failure: None,
+        }
+    }
+
+    pub fn with_delay(mut self, delay: Duration) -> Self {
+        self.delay = Some(delay);
+        self
+    }
+
+    pub fn with_failure(mut self, failure: MockFailure) -> Self {
+        self.failure = Some(failure);
+        self
+    }
+
+    /// Wrap this engine into an `Arc<dyn SearchEngine>` for use with
+    /// `MetadataSearchAdapter`.
+    pub fn into_engine(self) -> Arc<dyn SearchEngine> {
+        Arc::new(self)
+    }
+}
+
+impl SearchEngine for CountingMockEngine {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn search<'a>(
+        &'a self,
+        request: &'a crate::meta::engines::EngineSearchRequest,
+    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let results = self.results.clone();
+        let limit = request.max_results;
+        let delay = self.delay;
+        let failure = self.failure;
+        let engine = self.name;
+        Box::pin(async move {
+            if let Some(delay) = delay {
+                tokio::time::sleep(delay).await;
+            }
+            if let Some(failure) = failure {
+                return Err(failure.to_engine_error(engine));
+            }
             let mut out = results;
             out.truncate(limit);
             Ok(out)

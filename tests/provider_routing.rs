@@ -951,6 +951,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
         title: None,
         description: None,
         content_type: Some("text/plain".to_string()),
+        representation: None,
         status: 200,
         fetched: true,
         truncated: false,
@@ -984,6 +985,7 @@ fn web_fetch_response_includes_fetch_transform_field() {
         response_headers: None,
         transport: Some("http".to_string()),
         browser_escalated: false,
+        accept_policy: None,
         manual_interaction_required: false,
         focus: None,
         raw_body: None,
@@ -1009,6 +1011,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         title: None,
         description: None,
         content_type: None,
+        representation: None,
         status: 200,
         fetched: true,
         truncated: false,
@@ -1037,6 +1040,7 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         response_headers: None,
         transport: Some("http".to_string()),
         browser_escalated: false,
+        accept_policy: None,
         manual_interaction_required: false,
         focus: None,
         raw_body: None,
@@ -1944,6 +1948,107 @@ mod provider_status {
             .expect("brave_api health entry");
         assert_eq!(brave_api["enabled"], false);
         assert_eq!(brave_api["configured"], false);
+    }
+
+    #[test]
+    fn provider_status_reports_parse_shape_per_provider() {
+        let state = state_with_default();
+        let health = state.adapter.health();
+        health.record_success("brave", 5, 3);
+        health.record_success("duckduckgo", 5, 0);
+        health.record_failure(
+            "mojeek",
+            eggsearch::meta::provider_diagnostics::FailureClass::ParseError,
+            "engine 'mojeek' parse failed: result container missing",
+            5,
+        );
+
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("ok");
+        let views = v["health_views"].as_object().expect("health_views object");
+        assert_eq!(views["brave"]["parse_shape"], "ok");
+        assert_eq!(views["duckduckgo"]["parse_shape"], "empty");
+        assert_eq!(views["mojeek"]["parse_shape"], "shifted");
+        assert!(
+            views["startpage"].get("parse_shape").is_none(),
+            "providers without an observation omit parse_shape: {:?}",
+            views["startpage"]
+        );
+
+        let providers = v["providers"].as_array().expect("providers array");
+        let provider = |id: &str| {
+            providers
+                .iter()
+                .find(|p| p["id"].as_str() == Some(id))
+                .unwrap_or_else(|| panic!("provider {id}"))
+        };
+        assert_eq!(provider("brave")["parse_shape"], "ok");
+        assert_eq!(provider("duckduckgo")["parse_shape"], "empty");
+        assert_eq!(provider("mojeek")["parse_shape"], "shifted");
+        assert!(
+            provider("startpage").get("parse_shape").is_none(),
+            "capability-skipped and unobserved providers omit parse_shape"
+        );
+    }
+
+    #[test]
+    fn parse_shape_tracks_success_and_parse_failure() {
+        use eggsearch::meta::provider_diagnostics::FailureClass;
+        use eggsearch::meta::provider_health_view::ParseShape;
+
+        let registry = eggsearch::meta::ProviderHealthRegistry::new();
+        registry.record_success("duckduckgo", 10, 3);
+        assert_eq!(
+            registry.health_view("duckduckgo").parse_shape,
+            Some(ParseShape::Ok)
+        );
+
+        registry.record_success("duckduckgo", 10, 0);
+        assert_eq!(
+            registry.health_view("duckduckgo").parse_shape,
+            Some(ParseShape::Empty)
+        );
+
+        registry.record_failure("duckduckgo", FailureClass::ParseError, "shift", 10);
+        assert_eq!(
+            registry.health_view("duckduckgo").parse_shape,
+            Some(ParseShape::Shifted)
+        );
+
+        registry.record_failure("duckduckgo", FailureClass::Timeout, "slow", 10);
+        assert_eq!(
+            registry.health_view("duckduckgo").parse_shape,
+            Some(ParseShape::Shifted)
+        );
+
+        registry.record_failure("mojeek", FailureClass::Blocked, "blocked", 10);
+        assert_eq!(registry.health_view("mojeek").parse_shape, None);
+    }
+
+    #[test]
+    fn parse_shape_absent_without_observation() {
+        let registry = eggsearch::meta::ProviderHealthRegistry::new();
+        assert_eq!(registry.health_view("brave").parse_shape, None);
+        let json = serde_json::to_string(&registry.health_view("brave")).unwrap();
+        assert!(!json.contains("parse_shape"));
+    }
+
+    #[test]
+    fn failure_class_blocked_wire_value_round_trips() {
+        use eggsearch::meta::provider_diagnostics::FailureClass;
+
+        assert_eq!(FailureClass::Blocked.as_str(), "blocked");
+        assert_eq!(FailureClass::from_str("blocked"), FailureClass::Blocked);
+        assert_eq!(
+            FailureClass::from(eggsearch::meta::adapter::ErrorClass::Blocked),
+            FailureClass::Blocked
+        );
     }
 
     #[test]

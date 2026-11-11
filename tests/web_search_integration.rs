@@ -408,6 +408,80 @@ async fn web_search_partial_failure_returns_results_and_failures() {
     assert_eq!(failed.len(), 1, "failed: {failed:?}");
     assert_eq!(failed[0]["id"], "mock_b");
     assert_eq!(failed[0]["error_class"], "parse_error");
+
+    let dimensions = v["retrieval_summary"]["dimensions"].as_array().unwrap();
+    let parse_failed = dimensions
+        .iter()
+        .find(|d| d["provider_id"].as_str() == Some("mock_b"))
+        .expect("mock_b dimension");
+    assert_eq!(parse_failed["absence_kind"], "provider_failed");
+    assert_ne!(parse_failed["absence_kind"], "no_matching_evidence_found");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_zero_results_stays_success() {
+    let engines = vec![MockEngine::success("mock_a", Vec::new())];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a"], "zqxjvwkkplmnrtbqzz"))
+        .await
+        .expect("ok");
+
+    assert!(v["results"].as_array().unwrap().is_empty());
+    assert!(v["providers_failed"].as_array().unwrap().is_empty());
+
+    let dimensions = v["retrieval_summary"]["dimensions"].as_array().unwrap();
+    let absent = dimensions
+        .iter()
+        .find(|d| d["provider_id"].as_str() == Some("mock_a"))
+        .expect("mock_a dimension");
+    assert_eq!(absent["attempt_outcome"], "success_zero_results");
+    assert_eq!(absent["absence_kind"], "no_matching_evidence_found");
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_blocked_provider_reports_blocked_class() {
+    let engines = vec![
+        MockEngine::success(
+            "mock_a",
+            vec![MockResult::new("A", "https://example.com/a", "mock_a")],
+        ),
+        MockEngine::failure("mock_b", MockFailure::Blocked),
+    ];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let v = run_web_search(state, args_for(&["mock_a", "mock_b"], "rust"))
+        .await
+        .expect("ok");
+
+    let failed = v["providers_failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "failed: {failed:?}");
+    assert_eq!(failed[0]["id"], "mock_b");
+    assert_eq!(failed[0]["error_class"], "blocked");
+    assert!(
+        failed[0]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("mock challenge page"),
+        "message: {:?}",
+        failed[0]["message"]
+    );
+
+    let warnings = v["warnings"].as_array().unwrap();
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.as_str().unwrap_or_default().contains("[blocked]")),
+        "warnings: {warnings:?}"
+    );
+
+    let dimensions = v["retrieval_summary"]["dimensions"].as_array().unwrap();
+    let blocked = dimensions
+        .iter()
+        .find(|d| d["provider_id"].as_str() == Some("mock_b"))
+        .expect("mock_b dimension");
+    assert_eq!(blocked["absence_kind"], "provider_failed");
+    assert_ne!(blocked["absence_kind"], "no_matching_evidence_found");
 }
 
 #[cfg(feature = "mock")]
@@ -2303,4 +2377,574 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .arg("--allow-empty")
         .output()
         .ok();
+}
+
+#[cfg(feature = "mock")]
+mod derived_intent_reporting {
+    use super::*;
+    use eggsearch::core::query::SearchIntent;
+    use eggsearch::meta::engines::error::EngineError;
+    use eggsearch::meta::engines::models::SearchResult;
+    use eggsearch::meta::engines::{BoxFuture, EngineSearchRequest, SearchEngine};
+    use std::sync::Mutex;
+
+    struct RecordingEngine {
+        name: &'static str,
+        results: Vec<SearchResult>,
+        queries: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RecordingEngine {
+        fn new(
+            name: &'static str,
+            results: Vec<SearchResult>,
+        ) -> (Arc<Self>, Arc<Mutex<Vec<String>>>) {
+            let queries = Arc::new(Mutex::new(Vec::new()));
+            (
+                Arc::new(Self {
+                    name,
+                    results,
+                    queries: Arc::clone(&queries),
+                }),
+                queries,
+            )
+        }
+    }
+
+    impl SearchEngine for RecordingEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn search<'a>(
+            &'a self,
+            request: &'a EngineSearchRequest,
+        ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            if let Ok(mut seen) = self.queries.lock() {
+                seen.push(request.query.clone());
+            }
+            let results = self.results.clone();
+            Box::pin(async move { Ok(results) })
+        }
+    }
+
+    fn result(title: &str, url: &str) -> SearchResult {
+        SearchResult {
+            title: title.to_string(),
+            url: url.to_string(),
+            snippet: None,
+            source_engine: "mock_a".to_string(),
+            metadata: Default::default(),
+            excerpts: Vec::new(),
+            published_at: None,
+        }
+    }
+
+    fn docs_pair() -> Vec<SearchResult> {
+        vec![
+            result("Random blog", "https://example.com/blog"),
+            result(
+                "tower-http - Rust",
+                "https://docs.rs/tower-http/latest/tower_http/",
+            ),
+        ]
+    }
+
+    async fn search_with(
+        query: &'static str,
+        intent: Option<SearchIntent>,
+    ) -> (serde_json::Value, Vec<String>) {
+        let (engine, queries) = RecordingEngine::new("mock_a", docs_pair());
+        let state = state_with_arc_engines(test_cfg(), vec![engine], Duration::from_secs(5));
+        let mut args = args_for(&["mock_a"], query);
+        args.intent = intent;
+        args.response_detail = Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic);
+        let payload = run_web_search(state, args).await.expect("search succeeds");
+        let seen = queries.lock().map(|seen| seen.clone()).unwrap_or_default();
+        (payload, seen)
+    }
+
+    fn urls(payload: &serde_json::Value) -> Vec<String> {
+        payload["results"]
+            .as_array()
+            .map(|results| {
+                results
+                    .iter()
+                    .filter_map(|result| result["url"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn omitted_intent_is_reported_with_reasons() {
+        let (payload, _) = search_with("rust tokio documentation", None).await;
+        assert_eq!(payload["derived_intent"], "docs");
+        let reasons: Vec<&str> = payload["derived_intent_reasons"]
+            .as_array()
+            .expect("reasons are reported")
+            .iter()
+            .filter_map(|reason| reason.as_str())
+            .collect();
+        assert_eq!(reasons, ["docs_vocabulary"]);
+    }
+
+    #[tokio::test]
+    async fn derivation_is_stable_across_identical_calls() {
+        let (first, _) = search_with("rust tokio documentation", None).await;
+        let (second, _) = search_with("rust tokio documentation", None).await;
+        assert_eq!(first["derived_intent"], second["derived_intent"]);
+        assert_eq!(
+            first["derived_intent_reasons"],
+            second["derived_intent_reasons"]
+        );
+        assert_eq!(urls(&first), urls(&second));
+    }
+
+    #[tokio::test]
+    async fn explicit_intent_is_authoritative_and_unreported() {
+        for intent in [
+            SearchIntent::Web,
+            SearchIntent::Docs,
+            SearchIntent::Security,
+        ] {
+            let (payload, _) = search_with("rust tokio documentation", Some(intent)).await;
+            assert!(
+                payload.get("derived_intent").is_none(),
+                "explicit {intent:?} must not report a derived intent: {payload}"
+            );
+            assert!(
+                payload.get("derived_intent_reasons").is_none(),
+                "explicit {intent:?} must not report derived reasons"
+            );
+        }
+        let (explicit_web, _) =
+            search_with("rust tokio documentation", Some(SearchIntent::Web)).await;
+        let (explicit_docs, _) =
+            search_with("rust tokio documentation", Some(SearchIntent::Docs)).await;
+        assert_ne!(
+            urls(&explicit_web),
+            urls(&explicit_docs),
+            "explicit intent must control ordering even though this query derives docs"
+        );
+    }
+
+    #[tokio::test]
+    async fn derived_intent_leaves_provider_query_text_byte_identical() {
+        let (_, implicit) = search_with("rust tokio documentation", None).await;
+        let (_, explicit_web) =
+            search_with("rust tokio documentation", Some(SearchIntent::Web)).await;
+        assert_eq!(implicit, explicit_web);
+        assert_eq!(implicit, vec!["rust tokio documentation".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn applied_reranking_consumes_the_derived_intent() {
+        assert!(
+            eggsearch::selection_test::reranking_uses_derived_intent(),
+            "the M005 rollout gate applied derived-intent reranking; the tier-1 evidence is pinned in tests/retrieval_quality.rs"
+        );
+        let (implicit, _) = search_with("rust tokio documentation", None).await;
+        let (explicit_web, _) =
+            search_with("rust tokio documentation", Some(SearchIntent::Web)).await;
+        let (explicit_docs, _) =
+            search_with("rust tokio documentation", Some(SearchIntent::Docs)).await;
+        assert_eq!(implicit["derived_intent"], "docs");
+        assert_ne!(
+            urls(&implicit),
+            urls(&explicit_web),
+            "an omitted intent whose derived intent is docs must rerank differently from an explicit web intent"
+        );
+        assert_eq!(
+            urls(&implicit),
+            urls(&explicit_docs),
+            "the derived intent must rerank exactly as the explicit intent would"
+        );
+        assert_eq!(
+            urls(&explicit_web).first().map(String::as_str),
+            Some("https://example.com/blog"),
+            "explicit web must keep the neutral provider order"
+        );
+        assert_eq!(
+            urls(&explicit_docs).first().map(String::as_str),
+            Some("https://docs.rs/tower-http/latest/tower_http/"),
+            "explicit docs must promote the official documentation page"
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+mod search_result_cache {
+    use super::*;
+    use eggsearch::core::query::Freshness;
+    use eggsearch::mcp::tools::run_provider_status_async;
+    use eggsearch::meta::engines::SearchEngine;
+    use eggsearch::meta::mock::{CountingMockEngine, MockFailure};
+    use eggsearch::meta::search_cache::SearchCacheSettings;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::sync::Barrier;
+
+    fn result(title: &str, url: &str, engine: &'static str) -> MockResult {
+        MockResult::new(title, url, engine)
+    }
+
+    fn cached_state(
+        engines: Vec<Arc<dyn SearchEngine>>,
+        timeout: Duration,
+        ttl: Duration,
+        max_entries: usize,
+    ) -> Arc<ServerState> {
+        let adapter = MetadataSearchAdapter::from_engines_with_cache(
+            engines,
+            timeout,
+            SearchCacheSettings { ttl, max_entries },
+        );
+        Arc::new(ServerState::with_adapter(test_cfg(), Arc::new(adapter)))
+    }
+
+    fn status_args() -> ProviderStatusArgs {
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn two_identical_searches_share_one_fanout() {
+        let a_calls = Arc::new(AtomicUsize::new(0));
+        let b_calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            CountingMockEngine::new(
+                "mock_a",
+                vec![result("A1", "https://a.example/1", "mock_a")],
+                Arc::clone(&a_calls),
+            )
+            .into_engine(),
+            CountingMockEngine::new(
+                "mock_b",
+                vec![result("B1", "https://b.example/1", "mock_b")],
+                Arc::clone(&b_calls),
+            )
+            .into_engine(),
+        ];
+        let state = cached_state(engines, Duration::from_secs(5), Duration::from_secs(60), 8);
+
+        let first = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a", "mock_b"], "identical cache query"),
+        )
+        .await
+        .expect("first search");
+        assert_eq!(a_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(b_calls.load(Ordering::SeqCst), 1);
+
+        let second = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a", "mock_b"], "identical cache query"),
+        )
+        .await
+        .expect("second search");
+
+        assert_eq!(
+            a_calls.load(Ordering::SeqCst),
+            1,
+            "cache hit must not dispatch"
+        );
+        assert_eq!(
+            b_calls.load(Ordering::SeqCst),
+            1,
+            "cache hit must not dispatch"
+        );
+        assert_eq!(first, second, "cached payload must be byte-identical");
+
+        let status = run_provider_status_async(Arc::clone(&state), status_args())
+            .await
+            .expect("provider status");
+        assert_eq!(status["search_cache"]["entries"], 1);
+        assert_eq!(status["search_cache"]["misses"], 1);
+        assert_eq!(status["search_cache"]["hits"], 1);
+        assert_eq!(status["search_cache"]["coalesced"], 0);
+        assert_eq!(status["search_cache"]["bypassed"], 0);
+    }
+
+    #[tokio::test]
+    async fn concurrent_identical_searches_share_one_fanout() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![CountingMockEngine::new(
+            "mock_a",
+            vec![result("A1", "https://a.example/1", "mock_a")],
+            Arc::clone(&calls),
+        )
+        .with_delay(Duration::from_millis(120))
+        .into_engine()];
+        let state = cached_state(engines, Duration::from_secs(5), Duration::from_secs(60), 8);
+        let barrier = Arc::new(Barrier::new(4));
+
+        let tasks: Vec<_> = (0..4)
+            .map(|_| {
+                let state = Arc::clone(&state);
+                let barrier = Arc::clone(&barrier);
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    run_web_search(state, args_for(&["mock_a"], "coalesced query")).await
+                })
+            })
+            .collect();
+
+        let mut payloads = Vec::new();
+        for task in tasks {
+            payloads.push(task.await.expect("task joins").expect("search succeeds"));
+        }
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "identical concurrent searches must share one fan-out"
+        );
+        for payload in &payloads[1..] {
+            assert_eq!(&payloads[0], payload, "coalesced payloads must match");
+        }
+
+        let status = run_provider_status_async(Arc::clone(&state), status_args())
+            .await
+            .expect("provider status");
+        assert_eq!(status["search_cache"]["entries"], 1);
+        assert_eq!(status["search_cache"]["misses"], 4);
+        assert_eq!(status["search_cache"]["coalesced"], 3);
+        assert_eq!(status["search_cache"]["hits"], 0);
+    }
+
+    #[tokio::test]
+    async fn provider_failure_is_neither_stored_nor_served() {
+        let a_calls = Arc::new(AtomicUsize::new(0));
+        let b_calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            CountingMockEngine::new(
+                "mock_a",
+                vec![result("A1", "https://a.example/1", "mock_a")],
+                Arc::clone(&a_calls),
+            )
+            .into_engine(),
+            CountingMockEngine::new("mock_b", Vec::new(), Arc::clone(&b_calls))
+                .with_failure(MockFailure::HttpStatus(503))
+                .into_engine(),
+        ];
+        let state = cached_state(engines, Duration::from_secs(5), Duration::from_secs(60), 8);
+
+        let first = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a", "mock_b"], "partial fanout query"),
+        )
+        .await
+        .expect("first search");
+        assert_eq!(first["providers_failed"].as_array().unwrap().len(), 1);
+
+        let second = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a", "mock_b"], "partial fanout query"),
+        )
+        .await
+        .expect("second search");
+
+        assert_eq!(
+            a_calls.load(Ordering::SeqCst),
+            2,
+            "a fan-out with a provider failure must not be stored"
+        );
+        assert_eq!(b_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(first, second);
+        assert_eq!(second["providers_failed"].as_array().unwrap().len(), 1);
+
+        let status = run_provider_status_async(Arc::clone(&state), status_args())
+            .await
+            .expect("provider status");
+        assert_eq!(status["search_cache"]["entries"], 0);
+        assert_eq!(status["search_cache"]["hits"], 0);
+        assert_eq!(status["search_cache"]["misses"], 2);
+        assert_eq!(status["search_cache"]["bypassed"], 2);
+    }
+
+    #[tokio::test]
+    async fn deadline_truncated_fanout_is_not_cached() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![
+            CountingMockEngine::new(
+                "mock_a",
+                vec![result("A1", "https://a.example/1", "mock_a")],
+                Arc::clone(&calls),
+            )
+            .into_engine(),
+            Arc::new(MockEngine::hang("mock_b")),
+        ];
+        let state = cached_state(
+            engines,
+            Duration::from_millis(200),
+            Duration::from_secs(60),
+            8,
+        );
+
+        let first = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a", "mock_b"], "deadline fanout query"),
+        )
+        .await
+        .expect("first search");
+        let second = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a", "mock_b"], "deadline fanout query"),
+        )
+        .await
+        .expect("second search");
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "a deadline-interrupted fan-out must not be cached"
+        );
+        assert_eq!(first["providers_failed"][0]["error_class"], "timeout");
+        assert_eq!(first, second);
+
+        let status = run_provider_status_async(Arc::clone(&state), status_args())
+            .await
+            .expect("provider status");
+        assert_eq!(status["search_cache"]["entries"], 0);
+        assert_eq!(status["search_cache"]["bypassed"], 2);
+    }
+
+    #[tokio::test]
+    async fn cache_hit_adds_no_health_evidence() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![CountingMockEngine::new(
+            "mock_a",
+            vec![result("A1", "https://a.example/1", "mock_a")],
+            Arc::clone(&calls),
+        )
+        .with_delay(Duration::from_millis(25))
+        .into_engine()];
+        let state = cached_state(engines, Duration::from_secs(5), Duration::from_secs(60), 8);
+
+        let first = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a"], "health evidence query"),
+        )
+        .await
+        .expect("first search");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let after_miss =
+            serde_json::to_value(state.adapter.health().health_view("mock_a")).expect("view");
+        assert!(
+            after_miss["last_success_at"].is_string(),
+            "a miss must record provider health: {after_miss}"
+        );
+        assert_eq!(after_miss["parse_shape"], serde_json::json!("ok"));
+        let miss_latency = after_miss["last_latency_ms"]
+            .as_u64()
+            .expect("a miss records latency");
+        assert!(
+            miss_latency >= 20,
+            "expected real dispatch latency, got {miss_latency}"
+        );
+
+        let second = run_web_search(
+            Arc::clone(&state),
+            args_for(&["mock_a"], "health evidence query"),
+        )
+        .await
+        .expect("second search");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "cache hit must not dispatch"
+        );
+        assert_eq!(first, second);
+
+        let after_hit =
+            serde_json::to_value(state.adapter.health().health_view("mock_a")).expect("view");
+        assert_eq!(after_hit["last_latency_ms"], after_miss["last_latency_ms"]);
+        assert_eq!(after_hit["parse_shape"], after_miss["parse_shape"]);
+        assert_eq!(
+            after_hit["consecutive_failures"],
+            after_miss["consecutive_failures"]
+        );
+        assert_eq!(after_hit["status"], after_miss["status"]);
+    }
+
+    #[tokio::test]
+    async fn differing_request_fields_dispatch_separately() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![CountingMockEngine::new(
+            "mock_a",
+            vec![result("A1", "https://a.example/1", "mock_a")],
+            Arc::clone(&calls),
+        )
+        .into_engine()];
+        let state = cached_state(engines, Duration::from_secs(5), Duration::from_secs(60), 8);
+
+        let mut explicit_web = args_for(&["mock_a"], "key field query");
+        explicit_web.intent = Some(eggsearch::core::query::SearchIntent::Web);
+        run_web_search(Arc::clone(&state), explicit_web)
+            .await
+            .expect("explicit intent search");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        run_web_search(Arc::clone(&state), args_for(&["mock_a"], "key field query"))
+            .await
+            .expect("omitted intent search");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "omitted intent and explicit web must not share a key"
+        );
+
+        let mut weekly = args_for(&["mock_a"], "key field query");
+        weekly.freshness = Some(Freshness::Week);
+        run_web_search(Arc::clone(&state), weekly)
+            .await
+            .expect("freshness search");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "freshness must invalidate the key"
+        );
+
+        let mut excerpts = args_for(&["mock_a"], "key field query");
+        excerpts.excerpt_count = Some(2);
+        run_web_search(Arc::clone(&state), excerpts)
+            .await
+            .expect("excerpt search");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            4,
+            "excerpt demand must invalidate the key"
+        );
+    }
+
+    #[tokio::test]
+    async fn diagnostics_block_is_absent_when_the_cache_is_disabled() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let engines: Vec<Arc<dyn SearchEngine>> = vec![CountingMockEngine::new(
+            "mock_a",
+            vec![result("A1", "https://a.example/1", "mock_a")],
+            Arc::clone(&calls),
+        )
+        .into_engine()];
+        let state = state_with_arc_engines(test_cfg(), engines, Duration::from_secs(5));
+
+        run_web_search(Arc::clone(&state), args_for(&["mock_a"], "no cache query"))
+            .await
+            .expect("first search");
+        run_web_search(Arc::clone(&state), args_for(&["mock_a"], "no cache query"))
+            .await
+            .expect("second search");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+        let status = run_provider_status_async(Arc::clone(&state), status_args())
+            .await
+            .expect("provider status");
+        assert!(
+            status.get("search_cache").is_none(),
+            "disabled cache must not emit a search_cache block: {status}"
+        );
+    }
 }

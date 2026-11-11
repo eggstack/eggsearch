@@ -1,23 +1,23 @@
-use crate::core::sanitize::TrustMarkers;
 use crate::core::SearchWarning;
-use crate::core::SourceCard;
 use crate::core::WebSearchRequest;
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::models::SearchResult;
 use crate::meta::engines::EngineSearchRequest;
-use crate::meta::planner::build_search_plan;
+use crate::meta::planner::{build_search_plan, SearchPlan};
 use crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry;
 use crate::meta::response::{ProviderFailure, WebSearchResponse};
+use crate::meta::search_cache::{CacheDisposition, SearchCacheKey, SearchFanout};
 use futures::FutureExt;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 use super::error::*;
 use super::execution::*;
 use super::normalization::*;
-use super::MetadataSearchAdapter;
+use super::selection::{select, SelectionInputs, SelectionParams};
+use super::{EngineList, MetadataSearchAdapter};
 
 impl MetadataSearchAdapter {
     /// Run a metasearch query. This is the primary entry point used by
@@ -33,11 +33,41 @@ impl MetadataSearchAdapter {
     ///
     /// Uses per-engine timeouts via `JoinSet` so that a global deadline
     /// preserves partial results from engines that responded in time.
+    ///
+    /// This is the explicit-intent entry point: it reports no derived
+    /// intent and reranks with `req.intent`. The MCP `web_search` tool
+    /// calls [`Self::web_search_with_intent`] instead, so omitting the
+    /// caller's `intent` stays distinguishable from an explicit `web`.
     pub async fn web_search(
         &self,
         req: &WebSearchRequest,
         effective_max_results: usize,
         max_results_cap: usize,
+    ) -> WebSearchResponse {
+        self.web_search_with_intent(
+            req,
+            effective_max_results,
+            max_results_cap,
+            Some(req.intent),
+        )
+        .await
+    }
+
+    /// Run a metasearch query with an optional caller-supplied intent.
+    ///
+    /// `caller_intent == None` means the caller omitted `intent`:
+    /// the query is classified once with `derive_intent` and the
+    /// result is reported on the response. The planner always receives
+    /// `req.intent`, so query text and provider selection stay
+    /// byte-identical to the explicit-intent path. Reranking consumes
+    /// the derived intent only when the intent module's apply switch
+    /// is on.
+    pub async fn web_search_with_intent(
+        &self,
+        req: &WebSearchRequest,
+        effective_max_results: usize,
+        max_results_cap: usize,
+        caller_intent: Option<crate::core::query::SearchIntent>,
     ) -> WebSearchResponse {
         let final_max_results = effective_max_results;
         let candidate_cap = max_results_cap;
@@ -65,6 +95,17 @@ impl MetadataSearchAdapter {
 
         let plan = build_search_plan(req, &queried_ids);
 
+        let derived = caller_intent
+            .is_none()
+            .then(|| crate::meta::intent::derive_intent(&req.query, &plan.hints));
+        let rerank_intent = match (
+            &derived,
+            crate::meta::intent::APPLY_DERIVED_INTENT_TO_RERANKING,
+        ) {
+            (Some(derived), true) => derived.intent,
+            _ => req.intent,
+        };
+
         debug!(
             query = %req.query,
             providers = ?queried_ids,
@@ -72,125 +113,71 @@ impl MetadataSearchAdapter {
             candidate_limit,
             timeout_ms = effective_timeout.as_millis(),
             intent = %req.intent.as_str(),
+            derived_intent = ?derived.as_ref().map(|d| d.intent.as_str()),
+            derived_intent_reasons = ?derived.as_ref().map(|d| d.reasons.clone()),
+            derived_intent_confidence = ?derived.as_ref().map(|d| d.confidence.as_str()),
+            rerank_intent = %rerank_intent.as_str(),
             generic_query = %plan.generic_query,
             has_repo_hints = plan.hints.has_any(),
             "dispatching metasearch"
         );
 
-        // Fan out to engines with per-engine timeout, collecting results
-        // incrementally. When the global deadline hits we keep whatever
-        // arrived and cancel the rest.
-        let mut join_set = tokio::task::JoinSet::new();
-        let mut active_tasks: std::collections::HashMap<tokio::task::Id, (String, Instant)> =
-            std::collections::HashMap::new();
-        for engine in &engines {
-            let engine = Arc::clone(engine);
-            let provider_id = engine.name().to_string();
-            let provider_id_panic = provider_id.clone();
-            let query = plan
-                .provider_queries
-                .get(&provider_id)
-                .cloned()
-                .unwrap_or_else(|| plan.generic_query.clone());
-            let engine_request = EngineSearchRequest::from_web_request(
-                req,
-                query,
-                candidate_limit,
-                effective_timeout,
-            );
-            let spawn_started = Instant::now();
-            let provider_id_for_map = provider_id.clone();
-            let abort_handle = join_set.spawn(async move {
-                let started = Instant::now();
-                let inner = async move {
-                    let result = engine.search(&engine_request).await;
-                    (provider_id, result)
-                };
-                let outcome = AssertUnwindSafe(inner)
-                    .catch_unwind()
-                    .await
-                    .unwrap_or_else(|_| {
-                        (
-                            provider_id_panic,
-                            Err(crate::meta::engines::error::EngineError::NetworkError {
-                                engine: "dispatch",
-                                reason: "task panicked during dispatch".to_string(),
-                            }),
-                        )
-                    });
-                (
-                    outcome.0,
-                    outcome.1,
-                    started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-                )
-            });
-            active_tasks.insert(abort_handle.id(), (provider_id_for_map, spawn_started));
-        }
-
-        let deadline = tokio::time::Instant::now() + effective_timeout;
-        let mut raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
-        let mut result_latencies_ms: Vec<u64> = Vec::new();
-        let mut raw_failures: Vec<(String, EngineError)> = Vec::new();
-        let mut failure_latencies_ms: Vec<u64> = Vec::new();
-
-        loop {
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                warn!(
-                    "metasearch global timeout exceeded with {} engines still pending",
-                    join_set.len()
+        let (fanout, cache_disposition) = match self.search_cache.as_ref() {
+            Some(cache) => {
+                let cache_key = SearchCacheKey::from_request(
+                    req,
+                    caller_intent,
+                    &queried_ids,
+                    final_max_results,
+                    candidate_limit,
                 );
-                join_set.abort_all();
-                break;
+                cache
+                    .resolve(cache_key, || {
+                        self.dispatch_web_fanout(
+                            &engines,
+                            &plan,
+                            req,
+                            candidate_limit,
+                            effective_timeout,
+                            &queried_ids,
+                        )
+                    })
+                    .await
+                    .into_parts()
             }
-            match tokio::time::timeout(remaining, join_set.join_next_with_id()).await {
-                Ok(Some(Ok((task_id, (name, Ok(results), duration_ms))))) => {
-                    active_tasks.remove(&task_id);
-                    raw_results.push((name, results));
-                    result_latencies_ms.push(duration_ms);
-                }
-                Ok(Some(Ok((task_id, (name, Err(err), duration_ms))))) => {
-                    active_tasks.remove(&task_id);
-                    raw_failures.push((name, err));
-                    failure_latencies_ms.push(duration_ms);
-                }
-                Ok(Some(Err(join_err))) => {
-                    warn!(?join_err, "engine task panicked");
-                    if let Some((provider_id, started)) = active_tasks.remove(&join_err.id()) {
-                        let latency_ms =
-                            started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-                        raw_failures.push((
-                            provider_id,
-                            crate::meta::engines::error::EngineError::NetworkError {
-                                engine: "dispatch",
-                                reason: "task panicked during dispatch".to_string(),
-                            },
-                        ));
-                        failure_latencies_ms.push(latency_ms);
-                    }
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        "metasearch global timeout exceeded with {} engines still pending",
-                        join_set.len()
-                    );
-                    join_set.abort_all();
-                    break;
-                }
-            }
-        }
-        // JoinSet dropped here cancels any in-flight engine tasks.
+            None => (
+                self.dispatch_web_fanout(
+                    &engines,
+                    &plan,
+                    req,
+                    candidate_limit,
+                    effective_timeout,
+                    &queried_ids,
+                )
+                .await,
+                CacheDisposition::Disabled,
+            ),
+        };
 
-        // Record provider health from raw results and failures
-        self.record_provider_health(
-            &queried_ids,
-            &raw_results,
-            &result_latencies_ms,
-            &raw_failures,
-            &failure_latencies_ms,
-            effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
+        debug!(
+            providers = ?queried_ids,
+            cache = cache_disposition.as_str(),
+            "metasearch fan-out resolved"
         );
+
+        let raw_results = fanout.lists;
+        let raw_failures = fanout.failures;
+
+        if cache_disposition.conducted_fanout() {
+            self.record_provider_health(
+                &queried_ids,
+                &raw_results,
+                &fanout.result_latencies_ms,
+                &raw_failures,
+                &fanout.failure_latencies_ms,
+                effective_timeout.as_millis().min(u128::from(u64::MAX)) as u64,
+            );
+        }
 
         // Rank providers by `queried_ids` order once, up front: both
         // `providers_failed` and the attempts ledger are drained from a
@@ -273,49 +260,26 @@ impl MetadataSearchAdapter {
             accounted.insert(id.clone());
         }
 
-        // Additional excerpts are opt-in: without explicit excerpt
-        // demand, provider passages stay out of the merged cards so
-        // default search output remains compact discovery-only cards.
-        // Generic result timestamps are always preserved.
-        if req.effective_excerpt_count() == 0 {
-            for (_, results) in raw_results.iter_mut() {
-                for result in results.iter_mut() {
-                    result.excerpts.clear();
-                }
-            }
-        }
-
-        // Aggregate up to the candidate pool size so intent/freshness
-        // reranking has the larger pool to work with.
-        let aggregated = aggregate_rrf(raw_results, candidate_limit);
-        let mut results: Vec<SourceCard> = Vec::with_capacity(aggregated.len());
-        let mut trust_markers = TrustMarkers::default();
-        for a in aggregated {
-            if let Some(card) = convert_aggregated(a, self.sanitize_output) {
-                trust_markers.merge(&card.trust_markers);
-                results.push(card);
-            }
-        }
-
-        // Deterministic local domain enforcement after aggregation and
-        // before final truncation. Provider-native filtering is tracked
-        // separately; this step is always local approximation.
-        if has_domain_filters {
-            results = apply_domain_filters(results, &req.include_domains, &req.exclude_domains);
-            let mut filtered_markers = TrustMarkers::default();
-            for card in &results {
-                filtered_markers.merge(&card.trust_markers);
-            }
-            trust_markers = filtered_markers;
-        }
-
-        // --- bounded intent/freshness reranking ---
-        apply_intent_reranking(&mut results, req.intent, req.freshness);
-
-        // Truncate to the caller's effective max_results after
-        // reranking so intent-matching results just outside the
-        // final window can be promoted into the returned set.
-        results.truncate(final_max_results);
+        // Aggregate up to the candidate pool size, convert, enforce
+        // local domain filters, then run bounded intent/freshness
+        // reranking before truncating to the caller's effective
+        // `max_results`, so ranking results just outside the naive
+        // top-k can still be promoted into the returned set.
+        let outcome = select(
+            raw_results,
+            candidate_limit,
+            final_max_results,
+            SelectionInputs {
+                intent: rerank_intent,
+                freshness: req.freshness,
+                include_domains: &req.include_domains,
+                exclude_domains: &req.exclude_domains,
+                sanitize: self.sanitize_output,
+            },
+            SelectionParams::production(),
+        );
+        let mut results = outcome.results;
+        let trust_markers = outcome.trust_markers;
 
         // --- capability enforcement telemetry + warnings ---
         // Telemetry is the source of truth; human-readable warnings are
@@ -506,6 +470,158 @@ impl MetadataSearchAdapter {
             } else {
                 Some(telemetry)
             },
+            derived_intent: derived
+                .as_ref()
+                .map(|derived| derived.intent.as_str().to_string()),
+            derived_intent_reasons: derived
+                .as_ref()
+                .map(|derived| derived.reasons.iter().map(|r| (*r).to_string()).collect()),
+        }
+    }
+
+    /// Dispatch the provider fan-out for `web_search`.
+    ///
+    /// Uses per-engine timeouts via `JoinSet` so that a global deadline
+    /// preserves partial results from engines that responded in time.
+    /// Reports whether any queried provider failed to answer before the
+    /// deadline so the caller can refuse to cache a partial fan-out.
+    async fn dispatch_web_fanout(
+        &self,
+        engines: &EngineList,
+        plan: &SearchPlan,
+        req: &WebSearchRequest,
+        candidate_limit: usize,
+        effective_timeout: Duration,
+        queried_ids: &[String],
+    ) -> SearchFanout {
+        let mut join_set = tokio::task::JoinSet::new();
+        let mut active_tasks: std::collections::HashMap<tokio::task::Id, (String, Instant)> =
+            std::collections::HashMap::new();
+        for engine in engines {
+            let engine = Arc::clone(engine);
+            let provider_id = engine.name().to_string();
+            let provider_id_panic = provider_id.clone();
+            let query = plan
+                .provider_queries
+                .get(&provider_id)
+                .cloned()
+                .unwrap_or_else(|| plan.generic_query.clone());
+            let engine_request = EngineSearchRequest::from_web_request(
+                req,
+                query,
+                candidate_limit,
+                effective_timeout,
+            );
+            let spawn_started = Instant::now();
+            let provider_id_for_map = provider_id.clone();
+            let abort_handle = join_set.spawn(async move {
+                let started = Instant::now();
+                let inner = async move {
+                    let result = engine.search(&engine_request).await;
+                    (provider_id, result)
+                };
+                let outcome = AssertUnwindSafe(inner)
+                    .catch_unwind()
+                    .await
+                    .unwrap_or_else(|_| {
+                        (
+                            provider_id_panic,
+                            Err(crate::meta::engines::error::EngineError::NetworkError {
+                                engine: "dispatch",
+                                reason: "task panicked during dispatch".to_string(),
+                            }),
+                        )
+                    });
+                (
+                    outcome.0,
+                    outcome.1,
+                    started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                )
+            });
+            active_tasks.insert(abort_handle.id(), (provider_id_for_map, spawn_started));
+        }
+
+        let deadline = tokio::time::Instant::now() + effective_timeout;
+        let mut raw_results: Vec<(String, Vec<SearchResult>)> = Vec::new();
+        let mut result_latencies_ms: Vec<u64> = Vec::new();
+        let mut raw_failures: Vec<(String, EngineError)> = Vec::new();
+        let mut failure_latencies_ms: Vec<u64> = Vec::new();
+
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                warn!(
+                    "metasearch global timeout exceeded with {} engines still pending",
+                    join_set.len()
+                );
+                join_set.abort_all();
+                break;
+            }
+            match tokio::time::timeout(remaining, join_set.join_next_with_id()).await {
+                Ok(Some(Ok((task_id, (name, Ok(results), duration_ms))))) => {
+                    active_tasks.remove(&task_id);
+                    raw_results.push((name, results));
+                    result_latencies_ms.push(duration_ms);
+                }
+                Ok(Some(Ok((task_id, (name, Err(err), duration_ms))))) => {
+                    active_tasks.remove(&task_id);
+                    raw_failures.push((name, err));
+                    failure_latencies_ms.push(duration_ms);
+                }
+                Ok(Some(Err(join_err))) => {
+                    warn!(?join_err, "engine task panicked");
+                    if let Some((provider_id, started)) = active_tasks.remove(&join_err.id()) {
+                        let latency_ms =
+                            started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+                        raw_failures.push((
+                            provider_id,
+                            crate::meta::engines::error::EngineError::NetworkError {
+                                engine: "dispatch",
+                                reason: "task panicked during dispatch".to_string(),
+                            },
+                        ));
+                        failure_latencies_ms.push(latency_ms);
+                    }
+                }
+                Ok(None) => break,
+                Err(_) => {
+                    warn!(
+                        "metasearch global timeout exceeded with {} engines still pending",
+                        join_set.len()
+                    );
+                    join_set.abort_all();
+                    break;
+                }
+            }
+        }
+
+        let mut accounted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (id, _) in &raw_results {
+            accounted.insert(id.clone());
+        }
+        for (id, _) in &raw_failures {
+            accounted.insert(id.clone());
+        }
+        let deadline_interrupted = queried_ids.iter().any(|id| !accounted.contains(id));
+
+        // Additional excerpts are opt-in: without explicit excerpt
+        // demand, provider passages stay out of the merged cards so
+        // default search output remains compact discovery-only cards.
+        // Generic result timestamps are always preserved.
+        if req.effective_excerpt_count() == 0 {
+            for (_, results) in raw_results.iter_mut() {
+                for result in results.iter_mut() {
+                    result.excerpts.clear();
+                }
+            }
+        }
+
+        SearchFanout {
+            lists: raw_results,
+            failures: raw_failures,
+            result_latencies_ms,
+            failure_latencies_ms,
+            deadline_interrupted,
         }
     }
 }

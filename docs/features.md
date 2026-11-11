@@ -108,6 +108,7 @@ The response includes:
 
 Fresh raw cache entries can satisfy a new extraction mode, link setting, character bound, or PDF page selection without another network request.
 
+
 ### Configuration Reference
 
 | Setting | Default | Description |
@@ -291,3 +292,21 @@ is ever published.
 - `authentication` / `connection` / `timeout` dial errors carry
   kind/stage/hop/protocol facts without credentials; a failed chain never
   retries direct.
+
+## Representation Negotiation
+
+Enabled by default; there is nothing to turn on.
+
+- Every HTML-ish fetch sends `Accept: text/markdown;q=1.0, text/html;q=0.9, */*;q=0.1`.
+  Origins that support Markdown for Agents (Cloudflare-fronted sites, for example) return the
+  smaller representation; origins that ignore the header are unaffected.
+- PDF, JSON/XML/CSV/YAML/TOML, source/config, binary, and code-host raw targets keep the plain HTML
+  policy, and `extract_mode = "metadata_only"` never negotiates because page metadata lives in the
+  HTML head.
+- A 406/415, an unsupported content type, or an empty Markdown body falls back to HTML once, so a
+  fetch costs at most two requests.
+- The representation is a cache dimension (`md1`/`html1`), so a Markdown body can never be served
+  for an HTML cache key. Responses report `representation`, and origin token headers
+  (`x-markdown-tokens`, `x-original-tokens`) are surfaced when present.
+- `include_links` works on Markdown bodies: links are extracted from the parsed Markdown AST with
+  the same cap and classification as the HTML path.

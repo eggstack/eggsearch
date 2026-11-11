@@ -249,6 +249,7 @@ fn native_error_outcome(error: &EngineError) -> (RetrievalAttemptOutcome, String
         EngineError::ParseFailed { .. } => {
             (RetrievalAttemptOutcome::Failed, "parse_error".to_string())
         }
+        EngineError::Blocked { .. } => (RetrievalAttemptOutcome::Failed, "blocked".to_string()),
         EngineError::NetworkError { .. } | EngineError::Http { .. } => {
             (RetrievalAttemptOutcome::Failed, "network_error".to_string())
         }
@@ -507,6 +508,8 @@ pub async fn run_security_search_plan(
         trust_markers,
         evidence_postprocess: None,
         capability_enforcement: None,
+        derived_intent: None,
+        derived_intent_reasons: None,
     };
 
     // 3. Check whether any selected provider exposes native advisory capability.

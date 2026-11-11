@@ -40,3 +40,29 @@ The generated PDF check asserts the expected text `Hello from PDF`, `kind=pdf`, 
 - HTTP-only, PDF, browser and combined release build commands above all succeeded.
 
 No extractor behavior, default feature, public tool, or security policy changed. Detailed paired quality and resource figures for real JS rendering remain unmeasured and are not represented as passes.
+
+## Representation negotiation A/B (agentic retrieval integrity M003)
+
+M003 added default-on `Accept: text/markdown;q=1.0, text/html;q=0.9, */*;q=0.1`
+for HTML-ish targets. The controlled A/B serves one logical document in both
+representations from `httpmock` and fetches it through `run_web_fetch`:
+
+| Representation | Body chars | Extracted block chars | Approx tokens (chars/4) | Headings | Table rows | Code lines | Links | Focus-chunk hit |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| markdown | 356 | 251 | 63 | 2 | 3 | 4 | 2 | yes |
+| html | 560 | 251 | 63 | 2 | 3 | 4 | 2 | yes |
+
+The Markdown body is 36.4% smaller while extracted text, headings, table cells,
+code lines, link URLs, and the focus chunk are identical. Tests assert
+`markdown_bytes < html_bytes`, `markdown_block_chars <= html_block_chars`, the
+exact table rows and code lines, outline equality, and link-URL equality, so a
+Markdown-path fidelity regression fails rather than passing silently.
+
+A curl-level spot check of two Cloudflare-fronted origins observed
+`text/markdown` for the Markdown policy (7,031 and 18,334 bytes) versus
+`text/html` for the HTML policy (213,421 and 317,846 bytes), with
+`vary: accept-encoding, accept`. That comparison is not an end-to-end Eggsearch
+measurement and the HTML bodies include scripts, styles, and navigation, so it
+overstates content savings. It also observed no `x-markdown-tokens` header from
+either origin. Table and code-block fidelity on the negotiated path is
+evidenced by the controlled fixture, not by the spot check.

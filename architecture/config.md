@@ -66,6 +66,8 @@ defaulted, but `[search]` still requires `mode`, `default_max_results`,
 | `exact_error` | `ExactErrorConfig` | defaults | Compiler/runtime error search mode |
 | `multiquery_concurrency` | `usize` | `8` | Global in-flight `(subquery, provider)` dispatch cap |
 | `multiquery_provider_concurrency` | `usize` | `2` | Per-provider in-flight dispatch cap |
+| `cache_ttl_seconds` | `u64` | `300` | `web_search` result-cache TTL (`0` disables; max 86400). A freshness bound, not a correctness guarantee |
+| `cache_max_entries` | `usize` | `128` | Bounded LRU entry count (`1..=4096`); each entry is capped at 1024 rows and is not stored above that |
 
 Default `providers` map: `duckduckgo = true`, `brave = true`,
 `startpage = true`, `yahoo = true`, `mojeek = false`,
@@ -269,6 +271,7 @@ provider-scoped skips, never request failures.
   `retry_max_delay_ms >= retry_base_delay_ms`.
 - `[search]`: `default_max_results > 0`; `max_results_cap > 0` and
   `>= default_max_results`; `timeout_ms > 0`; `max_query_chars > 0`;
+  `cache_ttl_seconds <= 86400`; `cache_max_entries` in `1..=4096`;
   every `default_providers` entry and every `providers` map key must be
   a known provider id.
 - SearXNG: when enabled, `base_url` must be a valid `http`/`https` URL
