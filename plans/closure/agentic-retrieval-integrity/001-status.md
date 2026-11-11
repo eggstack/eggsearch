@@ -1,6 +1,6 @@
 # M001 Scraper Fidelity Contract — Closure Status
 
-Status: closing (closure commit outstanding)
+Status: closed
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/001-scraper-fidelity-contract.md`
 
@@ -8,9 +8,9 @@ Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
-Implementation candidate: uncommitted worktree on the planning baseline. This record is written
-before the closure commit, so the milestone is not `closed`; the plan's status vocabulary requires
-the closure record, roadmap status, and registry entry to move in the same commit.
+Implementation candidate: `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`, the implementation commit immediately preceding this
+closure commit. The closure record, roadmap status, and registry entry moved in the same closure
+commit.
 
 ## Result
 

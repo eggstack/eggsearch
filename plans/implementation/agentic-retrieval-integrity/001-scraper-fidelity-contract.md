@@ -1,6 +1,6 @@
 # M001 — Scraper Fidelity Contract
 
-Status: closing
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M001
 Primary class: invariant (corrective)
 Baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71`

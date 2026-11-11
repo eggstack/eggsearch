@@ -1,6 +1,6 @@
 # M005 Deterministic Intent Derivation — Closure Status
 
-Status: closing, applied reranking (closure commit outstanding)
+Status: closed (applied reranking)
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/005-deterministic-intent-derivation.md`
 
@@ -8,7 +8,9 @@ Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
-Implementation candidate: uncommitted worktree on the planning baseline. Closure commit outstanding.
+Implementation candidate: `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`, the implementation commit immediately preceding this
+closure commit. The closure record, roadmap status, and registry entry moved in the same closure
+commit.
 
 ## Result
 

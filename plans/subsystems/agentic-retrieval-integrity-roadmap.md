@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closing on one uncommitted candidate at the planning baseline; closure records written, closure commit outstanding; M006–M009 registered, not yet planned)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006–M009 registered, not yet planned)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -81,14 +81,15 @@ M009 long-running progress and pagination (interface MCP 2026-07-28 Tasks)
 | M008 — tool advertisement presets | capability | not yet written | interface ADR-0001 ten-tool contract | Config-selected presets shrink `tools/list`; hidden tools still execute; `next_actions` stay callable |
 | M009 — long-running progress and pagination | infrastructure | not yet written | interface MCP 2026-07-28 Tasks extension | Bounded progress reporting and a resumable cursor for long research and fetch payloads |
 
-M001–M005 are closing. Each closure record in `plans/closure/agentic-retrieval-integrity/`
-records the implementation evidence against baseline `cd81f4d`; none is `closed` yet because closure
-requires the candidate commit. M004's lane is now the accepted measurement gate, and M005's
-derived-intent reranking is applied on recorded tier-1 evidence rather than assumed.
+M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
+`plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
+commit carries the records, roadmap status, and registry rows together. M004's lane is the accepted
+measurement gate, and M005's derived-intent reranking is applied on recorded tier-1 evidence rather
+than assumed.
 
-M006–M009 are registered but not dependency-ready: M006 and M007 require the measurement lane from
-M004 (now available), and M009 requires confirming rmcp support for the Tasks extension before
-committing to that shape.
+M006–M009 are registered: M006 and M007 are dependency-ready now that M004's measurement lane
+exists, and M009 still requires confirming rmcp support for the Tasks extension before committing to
+that shape.
 
 ## 7. Cross-cutting concerns
 
@@ -106,7 +107,7 @@ Deferred without a plan: answer synthesis, embeddings, semantic local code searc
 
 ## 9. Closure and status
 
-Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-status.md` recording implementation SHA, tests and outputs, measured deltas, unchanged safety evidence, failures, and residual risk. All five records exist; each names the baseline SHA and states that the implementation candidate is uncommitted, so no milestone is marked closed until the closure commit. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 is corrective: it references the scraper behaviour observed at baseline and must record why the existing verification did not catch it.
+Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-status.md` recording implementation SHA, tests and outputs, measured deltas, unchanged safety evidence, failures, and residual risk. All five records exist and name implementation candidate `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; the closure commit carries the records, roadmap status, and registry rows together. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 is corrective: it references the scraper behaviour observed at baseline and must record why the existing verification did not catch it.
 
 ## 10. Recorded decisions
 

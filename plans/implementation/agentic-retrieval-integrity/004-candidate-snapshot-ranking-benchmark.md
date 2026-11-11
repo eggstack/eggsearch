@@ -1,6 +1,6 @@
 # M004 — Candidate Snapshot Ranking Benchmark
 
-Status: closing
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M004
 Primary class: infrastructure (corrective to deterministic-retrieval-quality M004)
 Baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71`

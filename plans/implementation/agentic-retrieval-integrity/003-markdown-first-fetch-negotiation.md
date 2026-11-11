@@ -1,6 +1,6 @@
 # M003 — Markdown-First Fetch Negotiation
 
-Status: closing
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M003
 Primary class: capability
 Baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71`

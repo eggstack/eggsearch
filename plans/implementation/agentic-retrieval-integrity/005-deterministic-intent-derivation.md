@@ -1,6 +1,6 @@
 # M005 — Deterministic Intent Derivation
 
-Status: closing
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M005
 Primary class: infrastructure
 Baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71`
