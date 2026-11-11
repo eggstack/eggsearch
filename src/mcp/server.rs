@@ -6,7 +6,7 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, Implementation, InitializeResult, ListToolsResult, PaginatedRequestParams,
-    ServerCapabilities, ServerInfo,
+    ServerCapabilities, ServerConfig,
 };
 use rmcp::service::RequestContext;
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler};
@@ -538,7 +538,7 @@ impl EggsearchServer {
 
 #[tool_handler]
 impl ServerHandler for EggsearchServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = ServerCapabilities::builder().enable_tools().build();
         let implementation = Implementation::new("eggsearch", env!("CARGO_PKG_VERSION"));
         InitializeResult::new(capabilities)
