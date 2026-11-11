@@ -206,6 +206,15 @@ const SEARCH_CACHE_TTL_MAX_SECONDS: u64 = 86_400;
 /// Upper bound for `[search].cache_max_entries`.
 const SEARCH_CACHE_MAX_ENTRIES_LIMIT: usize = 4096;
 
+/// Upper bound for `[fetch].pdf_max_bytes` (256 MiB).
+const PDF_MAX_BYTES_LIMIT: usize = 268_435_456;
+
+/// Lower bound for `[fetch].pdf_max_decompressed_bytes` (1 MiB).
+const PDF_MIN_DECOMPRESSED_BYTES: usize = 1_048_576;
+
+/// Upper bound for `[fetch].pdf_max_decompressed_bytes` (1 GiB).
+const PDF_MAX_DECOMPRESSED_BYTES_LIMIT: usize = 1_073_741_824;
+
 /// The `[search]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
@@ -374,6 +383,12 @@ fn default_pdf_max_chars_per_page() -> usize {
 }
 fn default_pdf_max_total_chars() -> usize {
     50000
+}
+fn default_pdf_max_bytes() -> usize {
+    16_777_216
+}
+fn default_pdf_max_decompressed_bytes() -> usize {
+    67_108_864
 }
 fn default_batch_max_items() -> usize {
     8
@@ -631,6 +646,16 @@ pub struct FetchSection {
     /// Default: 50000.
     #[serde(default = "default_pdf_max_total_chars")]
     pub pdf_max_total_chars: usize,
+    /// Maximum response body size in bytes for PDF documents, applied when
+    /// the response is identified as PDF by Content-Type or a `.pdf` path.
+    /// Default: 16777216 (16 MiB). Must be between 1 and 268435456.
+    #[serde(default = "default_pdf_max_bytes")]
+    pub pdf_max_bytes: usize,
+    /// Maximum bytes a PDF document may expand into once its streams are
+    /// decompressed, measured over the whole document before parsing.
+    /// Default: 67108864 (64 MiB). Must be between 1048576 and 1073741824.
+    #[serde(default = "default_pdf_max_decompressed_bytes")]
+    pub pdf_max_decompressed_bytes: usize,
 
     // --- Batch fetch configuration ---
     /// Default maximum number of items in a batch fetch request.
@@ -713,6 +738,8 @@ impl Default for FetchSection {
             pdf_max_pages: default_pdf_max_pages(),
             pdf_max_chars_per_page: default_pdf_max_chars_per_page(),
             pdf_max_total_chars: default_pdf_max_total_chars(),
+            pdf_max_bytes: default_pdf_max_bytes(),
+            pdf_max_decompressed_bytes: default_pdf_max_decompressed_bytes(),
             batch_max_items: default_batch_max_items(),
             batch_max_items_cap: default_batch_max_items_cap(),
             batch_max_chars_per_item: default_batch_max_chars_per_item(),
@@ -1211,6 +1238,8 @@ impl AppConfig {
             pdf_max_pages: self.fetch.pdf_max_pages,
             pdf_max_chars_per_page: self.fetch.pdf_max_chars_per_page,
             pdf_max_total_chars: self.fetch.pdf_max_total_chars,
+            pdf_max_bytes: self.fetch.pdf_max_bytes,
+            pdf_max_decompressed_bytes: self.fetch.pdf_max_decompressed_bytes,
         }
     }
 
@@ -1235,6 +1264,20 @@ impl AppConfig {
             return Err(CoreError::Config(
                 "[fetch].max_bytes must be > 0".to_string(),
             ));
+        }
+        if !(1..=PDF_MAX_BYTES_LIMIT).contains(&self.fetch.pdf_max_bytes) {
+            return Err(CoreError::Config(format!(
+                "[fetch].pdf_max_bytes ({}) must be between 1 and {PDF_MAX_BYTES_LIMIT}",
+                self.fetch.pdf_max_bytes
+            )));
+        }
+        if !(PDF_MIN_DECOMPRESSED_BYTES..=PDF_MAX_DECOMPRESSED_BYTES_LIMIT)
+            .contains(&self.fetch.pdf_max_decompressed_bytes)
+        {
+            return Err(CoreError::Config(format!(
+                "[fetch].pdf_max_decompressed_bytes ({}) must be between {PDF_MIN_DECOMPRESSED_BYTES} and {PDF_MAX_DECOMPRESSED_BYTES_LIMIT}",
+                self.fetch.pdf_max_decompressed_bytes
+            )));
         }
         if self.fetch.timeout_ms == 0 {
             return Err(CoreError::Config(

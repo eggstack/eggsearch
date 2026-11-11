@@ -1,11 +1,11 @@
 # M002 — Captured PDF Corpus and Fidelity Lane
 
-Status: proposed
+Status: closing
 Source: `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` M002
 Primary class: infrastructure
 Baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731`
 References: `architecture/testing.md`; `docs/test-inventory.md`; `tests/fixtures/retrieval_quality/extraction_pairs.json`; `tests/retrieval_quality.rs`; `src/fetch/pdf.rs`; `docs/retrieval-quality-extraction-matrix.md`; `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`.
-Dependencies: none hard. Produces the measurement lane M003, M004, and M005 depend on. Interface dependency on ADR-0008 for the target values; the lane itself does not depend on the decision.
+Dependencies: none hard. Produces the measurement lane M003, M004, and M005 depend on. Provides the target values ADR-0008 accepted as its fidelity gates; the lane itself does not depend on the decision.
 
 ## Objective
 

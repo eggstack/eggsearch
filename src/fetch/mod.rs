@@ -20,6 +20,12 @@ pub mod origin;
 /// PDF text extraction (requires the `pdf` Cargo feature).
 #[cfg(feature = "pdf")]
 pub mod pdf;
+/// PDF page-quality classification (requires the `pdf` Cargo feature).
+#[cfg(feature = "pdf")]
+mod pdf_quality;
+/// Bounded PDF stream-expansion scan (requires the `pdf` Cargo feature).
+#[cfg(feature = "pdf")]
+mod pdf_stream;
 /// HTML structural rendering (blocks, text, markdown).
 pub mod render;
 /// Symbol/span-aware block expansion for `repo_fetch`.

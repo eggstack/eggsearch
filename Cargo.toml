@@ -40,7 +40,7 @@ path = "src/main.rs"
 [features]
 default = []
 mock = []
-pdf = ["dep:lopdf"]
+pdf = ["dep:lopdf", "dep:flate2"]
 browser = ["dep:chromiumoxide"]
 live-smoke = ["mock"]
 egress = ["dep:eggress-outbound", "dep:eggress-uri", "dep:eggress-core"]
@@ -75,6 +75,7 @@ quick-xml = { version = "0.41", default-features = false }
 dirs = "5"
 pulldown-cmark = "0.12"
 lopdf = { version = "0.42", optional = true, default-features = false }
+flate2 = { version = "1", optional = true, default-features = false, features = ["rust_backend"] }
 chromiumoxide = { version = "0.9", optional = true, default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }

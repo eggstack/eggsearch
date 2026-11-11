@@ -62,7 +62,9 @@ pub enum FetchError {
     ExtractError(String),
 
     /// PDF support is not compiled in (the `pdf` Cargo feature is disabled).
-    #[error("PDF support is not compiled in; enable the `pdf` Cargo feature")]
+    #[error(
+        "PDF support is not compiled in; build with `cargo build --features pdf` (see docs/features.md#pdf-extraction for the `pdf` Cargo feature)"
+    )]
     PdfNotCompiledIn,
 
     /// PDF extraction is disabled by configuration.
@@ -72,6 +74,24 @@ pub enum FetchError {
     /// PDF parse failure.
     #[error("PDF parse error: {0}")]
     PdfParseError(String),
+
+    /// PDF decompressed content would exceed the configured bound.
+    ///
+    /// Raised before `lopdf` sees the document when measured Flate expansion
+    /// crosses the budget, when a declared xref `/W` geometry would allocate
+    /// beyond it, or when a stream uses `LZWDecode` or a width beyond eight
+    /// bytes, which cannot be measured or accepted. `measured` is the accounted
+    /// bytes for a measurement breach and `budget + 1` for a structural
+    /// refusal.
+    #[error(
+        "PDF decompressed content exceeds the bound: measured {measured} bytes (budget {budget})"
+    )]
+    PdfDecompressionBoundExceeded {
+        /// Bytes accounted for the document, or the declared allocation.
+        measured: usize,
+        /// Configured per-document decompressed-byte budget.
+        budget: usize,
+    },
 
     /// PDF is encrypted/password-protected.
     #[error("PDF is encrypted or password-protected; extraction is not supported")]
@@ -179,6 +199,8 @@ pub enum FetchErrorKind {
     PdfDisabled,
     /// PDF parse error.
     PdfParseError,
+    /// PDF decompressed content exceeds the bound.
+    PdfDecompressionBoundExceeded,
     /// PDF encrypted.
     PdfEncrypted,
     /// PDF no extractable text.
@@ -232,6 +254,9 @@ impl FetchError {
             FetchError::PdfNotCompiledIn => FetchErrorKind::PdfNotCompiledIn,
             FetchError::PdfDisabled => FetchErrorKind::PdfDisabled,
             FetchError::PdfParseError(_) => FetchErrorKind::PdfParseError,
+            FetchError::PdfDecompressionBoundExceeded { .. } => {
+                FetchErrorKind::PdfDecompressionBoundExceeded
+            }
             FetchError::PdfEncrypted => FetchErrorKind::PdfEncrypted,
             FetchError::PdfNoExtractableText => FetchErrorKind::PdfNoExtractableText,
             FetchError::PdfPageSpecInvalid(_) => FetchErrorKind::PdfPageSpecInvalid,
@@ -271,6 +296,7 @@ impl FetchError {
             FetchErrorKind::PdfNotCompiledIn => "pdf_not_compiled_in",
             FetchErrorKind::PdfDisabled => "pdf_disabled",
             FetchErrorKind::PdfParseError => "pdf_parse_error",
+            FetchErrorKind::PdfDecompressionBoundExceeded => "pdf_decompression_bound_exceeded",
             FetchErrorKind::PdfEncrypted => "pdf_encrypted",
             FetchErrorKind::PdfNoExtractableText => "pdf_no_extractable_text",
             FetchErrorKind::PdfPageSpecInvalid => "pdf_page_spec_invalid",
@@ -287,5 +313,54 @@ impl FetchError {
             FetchErrorKind::BrowserDomTooLarge => "browser_dom_too_large",
             FetchErrorKind::Unknown => "unknown",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pdf_decompression_bound_maps_to_its_own_kind() {
+        let error = FetchError::PdfDecompressionBoundExceeded {
+            measured: 4096,
+            budget: 1024,
+        };
+        assert_eq!(
+            error.error_code(),
+            "pdf_decompression_bound_exceeded",
+            "the breach must not be repurposed as a parse error"
+        );
+        assert!(matches!(
+            error.kind(),
+            FetchErrorKind::PdfDecompressionBoundExceeded
+        ));
+        assert!(error.to_string().contains("4096"));
+        assert!(error.to_string().contains("1024"));
+        assert_ne!(
+            FetchError::PdfParseError("x".into()).error_code(),
+            error.error_code()
+        );
+    }
+
+    #[test]
+    fn pdf_not_compiled_in_message_is_actionable() {
+        let message = FetchError::PdfNotCompiledIn.to_string();
+        assert!(
+            message.contains("`pdf` Cargo feature"),
+            "message must name the feature: {message}"
+        );
+        assert!(
+            message.contains("cargo build --features pdf"),
+            "message must name the enabling source-build command: {message}"
+        );
+        assert!(
+            message.contains("docs/features.md#pdf-extraction"),
+            "message must point at the documentation anchor: {message}"
+        );
+        assert_eq!(
+            FetchError::PdfNotCompiledIn.error_code(),
+            "pdf_not_compiled_in"
+        );
     }
 }

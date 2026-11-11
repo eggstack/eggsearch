@@ -1,6 +1,6 @@
 # M005 — PDF Chunking, Focus, and Payload Economy
 
-Status: proposed
+Status: ready
 Source: `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` M005
 Primary class: capability (corrective)
 Baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731`

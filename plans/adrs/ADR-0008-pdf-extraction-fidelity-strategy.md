@@ -1,6 +1,6 @@
 # ADR-0008: PDF Extraction Fidelity Strategy
 
-Status: proposed
+Status: accepted
 Date: 2026-11-11
 Decision owners: project maintainers
 Affected subsystems: fetch and extraction; retrieval quality measurement; optional PDF capability; documentation.
@@ -72,4 +72,4 @@ Additive response detail (richer blocks, honest quality kinds) with no MCP tool 
 
 ## Verification and status
 
-This ADR is `proposed`. Acceptance requires the maintainer decision and the roadmap M002 measurement lane in place before M003 begins. No extraction behaviour changes on the strength of this record alone.
+This ADR is `accepted` (maintainer decision, 2026-11-11). Acceptance settles the extraction strategy and unblocks roadmap M003 and M004; it does not certify fidelity. The M002 measurement lane must exist before M003 begins, and the five fidelity targets remain milestone acceptance gates owned by M003 and M004, not claims this record satisfies.

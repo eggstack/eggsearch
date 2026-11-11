@@ -1,6 +1,6 @@
 # M001 — PDF Fetch Contract and Budgets
 
-Status: proposed
+Status: closing
 Source: `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` M001
 Primary class: invariant (corrective)
 Baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731`
@@ -42,7 +42,7 @@ Make the PDF fetch boundary correct and honest before any extraction-quality wor
 3. **Scanned classification without `include_media`.** Always determine image-XObject presence for quality classification; keep `include_media` as the switch that decides whether image counts are *reported* in page metadata. Preserve the existing page-metadata shape.
 4. **OCR policy semantics.** `auto` attempts text extraction and records scanned/OCR-unavailable outcomes per page instead of failing the document; `always` keeps failing closed with `pdf_ocr_unavailable` because it demands a capability the build does not have.
 5. **Document classifier coherence.** Add `application/pdf` to content-type detection with a unit test, so the second classifier cannot disagree with the fetch gate.
-6. **Actionable refusal.** Keep the `pdf_not_compiled_in` kind and change the message to name the feature, the documentation anchor, and — if ADR-0007 is accepted later — the install-relevant guidance. Keep `provider_status.pdf_capabilities` consistent with feature, config, and budget state.
+6. **Actionable refusal.** Keep the `pdf_not_compiled_in` kind and change the message to name the feature, the documentation anchor, and the source-build command that enables it. Keep `provider_status.pdf_capabilities` consistent with feature, config, and budget state.
 7. **Cache invalidation.** Bump `renderer_version` and add the isolation test, because page classification is part of the cached derived document.
 
 ## Storage, protocol, and compatibility effects

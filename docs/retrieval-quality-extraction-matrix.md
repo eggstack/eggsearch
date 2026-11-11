@@ -2,6 +2,8 @@
 
 This report records the source-build comparison for M002. The offline tests use controlled HTTP fixtures and generated synthetic PDF content. Browser execution is classified as limited because this environment has no Chrome/Chromium executable and the production browser policy rejects loopback fixtures. No production SSRF relaxation or external test origin was used.
 
+This matrix is a build-feature and controlled-fixture comparison, not the PDF extraction-fidelity authority. Fidelity is measured by `tests/pdf_fidelity.rs` against the eight-class synthetic corpus in `tests/fixtures/pdf/corpus.json`, with per-case line-shape, intact-word, table-adjacency, ordered-passage, per-page-classification, running-head, and outline assertions plus a join-lines-and-strip-spaces negative control. Real-document measurement is the ignored recorder into `target/pdf-corpus/`. Suite registration is in `architecture/testing.md` and counts are in `docs/test-inventory.md`.
+
 ## Feature arms
 
 | Arm | Build command | Runtime | Release executable | Outcome |
@@ -28,7 +30,7 @@ Optional dependency versions resolved by `Cargo.lock`: `lopdf 0.42.0` and `chrom
 | Browser private-target denial / public-only policy | n/a | n/a | pass: policy tests, including loopback/private-target rejection | pass: same policy tests |
 | Cold/warm browser latency, JS passage recall, CPU/RSS, time-to-first-useful-text | not applicable | not measured as a paired benchmark | skip: no Chrome | skip: no Chrome |
 
-The generated PDF check asserts the expected text `Hello from PDF`, `kind=pdf`, byte counts, source extension and redirect count. The PDF module suite adds 57 passing unit tests for page selection, limits, metadata and quality classifications. OCR is not provided; image-only/scanned pages remain explicitly low-quality or unsupported. This report does not claim broad multi-page table, columns, outline, corrupt-CID or scan fixture recall.
+The generated PDF check asserts the expected text `Hello from PDF`, `kind=pdf`, byte counts, source extension and redirect count. At the time of this comparison the PDF module suite contributed 57 passing unit tests for page selection, limits, metadata and quality classifications; current counts live in `docs/test-inventory.md`. OCR is not provided; image-only/scanned pages remain explicitly low-quality or unsupported. This report does not claim broad multi-page table, columns, outline, corrupt-CID or scan fixture recall; those shapes are measured by `tests/pdf_fidelity.rs`, not by this matrix.
 
 ## Verification
 

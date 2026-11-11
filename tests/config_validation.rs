@@ -377,6 +377,8 @@ fn default_config_has_expected_values() {
     assert!(!cfg.fetch.allow_localhost);
     assert!(cfg.fetch.sanitize_output);
     assert!(!cfg.fetch.pdf_enabled);
+    assert_eq!(cfg.fetch.pdf_max_bytes, 16_777_216);
+    assert_eq!(cfg.fetch.pdf_max_decompressed_bytes, 67_108_864);
     assert!(!cfg.local.enabled);
     assert!(cfg.local.roots.is_empty());
 }
@@ -432,6 +434,7 @@ fn round_trip_preserves_all_fields() {
     assert_eq!(parsed.fetch.allow_localhost, cfg.fetch.allow_localhost);
     assert_eq!(parsed.fetch.sanitize_output, cfg.fetch.sanitize_output);
     assert_eq!(parsed.fetch.pdf_enabled, cfg.fetch.pdf_enabled);
+    assert_eq!(parsed.fetch.pdf_max_bytes, cfg.fetch.pdf_max_bytes);
     assert_eq!(parsed.local.enabled, cfg.local.enabled);
 }
 
@@ -473,6 +476,7 @@ pdf_enabled = true
 pdf_max_pages = 50
 pdf_max_chars_per_page = 24000
 pdf_max_total_chars = 100000
+pdf_max_bytes = 33554432
 "#;
     let cfg: AppConfig = toml::from_str(toml).unwrap();
     assert!(!cfg.fetch.enabled);
@@ -488,6 +492,88 @@ pdf_max_total_chars = 100000
     assert_eq!(cfg.fetch.pdf_max_pages, 50);
     assert_eq!(cfg.fetch.pdf_max_chars_per_page, 24_000);
     assert_eq!(cfg.fetch.pdf_max_total_chars, 100_000);
+    assert_eq!(cfg.fetch.pdf_max_bytes, 33_554_432);
+}
+
+#[test]
+fn toml_absent_pdf_max_bytes_uses_default() {
+    let toml = r#"
+[fetch]
+pdf_enabled = true
+"#;
+    let cfg: AppConfig = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.fetch.pdf_max_bytes, 16_777_216);
+    assert_eq!(cfg.fetch_limits().pdf_max_bytes, 16_777_216);
+}
+
+#[test]
+fn validate_rejects_pdf_max_bytes_out_of_range() {
+    let mut cfg = default_config();
+    cfg.fetch.pdf_max_bytes = 0;
+    let err = cfg.validate().unwrap_err();
+    assert!(
+        err.to_string().contains("pdf_max_bytes"),
+        "expected pdf_max_bytes range error, got: {err}"
+    );
+
+    let mut cfg = default_config();
+    cfg.fetch.pdf_max_bytes = 268_435_457;
+    let err = cfg.validate().unwrap_err();
+    assert!(
+        err.to_string().contains("pdf_max_bytes"),
+        "expected pdf_max_bytes range error, got: {err}"
+    );
+
+    let mut cfg = default_config();
+    cfg.fetch.pdf_max_bytes = 268_435_456;
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn toml_absent_pdf_max_decompressed_bytes_uses_default() {
+    let toml = r#"
+[fetch]
+pdf_enabled = true
+"#;
+    let cfg: AppConfig = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.fetch.pdf_max_decompressed_bytes, 67_108_864);
+    assert_eq!(cfg.fetch_limits().pdf_max_decompressed_bytes, 67_108_864);
+}
+
+#[test]
+fn toml_parse_pdf_max_decompressed_bytes() {
+    let toml = r#"
+[fetch]
+pdf_max_decompressed_bytes = 134217728
+"#;
+    let cfg: AppConfig = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.fetch.pdf_max_decompressed_bytes, 134_217_728);
+    assert_eq!(cfg.fetch_limits().pdf_max_decompressed_bytes, 134_217_728);
+}
+
+#[test]
+fn validate_rejects_pdf_max_decompressed_bytes_out_of_range() {
+    let mut cfg = default_config();
+    cfg.fetch.pdf_max_decompressed_bytes = 1_048_575;
+    let err = cfg.validate().unwrap_err();
+    assert!(
+        err.to_string().contains("pdf_max_decompressed_bytes"),
+        "expected pdf_max_decompressed_bytes range error, got: {err}"
+    );
+
+    let mut cfg = default_config();
+    cfg.fetch.pdf_max_decompressed_bytes = 1_073_741_825;
+    let err = cfg.validate().unwrap_err();
+    assert!(
+        err.to_string().contains("pdf_max_decompressed_bytes"),
+        "expected pdf_max_decompressed_bytes range error, got: {err}"
+    );
+
+    let mut cfg = default_config();
+    cfg.fetch.pdf_max_decompressed_bytes = 1_048_576;
+    assert!(cfg.validate().is_ok());
+    cfg.fetch.pdf_max_decompressed_bytes = 1_073_741_824;
+    assert!(cfg.validate().is_ok());
 }
 
 #[test]
@@ -803,6 +889,7 @@ fn fetch_limits_derived_from_config() {
     cfg.fetch.pdf_max_pages = 10;
     cfg.fetch.pdf_max_chars_per_page = 6_000;
     cfg.fetch.pdf_max_total_chars = 30_000;
+    cfg.fetch.pdf_max_bytes = 8_388_608;
     let limits = cfg.fetch_limits();
     assert_eq!(limits.max_bytes, 1_000_000);
     assert_eq!(limits.max_chars_default, 5_000);
@@ -815,6 +902,7 @@ fn fetch_limits_derived_from_config() {
     assert_eq!(limits.pdf_max_pages, 10);
     assert_eq!(limits.pdf_max_chars_per_page, 6_000);
     assert_eq!(limits.pdf_max_total_chars, 30_000);
+    assert_eq!(limits.pdf_max_bytes, 8_388_608);
 }
 
 #[test]

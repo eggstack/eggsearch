@@ -1,0 +1,134 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [7 0 R 9 0 R 11 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 657 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+28 beginbfchar
+<20> <0020>
+<2E> <002E>
+<61> <0061>
+<63> <0063>
+<64> <0064>
+<65> <0065>
+<66> <0066>
+<67> <0067>
+<68> <0068>
+<69> <0069>
+<6C> <006C>
+<6E> <006E>
+<6F> <006F>
+<70> <0070>
+<72> <0072>
+<73> <0073>
+<74> <0074>
+<75> <0075>
+<76> <0076>
+<77> <0077>
+<79> <0079>
+<80> <FB00>
+<81> <FB02>
+<82> <FB01>
+<83> <FB03>
+<84> <FB04>
+<85> <FB05>
+<86> <FB06>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /ToUnicode 4 0 R >>
+endobj
+6 0 obj
+<< /Length 770 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 760 Tm (Running head: Standards Sample) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 720 Tm (Internet Engineering Task Force) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 704 Tm (Request for Comments: 9110) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 688 Tm (Obsoletes: 7231) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 672 Tm (Category: Standards Track) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 656 Tm (Abstract. This synthetic document measures table label to value adjacency.) Tj ET
+BT /F2 10 Tf 1 0 0 1 72 624 Tm [(the speci) -150 (Ç) -150 (cation de) -150 (Ç) -150 (nes each identi) -150 (Ç) -150 (er and every de) -150 (Ç) -150 (nition.)] TJ ET
+BT /F2 10 Tf 1 0 0 1 72 608 Tm [(Ä) -150 (Å) -150 (Ç) -150 (É) -150 (Ñ) -150 (Ö) -150 (Ü)] TJ ET
+BT /F2 10 Tf 1 0 0 1 72 592 Tm (deÇnes deÇnition identiÇer.) Tj ET
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 5 0 R >>  >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 551 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 760 Tm (Running head: Standards Sample) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 700 Tm (Stream:) Tj ET
+BT /F1 10 Tf 1 0 0 1 240 700 Tm (9110) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 684 Tm (RFC:) Tj ET
+BT /F1 10 Tf 1 0 0 1 240 684 Tm (9110) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 668 Tm (STD:) Tj ET
+BT /F1 10 Tf 1 0 0 1 240 668 Tm (97) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 652 Tm (Obsoletes:) Tj ET
+BT /F1 10 Tf 1 0 0 1 240 652 Tm (7231) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 636 Tm (Authors:) Tj ET
+BT /F1 10 Tf 1 0 0 1 240 636 Tm (Fielding, Nottingham, Reschke) Tj ET
+
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 5 0 R >>  >> /Contents 8 0 R >>
+endobj
+10 0 obj
+<< /Length 296 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 760 Tm (Running head: Standards Sample) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 700 Tm (Limit: 100) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 684 Tm (Timeout: 30) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 668 Tm (Retries: 3) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 636 Tm (Closing note. The sample ends here.) Tj ET
+
+endstream
+endobj
+11 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 5 0 R >>  >> /Contents 10 0 R >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000134 00000 n 
+0000000204 00000 n 
+0000000912 00000 n 
+0000000999 00000 n 
+0000001820 00000 n 
+0000001957 00000 n 
+0000002559 00000 n 
+0000002696 00000 n 
+0000003044 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+3183
+%%EOF

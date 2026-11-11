@@ -6,10 +6,10 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 5848 | 26 |
-| `--features mock` | 5577 | 3 |
+| `--all-features` | 5948 | 27 |
+| `--features mock` | 5593 | 3 |
 
-Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`) plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
+Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
 ## Behavioral & Workflow Contracts
 
@@ -24,6 +24,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling |
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
+| `pdf_fidelity` | `pdf` | Committed synthetic PDF corpus (8 cases, one per document class, 15,890 bytes): line-shape floors/ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification and image counts, running-head repetition, outline count/depth; 116 baseline assertions and 15 recorded ADR-0008 target statuses; join-lines-and-strip-spaces negative control over 25 metric groups; 15 tests plus 1 ignored opt-in recorder into `target/pdf-corpus/` |
 | `evidence_contract` | `mock` (mostly) | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
 | `config_validation` | None | Config rules and validation, including `[search]` search-cache TTL/entry bounds |
@@ -44,6 +45,22 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 
 Placement authority is the table in `architecture/testing.md`.
 
+## PDF Fidelity Corpus (`tests/fixtures/pdf/`)
+
+| Document class | Case file | PDF bytes |
+|----------------|-----------|----------:|
+| `two_column` | `two_column_interleaved/arxiv_style_two_column.pdf` | 1,886 |
+| `standards_table` | `standards_table/rfc_style_standards_table.pdf` | 3,489 |
+| `clean_text` | `clean_text/single_column_notes.pdf` | 1,466 |
+| `image_only` | `image_only/scanned_placeholder.pdf` | 774 |
+| `encrypted` | `encrypted/locked_placeholder.pdf` | 903 |
+| `malformed` | `malformed/broken_xref.pdf` | 701 |
+| `cid_corrupt` | `cid_corrupt/garbled_codes.pdf` | 1,011 |
+| `outline_heavy` | `outline_heavy/nested_outline.pdf` | 5,660 |
+| **Total** | **8 cases** | **15,890** |
+
+Every case is generated synthetically by this repository; no third-party document bytes are committed. `corpus.json` records the licence, page count, SHA-256, expected outcome, and a construction recipe per case. The suite asserts 116 baseline annotations and 15 recorded ADR-0008 target statuses (an improvement forces a manifest update), and the join-lines-and-strip-spaces negative control must be rejected by 25 declared metric groups, with the two-column case covering all five metric families plus running heads. Corpus budget: 3 MiB total and 1 MiB per case, asserted by the suite.
+
 ## Property Tests (17 suites)
 
 | Suite | Feature Gate | Tests | Focus |
@@ -52,7 +69,7 @@ Placement authority is the table in `architecture/testing.md`.
 | `property_identity` | None | 16 | source_id, canonicalize_url, cross-type collisions, Unicode normalization |
 | `property_identity2` | None | 15 | fetch_id, suggested_fetch_id, batch_fetch_id, doc_id |
 | `property_identity3` | None | 9 | chunk_id, code_span_id, locator_id |
-| `property_fetch_limits` | None | 11 | validate_url: scheme, length, localhost, private IP |
+| `property_fetch_limits` | None | 13 | validate_url: scheme, length, localhost, private IP; (feature `pdf`) the stream-scan total never exceeds its budget and extraction reports only the configured budget |
 | `property_fetch_redirects` | None | 27 | validate_url: TLDs, IP ranges, ports, schemes |
 | `property_fetch_url_edge` | None | 20 | URL scheme/path/length edge cases |
 | `property_fetch_response` | None | 18 | FetchClient: credentials, metadata-only, text mode, max_chars, Content-Length, timeout, redirect limit, sanitization |
@@ -72,7 +89,7 @@ Placement authority is the table in `architecture/testing.md`.
 |-------|-------------|-------|-------|
 | `dispatch_fault_injection` | `mock` | 34 | Provider failure, timeout, hang, health transitions, concurrency, panic, credentialed quota isolation (rate-limited class, cooldown threshold, auth vs quota classes) |
 | `provider_probe_conformance` | `mock` | 20 | Shared probe service: success/skip/timeout/HTTP/parse/network/panic, cooldown, explicit-after-degraded, bounded messages, descriptor source-of-truth |
-| `adversarial_corpus` | None | 16 | Structural validation of adversarial corpus JSON files |
+| `adversarial_corpus` | None | 28 | Structural validation of adversarial corpus JSON files, plus (feature `pdf`) pre-parse decompression-bound bombs for content, object, xref and chained-filter streams, `/W` geometry and `LZWDecode` refusals, the `/FlateDecode`-then-unknown-filter chain, and the `/Encrypt` with/without-password matrix |
 | `provider_request_contract` | `mock` | 36 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, credentialed-provider wire contracts (SerpApi pinned engine/no extra verticals/query-parameter credential; Kagi v1 POST + bearer + search-only collection, terminal quota), provider-scoped failures, credential redaction in every error path, and oversized-body rejection |
 | `extract_fetch_contract` | `mock` (1 test) | 24 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls, markdown-first negotiation (Accept policy, cache-key isolation, bounded fallback, `Vary: Accept`, markdown link extraction, controlled A/B) |
 | `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |

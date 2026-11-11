@@ -750,7 +750,7 @@ async fn cache_derived_insert_and_get() {
             pdf_pages: None,
             pdf_ocr: None,
             include_media: false,
-            renderer_version: 2,
+            renderer_version: 4,
             sanitize_output: true,
         },
     };
@@ -792,7 +792,7 @@ fn make_derived_entry(raw_content_hash: u64, text_len: usize) -> DerivedDocument
             pdf_pages: None,
             pdf_ocr: None,
             include_media: false,
-            renderer_version: 2,
+            renderer_version: 4,
             sanitize_output: true,
         },
         response: CachedExtractedDocument {
@@ -827,7 +827,7 @@ fn make_derived_key(raw_content_hash: u64) -> DerivedCacheKey {
             pdf_pages: None,
             pdf_ocr: None,
             include_media: false,
-            renderer_version: 2,
+            renderer_version: 4,
             sanitize_output: true,
         },
     }
@@ -968,7 +968,7 @@ fn build_derived_key_distinguishes_modes() {
 }
 
 #[test]
-fn derived_key_renderer_version_isolates_pre_negotiation_entries() {
+fn derived_key_renderer_version_isolates_pre_encryption_refusal_entries() {
     let current = build_derived_key(
         &CacheScope::Anonymous,
         100,
@@ -980,12 +980,43 @@ fn derived_key_renderer_version_isolates_pre_negotiation_entries() {
         false,
         true,
     );
-    assert_eq!(current.extraction_key.renderer_version, 2);
+    assert_eq!(current.extraction_key.renderer_version, 4);
     let mut legacy = current.clone();
-    legacy.extraction_key.renderer_version = 1;
+    legacy.extraction_key.renderer_version = 3;
     assert_ne!(
         current, legacy,
-        "an entry derived before markdown negotiation must not be reused"
+        "an entry derived before the encryption refusal changed must not be reused"
+    );
+}
+
+#[tokio::test]
+async fn cache_derived_does_not_serve_pre_encryption_refusal_entries() {
+    let cache = FetchCache::new(10, 10, 1_000_000, 1_000_000);
+    let mut legacy = make_derived_key(7);
+    legacy.extraction_key.renderer_version = 3;
+    let mut legacy_entry = make_derived_entry(7, 32);
+    legacy_entry.extraction_key = legacy.extraction_key.clone();
+    cache.insert_derived(legacy.clone(), legacy_entry).await;
+    assert!(
+        cache.get_derived(&legacy).await.is_some(),
+        "the fixture entry must be retrievable under its own key"
+    );
+
+    let current = build_derived_key(
+        &CacheScope::Anonymous,
+        7,
+        ExtractMode::Text,
+        12000,
+        false,
+        None,
+        None,
+        false,
+        true,
+    );
+    assert_eq!(current.extraction_key.renderer_version, 4);
+    assert!(
+        cache.get_derived(&current).await.is_none(),
+        "a derived entry written before the encryption-refusal bump must not be served"
     );
 }
 

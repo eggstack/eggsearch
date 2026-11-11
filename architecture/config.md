@@ -97,6 +97,8 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `pdf_max_pages` | `usize` | `25` | PDF page budget |
 | `pdf_max_chars_per_page` | `usize` | `12_000` | Per-page extraction cap |
 | `pdf_max_total_chars` | `usize` | `50_000` | Total PDF extraction budget |
+| `pdf_max_bytes` | `usize` | `16_777_216` | Response body cap for PDF-identified fetches (`1..=268_435_456`); non-PDF keeps `max_bytes` |
+| `pdf_max_decompressed_bytes` | `usize` | `67_108_864` | Total PDF stream-expansion budget measured before parsing (`1_048_576..=1_073_741_824`) |
 | `batch_max_items` | `usize` | `8` | Default batch item count |
 | `batch_max_items_cap` | `usize` | `20` | Hard batch item cap |
 | `batch_max_chars_per_item` | `usize` | `12_000` | Per-item char cap |
@@ -259,7 +261,10 @@ provider-scoped skips, never request failures.
 
 `AppConfig::validate()` fails fast on the first violated invariant:
 
-- `[fetch]`: `max_chars_cap >= max_chars_default`; `max_bytes`,
+- `[fetch]`: `max_chars_cap >= max_chars_default`; `pdf_max_bytes` in
+  `1..=268_435_456` (it bounds a different body class from `max_bytes` and is
+  not required to be `>= max_bytes`); `pdf_max_decompressed_bytes` in
+  `1_048_576..=1_073_741_824`, with an error naming the key; `max_bytes`,
   `timeout_ms`, `batch_max_items`, `batch_max_items_cap`,
   `batch_max_total_chars`, `batch_concurrency`, `retry_max_attempts`,
   `origin_http_concurrency`, `origin_browser_concurrency`,

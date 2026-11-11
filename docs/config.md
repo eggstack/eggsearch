@@ -446,8 +446,31 @@ batch_concurrency = 2
 | `pdf_max_pages` | `25` |
 | `pdf_max_chars_per_page` | `12_000` |
 | `pdf_max_total_chars` | `50_000` |
+| `pdf_max_bytes` | `16_777_216` |
+| `pdf_max_decompressed_bytes` | `67_108_864` |
 
 The fetch side is bounded by both byte and character caps. The byte cap is a hard response limit; the character cap is an extraction limit.
+
+`max_bytes` is the body cap for everything except PDF documents. A response
+identified as PDF by `Content-Type: application/pdf` or by a `.pdf` URL path
+uses `pdf_max_bytes` instead, so an ordinary paper is not refused or truncated
+at the generic 2 MB cap. `pdf_max_bytes` must be between 1 and 268,435,456
+(256 MiB); the default is 16 MiB. A PDF that is recognised only by its
+`%PDF-` magic (no Content-Type, no `.pdf` path) is still read under
+`max_bytes`, because the body cap is fixed before the first bytes arrive.
+A PDF refused for declared length, or truncated at the effective cap, returns
+`content_too_large` naming the configured limit — never a parse error.
+
+`pdf_max_decompressed_bytes` caps how many bytes a PDF may expand into once
+its streams are decompressed, measured over the whole document before the
+parser runs. The default is 64 MiB, comfortably above the largest baseline
+document and four times the `pdf_max_bytes` default; the validated range is
+1,048,576 to 1,073,741,824 bytes. A document that would exceed it — by measured
+expansion, by a declared xref `/W` geometry, or by using `LZWDecode`, whose
+expansion cannot be measured — fails with `pdf_decompression_bound_exceeded`.
+Encrypted documents are refused with `pdf_encrypted` whether or not a password
+is supplied; `pdf_password` is accepted for wire compatibility and is
+unsupported.
 
 `allow_private_network = true` and `allow_localhost = true` are operator escape hatches. Keep them off for general MCP exposure.
 

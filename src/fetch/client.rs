@@ -349,16 +349,19 @@ impl FetchClient {
         // Pre-check Content-Length for honest servers. The streaming
         // body cap below remains the authoritative upper bound for
         // chunked/encoded responses; this is an early bailout.
+        let body_cap = self
+            .limits
+            .body_cap(classify_content_type(content_type.as_deref(), &final_url, false).is_pdf);
         let mut content_length_header: Option<usize> = None;
         let declared_len: Option<u64> = response
             .wire_content_length()
             .and_then(|s| s.parse::<u64>().ok())
             .or_else(|| response.content_length());
         if let Some(content_length_u64) = declared_len {
-            if content_length_u64 > self.limits.max_bytes as u64 {
+            if content_length_u64 > body_cap as u64 {
                 return Err(FetchError::ContentTooLarge(
                     usize::try_from(content_length_u64).unwrap_or(usize::MAX),
-                    self.limits.max_bytes,
+                    body_cap,
                 ));
             }
             let content_length = usize::try_from(content_length_u64).unwrap_or(usize::MAX);
@@ -433,12 +436,12 @@ impl FetchClient {
         let mut truncated = false;
 
         if let Some(chunk) = pdf_magic_chunk {
-            truncated = append_bounded(&mut body, &chunk, self.limits.max_bytes);
+            truncated = append_bounded(&mut body, &chunk, body_cap);
         }
         if !truncated {
             while let Some(chunk_result) = stream.next().await {
                 let chunk = chunk_result.map_err(|e| FetchError::NetworkError(e.to_string()))?;
-                truncated = append_bounded(&mut body, &chunk, self.limits.max_bytes);
+                truncated = append_bounded(&mut body, &chunk, body_cap);
                 if truncated {
                     break;
                 }
@@ -516,6 +519,15 @@ impl FetchClient {
         // from the shared HTML/text pipeline.
         #[cfg(feature = "pdf")]
         if kind.is_pdf {
+            // A PDF that was cut at the effective cap is a size outcome, not a
+            // document defect: never hand a truncated body to the parser.
+            if truncated {
+                let cap = self.limits.body_cap(
+                    classify_content_type(content_type.as_deref(), &final_url, false).is_pdf,
+                );
+                return Err(FetchError::ContentTooLarge(cap.saturating_add(1), cap));
+            }
+
             // Metadata-only mode: skip expensive text extraction.
             // Return fetch metadata and a minimal empty document.
             if extract_mode == ExtractMode::MetadataOnly {
@@ -633,6 +645,7 @@ impl FetchClient {
                 max_pages: self.limits.pdf_max_pages,
                 max_chars_per_page: self.limits.pdf_max_chars_per_page,
                 max_total_chars: self.limits.pdf_max_total_chars,
+                max_decompressed_bytes: self.limits.pdf_max_decompressed_bytes,
             };
 
             let pdf_extract_opts = if let Some(opts) = pdf_options {
@@ -1527,6 +1540,8 @@ mod tests {
             pdf_max_pages: 25,
             pdf_max_chars_per_page: 12000,
             pdf_max_total_chars: 50000,
+            pdf_max_bytes: 16_777_216,
+            pdf_max_decompressed_bytes: 67_108_864,
         }
     }
 

@@ -1,0 +1,475 @@
+{
+  "schema_version": 1,
+  "corpus_revision": "pdf-fidelity-v1",
+  "fixture_policy": "Every committed PDF is generated synthetically by this repository from the per-case construction recipe; no third-party document bytes are committed. Real documents named in this workstream (arXiv 1706.03762 and RFC 9110) are measured only by the ignored opt-in recorder into target/pdf-corpus/ and are never committed, following the plan's uncommittable-source substitution.",
+  "byte_budget": {
+    "total": 3145728,
+    "per_case": 1048576
+  },
+  "cases": [
+    {
+      "id": "pdf-two-column-synthetic",
+      "document_class": "two_column",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "fd905a7e4910a05e9f1872b739f6722105cf4f0a037a88caa3c8635358cb1688",
+        "pages": 2
+      },
+      "construction": "Two-page PDF, 1.7, uncompressed streams, Type1 Helvetica. Page 1 draws the running head 'Running head: Fidelity Sample' at 72,760, then four single-line text objects at x=72,y=660/644/628/612: 'Retrieval Fidelity Under Interleaved Columns', 'Ada Lovelace, Grace Hopper, Katherine Johnson', 'Abstract. This synthetic document measures reading order and line shape for a two column layout.' and 'Sample profile: Columns: 2 Rows: 3'. Page 2 draws the same running head, then one text object at y=700 whose six Tj operations alternate left-column and right-column lines L1,R1,L2,R2,L3,R3 with Tm x=72/320 and y=700/684/668, so content-stream order interleaves the columns and extraction returns one 454-character line. xref offsets are exact; no timestamps.",
+      "file": "two_column_interleaved/arxiv_style_two_column.pdf",
+      "bytes": 1886,
+      "expected_outcome": "extracted",
+      "required_words": [
+        "Interleaved",
+        "encoder",
+        "decoder",
+        "attention",
+        "residual",
+        "evaluation",
+        "Lovelace",
+        "Columns",
+        "Rows"
+      ],
+      "required_table_rows": [
+        {
+          "label": "Columns:",
+          "value": "2"
+        }
+      ],
+      "opening_passage": [
+        "Retrieval Fidelity Under Interleaved Columns",
+        "Ada Lovelace, Grace Hopper, Katherine Johnson",
+        "Abstract. This synthetic document measures reading order"
+      ],
+      "min_body_lines": 7,
+      "max_body_line_chars": 500,
+      "running_heads": [
+        {
+          "text": "Running head: Fidelity Sample",
+          "expected_pages": 2
+        }
+      ],
+      "expected_pages": [
+        {
+          "page": 1,
+          "quality_kind": "clean_text"
+        },
+        {
+          "page": 2,
+          "quality_kind": "clean_text"
+        }
+      ],
+      "fidelity_targets": {
+        "line_shape": {
+          "min_body_lines": 10,
+          "max_body_line_chars": 400,
+          "status": "unmet"
+        },
+        "opening_passage": {
+          "prefixes": [
+            "Left one: the encoder",
+            "Left two: attention weights",
+            "Left three: the residual",
+            "Right one: the decoder",
+            "Right two: the schedule",
+            "Right three: the evaluation"
+          ],
+          "status": "unmet"
+        }
+      }
+    },
+    {
+      "id": "pdf-standards-table-synthetic",
+      "document_class": "standards_table",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "fd4c8861aba86f32f687f988c4a0037c2d68f79ce195ad6f3b8e36782d7c6c48",
+        "pages": 3
+      },
+      "construction": "Three-page PDF, 1.7, uncompressed streams, Type1 Helvetica plus a second Type1 font whose only encoding is a ToUnicode CMap: one-byte codes 0x61-0x7A, 0x20 and 0x2E map to themselves, codes 0x80-0x86 map to U+FB00-U+FB06. Every page draws the running head 'Running head: Standards Sample' at 72,760. Page 1 adds five header lines at y=720..656 ('Internet Engineering Task Force', 'Request for Comments: 9110', 'Obsoletes: 7231', 'Category: Standards Track', an abstract sentence) and a TJ line at y=624 with kerning -150 between the fragments 'the speci',U+FB01,'cation de',U+FB01,'nes each identi',U+FB01,'er and every de',U+FB01,'nition.' plus a y=608 line listing all seven ligatures space-separated. Page 2 draws five header-table label strings at x=72 and their values at x=240 as separate text objects (Stream/9110, RFC/9110, STD/97, Obsoletes/7231, Authors/Fielding, Nottingham, Reschke). Page 3 draws three same-line rows at y=700/684/668 ('Limit: 100', 'Timeout: 30', 'Retries: 3') and a closing note. xref exact; no timestamps.",
+      "file": "standards_table/rfc_style_standards_table.pdf",
+      "bytes": 3489,
+      "expected_outcome": "extracted",
+      "required_words": [
+        "Internet",
+        "Engineering",
+        "Fielding",
+        "Nottingham",
+        "Reschke",
+        "Limit",
+        "Timeout",
+        "Retries",
+        "9110",
+        "7231",
+        "ﬀ",
+        "ﬂ",
+        "ﬁ",
+        "ﬃ",
+        "ﬄ",
+        "ﬅ",
+        "ﬆ",
+        "deﬁnes",
+        "deﬁnition",
+        "identiﬁer"
+      ],
+      "required_table_rows": [
+        {
+          "label": "Limit:",
+          "value": "100"
+        },
+        {
+          "label": "Timeout:",
+          "value": "30"
+        },
+        {
+          "label": "Retries:",
+          "value": "3"
+        }
+      ],
+      "opening_passage": [
+        "Internet Engineering Task Force",
+        "Request for Comments: 9110",
+        "Obsoletes: 7231",
+        "Category: Standards Track",
+        "Abstract. This synthetic document measures table label to value adjacency."
+      ],
+      "min_body_lines": 25,
+      "max_body_line_chars": 120,
+      "running_heads": [
+        {
+          "text": "Running head: Standards Sample",
+          "expected_pages": 3
+        }
+      ],
+      "expected_pages": [
+        {
+          "page": 1,
+          "quality_kind": "clean_text"
+        },
+        {
+          "page": 2,
+          "quality_kind": "clean_text"
+        },
+        {
+          "page": 3,
+          "quality_kind": "clean_text"
+        }
+      ],
+      "fidelity_targets": {
+        "line_shape": {
+          "min_body_lines": 20,
+          "max_body_line_chars": 200,
+          "status": "met"
+        },
+        "required_words": {
+          "words": [
+            "defines",
+            "definition",
+            "identifier"
+          ],
+          "status": "unmet"
+        },
+        "table_rows": {
+          "rows": [
+            {
+              "label": "Stream:",
+              "value": "9110"
+            },
+            {
+              "label": "RFC:",
+              "value": "9110"
+            },
+            {
+              "label": "STD:",
+              "value": "97"
+            },
+            {
+              "label": "Obsoletes:",
+              "value": "7231"
+            },
+            {
+              "label": "Authors:",
+              "value": "Fielding"
+            }
+          ],
+          "status": "unmet"
+        },
+        "opening_passage": {
+          "prefixes": [
+            "Internet Engineering Task Force",
+            "Request for Comments: 9110",
+            "Abstract. This synthetic document measures"
+          ],
+          "status": "met"
+        }
+      }
+    },
+    {
+      "id": "pdf-clean-text-synthetic",
+      "document_class": "clean_text",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "46bb02055720afadd319c7a8b7516cdde28d821e42f20ed6566f0e5bbe232653",
+        "pages": 2
+      },
+      "construction": "Two-page PDF, 1.7, uncompressed streams, Type1 Helvetica. Page 1 has five single-line text objects at x=72,y=720/704/688/672/656: 'Clean text sample', 'The parser reads each line in stream order.', 'Every sentence stays on its own line.', 'The definition of a token is stable.', 'A single column holds the whole page.' Page 2 has four single-line text objects at y=720/704/688/672 about the identifier, ligature-free text, no tables or columns, and the closing line. xref exact; no timestamps.",
+      "file": "clean_text/single_column_notes.pdf",
+      "bytes": 1466,
+      "expected_outcome": "extracted",
+      "required_words": [
+        "parser",
+        "stream",
+        "sentence",
+        "definition",
+        "token",
+        "identifier",
+        "deterministic",
+        "ligature",
+        "table",
+        "columns"
+      ],
+      "opening_passage": [
+        "Clean text sample",
+        "The parser reads each line in stream order.",
+        "Every sentence stays on its own line.",
+        "The definition of a token is stable."
+      ],
+      "min_body_lines": 9,
+      "max_body_line_chars": 80,
+      "expected_pages": [
+        {
+          "page": 1,
+          "quality_kind": "clean_text"
+        },
+        {
+          "page": 2,
+          "quality_kind": "clean_text"
+        }
+      ],
+      "fidelity_targets": {
+        "line_shape": {
+          "min_body_lines": 9,
+          "max_body_line_chars": 200,
+          "status": "met"
+        },
+        "required_words": {
+          "words": [
+            "definition",
+            "identifier"
+          ],
+          "status": "met"
+        },
+        "opening_passage": {
+          "prefixes": [
+            "Clean text sample",
+            "The definition of a token"
+          ],
+          "status": "met"
+        }
+      }
+    },
+    {
+      "id": "pdf-image-only-synthetic",
+      "document_class": "image_only",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "fe6287e8af04d99f672f83dd3e13469b87b7a10f33bfa1288d5151c986b87aa3",
+        "pages": 1
+      },
+      "construction": "One-page PDF, 1.7. The resources dictionary holds a 1x1 DeviceGray image XObject (/Width 1 /Height 1 /BitsPerComponent 8, one raw 0xFF byte) named /Im1 and drawn with 'q 100 0 0 100 72 600 cm /Im1 Do Q'. There is no text operator and no font use. The loader requests media metadata so image presence is reported and the page classifies as scanned/image-only rather than blank. xref exact; no timestamps.",
+      "file": "image_only/scanned_placeholder.pdf",
+      "bytes": 774,
+      "expected_outcome": "empty",
+      "include_media": true,
+      "min_body_lines": 0,
+      "max_body_line_chars": 0,
+      "expected_pages": [
+        {
+          "page": 1,
+          "quality_kind": "scanned_or_image_only",
+          "image_count": 1
+        }
+      ]
+    },
+    {
+      "id": "pdf-encrypted-synthetic",
+      "document_class": "encrypted",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "7a3ee3d80ae0bb3656272ca46532b118c3cac50c2ad425d4dd1ef625d5092e1c",
+        "pages": 1
+      },
+      "construction": "One-page PDF, 1.7, whose trailer references an /Encrypt dictionary with /Filter /Standard, /V 1, /R 2, /P -4 and 32-byte all-zero /O plus 32-byte all-0x11 /U values. The page content is a running head and 'Locked content.' but the file is rejected as encrypted before extraction because no password is supplied. xref exact; no timestamps.",
+      "file": "encrypted/locked_placeholder.pdf",
+      "bytes": 903,
+      "expected_outcome": "structural_break",
+      "expected_error": "pdf_encrypted"
+    },
+    {
+      "id": "pdf-malformed-synthetic",
+      "document_class": "malformed",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "0175cfebfba998af077e8b6fe58a7f2570835a4e0850cd72b7b4266cb46da6bd",
+        "pages": 1
+      },
+      "construction": "One-page PDF, 1.7, with valid objects but a deliberately malformed cross-reference table: the xref entries are replaced by offsets 9 repeated for six entries and startxref is 999999, which is beyond the file. Parsing fails at the cross-reference table before any page is read. No timestamps.",
+      "file": "malformed/broken_xref.pdf",
+      "bytes": 701,
+      "expected_outcome": "structural_break",
+      "expected_error": "pdf_parse_error"
+    },
+    {
+      "id": "pdf-cid-corrupt-synthetic",
+      "document_class": "cid_corrupt",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "f6574c816f79b203a92a1ff5dcd44693d13c2405dfaa1e3a1685f8fce7629178",
+        "pages": 1
+      },
+      "construction": "One-page PDF, 1.7, uncompressed Type1 Helvetica. A running head, 'Synthetic glyph report', a line carrying fourteen literal '(cid:101)' through '(cid:114)' tokens, and 'Metadata remains readable for this sample.' are drawn as four single-line text objects. The literal CID tokens stand in for the output of a broken CID font mapping; the production classifier counts them and marks the page CID-corrupt. xref exact; no timestamps.",
+      "file": "cid_corrupt/garbled_codes.pdf",
+      "bytes": 1011,
+      "expected_outcome": "extracted",
+      "required_words": [
+        "Synthetic",
+        "glyph",
+        "report",
+        "Metadata",
+        "readable",
+        "sample"
+      ],
+      "opening_passage": [
+        "Synthetic glyph report",
+        "The following codes could not be decoded",
+        "Metadata remains readable"
+      ],
+      "min_body_lines": 4,
+      "max_body_line_chars": 220,
+      "running_heads": [
+        {
+          "text": "Running head: Glyph Report",
+          "expected_pages": 1
+        }
+      ],
+      "expected_pages": [
+        {
+          "page": 1,
+          "quality_kind": "cid_corrupt"
+        }
+      ],
+      "fidelity_targets": {
+        "line_shape": {
+          "min_body_lines": 4,
+          "max_body_line_chars": 220,
+          "status": "met"
+        },
+        "required_words": {
+          "words": [
+            "decoded"
+          ],
+          "status": "met"
+        },
+        "opening_passage": {
+          "prefixes": [
+            "Synthetic glyph report",
+            "Metadata remains readable"
+          ],
+          "status": "met"
+        }
+      }
+    },
+    {
+      "id": "pdf-outline-heavy-synthetic",
+      "document_class": "outline_heavy",
+      "source_type": "synthetic",
+      "license": "MIT",
+      "provenance": {
+        "url": null,
+        "retrieved": "2026-11-11",
+        "sha256": "1ec28842f4170377568b3a5bc9a635804498eb7025150f6815b6bfa9371d09f7",
+        "pages": 2
+      },
+      "construction": "Two-page PDF, 1.7, uncompressed Type1 Helvetica, each page drawing three single-line text objects. The catalog holds an /Outlines dictionary with 40 entries: 28 sibling 'Chapter N' entries at depth 1, 'Chapter 1' owning five 'Section 1.x' children, 'Section 1.1' owning three 'Subsection 1.1.x' children, 'Subsection 1.1.1' owning two 'Detail 1.1.1.x' children at depth 4, and 'Section 1.2' owning two 'Subsection 1.2.x' children. Each entry has /Title, /Parent, /Next and /First as needed and a /Dest array pointing at page 1 or 2. Production appends one 'Page N' outline entry per extracted page, so the extracted outline has 42 entries with maximum level 4. xref exact; no timestamps.",
+      "file": "outline_heavy/nested_outline.pdf",
+      "bytes": 5660,
+      "expected_outcome": "extracted",
+      "required_words": [
+        "Outline",
+        "heavy",
+        "sample",
+        "Page",
+        "one",
+        "body",
+        "line",
+        "nested",
+        "entries",
+        "unaffected"
+      ],
+      "opening_passage": [
+        "Outline heavy sample",
+        "Page one body line.",
+        "The outline lists many nested entries.",
+        "Page two heading",
+        "Page two body line.",
+        "The body text is unaffected"
+      ],
+      "min_body_lines": 6,
+      "max_body_line_chars": 80,
+      "expected_pages": [
+        {
+          "page": 1,
+          "quality_kind": "clean_text"
+        },
+        {
+          "page": 2,
+          "quality_kind": "clean_text"
+        }
+      ],
+      "expected_outline_entries": 42,
+      "expected_outline_max_level": 4,
+      "fidelity_targets": {
+        "line_shape": {
+          "min_body_lines": 6,
+          "max_body_line_chars": 200,
+          "status": "met"
+        },
+        "required_words": {
+          "words": [
+            "nested",
+            "unaffected"
+          ],
+          "status": "met"
+        },
+        "opening_passage": {
+          "prefixes": [
+            "Outline heavy sample",
+            "Page two heading"
+          ],
+          "status": "met"
+        }
+      }
+    }
+  ]
+}

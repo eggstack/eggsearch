@@ -22,6 +22,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
 | `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate; ignored live observation and recorder |
+| `tests/pdf_fidelity.rs` + `tests/fixtures/pdf/` | Committed synthetic PDF extraction-fidelity corpus, per-class annotations, deterministic metrics, and the join-lines-and-strip-spaces negative control |
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
 | `src/**/mod.rs` unit tests | Private-function coverage at the bottom of the source file |
@@ -64,6 +65,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `native_forge_smoke` | Maintainer-only native forge diagnostics (`live-smoke`-gated, ignored by default; never release evidence) |
 | `egress_routing`, `egress_qualify_contract` | Egress route behavior and egress qualification CI contract |
 | `dependency_fixtures` | Realistic minimized lockfile fixtures per ecosystem and version (`tests/fixtures/dependency_evidence/`) |
+| `pdf_fidelity` | Committed synthetic PDF corpus (`tests/fixtures/pdf/`, one case per document class): line-shape floors and ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification, running-head repetition, and outline count/depth; a join-lines-and-strip-spaces negative control that every declared metric must reject; ignored opt-in recorder into `target/pdf-corpus/` |
 | `bounded_command` | Bounded git command execution (caps, timeout, termination) |
 
 ### Where new tests go
@@ -274,6 +276,16 @@ Browser suites are gated by the `browser` feature:
 ```bash
 cargo test --locked --features browser --test browser_profiles
 cargo test --locked --features browser --test browser_transport
+```
+
+`tests/pdf_fidelity.rs` is gated on the `pdf` feature and needs no network or
+credentials. Its committed fixtures are synthetic PDFs built from the
+per-case construction recipes in `tests/fixtures/pdf/corpus.json`; the ignored
+recorder downloads the workstream reference documents into
+`target/pdf-corpus/` and prints the same per-case report.
+
+```bash
+cargo test --locked --features pdf --test pdf_fidelity -- --nocapture
 ```
 
 ## Hygiene and packaging contract

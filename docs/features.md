@@ -25,6 +25,9 @@ cargo build --features pdf
 
 - Text-only extraction via `lopdf` — no OCR, no rendering, no image extraction
 - Per-page quality classification: blank, scanned, CID-corrupt, and sparse text pages
+- Image presence is always detected for classification, so an image-only page is
+  reported as scanned even when `include_media` is off; `include_media` only adds
+  the image count to page metadata
 - Document metadata (title, author, subject, keywords, creator, producer, dates)
 - Bookmark/outline entries where available
 
@@ -34,15 +37,41 @@ The `pages` field supports `1`, `1,3,5`, `1-5`, and `1,3,7-10` syntax (one-index
 
 ### Limits
 
+- 16 MiB response body (`[fetch].pdf_max_bytes`, range 1 byte to 256 MiB); the
+  generic `[fetch].max_bytes` cap still applies to every non-PDF response
+- 64 MiB decompressed content (`[fetch].pdf_max_decompressed_bytes`, range
+  1 MiB to 1 GiB), measured over the whole document before parsing; a document
+  that would expand further fails with `pdf_decompression_bound_exceeded`
 - 25 pages maximum
 - 12k chars per page
 - 50k chars total
+
+A PDF that exceeds `pdf_max_bytes` — whether declared in `Content-Length` or
+truncated while streaming — fails with `content_too_large` naming the limit.
+It is never reported as `pdf_parse_error`.
+
+The decompressed-content budget is enforced before the parser runs, so a
+decompression bomb is refused by configuration rather than by the allocator.
+Flate streams are measured, ASCII85 streams are decoded under the same cap,
+filters `lopdf` cannot decode are used verbatim (and a stage decoded before
+such a filter is still counted), and an `LZWDecode` stream is refused because
+its expansion cannot be measured. A filtered stream whose `/Length` is an
+indirect reference is refused for the same reason: the extent cannot be
+measured before parsing.
+Encrypted documents are refused with `pdf_encrypted` whether or not a password
+is supplied; `pdf_password` stays in the schema for compatibility but is
+unsupported.
 
 ### Limitations
 
 - Extracted text may be incomplete or reordered — PDF layout does not always map to linear text flow
 - Scanned or image-based PDFs produce little or no text
 - `metadata_only` mode returns a minimal document with fetch context but no extracted body text
+- `pdf_ocr = "auto"` extracts text and reports scanned pages as scanned with an
+  OCR-unavailable note per page; no OCR is attempted and no text is recovered for
+  an image-only page
+- `pdf_ocr = "always"` fails closed with `pdf_ocr_unavailable`, because it demands
+  a capability this build does not have
 - PDF layout reconstruction and OCR are deferred
 
 ---

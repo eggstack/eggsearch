@@ -159,3 +159,57 @@ proptest! {
         prop_assert!(result.is_ok(), "localhost should be accepted when allow_localhost=true");
     }
 }
+
+#[cfg(feature = "pdf")]
+mod pdf_decompression {
+    use eggsearch::fetch::pdf::extract_pdf_text;
+    use eggsearch::fetch::pdf::PdfLimits;
+    use eggsearch::fetch::pdf_stream::scan_stream_budget;
+    use eggsearch::fetch::FetchError;
+    use proptest::prelude::*;
+
+    const BUDGET: usize = 65_536;
+
+    fn pdf_limits() -> PdfLimits {
+        PdfLimits {
+            max_pages: 5,
+            max_chars_per_page: 1000,
+            max_total_chars: 5000,
+            max_decompressed_bytes: BUDGET,
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn scan_total_never_exceeds_the_configured_budget(
+            data in prop::collection::vec(any::<u8>(), 0..8192)
+        ) {
+            match scan_stream_budget(&data, BUDGET) {
+                Ok(total) => prop_assert!(
+                    total <= BUDGET,
+                    "scan reported {total} decompressed bytes over a {BUDGET} budget"
+                ),
+                Err(FetchError::PdfDecompressionBoundExceeded { measured, budget }) => {
+                    prop_assert_eq!(budget, BUDGET);
+                    prop_assert!(measured > budget, "a refusal must exceed its budget");
+                }
+                Err(other) => prop_assert!(false, "unexpected scan error: {other:?}"),
+            }
+        }
+
+        #[test]
+        fn extraction_reports_only_the_configured_budget(
+            data in prop::collection::vec(any::<u8>(), 0..8192)
+        ) {
+            let limits = pdf_limits();
+            match extract_pdf_text(&data, 4000, &limits, None) {
+                Ok(_) => {}
+                Err(FetchError::PdfDecompressionBoundExceeded { measured, budget }) => {
+                    prop_assert_eq!(budget, BUDGET);
+                    prop_assert!(measured > budget, "a refusal must exceed its budget");
+                }
+                Err(_) => {}
+            }
+        }
+    }
+}

@@ -1,9 +1,9 @@
 # PDF Ingestion and Extraction Fidelity Roadmap
 
-Status: proposed (all milestones registered; M001–M005 planned, M006–M008 not yet written)
+Status: closing (M001, M002, and M007 implemented with closure records; M003–M008 ready)
 Planning baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731` (branch `feat/auto-20261110-0a674cdc`, 2026-11-11 UTC)
 
-References: `plans/000-long-term-specification.md` §5, 7, 8; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0002, ADR-0006; proposed ADR-0007, ADR-0008.
+References: `plans/000-long-term-specification.md` §5, 7, 8; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0002, ADR-0006, ADR-0007, ADR-0008.
 
 Prior closed evidence: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` M002 (PDF/browser extraction matrix) and M006; `plans/subsystems/retrieval-quality-evidence-extension-roadmap.md` M007 paired extraction qualification (`docs/retrieval-quality-extraction-qualification.md`); `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M001 (the four-outcome scraper fidelity contract this workstream mirrors for documents).
 
@@ -28,7 +28,7 @@ Detection is sound: Content-Type, `.pdf` extension, and a `%PDF-` magic sniff co
 
 Measured or code-evidenced at the planning baseline:
 
-- **Unavailable in distributed artifacts.** The default feature set is empty and the published distribution requests no feature flags, so released binaries answer `pdf_not_compiled_in`. `docs/features.md` nonetheless documents PDF extraction as a capability. ADR-0006 records the "not selected" decision this now contradicts; ADR-0007 is the proposed supersede.
+- **Unavailable in distributed artifacts.** The default feature set is empty and the published distribution requests no feature flags, so released binaries answer `pdf_not_compiled_in`. `docs/features.md` nonetheless documents PDF extraction as a capability. ADR-0006 recorded the "not selected" decision; ADR-0007 now supersedes it, and no release has shipped the capability yet.
 - **The default byte cap is smaller than ordinary PDFs.** `[fetch].max_bytes` defaults to 2,000,000 bytes and applies to PDFs. A 2,215,244-byte arXiv paper with a `Content-Length` is refused before download; a 2,858,365-byte chunked response is silently truncated and then reported as `pdf_parse_error` (cross-reference failure), which attributes a size problem to the document.
 - **Extraction has no position model.** Text arrives in content-stream order with newlines only on `'`, `"`, `T*`, and `ET`. Measured: a 15-page two-column paper produced 141 non-empty lines with a 4,301-character line; a 311-page standards document produced 928 lines with a 3,173-character line and lost table label-to-value adjacency.
 - **Text normalization loses words.** 153 of 175 ligature codepoints in one document arrived space-wrapped, so `defines`, `definition`, and `identifier` were absent from the extracted text.
@@ -67,13 +67,14 @@ Acceptance rule: no extraction, chunking, or payload change is accepted without 
 ## 5. Milestone dependency graph
 
 ```text
-M001 PDF fetch contract and budgets ──┬──> M008 local and batch ingestion
-M002 captured corpus and fidelity lane ─┬──> M003 (hard) ──> M004
-                                        ├──> M005
-                                        └──> M008 (soft)
-ADR-0008 accepted ──> M003
-ADR-0007 accepted ──> M006 (blocked until accepted)
+M001 PDF fetch contract and budgets ─┬─> M006 artifact availability (hard)
+                                     └─> M008 local and batch ingestion (hard)
+M002 captured corpus and fidelity lane ─┬─> M003 (hard) ──> M004
+                                        ├─> M005
+                                        └─> M008 (soft)
 M007 hostile-input bounds (independent)
+
+Gates satisfied: ADR-0007 (accepted) unblocked M006; ADR-0008 (accepted) unblocked M003 and M004.
 ```
 
 ## 6. Milestones and exit boundaries
@@ -82,16 +83,16 @@ M007 hostile-input bounds (independent)
 |---|---|---|---|---|
 | M001 — PDF fetch contract and budgets | invariant (corrective) | `plans/implementation/pdf-ingestion-fidelity/001-pdf-fetch-contract-and-budgets.md` | none | A PDF larger than the generic response cap can be fetched under a PDF-specific budget; oversize reports a size problem, not a parse error; an image-only page reports scanned without `include_media` |
 | M002 — captured PDF corpus and fidelity lane | infrastructure | `002-captured-pdf-corpus-and-fidelity-lane.md` | none | CI measures extraction fidelity per document from committed annotations and rejects a deliberately degraded extractor |
-| M003 — text-stream fidelity | capability | `003-text-stream-fidelity.md` | hard M002; interface ADR-0008 | Lines, words, and ligatures survive extraction: no collapsed multi-thousand-character lines, no damaged words, hyphenation joined |
-| M004 — structural reconstruction and honest quality | capability | `004-structural-reconstruction-and-quality-signal.md` | hard M003 | Columns read in author order, table rows keep label-to-value adjacency, and a layout-collapsed document cannot report full quality |
+| M003 — text-stream fidelity | capability | `003-text-stream-fidelity.md` | hard M002; ADR-0008 accepted | Lines, words, and ligatures survive extraction: no collapsed multi-thousand-character lines, no damaged words, hyphenation joined |
+| M004 — structural reconstruction and honest quality | capability | `004-structural-reconstruction-and-quality-signal.md` | hard M003; ADR-0008 accepted | Columns read in author order, table rows keep label-to-value adjacency, and a layout-collapsed document cannot report full quality |
 | M005 — chunking, focus, and payload economy | capability (corrective) | `005-pdf-chunking-focus-and-payload-economy.md` | hard M002 | Two disjoint focus queries on a PDF return different, relevant chunks; the same text is no longer shipped three times; budgets agree |
-| M006 — artifact availability | capability | not yet written | ADR-0007 accepted (blocked) | An installed release ingests an ordinary PDF with no source build and no extra configuration |
-| M007 — hostile-input and memory bounds | invariant | not yet written | none | A decompression-bomb document is rejected by a bound rather than by exhausting memory |
-| M008 — local workspace and batch ingestion | capability | not yet written | hard M001; soft M005 | A PDF inside a local repository can be read, and `batch_fetch` can select pages per URL |
+| M006 — artifact availability | capability | `006-artifact-availability.md` | ADR-0007 accepted; hard M001 | An installed release ingests an ordinary PDF with no source build and no extra configuration |
+| M007 — hostile-input and memory bounds | invariant | `007-hostile-input-and-memory-bounds.md` | none | A decompression-bomb document is rejected by a bound rather than by exhausting memory |
+| M008 — local workspace and batch ingestion | capability | `008-local-workspace-and-batch-ingestion.md` | hard M001; soft M005 | A PDF inside a local repository can be read, and `batch_fetch` can select pages per URL |
 
-M001 and M002 have no predecessors and are the two milestones that may be handed off as soon as the roadmap is approved. M005 depends on M002's corpus for its focus annotations, so it lands after M002 closes but is otherwise independent of M003 and M004: it operates on blocks and outline entries, so better lines and structure improve it without changing its contract.
+M001, M002, and M007 have no predecessors and are the first handoffs. M005 depends on M002's corpus for its focus annotations, so it lands after M002 closes but is otherwise independent of M003 and M004: it operates on blocks and outline entries, so better lines and structure improve it without changing its contract.
 
-M003 and M004 are gated on ADR-0008 acceptance because both implement the layout decision it selects. M006 is registered and blocked on ADR-0007 acceptance; writing its plan before that decision would bake an unapproved artifact graph into a handoff artifact.
+ADR-0008 accepted the layout strategy, which discharges the interface gate for M003 and M004; M003's remaining dependency is M002's corpus, and M004's is M003. ADR-0007 accepted the artifact decision, which unblocks M006; that milestone additionally requires M001, because a default install must carry the corrected fetch contract before PDFs become reachable everywhere. M008 requires M001 and depends on M005 only softly, so it may land before the extraction milestones and must state which chunk shape it inherits.
 
 ## 7. Cross-cutting concerns
 
@@ -110,6 +111,10 @@ Layout heuristics are the main fidelity risk: column detection can mis-order a d
 Deferred without a plan: OCR and rasterization, image and attachment extraction, PDF generation or editing, annotation extraction, page-image thumbnails, table-to-structured-data extraction beyond row adjacency, and any native binding.
 
 ## 9. Closure and status
+
+The roadmap was approved for execution on 2026-11-11, and all eight implementation plans are `ready`. Approval is not closure: no milestone may start before its hard predecessor closes, and each still lands only through its own closure record.
+
+Implementation status at 2026-11-11: M001, M002, and M007 are implemented and verified on the uncommitted worktree, with closure records at `plans/closure/pdf-ingestion-fidelity/001-status.md`, `002-status.md`, and `007-status.md`. They stay `closing` until the closure commit records the candidate SHA and flips the registry rows to `closed` in the same commit. M003, M004, M005, M006, and M008 are unimplemented and remain `ready`.
 
 Each milestone needs its own `plans/closure/pdf-ingestion-fidelity/NNN-status.md` recording the implementation candidate, the corpus measurement before and after, tests and guards run with outcomes, unchanged safety evidence, failures and unrun verification, and residual risk. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 and M005 are corrective: each must record the defect observed at baseline and why the existing verification did not catch it.
 

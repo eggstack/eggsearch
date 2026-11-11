@@ -4883,3 +4883,355 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .output()
         .ok();
 }
+
+// ---------------------------------------------------------------------------
+// Phase F: PDF byte budget (M001)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "pdf")]
+fn build_pdf_with_padding(text: &str, padding_bytes: usize) -> Vec<u8> {
+    use lopdf::content::{Content, Operation};
+    use lopdf::{dictionary, Document, Object, Stream};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+
+    let font_id = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+    });
+
+    let resources_id = doc.add_object(dictionary! {
+        "Font" => dictionary! {
+            "F1" => font_id,
+        },
+    });
+
+    let content = Content {
+        operations: vec![
+            Operation::new("BT", vec![]),
+            Operation::new("Tf", vec!["F1".into(), 12.into()]),
+            Operation::new("Td", vec![100.into(), 700.into()]),
+            Operation::new("Tj", vec![Object::string_literal(text)]),
+            Operation::new("ET", vec![]),
+        ],
+    };
+
+    let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+    let page_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content_id,
+        "Resources" => resources_id,
+    });
+
+    let pages = dictionary! {
+        "Type" => "Pages",
+        "Kids" => vec![page_id.into()],
+        "Count" => 1,
+    };
+    doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    if padding_bytes > 0 {
+        doc.add_object(Stream::new(
+            dictionary! { "Type" => "Metadata" },
+            vec![b'p'; padding_bytes],
+        ));
+    }
+
+    let mut buf = Vec::new();
+    doc.save_to(&mut buf).unwrap();
+    buf
+}
+
+async fn serve_chunked_once(content_type: &str, body: Vec<u8>, chunk_size: usize) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let content_type = content_type.to_string();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind loopback listener");
+    let addr = listener.local_addr().expect("listener address");
+    tokio::spawn(async move {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(pair) => pair,
+            Err(_) => return,
+        };
+        let mut scratch = [0u8; 4096];
+        let _ = socket.read(&mut scratch).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+        );
+        if socket.write_all(head.as_bytes()).await.is_err() {
+            return;
+        }
+        for chunk in body.chunks(chunk_size.max(1)) {
+            let framed = format!("{:x}\r\n", chunk.len());
+            let _ = socket.write_all(framed.as_bytes()).await;
+            let _ = socket.write_all(chunk).await;
+            let _ = socket.write_all(b"\r\n").await;
+        }
+        let _ = socket.write_all(b"0\r\n\r\n").await;
+        let _ = socket.shutdown().await;
+    });
+    format!("http://{addr}/download")
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn web_fetch_pdf_above_max_bytes_within_pdf_budget_extracts() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pdf_body = build_pdf_with_padding("Budgeted PDF body", 2_200_000);
+    let pdf_len = pdf_body.len();
+    let default_max_bytes = AppConfig::default().fetch.max_bytes;
+    assert!(
+        pdf_len > default_max_bytes,
+        "fixture PDF ({pdf_len} bytes) must exceed the generic max_bytes ({default_max_bytes})"
+    );
+
+    server.mock(|when, then| {
+        when.method(GET).path("/paper.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("content-length", pdf_len.to_string())
+            .body(pdf_body);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/paper.pdf"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+            render: None,
+            browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("a PDF within pdf_max_bytes must fetch and extract");
+
+    assert_eq!(v["document"]["kind"], "pdf");
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("Budgeted PDF body"),
+        "extracted text should contain the page text: {text}"
+    );
+    assert_eq!(
+        v["document"]["metadata"]["content_length"].as_u64(),
+        Some(pdf_len as u64)
+    );
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn web_fetch_pdf_above_pdf_budget_returns_size_outcome() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pdf_body = build_pdf_with_padding("Oversized PDF body", 8_000);
+    let pdf_len = pdf_body.len();
+    server.mock(|when, then| {
+        when.method(GET).path("/huge.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("content-length", pdf_len.to_string())
+            .body(pdf_body);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    cfg.fetch.pdf_max_bytes = 4096;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let err = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/huge.pdf"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+            render: None,
+            browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect_err("a PDF above pdf_max_bytes must be refused");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("content_too_large"),
+        "expected the size outcome, got: {message}"
+    );
+    assert!(
+        message.contains("max 4096"),
+        "the size outcome must name the configured pdf_max_bytes, got: {message}"
+    );
+    assert!(
+        !message.contains("pdf_parse_error"),
+        "a size problem must not be reported as a parse error, got: {message}"
+    );
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn pdf_chunked_body_truncated_at_budget_returns_size_outcome() {
+    let body = build_pdf_with_padding("Chunked PDF body", 6_000);
+    assert!(body.len() > 3_000);
+    let url = serve_chunked_once("application/pdf", body, 512).await;
+
+    let mut config = AppConfig::default();
+    config.fetch.pdf_enabled = true;
+    config.fetch.pdf_max_bytes = 2048;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let result = client
+        .fetch(&url, None, ExtractMode::Text, false, None)
+        .await;
+    match result {
+        Err(eggsearch::fetch::FetchError::ContentTooLarge(_, cap)) => {
+            assert_eq!(cap, 2048, "size outcome must name pdf_max_bytes");
+        }
+        other => panic!("expected ContentTooLarge(_, 2048), got: {other:?}"),
+    }
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn magic_sniffed_pdf_without_declared_signal_stays_under_max_bytes() {
+    let mut body = b"%PDF-1.7\n".to_vec();
+    body.extend(std::iter::repeat_n(b'x', 6_000));
+    let url = serve_chunked_once("application/octet-stream", body, 512).await;
+
+    let mut config = AppConfig::default();
+    config.fetch.pdf_enabled = true;
+    config.fetch.pdf_max_bytes = 1_000_000;
+    config.fetch.max_bytes = 2048;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let result = client
+        .fetch(&url, None, ExtractMode::Text, false, None)
+        .await;
+    match result {
+        Err(eggsearch::fetch::FetchError::ContentTooLarge(_, cap)) => {
+            assert_eq!(
+                cap, 2048,
+                "a magic-sniffed PDF reached the body read under max_bytes and must report that cap"
+            );
+        }
+        other => panic!("expected ContentTooLarge(_, 2048), got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn non_pdf_chunked_body_still_truncates_without_error() {
+    let url = serve_chunked_once("text/plain", vec![b'a'; 6_000], 512).await;
+
+    let mut config = AppConfig::default();
+    config.fetch.max_bytes = 2048;
+    config.fetch.pdf_max_bytes = 1_000_000;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let response = client
+        .fetch(&url, None, ExtractMode::Text, false, None)
+        .await
+        .expect("non-PDF truncation stays a successful response");
+    assert!(
+        response.truncated,
+        "non-PDF bodies above max_bytes keep the truncated flag"
+    );
+}
+
+#[tokio::test]
+async fn non_pdf_declared_length_above_max_bytes_keeps_generic_cap() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let body = vec![b'x'; 5_000];
+    server.mock(|when, then| {
+        when.method(GET).path("/big");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .header("content-length", body.len().to_string())
+            .body(&body);
+    });
+
+    let mut config = AppConfig::default();
+    config.fetch.max_bytes = 1024;
+    config.fetch.pdf_max_bytes = 4_000_000;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let result = client
+        .fetch(&server.url("/big"), None, ExtractMode::Text, false, None)
+        .await;
+    match result {
+        Err(eggsearch::fetch::FetchError::ContentTooLarge(size, cap)) => {
+            assert_eq!(size, 5_000);
+            assert_eq!(cap, 1024, "non-PDF paths keep max_bytes");
+        }
+        other => panic!("expected ContentTooLarge(5000, 1024), got: {other:?}"),
+    }
+}

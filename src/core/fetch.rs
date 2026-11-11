@@ -137,8 +137,10 @@ pub struct PdfFetchOptions {
     /// mixed ("1,3,7-10"). Reversed ranges are normalized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pages: Option<String>,
-    /// Password for encrypted PDFs. Never logged or included in
-    /// stable identifiers. Redacted in `Debug` output.
+    /// Password for encrypted PDFs. Accepted for wire compatibility but
+    /// unsupported: a document that declares `/Encrypt` is refused with
+    /// `pdf_encrypted` whether or not a password is supplied. Never logged
+    /// or included in stable identifiers. Redacted in `Debug` output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf_password: Option<RedactedString>,
     /// Whether to include media metadata. Returns bounded metadata

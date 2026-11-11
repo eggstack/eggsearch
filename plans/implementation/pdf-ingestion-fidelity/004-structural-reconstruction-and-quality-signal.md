@@ -1,11 +1,11 @@
 # M004 — Structural Reconstruction and Honest Quality
 
-Status: proposed
+Status: ready
 Source: `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` M004
 Primary class: capability
 Baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731`
 References: `architecture/fetch.md` § 7; `src/fetch/pdf.rs`; `src/core/document.rs`; `src/core/warning.rs`; `docs/features.md`; `tests/pdf_fidelity.rs` (M002); `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`.
-Dependencies: hard M003 (line and word model). Interface ADR-0008 must be accepted before handoff.
+Dependencies: hard M003 (line and word model); ADR-0008 accepted, which satisfies the strategy interface this plan implements.
 
 ## Objective
 

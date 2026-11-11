@@ -1,11 +1,11 @@
 # M003 — Text-Stream Fidelity
 
-Status: proposed
+Status: ready
 Source: `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` M003
 Primary class: capability
 Baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731`
 References: `architecture/fetch.md` § 7; `src/fetch/pdf.rs`; `src/fetch/detect.rs`; `src/fetch/cache.rs`; `src/core/document.rs`; `tests/pdf_fidelity.rs` (M002); `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`.
-Dependencies: hard M002 (corpus and fidelity lane). Interface ADR-0008 must be accepted before this plan is handoff-ready, because it selects the in-house layout approach implemented here.
+Dependencies: hard M002 (corpus and fidelity lane); ADR-0008 accepted, which satisfies the strategy interface this plan implements. Handoff awaits M002 closure.
 
 ## Objective
 

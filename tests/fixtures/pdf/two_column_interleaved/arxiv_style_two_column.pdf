@@ -1,0 +1,51 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 457 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 700 Tm (Running head: Fidelity Sample) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 660 Tm [(Retrieval Fidelity Under Interleaved Columns )] TJ ET
+BT /F1 10 Tf 1 0 0 1 72 644 Tm [(Ada Lovelace, Grace Hopper, Katherine Johnson )] TJ ET
+BT /F1 10 Tf 1 0 0 1 72 628 Tm [(Abstract. This synthetic document measures reading order and line shape for a two column layout. )] TJ ET
+BT /F1 10 Tf 1 0 0 1 72 612 Tm (Sample profile: Columns: 2 Rows: 3) Tj ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >>  >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 652 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 760 Tm (Running head: Fidelity Sample) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 700 Tm (Left one: the encoder maps tokens to vectors and keeps the position stable. ) Tj1 0 0 1 320 700 Tm (Right one: the decoder reads the memory and predicts the next token. ) Tj1 0 0 1 72 684 Tm (Left two: attention weights are normalized across the sequence dimension. ) Tj1 0 0 1 320 684 Tm (Right two: the schedule warms the rate and then decays it smoothly. ) Tj1 0 0 1 72 668 Tm (Left three: the residual path preserves the signal through the block. ) Tj1 0 0 1 320 668 Tm (Right three: the evaluation reports exact match and token accuracy. ) Tj ET
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >>  >> /Contents 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000705 00000 n 
+0000000832 00000 n 
+0000001535 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1662
+%%EOF

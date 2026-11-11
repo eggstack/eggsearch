@@ -11,9 +11,11 @@ use eggsearch::core::config::AppConfig;
 use eggsearch::mcp::state::ServerState;
 
 // Baseline re-measured after `repo_map` stopped advertising `providers`:
-// -98 definition bytes, -25 estimated tokens.
-const BASELINE_TOTAL_BYTES: i64 = 72906;
-const BASELINE_EST_TOKENS: i64 = 18227;
+// -98 definition bytes, -25 estimated tokens. Re-measured again after the
+// `pdf_password` schema description began stating that encrypted documents
+// are refused: +158 definition bytes, +39 estimated tokens.
+const BASELINE_TOTAL_BYTES: i64 = 73064;
+const BASELINE_EST_TOKENS: i64 = 18266;
 const BASELINE_MAX_DESC: i64 = 186;
 const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 

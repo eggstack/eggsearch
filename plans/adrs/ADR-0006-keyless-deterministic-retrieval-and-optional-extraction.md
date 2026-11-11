@@ -40,3 +40,7 @@ No new MCP tools, breaking schemas, or source-layout migrations. Preserve the ex
 ## Verification and status
 
 The new `plans/subsystems/deterministic-retrieval-quality-roadmap.md` supplies measurable baselines, quality/effectiveness acceptance, optional extraction comparisons, and host-facing context-efficiency evidence. Existing search, performance, hardening, and tool-surface workstreams remain closed; this decision supplements them, not reopens them. No production behavior change is authorized solely by adopting this ADR.
+
+## Superseding record
+
+ADR-0007 supersedes this record's PDF-in-default clauses only: alternative 3's rejection of baking PDF into the default release binary, and the decision bullet that keeps `pdf` an optional source-build capability with the published default binary unchanged. Browser remains optional and public-network-only, the single-SKU and version-free asset-name rules are unchanged, and no other decision here is reopened.

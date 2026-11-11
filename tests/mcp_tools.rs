@@ -447,3 +447,38 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .output()
         .ok();
 }
+
+#[test]
+fn provider_status_pdf_capabilities_track_feature_and_config() {
+    for pdf_enabled in [false, true] {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.pdf_enabled = pdf_enabled;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("provider status");
+
+        let caps = &v["pdf_capabilities"];
+        assert_eq!(
+            caps["compiled"],
+            cfg!(feature = "pdf"),
+            "compiled must match the build feature"
+        );
+        assert_eq!(
+            caps["configured"], pdf_enabled,
+            "configured must match [fetch].pdf_enabled"
+        );
+        assert_eq!(
+            caps["usable"],
+            cfg!(feature = "pdf") && pdf_enabled,
+            "usable must agree with feature and config"
+        );
+        assert_eq!(caps["layout"], "deferred");
+        assert_eq!(caps["ocr"], "deferred");
+    }
+}

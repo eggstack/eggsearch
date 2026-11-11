@@ -2434,3 +2434,52 @@ fn repo_search_local_only_uses_explicit_remote_execution_authority() {
         "package advisory lookup must remain behind the same execution authority"
     );
 }
+
+fn pdf_inflation_violations(source: &str) -> Vec<&'static str> {
+    let non_test = strip_test_code(source);
+    let mut violations = Vec::new();
+    if non_test.contains("decompressed_content") {
+        violations.push("decompressed_content");
+    }
+    if non_test.contains(".decompress(") {
+        violations.push(".decompress(");
+    }
+    violations
+}
+
+#[test]
+fn pdf_inflation_enters_only_through_the_bounded_scanner() {
+    let source = read_source("src/fetch/pdf.rs");
+    let violations = pdf_inflation_violations(&source);
+    assert!(
+        violations.is_empty(),
+        "src/fetch/pdf.rs (non-test) contains unbounded inflation {violations:?}; inflation must enter through src/fetch/pdf_stream.rs::scan_stream_budget"
+    );
+    let non_test = strip_test_code(&source);
+    assert!(
+        non_test.contains("scan_stream_budget("),
+        "extract_pdf_text must run the bounded stream scan before parsing"
+    );
+
+    let scanner = read_source("src/fetch/pdf_stream.rs");
+    assert!(
+        scanner.contains("pub fn scan_stream_budget("),
+        "the bounded scanner must expose scan_stream_budget"
+    );
+
+    assert_eq!(
+        pdf_inflation_violations("fn f() { let _ = stream.decompressed_content(); }"),
+        vec!["decompressed_content"]
+    );
+    assert_eq!(
+        pdf_inflation_violations("fn f() { stream.decompress()?; }"),
+        vec![".decompress("]
+    );
+    assert!(pdf_inflation_violations(
+        "#[cfg(test)]\nmod tests {\n    fn f() { stream.decompress()?; }\n}\nfn g() {}\n"
+    )
+    .is_empty());
+    assert!(
+        pdf_inflation_violations("fn f() { let _ = scan_stream_budget(bytes, 1); }").is_empty()
+    );
+}

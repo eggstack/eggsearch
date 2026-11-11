@@ -98,6 +98,7 @@ fn detect_from_content_type(ct: &str) -> Option<DocumentKind> {
 
     match ct_base {
         "text/markdown" | "text/x-markdown" => Some(DocumentKind::Markdown),
+        "application/pdf" => Some(DocumentKind::Pdf),
         "application/json" | "application/ld+json" => Some(DocumentKind::Json),
         _ if ct_base.ends_with("+json") => Some(DocumentKind::Json),
         "text/toml" | "application/toml" => Some(DocumentKind::Toml),
@@ -461,6 +462,25 @@ mod tests {
             b"Just some plain text notes here.",
         );
         assert_eq!(det.kind, DocumentKind::PlainText);
+        assert!(!det.line_preserving);
+    }
+
+    #[test]
+    fn detect_from_content_type_pdf_matches_fetch_gate() {
+        assert_eq!(
+            detect_from_content_type("application/pdf"),
+            Some(DocumentKind::Pdf)
+        );
+        assert_eq!(
+            detect_from_content_type("Application/PDF; charset=binary"),
+            Some(DocumentKind::Pdf)
+        );
+        let det = classify(
+            Some("application/pdf"),
+            "https://example.com/download",
+            b"%PDF-1.7",
+        );
+        assert_eq!(det.kind, DocumentKind::Pdf);
         assert!(!det.line_preserving);
     }
 

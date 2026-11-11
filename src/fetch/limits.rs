@@ -175,6 +175,19 @@ pub struct FetchLimits {
     pub pdf_max_chars_per_page: usize,
     /// Maximum total characters to extract from PDF.
     pub pdf_max_total_chars: usize,
+    /// Maximum content size in bytes for PDF documents.
+    ///
+    /// Applies when the response is identified as PDF by Content-Type or a
+    /// `.pdf` path. A PDF detected only by `%PDF-` magic is read under
+    /// `max_bytes`, because the body cap is chosen before the first bytes
+    /// arrive.
+    pub pdf_max_bytes: usize,
+    /// Maximum bytes a PDF document may expand into once its streams are
+    /// decompressed.
+    ///
+    /// Measured over the whole document before the parser runs, so no stream
+    /// distribution can evade it.
+    pub pdf_max_decompressed_bytes: usize,
 }
 
 impl Default for FetchLimits {
@@ -192,6 +205,23 @@ impl Default for FetchLimits {
             pdf_max_pages: 25,
             pdf_max_chars_per_page: 12000,
             pdf_max_total_chars: 50000,
+            pdf_max_bytes: 16_777_216,
+            pdf_max_decompressed_bytes: 67_108_864,
+        }
+    }
+}
+
+impl FetchLimits {
+    /// Body cap for a response. `is_pdf` means the response is PDF-identified
+    /// by Content-Type or a `.pdf` path, which selects `pdf_max_bytes`;
+    /// everything else keeps `max_bytes`. A PDF recognised only by `%PDF-`
+    /// magic is not PDF-identified here, because the cap is fixed before the
+    /// first bytes arrive.
+    pub(crate) fn body_cap(&self, is_pdf: bool) -> usize {
+        if is_pdf {
+            self.pdf_max_bytes
+        } else {
+            self.max_bytes
         }
     }
 }

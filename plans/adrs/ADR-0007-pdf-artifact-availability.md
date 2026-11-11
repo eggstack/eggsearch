@@ -1,6 +1,6 @@
 # ADR-0007: PDF Ingestion in Distributed Artifacts
 
-Status: proposed
+Status: accepted
 Date: 2026-11-11
 Decision owners: project maintainers
 Affected subsystems: fetch and extraction; binary distribution, install/update, and deployment; Python native library and wheel distribution; packaging; documentation.
@@ -53,4 +53,4 @@ Additive only. No MCP tool, tool argument, or wire string changes. `pdf_not_comp
 
 ## Verification and status
 
-This ADR is `proposed`. Acceptance requires the maintainer decision plus the recorded evidence named in the decision section: per-target size delta, re-run extraction qualification, installer smoke, wheel matrix, `make dependency-policy`, the MSRV all-features check, and the full canonical gate on the exact candidate. Roadmap milestone M006 is blocked on that acceptance. No production default changes on the strength of this record alone.
+This ADR is `accepted` (maintainer decision, 2026-11-11). Acceptance settles the selection and supersedes ADR-0006's clause keeping `pdf` out of the default release binary; it does not supply the evidence. The recorded per-target size delta, re-run extraction qualification, installer smoke, wheel matrix, `make dependency-policy`, the MSRV all-features check, and the full canonical gate on the exact candidate are conditions on roadmap milestone M006, which owns them. No production default changes on the strength of this record alone.

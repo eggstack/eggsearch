@@ -584,7 +584,7 @@ pub fn build_derived_key(
             pdf_pages: pdf_pages.map(|s| s.to_string()),
             pdf_ocr: pdf_ocr.map(|s| s.to_string()),
             include_media,
-            renderer_version: 2,
+            renderer_version: 4,
             sanitize_output,
         },
     }
