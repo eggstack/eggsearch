@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M019 ready; M020 blocked on M019)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -72,6 +72,7 @@ M014 pass-cookie lifetime and egress binding    (independent)
 M015 challenge solvability observability        (independent)
 M017 routing shipped-set evidence               (discharges M006's named condition)
 M018 pagination consistency across pages        (corrective to M009)
+ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement
 ```
 
 ## 6. Milestones and exit boundaries
@@ -96,6 +97,8 @@ M018 pagination consistency across pages        (corrective to M009)
 | M016 — Anubis `metarefresh` solver | capability | `plans/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md` | ADR-0010 | A deployment offering only the no-JavaScript method is reachable with zero hashing, and the echoed payload contains only published values |
 | M017 — routing shipped-set evidence and keyword predicate | invariant (corrective to M006) | `plans/implementation/agentic-retrieval-integrity/017-routing-shipped-set-evidence-and-keyword-predicate.md` | hard M004, M005, M006 | The shipped default provider set is measured, so `intent_mode` is decided by evidence; and no routing entry can be one that rejects a keyword query |
 | M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009 | Pages carry comparable content, `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
+| M019 — fetch document budget and truncation semantics | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md` | none (ADR-0011 accepted) | The extracted document exceeds one caller's window, and truncation is reported as two distinct facts so a caller is never told "not truncated" while holding less than the document contains |
+| M020 — offset addressing and cursor retirement | capability (interface) | `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md` | hard M019 — blocked until M019 closes | A caller reads any window of a fetched document in one call by re-specifying the request with `offset`/`limit`; no opaque token remains in any advertised schema |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -135,6 +138,13 @@ exposed M011's mandatory-`redir` defect.
   The condition is a shipped-set measurement, not an implementation gap.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
+- M019–M020 restructure fetch addressing under ADR-0011. They supersede the opaque replay cursor
+  from M009 in part and the page-budget mechanism from M018 in part: the cursor was unreleased, so
+  this is a replacement rather than a deprecation, and M018's `focus_scope`/`aggregate_scope`
+  labelling survives while its chunk-packing mechanism is replaced by offset windows.
+- M020 is `blocked`, not `ready`, because its hard dependency M019 is still open: offset addressing
+  over a document still truncated at the caller's `max_chars` would be correct arithmetic over the
+  wrong total. It becomes dependency-ready when M019 closes with a closure record.
 - M013–M018 are registered corrective and extension work from the 2026-11-12 live review. ADR-0010
   is accepted and authorizes no behaviour change by itself: it widens method coverage to the
   published Anubis registry and records that the nonce search stays single-threaded, but every
@@ -163,3 +173,12 @@ These shapes are decided for this workstream. Changing one requires a new milest
    nonce search stays single-threaded deliberately: a Rust solver already pays roughly 1/300th of
    the browser cost Anubis budgeted for, so the operator ceiling must remain the binding control on
    solve rate. Changing either half of that requires a superseding ADR, not a milestone.
+
+8. **Documents are addressed by offsets; collections by index.** ADR-0011 governs. Reading a
+   fetched document re-specifies the original request with `offset`/`limit`, with the plan key
+   derived server-side and never echoed, so random access costs one call and no opaque state is
+   carried. The classic objection to offset pagination — skipping and duplicating under concurrent
+   mutation — does not apply, because a fetched document is immutable for its cache TTL and
+   content-addressed by an FNV-1a hash that is already part of the cache key. `chunk_id` remains the
+   citation address; offsets are the reading address. `text_total` must be truthful, so the document
+   is extracted at the internal budget rather than the caller's window.

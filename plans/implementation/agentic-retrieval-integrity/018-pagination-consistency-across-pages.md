@@ -7,6 +7,16 @@ Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0` (the worktree also carries 
 References: `plans/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md`; `plans/closure/agentic-retrieval-integrity/009-status.md` § Known limitations; `architecture/mcp.md` § Pagination, progress, and tasks; `src/mcp/cursor.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch.rs`; `src/mcp/tools/research_search.rs`; `src/meta/adapter/research.rs`; `src/meta/research_grouping.rs`; `src/core/focus.rs`; `src/mcp/projection.rs`
 Dependencies: hard M009 (closed). The closure record's three recorded limitations are this milestone's specification.
 
+## Superseded in part
+
+ADR-0011 and `020-offset-addressing-and-cursor-retirement.md` re-base page selection on character
+offsets, so this plan's page-budget mechanism (chunk-boundary packing against a char capacity) is
+replaced. Its three defect statements remain the specification of what must be correct, and its
+labelling decisions survive: `focus_scope` and `aggregate_scope` describe a document-wide value
+rather than implying per-page scope. The page-size defect is subsumed by offset windows; the
+`focus` and aggregate-scope defects are still this plan's to close and should be closed by M020's
+implementation rather than duplicated here.
+
 ## Objective
 
 Close M009's three recorded pagination limitations without changing the cursor contract, the ten-tool surface, any wire string, or any single-page payload. This is a corrective pass under `plans/003-planning-process.md` §7: each defect below states what is wrong and what M009's verification missed, and the regression test that prevents recurrence is named under Verification.

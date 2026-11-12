@@ -7,6 +7,19 @@ Baseline: `d751bd7471a647e651ee41b8e51199c66d04d01a` (the worktree also carries 
 References: ADR-0001; MCP SEP-2663 `io.modelcontextprotocol/tasks` as implemented by `rmcp` 3.9.0; `architecture/mcp.md`; `src/mcp/server.rs`; `src/mcp/tools/`; `src/mcp/projection.rs`; `src/mcp/output_schema.rs`; `src/fetch/client.rs`; `src/fetch/limits.rs`; `src/core/identity.rs`; `src/core/config.rs`
 Dependencies: interface — the MCP 2026-07-28 Tasks extension (`io.modelcontextprotocol/tasks`, SEP-2663) through `rmcp` 3.9.0. Work package 0 confirms that contract from the vendored crate source and records the result before any other package is written. No hard dependency.
 
+## Superseded in part
+
+ADR-0011 and `020-offset-addressing-and-cursor-retirement.md` retire the opaque replay cursor for
+`web_fetch`, `batch_fetch`, and `research_search`: reading is addressed by the original request
+re-specified with `offset`/`limit`, guarded by a server-derived plan key, and `next_cursor` is
+replaced by `next_offset`. The cursor was never released, so this is a replacement rather than a
+deprecation.
+
+What stands unchanged from this plan: token-gated bounded progress, the rule that a resumed call
+never widens the original deadline, the capability-gated Tasks path, and the requirement that a
+caller with no knowledge of the mechanism receives today's payload byte for byte. Its closure
+record remains history and is not rewritten.
+
 ## Objective
 
 Make the three long-running retrieval paths — `web_fetch` over a large document, `batch_fetch` over many items, and `research_search` over a deep plan — resumable and observable without adding a tool, renaming a field, changing a wire string, or widening any existing bound. A caller with no knowledge of this milestone receives today's complete-or-truncated response byte for byte.
