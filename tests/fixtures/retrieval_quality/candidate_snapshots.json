@@ -394,6 +394,173 @@
           {"rank": 4, "title": "Ordering audio note", "url": "https://podcast.example.test/ordering-note"}
         ]}
       ]
+    },
+    {
+      "id": "security-osv-routing-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "CVE-2024-1234 openssl advisory",
+      "language": "en",
+      "region": "US",
+      "intent": "security",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "openssl-advisory", "urls": ["https://osv.dev/vulnerability/CVE-2024-1234"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Advisory roundup thread", "url": "https://forum.example.test/thread-201"},
+          {"rank": 2, "title": "Patch cadence for crypto libraries", "url": "https://blog.example.test/crypto-patch-cadence"},
+          {"rank": 3, "title": "OpenSSL patching guide", "url": "https://docs.example.test/openssl-patching-guide"},
+          {"rank": 4, "title": "Thread 202: advisory triage", "url": "https://forum.example.test/thread-202"},
+          {"rank": 5, "title": "Thread 203: patching window", "url": "https://forum.example.test/thread-203"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Advisory feed thread", "url": "https://forum.example.test/thread-204"},
+          {"rank": 2, "title": "Patch cadence for crypto libraries", "url": "https://blog.example.test/crypto-patch-cadence"},
+          {"rank": 3, "title": "OpenSSL patching guide", "url": "https://docs.example.test/openssl-patching-guide"},
+          {"rank": 4, "title": "Thread 204: patch review", "url": "https://forum.example.test/thread-205"}
+        ]},
+        {"provider_id": "osv", "results": [
+          {"rank": 1, "title": "OSV entry: CVE-2024-9999", "url": "https://osv.dev/vulnerability/CVE-2024-9999"},
+          {"rank": 2, "title": "CVE-2024-1234: heap overflow in X.509 name parsing", "url": "https://osv.dev/vulnerability/CVE-2024-1234"}
+        ]},
+        {"provider_id": "nvd", "results": [
+          {"rank": 1, "title": "CVE-2024-7777 detail", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-7777"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "startpage", "osv", "nvd"],
+        "default_providers": ["duckduckgo", "startpage"],
+        "intent_mode": "apply",
+        "max_extra_providers": 2
+      }
+    },
+    {
+      "id": "code-github-routing-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "Router::layer middleware ordering",
+      "language": "en",
+      "region": "US",
+      "intent": "code",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "router-layer-source", "urls": ["https://github.com/example/router/blob/main/src/layer.rs"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 301: layer order", "url": "https://forum.example.test/thread-301"},
+          {"rank": 2, "title": "Ordering middleware correctly", "url": "https://notes.example.test/middleware-ordering"},
+          {"rank": 3, "title": "Router design overview", "url": "https://blog.example.test/router-design"},
+          {"rank": 4, "title": "Thread 302: router tips", "url": "https://forum.example.test/thread-302"},
+          {"rank": 5, "title": "Thread 303: middleware notes", "url": "https://forum.example.test/thread-303"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Thread 304: layer wrapping", "url": "https://forum.example.test/thread-304"},
+          {"rank": 2, "title": "Ordering middleware correctly", "url": "https://notes.example.test/middleware-ordering"},
+          {"rank": 3, "title": "Router design overview", "url": "https://blog.example.test/router-design"},
+          {"rank": 4, "title": "Thread 305: router questions", "url": "https://forum.example.test/thread-305"}
+        ]},
+        {"provider_id": "github_code", "results": [
+          {"rank": 1, "title": "router: dispatch table", "url": "https://github.com/example/router/blob/main/src/dispatch.rs"},
+          {"rank": 2, "title": "router: layer ordering", "url": "https://github.com/example/router/blob/main/src/layer.rs"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "yahoo", "github_code"],
+        "default_providers": ["duckduckgo", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 2
+      }
+    },
+    {
+      "id": "issues-firecrawl-routing-001",
+      "category": "intent_routing",
+      "partition": "held_out",
+      "query": "auth token refresh bug report issues",
+      "language": "en",
+      "region": "US",
+      "intent": "issues",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "auth-refresh-issue", "urls": ["https://github.com/example/auth/issues/42"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 401: refresh loop", "url": "https://forum.example.test/thread-401"},
+          {"rank": 2, "title": "Token refresh notes", "url": "https://notes.example.test/token-refresh"},
+          {"rank": 3, "title": "Session handling overview", "url": "https://blog.example.test/session-handling"},
+          {"rank": 4, "title": "Thread 402: token expiry", "url": "https://forum.example.test/thread-402"},
+          {"rank": 5, "title": "Thread 403: auth middleware", "url": "https://forum.example.test/thread-403"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Thread 404: refresh retries", "url": "https://forum.example.test/thread-404"},
+          {"rank": 2, "title": "Token refresh notes", "url": "https://notes.example.test/token-refresh"},
+          {"rank": 3, "title": "Session handling overview", "url": "https://blog.example.test/session-handling"},
+          {"rank": 4, "title": "Thread 405: auth logs", "url": "https://forum.example.test/thread-405"}
+        ]},
+        {"provider_id": "firecrawl_developer", "results": [
+          {"rank": 1, "title": "example/auth: refresh middleware discussion", "url": "https://github.com/example/auth/issues/41"},
+          {"rank": 2, "title": "auth token refresh fails after rotation", "url": "https://github.com/example/auth/issues/42"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "startpage", "firecrawl_developer"],
+        "default_providers": ["duckduckgo", "startpage"],
+        "intent_mode": "apply",
+        "max_extra_providers": 2
+      }
+    },
+    {
+      "id": "docs-no-routing-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "tower-http trace layer documentation",
+      "language": "en",
+      "region": "US",
+      "intent": "docs",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "trace-layer-reference", "urls": ["https://docs.rs/tower-http/latest/tower_http/trace/index.html"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 501: layers", "url": "https://forum.example.test/thread-501"},
+          {"rank": 2, "title": "Caching layers behind a proxy", "url": "https://notes.example.test/proxy-caching"},
+          {"rank": 3, "title": "Composing middleware in a service", "url": "https://blog.example.test/middleware-composition"},
+          {"rank": 4, "title": "Thread 502: service layers", "url": "https://forum.example.test/thread-502"},
+          {"rank": 5, "title": "tower-http trace layer reference", "url": "https://docs.rs/tower-http/latest/tower_http/trace/index.html"}
+        ]},
+        {"provider_id": "startpage", "results": [
+          {"rank": 1, "title": "Thread 503: layer order", "url": "https://forum.example.test/thread-503"},
+          {"rank": 2, "title": "Caching layers behind a proxy", "url": "https://notes.example.test/proxy-caching"},
+          {"rank": 3, "title": "Composing middleware in a service", "url": "https://blog.example.test/middleware-composition"},
+          {"rank": 4, "title": "Thread 504: layer FAQ", "url": "https://forum.example.test/thread-504"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "startpage"],
+        "default_providers": ["duckduckgo", "startpage"],
+        "intent_mode": "apply",
+        "max_extra_providers": 2
+      }
     }
   ]
 }

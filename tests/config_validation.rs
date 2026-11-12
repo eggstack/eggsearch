@@ -1,4 +1,4 @@
-use eggsearch::core::config::{ApiProviderConfig, AppConfig, Mode};
+use eggsearch::core::config::{ApiProviderConfig, AppConfig, McpToolPreset, Mode};
 use eggsearch::core::provider::KNOWN_PROVIDER_IDS;
 
 fn default_config() -> AppConfig {
@@ -37,6 +37,47 @@ fn mcp_schema_profile_defaults_to_full_and_accepts_compact() {
 }
 
 #[test]
+fn mcp_tool_preset_defaults_to_full_and_round_trips_every_value() {
+    assert_eq!(AppConfig::default().mcp.tool_preset, McpToolPreset::Full);
+    assert_eq!(McpToolPreset::default(), McpToolPreset::Full);
+    for (raw, expected) in [
+        ("full", McpToolPreset::Full),
+        ("research", McpToolPreset::Research),
+        ("code", McpToolPreset::Code),
+        ("minimal", McpToolPreset::Minimal),
+    ] {
+        let config: AppConfig = toml::from_str(&format!("[mcp]\ntool_preset = '{raw}'\n")).unwrap();
+        assert_eq!(config.mcp.tool_preset, expected, "tool_preset {raw}");
+        assert_eq!(config.mcp.tool_preset.as_str(), raw);
+        assert_eq!(
+            config.mcp.schema_profile,
+            eggsearch::core::config::McpSchemaProfile::Full,
+            "tool_preset must not change the schema profile default"
+        );
+        assert_eq!(
+            config.mcp.brief_max_chars, 8_000,
+            "tool_preset must not change response_detail budgets"
+        );
+    }
+}
+
+#[test]
+fn unknown_mcp_tool_preset_is_a_parse_error_naming_valid_values() {
+    let err = toml::from_str::<AppConfig>("[mcp]\ntool_preset = 'moderate'\n").unwrap_err();
+    let message = err.to_string();
+    assert!(
+        message.contains("unknown variant") && message.contains("moderate"),
+        "parse error must identify the rejected value: {message}"
+    );
+    for value in ["full", "research", "code", "minimal"] {
+        assert!(
+            message.contains(value),
+            "parse error must list `{value}`: {message}"
+        );
+    }
+}
+
+#[test]
 fn brief_character_budget_is_bounded() {
     let mut config = AppConfig::default();
     config.mcp.brief_max_chars = 511;
@@ -53,6 +94,42 @@ fn brief_character_budget_is_bounded() {
         .unwrap_err()
         .to_string()
         .contains("brief_max_chars"));
+}
+
+#[test]
+fn excerpt_budget_defaults_and_toml_bounds() {
+    assert_eq!(
+        AppConfig::default().mcp.excerpt_budget_chars,
+        eggsearch::core::config::DEFAULT_EXCERPT_BUDGET_CHARS
+    );
+    let config: AppConfig = toml::from_str("[mcp]\nexcerpt_budget_chars = 2500\n").unwrap();
+    assert_eq!(config.mcp.excerpt_budget_chars, 2_500);
+    assert!(config.validate().is_ok());
+
+    let inherited: AppConfig = toml::from_str("[mcp]\nschema_profile = 'compact'\n").unwrap();
+    assert_eq!(inherited.mcp.excerpt_budget_chars, 4_000);
+
+    let independent: AppConfig =
+        toml::from_str("[mcp]\nbrief_max_chars = 512\nexcerpt_budget_chars = 4000\n").unwrap();
+    assert!(independent.validate().is_ok());
+
+    for value in [255usize, 32_001] {
+        let text = format!("[mcp]\nexcerpt_budget_chars = {value}\n");
+        let config: AppConfig = toml::from_str(&text).unwrap();
+        let err = config
+            .validate()
+            .expect_err("out-of-range excerpt budget must fail");
+        assert!(
+            err.to_string().contains("excerpt_budget_chars"),
+            "got: {err}"
+        );
+    }
+
+    for value in [256usize, 32_000] {
+        let text = format!("[mcp]\nexcerpt_budget_chars = {value}\n");
+        let config: AppConfig = toml::from_str(&text).unwrap();
+        assert!(config.validate().is_ok(), "{value}");
+    }
 }
 
 #[test]
@@ -362,6 +439,7 @@ fn validate_allows_off_mode_with_no_providers() {
 fn default_config_has_expected_values() {
     let cfg = default_config();
     assert_eq!(cfg.search.mode, Mode::Live);
+    assert_eq!(cfg.mcp.tool_preset, McpToolPreset::Full);
     assert_eq!(cfg.search.default_max_results, 10);
     assert_eq!(cfg.search.max_results_cap, 50);
     assert_eq!(cfg.search.max_query_chars, 512);
@@ -399,7 +477,7 @@ fn default_providers_match_docs() {
     let cfg = default_config();
     assert_eq!(
         cfg.search.default_providers,
-        vec!["duckduckgo", "startpage", "yahoo"]
+        vec!["duckduckgo", "brave", "yahoo"]
     );
 }
 
@@ -1109,4 +1187,157 @@ fn search_cache_fields_round_trip() {
     let parsed: AppConfig = toml::from_str(&text).unwrap();
     assert_eq!(parsed.search.cache_ttl_seconds, 42);
     assert_eq!(parsed.search.cache_max_entries, 7);
+}
+
+#[test]
+fn intent_routing_defaults_ship_off_with_two_extra_providers() {
+    use eggsearch::core::config::{IntentRoutingMode, RoutingSection};
+
+    let defaults = RoutingSection::default();
+    assert_eq!(defaults.intent_mode, IntentRoutingMode::Off);
+    assert_eq!(defaults.intent_mode.as_str(), "off");
+    assert_eq!(defaults.max_extra_providers, 2);
+
+    let config = AppConfig::default();
+    assert_eq!(config.search.routing.intent_mode, IntentRoutingMode::Off);
+    assert_eq!(config.search.routing.max_extra_providers, 2);
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn intent_routing_unknown_mode_is_a_parse_error_naming_the_variants() {
+    let toml = r#"
+[search]
+mode = "live"
+
+[search.routing]
+intent_mode = "sometimes"
+"#;
+    let err = toml::from_str::<AppConfig>(toml).unwrap_err();
+    let message = err.to_string();
+    assert!(
+        message.contains("invalid intent_mode `sometimes`"),
+        "got: {message}"
+    );
+    assert!(message.contains("off, apply"), "got: {message}");
+}
+
+#[test]
+fn intent_routing_mode_accepts_both_variants() {
+    use eggsearch::core::config::IntentRoutingMode;
+
+    for (raw, expected) in [
+        ("off", IntentRoutingMode::Off),
+        ("apply", IntentRoutingMode::Apply),
+    ] {
+        let toml = format!(
+            "[search]\nmode = \"live\"\ndefault_max_results = 10\nmax_results_cap = 50\nmax_query_chars = 512\ntimeout_ms = 8000\ndefault_providers = [\"duckduckgo\"]\n\n[search.routing]\nintent_mode = \"{raw}\"\n"
+        );
+        let cfg: AppConfig = toml::from_str(&toml).unwrap();
+        assert_eq!(cfg.search.routing.intent_mode, expected);
+        assert_eq!(cfg.search.routing.intent_mode.as_str(), raw);
+    }
+}
+
+#[test]
+fn intent_routing_max_extra_providers_bound_is_enforced() {
+    let mut config = AppConfig::default();
+    for value in [0usize, 1, 2, 3, 4] {
+        config.search.routing.max_extra_providers = value;
+        assert!(config.validate().is_ok(), "value {value} should validate");
+    }
+    config.search.routing.max_extra_providers = 5;
+    let err = config.validate().expect_err("expected upper-bound failure");
+    assert!(
+        err.to_string()
+            .contains("[search.routing].max_extra_providers"),
+        "got: {err}"
+    );
+    assert!(err.to_string().contains("between 0 and 4"), "got: {err}");
+}
+
+#[test]
+fn config_without_routing_table_keeps_today_behaviour() {
+    let toml = r#"
+[search]
+mode = "live"
+default_max_results = 10
+max_results_cap = 50
+max_query_chars = 512
+timeout_ms = 8000
+default_providers = ["duckduckgo"]
+
+[search.providers]
+duckduckgo = true
+"#;
+    let cfg: AppConfig = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.search.routing.intent_mode.as_str(), "off");
+    assert_eq!(cfg.search.routing.max_extra_providers, 2);
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn intent_routing_table_round_trips_through_save_shape() {
+    use eggsearch::core::config::IntentRoutingMode;
+
+    let mut config = AppConfig::default();
+    config.search.routing.intent_mode = IntentRoutingMode::Apply;
+    config.search.routing.max_extra_providers = 4;
+    let text = toml::to_string(&config).unwrap();
+    assert!(text.contains("intent_mode = \"apply\""), "got: {text}");
+    let parsed: AppConfig = toml::from_str(&text).unwrap();
+    assert_eq!(parsed.search.routing.intent_mode, IntentRoutingMode::Apply);
+    assert_eq!(parsed.search.routing.max_extra_providers, 4);
+    assert!(parsed.validate().is_ok());
+}
+
+#[test]
+fn mcp_tasks_defaults_to_disabled_with_bounded_limits() {
+    let tasks = AppConfig::default().mcp.tasks;
+    assert!(!tasks.enabled);
+    assert_eq!(tasks.ttl_ms, 300_000);
+    assert_eq!(tasks.max_concurrent, 4);
+    assert_eq!(tasks.poll_interval_ms, 1_000);
+    assert!(AppConfig::default().validate().is_ok());
+}
+
+#[test]
+fn mcp_tasks_parses_from_toml_without_disturbing_existing_configs() {
+    let config: AppConfig = toml::from_str(
+        "[mcp.tasks]\nenabled = true\nttl_ms = 60000\nmax_concurrent = 2\npoll_interval_ms = 500\n",
+    )
+    .expect("parses");
+    assert!(config.mcp.tasks.enabled);
+    assert_eq!(config.mcp.tasks.ttl_ms, 60_000);
+    assert_eq!(config.mcp.tasks.max_concurrent, 2);
+    assert_eq!(config.mcp.tasks.poll_interval_ms, 500);
+    assert_eq!(config.mcp.brief_max_chars, 8_000);
+    assert!(config.validate().is_ok());
+}
+
+#[test]
+fn mcp_tasks_bounds_are_enforced() {
+    let mut config = AppConfig::default();
+    config.mcp.tasks.enabled = true;
+
+    config.mcp.tasks.ttl_ms = 999;
+    assert!(config.validate().is_err());
+    config.mcp.tasks.ttl_ms = 3_600_001;
+    assert!(config.validate().is_err());
+    config.mcp.tasks.ttl_ms = 3_600_000;
+    assert!(config.validate().is_ok());
+
+    config.mcp.tasks.max_concurrent = 0;
+    assert!(config.validate().is_err());
+    config.mcp.tasks.max_concurrent = 17;
+    assert!(config.validate().is_err());
+    config.mcp.tasks.max_concurrent = 16;
+    assert!(config.validate().is_ok());
+
+    config.mcp.tasks.poll_interval_ms = 249;
+    assert!(config.validate().is_err());
+    config.mcp.tasks.poll_interval_ms = 10_001;
+    assert!(config.validate().is_err());
+    config.mcp.tasks.poll_interval_ms = 10_000;
+    assert!(config.validate().is_ok());
 }

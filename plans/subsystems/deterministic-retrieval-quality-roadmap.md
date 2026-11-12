@@ -23,7 +23,7 @@ The baseline has 44 provider IDs, keyless default DuckDuckGo/Startpage/Yahoo, RR
 
 ## 3. Invariants and non-goals
 
-- The SearXNG-derived/keyless HTML design is intentional. Do not replace keyless defaults with paid API dependencies, or penalize providers merely because they use HTML. Failures remain observable with bounded retry/cooldown; no CAPTCHA solving or rate-limit circumvention.
+- The SearXNG-derived/keyless HTML design is intentional. Do not replace keyless defaults with paid API dependencies, or penalize providers merely because they use HTML. Failures remain observable with bounded retry/cooldown; rate-limit circumvention stays prohibited, while published computational proof-of-work challenges may be solved under ADR-0009's opt-in bounds.
 - No Eggsearch-side inference, generative answer synthesis, model-generated snippets, embeddings, vector index, or LSP dependency. Existing opt-in Exa/Tavily etc. integrations remain unchanged.
 - No new MCP tools, schema-breaking changes, default features, compulsory Chrome/`lopdf`, new binary SKU, or Python wheel feature expansion.
 - No recursive crawling, unbounded exploration, automatic billing, credential tests in routine CI, or on-board SBC compilation.

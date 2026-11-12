@@ -762,6 +762,7 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
 
     let state = state_with_default();
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -2860,6 +2861,7 @@ fn enabled_but_unbuildable_is_rejected_as_not_built() {
         &cfg,
         &health,
         true,
+        None,
     )
     .expect_err("must not report an unbuildable provider as selected");
 
@@ -2890,6 +2892,7 @@ fn enabled_api_provider_without_credential_is_a_missing_credential() {
         &cfg,
         &health,
         true,
+        None,
     )
     .expect_err("must reject a provider whose credential is unset");
 
@@ -2916,6 +2919,7 @@ fn known_but_unenabled_is_still_reported_as_disabled() {
         &cfg,
         &health,
         true,
+        None,
     )
     .expect_err("must reject an unenabled provider");
 
@@ -2935,6 +2939,7 @@ fn unknown_provider_still_reports_unknown() {
         &cfg,
         &health,
         true,
+        None,
     )
     .expect_err("must reject an unknown provider");
 
@@ -2957,6 +2962,7 @@ fn non_strict_mode_records_typed_skips_instead_of_silent_omission() {
         &cfg,
         &health,
         false,
+        None,
     )
     .expect("non-strict mode must not fail");
 
@@ -2986,6 +2992,7 @@ fn fully_routable_request_selects_exactly_what_was_requested() {
         &cfg,
         &health,
         true,
+        None,
     )
     .expect("a fully routable list must succeed");
 
@@ -3286,4 +3293,408 @@ async fn journey_pubmed_explicit_scholarly_search() {
 #[tokio::test]
 async fn journey_hn_algolia_explicit_search() {
     source_provider_journey("hn_algolia").await;
+}
+
+// ---------------------------------------------------------------------------
+// M006 — intent-aware provider routing.
+//
+// Routing is additive selection on the default path only: it appends
+// capability-valid providers for the effective intent, never removes or
+// reorders a base provider, and never runs for explicit or profile routing.
+// ---------------------------------------------------------------------------
+
+use eggsearch::core::config::{ApiProviderConfig, IntentRoutingMode};
+use eggsearch::core::query::SearchIntent;
+
+fn capability_adapter_ids() -> Vec<String> {
+    adapter_ids(&[
+        "duckduckgo",
+        "brave",
+        "yahoo",
+        "osv",
+        "github_advisory",
+        "github_issues",
+        "firecrawl_developer",
+    ])
+}
+
+fn apply_config() -> AppConfig {
+    let mut cfg = AppConfig::default();
+    cfg.search.routing.intent_mode = IntentRoutingMode::Apply;
+    cfg
+}
+
+#[test]
+fn intent_routing_off_is_identical_to_no_intent_on_the_default_path() {
+    let mut cfg = AppConfig::default();
+    cfg.search
+        .providers
+        .insert("firecrawl_developer".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+    let adapter = capability_adapter_ids();
+
+    let without = resolve_provider_routing(&[], None, &adapter, &cfg, &health, true, None)
+        .expect("default routing resolves");
+    let with = resolve_provider_routing(
+        &[],
+        None,
+        &adapter,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Issues),
+    )
+    .expect("default routing resolves");
+
+    assert_eq!(without.selected_providers, with.selected_providers);
+    assert_eq!(without.reason, with.reason);
+    assert_eq!(without.degraded, with.degraded);
+    assert_eq!(without.partial, with.partial);
+    assert_eq!(
+        without.skipped_providers.len(),
+        with.skipped_providers.len()
+    );
+    let report = with
+        .intent_routing
+        .expect("off mode still reports the intent");
+    assert_eq!(report.intent.as_deref(), Some("issues"));
+    assert_eq!(report.intent_mode, "off");
+    assert!(report.additions.is_empty());
+    assert!(report.considered.is_empty());
+}
+
+#[test]
+fn intent_routing_apply_appends_the_capability_provider_in_table_order() {
+    let mut cfg = apply_config();
+    cfg.search
+        .providers
+        .insert("firecrawl_developer".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        &capability_adapter_ids(),
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Issues),
+    )
+    .expect("default routing resolves");
+
+    assert_eq!(
+        decision.selected_providers,
+        vec![
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+            "yahoo".to_string(),
+            "firecrawl_developer".to_string(),
+        ],
+        "routing must append after the base providers without reordering them"
+    );
+    let report = decision.intent_routing.expect("apply reports the decision");
+    assert_eq!(report.intent_mode, "apply");
+    assert_eq!(report.additions, vec!["firecrawl_developer".to_string()]);
+    let firecrawl = report
+        .considered
+        .iter()
+        .find(|attempt| attempt.provider_id == "firecrawl_developer")
+        .expect("firecrawl_developer is considered");
+    assert_eq!(firecrawl.disposition, "added");
+    let github_issues = report
+        .considered
+        .iter()
+        .find(|attempt| attempt.provider_id == "github_issues")
+        .expect("github_issues is considered");
+    assert_eq!(github_issues.disposition, "not_enabled");
+}
+
+#[test]
+fn intent_routing_apply_never_adds_an_unbuilt_provider() {
+    let mut cfg = apply_config();
+    cfg.search.providers.insert("osv".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        &adapter_ids(&["duckduckgo", "brave", "yahoo"]),
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Security),
+    )
+    .expect("default routing resolves");
+
+    assert_eq!(
+        decision.selected_providers,
+        vec![
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+            "yahoo".to_string()
+        ]
+    );
+    let report = decision.intent_routing.expect("apply reports the decision");
+    assert!(report.additions.is_empty());
+    let osv = report
+        .considered
+        .iter()
+        .find(|attempt| attempt.provider_id == "osv")
+        .expect("osv is considered");
+    assert_eq!(osv.disposition, "not_built");
+}
+
+#[test]
+fn intent_routing_apply_routes_a_configured_api_provider() {
+    const ENV: &str = "EGGSEARCH_TEST_INTENT_ROUTING_GITHUB_CODE_KEY";
+    std::env::set_var(ENV, "test_key");
+    let mut cfg = apply_config();
+    cfg.search.api.insert(
+        "github_code".to_string(),
+        ApiProviderConfig {
+            enabled: true,
+            api_key_env: Some(ENV.to_string()),
+            base_url: None,
+        },
+    );
+    let health = ProviderHealthRegistry::new();
+    let adapter = adapter_ids(&["duckduckgo", "brave", "yahoo", "github_code"]);
+
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        &adapter,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Code),
+    )
+    .expect("default routing resolves");
+    std::env::remove_var(ENV);
+
+    assert_eq!(
+        decision.selected_providers.last().map(String::as_str),
+        Some("github_code")
+    );
+    let report = decision.intent_routing.expect("apply reports the decision");
+    assert_eq!(report.additions, vec!["github_code".to_string()]);
+}
+
+#[test]
+fn intent_routing_apply_never_touches_explicit_providers() {
+    let mut cfg = apply_config();
+    cfg.search
+        .providers
+        .insert("firecrawl_developer".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+
+    let decision = resolve_provider_routing(
+        &["duckduckgo".to_string()],
+        None,
+        &capability_adapter_ids(),
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Issues),
+    )
+    .expect("explicit routing resolves");
+
+    assert_eq!(decision.selected_providers, vec!["duckduckgo".to_string()]);
+    assert!(decision.intent_routing.is_none());
+    assert_eq!(
+        decision.reason.as_deref(),
+        Some("using explicitly requested providers")
+    );
+}
+
+#[test]
+fn intent_routing_apply_never_touches_profile_routing() {
+    use eggsearch::core::repo_search::SearchProfile;
+
+    let cfg = apply_config();
+    let health = ProviderHealthRegistry::new();
+    let adapter = capability_adapter_ids();
+
+    for intent in [
+        None,
+        Some(SearchIntent::Issues),
+        Some(SearchIntent::Security),
+    ] {
+        let decision = resolve_provider_routing(
+            &[],
+            Some(SearchProfile::Coding),
+            &adapter,
+            &cfg,
+            &health,
+            true,
+            intent,
+        )
+        .expect("profile routing resolves");
+        assert!(
+            decision.intent_routing.is_none(),
+            "profile routing must not run intent selection"
+        );
+        let baseline = resolve_provider_routing(
+            &[],
+            Some(SearchProfile::Coding),
+            &adapter,
+            &cfg,
+            &health,
+            true,
+            None,
+        )
+        .expect("profile routing resolves");
+        assert_eq!(decision.selected_providers, baseline.selected_providers);
+        assert_eq!(decision.reason, baseline.reason);
+        assert_eq!(decision.degraded, baseline.degraded);
+        assert_eq!(decision.partial, baseline.partial);
+    }
+}
+
+#[test]
+fn intent_routing_zero_extra_reports_withheld_and_adds_nothing() {
+    let mut cfg = apply_config();
+    cfg.search.routing.max_extra_providers = 0;
+    let mut enabled = capability_adapter_ids();
+    enabled.retain(|id| id != "brave");
+    let health = ProviderHealthRegistry::new();
+
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        &enabled,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Security),
+    )
+    .expect("default routing resolves");
+
+    assert_eq!(
+        decision.selected_providers,
+        vec!["duckduckgo".to_string(), "yahoo".to_string()],
+        "max_extra_providers=0 must add nothing"
+    );
+    let report = decision.intent_routing.expect("apply reports the decision");
+    assert_eq!(report.max_extra_providers, 0);
+    assert!(report.additions.is_empty());
+    assert_eq!(
+        report.withheld,
+        vec!["osv".to_string()],
+        "osv is enabled and built, so 0 must report it as withheld"
+    );
+}
+
+#[test]
+fn intent_routing_max_extra_bounds_the_suffix() {
+    let mut cfg = apply_config();
+    cfg.search.routing.max_extra_providers = 1;
+    cfg.search.providers.insert("osv".to_string(), true);
+    cfg.search.providers.insert("nvd".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+    let adapter = adapter_ids(&["duckduckgo", "osv", "nvd"]);
+
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        &adapter,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Security),
+    )
+    .expect("default routing resolves");
+
+    assert_eq!(
+        decision.selected_providers,
+        vec!["duckduckgo".to_string(), "osv".to_string()]
+    );
+    let report = decision.intent_routing.expect("apply reports the decision");
+    assert_eq!(report.additions, vec!["osv".to_string()]);
+    assert_eq!(report.withheld, vec!["nvd".to_string()]);
+}
+
+#[test]
+fn intent_routing_is_deterministic_across_calls() {
+    let mut cfg = apply_config();
+    cfg.search.providers.insert("osv".to_string(), true);
+    cfg.search
+        .providers
+        .insert("github_advisory".to_string(), true);
+    let health = ProviderHealthRegistry::new();
+    let adapter = adapter_ids(&["duckduckgo", "osv", "github_advisory"]);
+
+    let first = resolve_provider_routing(
+        &[],
+        None,
+        &adapter,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Security),
+    )
+    .expect("routing resolves");
+    let second = resolve_provider_routing(
+        &[],
+        None,
+        &adapter,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Security),
+    )
+    .expect("routing resolves");
+    assert_eq!(first.selected_providers, second.selected_providers);
+    assert_eq!(
+        serde_json::to_string(&first.intent_routing).unwrap(),
+        serde_json::to_string(&second.intent_routing).unwrap()
+    );
+}
+
+#[test]
+fn provider_status_discloses_the_routing_table_and_mode() {
+    let state = state_with_default();
+    let payload = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+
+    let routing = &payload["routing"];
+    assert_eq!(routing["intent_mode"], serde_json::json!("off"));
+    assert_eq!(routing["max_extra_providers"], serde_json::json!(2));
+    assert_eq!(
+        routing["preferences"]["web"],
+        serde_json::json!([]),
+        "web has no capability-justified preference list"
+    );
+    assert_eq!(routing["preferences"]["docs"], serde_json::json!([]));
+    assert_eq!(
+        routing["preferences"]["code"],
+        serde_json::json!(["github_code", "gitlab_code", "gitea_code", "sourcegraph"])
+    );
+    assert_eq!(
+        routing["preferences"]["issues"],
+        serde_json::json!([
+            "github_issues",
+            "gitlab_issues",
+            "gitea_issues",
+            "firecrawl_developer"
+        ])
+    );
+    assert_eq!(
+        routing["preferences"]["releases"],
+        serde_json::json!(["github_releases", "gitlab_releases", "gitea_releases"])
+    );
+    assert_eq!(
+        routing["preferences"]["security"],
+        serde_json::json!(["osv", "github_advisory", "nvd"])
+    );
+    assert_eq!(
+        routing["preferences"]["news"],
+        serde_json::json!(["tavily", "brave_api"])
+    );
 }

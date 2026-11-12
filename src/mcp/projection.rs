@@ -54,8 +54,23 @@ impl ResponseDetail {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProjectionLimits {
+    pub brief_max_chars: usize,
+    pub excerpt_budget_chars: usize,
+}
+
+impl Default for ProjectionLimits {
+    fn default() -> Self {
+        Self {
+            brief_max_chars: DEFAULT_BRIEF_MAX_CHARS,
+            excerpt_budget_chars: crate::mcp::excerpt_economy::DEFAULT_EXCERPT_BUDGET_CHARS,
+        }
+    }
+}
+
 pub fn project(tool: &str, value: serde_json::Value, detail: ResponseDetail) -> serde_json::Value {
-    project_with_budget(tool, value, detail, DEFAULT_BRIEF_MAX_CHARS)
+    project_with_limits(tool, value, detail, ProjectionLimits::default())
 }
 
 pub fn project_with_budget(
@@ -64,21 +79,42 @@ pub fn project_with_budget(
     detail: ResponseDetail,
     max_chars: usize,
 ) -> serde_json::Value {
-    match detail {
-        ResponseDetail::Brief => project_brief(tool, value, max_chars),
-        ResponseDetail::Diagnostic => value,
-        ResponseDetail::Compact => match tool {
-            "web_search" => project_web_search(value, true),
-            "repo_search" => project_repo_search(value, true),
-            "research_search" => project_research_search(value, true),
-            "security_search" => project_security_search(value, true),
-            "web_fetch" => project_web_fetch(value, true),
-            "repo_fetch" => project_repo_fetch(value, true),
-            "repo_map" => project_repo_map(value, true),
-            "batch_fetch" => project_batch_fetch(value, true),
-            "build_evidence_bundle" => value,
-            _ => value,
+    project_with_limits(
+        tool,
+        value,
+        detail,
+        ProjectionLimits {
+            brief_max_chars: max_chars,
+            ..ProjectionLimits::default()
         },
+    )
+}
+
+pub fn project_with_limits(
+    tool: &str,
+    value: serde_json::Value,
+    detail: ResponseDetail,
+    limits: ProjectionLimits,
+) -> serde_json::Value {
+    match detail {
+        ResponseDetail::Brief => project_brief(tool, value, limits),
+        ResponseDetail::Diagnostic => value,
+        ResponseDetail::Compact => economy_project(
+            tool,
+            match tool {
+                "web_search" => project_web_search(value, true),
+                "repo_search" => project_repo_search(value, true),
+                "research_search" => project_research_search(value, true),
+                "security_search" => project_security_search(value, true),
+                "web_fetch" => project_web_fetch(value, true),
+                "repo_fetch" => project_repo_fetch(value, true),
+                "repo_map" => project_repo_map(value, true),
+                "batch_fetch" => project_batch_fetch(value, true),
+                "build_evidence_bundle" => value,
+                _ => value,
+            },
+            limits.excerpt_budget_chars,
+        ),
         ResponseDetail::Standard => match tool {
             "web_search" => project_web_search(value, false),
             "repo_search" => project_repo_search(value, false),
@@ -94,11 +130,30 @@ pub fn project_with_budget(
     }
 }
 
-fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serde_json::Value {
+fn economy_project(
+    tool: &str,
+    mut value: serde_json::Value,
+    excerpt_budget_chars: usize,
+) -> serde_json::Value {
+    if matches!(
+        tool,
+        "web_search" | "repo_search" | "research_search" | "security_search"
+    ) {
+        crate::mcp::excerpt_economy::apply(&mut value, excerpt_budget_chars);
+    }
+    value
+}
+
+fn project_brief(
+    tool: &str,
+    value: serde_json::Value,
+    limits: ProjectionLimits,
+) -> serde_json::Value {
     if tool == "build_evidence_bundle" {
         return value;
     }
-    let mut projected = project(tool, value, ResponseDetail::Compact);
+    let max_chars = limits.brief_max_chars;
+    let mut projected = project_with_limits(tool, value, ResponseDetail::Compact, limits);
     reduce_brief_fields(&mut projected);
     let applicability_total = add_applicability_summary(&mut projected);
     let provider_failure_total = add_provider_failure_summary(&mut projected);
@@ -248,6 +303,15 @@ fn project_brief(tool: &str, value: serde_json::Value, max_chars: usize) -> serd
                     serde_json::Value::Bool(clipped || omitted > 0),
                 );
             }
+        }
+    }
+    if brief_serialized_chars(&projected) > max_chars {
+        if let Some(object) = projected.as_object_mut() {
+            clipped |= object.remove("excerpt_economy").is_some();
+            object.insert(
+                "output_truncated".into(),
+                serde_json::Value::Bool(clipped || omitted > 0),
+            );
         }
     }
     let retained_count = primary_key
@@ -420,7 +484,17 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
         "error_class",
         "evidence_gaps",
         "evidence_role",
+        "excerpt_economy",
         "excerpts",
+        "excerpts_suppressed",
+        "budget_chars",
+        "considered_count",
+        "admitted_count",
+        "redundant_count",
+        "over_budget_count",
+        "clipped_count",
+        "chars_before",
+        "chars_after",
         "failed",
         "failed_job_count",
         "fetches",
@@ -522,6 +596,8 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
         "returned_sources",
         "omitted_sources",
         "conflict_metadata",
+        "next_cursor",
+        "cursor_status",
     ];
     match value {
         serde_json::Value::Object(object) => {
@@ -595,7 +671,7 @@ fn clip_warning_text(text: &str, max_chars: usize) -> String {
     }
 }
 
-fn clip_framed_text(text: &str, max_chars: usize) -> String {
+pub(crate) fn clip_framed_text(text: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
     }

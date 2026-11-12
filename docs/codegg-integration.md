@@ -92,13 +92,14 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
 multiquery_concurrency = 8
 multiquery_provider_concurrency = 2
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -132,7 +133,7 @@ batch_concurrency = 4
 
 ```toml eggsearch-config-parse-only
 # HTML scraper providers (enabled by default)
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 # Individual provider toggles (all enabled unless noted)
 [search.providers]
@@ -210,7 +211,7 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 [fetch]
 enabled = false
@@ -1180,6 +1181,7 @@ and `warnings` (legacy string array) for backward compatibility.
 | `profile_degraded` | Warning | Profile fell back to default providers |
 | `profile_provider_not_built` | Notice | A profile provider is missing its API key |
 | `native_code_search_unavailable` | Notice | No GitHub/GitLab/Gitea provider configured |
+| `intent_routing_capability_excluded` | Notice | Intent-aware routing considered a preferred provider but it does not declare the capability the derived intent requires, so it was not added |
 | `freshness_unenforced` | Notice | Freshness requested but no provider enforces it |
 | `date_range_unenforced` | Notice | Exact date range requested but no provider enforces it |
 | `language_unenforced` | Notice | Language hint requested but no provider enforces it |
@@ -1199,7 +1201,7 @@ MCP tools return `Result<serde_json::Value, ToolError>` via the single
 MCP tool errors (`isError: true`) with a stable `code`
 (`invalid_semantic_value`, `conflicting_arguments`,
 `capability_unavailable`, `provider_unavailable`, `policy_denied`,
-`budget_invalid`, `locator_invalid`, `manual_interaction_required`,
+`budget_invalid`, `cursor_mismatch`, `locator_invalid`, `manual_interaction_required`,
 `upstream_failed`) and a bounded `repair { field, accepted[],
 suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC
 `invalid_params`; server faults are `internal_error`. The harness should:

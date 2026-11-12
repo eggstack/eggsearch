@@ -49,6 +49,7 @@ impl MetadataSearchAdapter {
             effective_max_results,
             max_results_cap,
             Some(req.intent),
+            crate::core::config::IntentRoutingMode::Off,
         )
         .await
     }
@@ -68,6 +69,7 @@ impl MetadataSearchAdapter {
         effective_max_results: usize,
         max_results_cap: usize,
         caller_intent: Option<crate::core::query::SearchIntent>,
+        intent_routing_mode: crate::core::config::IntentRoutingMode,
     ) -> WebSearchResponse {
         let final_max_results = effective_max_results;
         let candidate_cap = max_results_cap;
@@ -327,46 +329,59 @@ impl MetadataSearchAdapter {
             ));
         }
 
+        let apply_intent_routing =
+            intent_routing_mode == crate::core::config::IntentRoutingMode::Apply;
+
         // 3. Code intent with no native code/repository providers.
-        if req.intent == crate::core::query::SearchIntent::Code
-            && !any_engine_supports(&engines, |c| {
-                c.supports_code_search || c.supports_repo_filter
-            })
-        {
-            capability_warnings.push(SearchWarning::new(
-                "_system",
-                "native_code_search_unavailable: intent=code requested but no provider has native code/repository search; results are from generic text search",
-            ));
+        if let Some(warning) = native_capability_warning(
+            req.intent,
+            crate::core::query::SearchIntent::Code,
+            &engines,
+            &self.provider_ids,
+            apply_intent_routing,
+            crate::meta::routing::IntentCapability::Code,
+            "native_code_search_unavailable: intent=code requested but no provider has native code/repository search; results are from generic text search",
+        ) {
+            capability_warnings.push(warning);
         }
 
         // 4. Issues intent with no issue providers.
-        if req.intent == crate::core::query::SearchIntent::Issues
-            && !any_engine_supports(&engines, |c| c.supports_issue_search)
-        {
-            capability_warnings.push(SearchWarning::new(
-                "_system",
-                "native_issue_search_unavailable: intent=issues requested but no provider has native issue search; results are from generic text search",
-            ));
+        if let Some(warning) = native_capability_warning(
+            req.intent,
+            crate::core::query::SearchIntent::Issues,
+            &engines,
+            &self.provider_ids,
+            apply_intent_routing,
+            crate::meta::routing::IntentCapability::Issues,
+            "native_issue_search_unavailable: intent=issues requested but no provider has native issue search; results are from generic text search",
+        ) {
+            capability_warnings.push(warning);
         }
 
         // 5. Releases intent with no release providers.
-        if req.intent == crate::core::query::SearchIntent::Releases
-            && !any_engine_supports(&engines, |c| c.supports_release_search)
-        {
-            capability_warnings.push(SearchWarning::new(
-                "_system",
-                "native_release_search_unavailable: intent=releases requested but no provider has native release search; results are from generic text search",
-            ));
+        if let Some(warning) = native_capability_warning(
+            req.intent,
+            crate::core::query::SearchIntent::Releases,
+            &engines,
+            &self.provider_ids,
+            apply_intent_routing,
+            crate::meta::routing::IntentCapability::Releases,
+            "native_release_search_unavailable: intent=releases requested but no provider has native release search; results are from generic text search",
+        ) {
+            capability_warnings.push(warning);
         }
 
         // 6. Security intent with no advisory provider.
-        if req.intent == crate::core::query::SearchIntent::Security
-            && !any_engine_supports(&engines, |c| c.supports_security_search)
-        {
-            capability_warnings.push(SearchWarning::new(
-                "_system",
-                "native_advisory_search_unavailable: intent=security requested but no provider has native security advisory search; results are from generic/contextual search",
-            ));
+        if let Some(warning) = native_capability_warning(
+            req.intent,
+            crate::core::query::SearchIntent::Security,
+            &engines,
+            &self.provider_ids,
+            apply_intent_routing,
+            crate::meta::routing::IntentCapability::Security,
+            "native_advisory_search_unavailable: intent=security requested but no provider has native security advisory search; results are from generic/contextual search",
+        ) {
+            capability_warnings.push(warning);
         }
 
         // Engines still in the join_set when the deadline hit are
@@ -624,4 +639,29 @@ impl MetadataSearchAdapter {
             deadline_interrupted,
         }
     }
+}
+
+fn native_capability_warning(
+    requested: crate::core::query::SearchIntent,
+    intent: crate::core::query::SearchIntent,
+    engines: &EngineList,
+    built_provider_ids: &[String],
+    apply_intent_routing: bool,
+    capability: crate::meta::routing::IntentCapability,
+    legacy_message: &str,
+) -> Option<SearchWarning> {
+    if requested != intent {
+        return None;
+    }
+    if any_engine_supports(engines, |capabilities| capability.holds(capabilities)) {
+        return None;
+    }
+    if apply_intent_routing {
+        let excluded = crate::meta::routing::capable_built_providers(intent, built_provider_ids);
+        if let Some(message) = crate::meta::routing::capability_exclusion_warning(intent, &excluded)
+        {
+            return Some(SearchWarning::new("_system", message));
+        }
+    }
+    Some(SearchWarning::new("_system", legacy_message))
 }

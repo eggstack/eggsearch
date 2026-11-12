@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006–M009 registered, not yet planned)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -36,7 +36,7 @@ Measured or code-evidenced gaps:
 
 ## 3. Invariants and non-goals
 
-- HTML scrape engines remain first-class retrieval paths per ADR-0006. Do not replace them with API dependencies, hide them, or label them legacy. Do not implement CAPTCHA solving, anti-bot evasion, proxy rotation, or unbounded retries.
+- HTML scrape engines remain first-class retrieval paths per ADR-0006. Do not replace them with API dependencies, hide them, or label them legacy. Bounded computational challenge solving is allowed under ADR-0009 (proof-of-work only, opt-in, ceilinged); interactive CAPTCHA solving, OCR, solving services, proxy rotation, user-agent spoofing, and unbounded retries remain prohibited.
 - No Eggsearch-side inference: no embeddings, vector index, LLM reranker, generated answer, or hosted classification in any execution path. Existing opt-in semantic **providers** are unchanged upstream sources.
 - No new MCP tools, no removal or rename of existing tools, no schema-breaking change. Advertisement profiles may hide tools; hidden tools still execute.
 - Preserve stable FNV-1a IDs, RRF tie ordering unless an accepted measured change says otherwise, sanitization tiers, trust markers, per-provider attempt ledger, capability-skip semantics, deadlines, and Mode-Off remote denial.
@@ -65,6 +65,7 @@ M004 candidate snapshot benchmark
 M005 deterministic intent derivation ──> M006
 M008 tool advertisement presets (interface ADR-0001)
 M009 long-running progress and pagination (interface MCP 2026-07-28 Tasks)
+M010 challenge-solving framework + ALTCHA ──> M011 Anubis solver + difficulty ceiling ──> M012 Startpage payload extraction
 ```
 
 ## 6. Milestones and exit boundaries
@@ -76,10 +77,13 @@ M009 long-running progress and pagination (interface MCP 2026-07-28 Tasks)
 | M003 — markdown-first fetch negotiation | capability | `003-markdown-first-fetch-negotiation.md` | none | Cooperative origins return markdown; tokens drop; caching and fallback stay correct |
 | M004 — candidate snapshot ranking benchmark | infrastructure (corrective to DRQ M004) | `004-candidate-snapshot-ranking-benchmark.md` | none | `make eval-retrieval-quality` exercises the real selection path and detects a seeded regression |
 | M005 — deterministic intent derivation | infrastructure | `005-deterministic-intent-derivation.md` | none | Intent is derived from the query with fixed precedence and reported; no new required argument |
-| M006 — intent-aware provider routing | capability | not yet written | hard M004, M005 | Default routing includes intent-appropriate providers; acceptance evidence recorded before the default flips |
-| M007 — cross-result excerpt economy | capability | not yet written | hard M004 | One response-level excerpt budget with redundancy suppression and reported collapse counts |
-| M008 — tool advertisement presets | capability | not yet written | interface ADR-0001 ten-tool contract | Config-selected presets shrink `tools/list`; hidden tools still execute; `next_actions` stay callable |
-| M009 — long-running progress and pagination | infrastructure | not yet written | interface MCP 2026-07-28 Tasks extension | Bounded progress reporting and a resumable cursor for long research and fetch payloads |
+| M006 — intent-aware provider routing | capability | `plans/implementation/agentic-retrieval-integrity/006-intent-aware-provider-routing.md` | hard M004, M005 | Default routing includes intent-appropriate providers; acceptance evidence recorded before the default flips |
+| M007 — cross-result excerpt economy | capability | `plans/implementation/agentic-retrieval-integrity/007-cross-result-excerpt-economy.md` | hard M004 | One response-level excerpt budget with redundancy suppression and reported collapse counts |
+| M008 — tool advertisement presets | capability | `plans/implementation/agentic-retrieval-integrity/008-tool-advertisement-presets.md` | interface ADR-0001 ten-tool contract | Config-selected presets shrink `tools/list`; hidden tools still execute; `next_actions` stay callable |
+| M009 — long-running progress and pagination | infrastructure | `plans/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md` | interface MCP 2026-07-28 Tasks extension | Bounded progress reporting and a resumable cursor for long research and fetch payloads |
+| M010 — bounded challenge-solving framework and ALTCHA | capability | `plans/implementation/agentic-retrieval-integrity/010-challenge-solving-framework-and-altcha.md` | none (ADR-0009 accepted) | With `[search.challenge]` enabled, Mojeek returns rows inside configured ceilings; disabled, it stays `blocked` |
+| M011 — Anubis solver and operator difficulty ceiling | capability | `plans/implementation/agentic-retrieval-integrity/011-anubis-solver-and-difficulty-ceiling.md` | hard M010 | Raising `max_difficulty` is the supported way to pay for a harder challenge; the default ceiling leaves Startpage `blocked` with a named reason |
+| M012 — Startpage payload extraction | capability | `plans/implementation/agentic-retrieval-integrity/012-startpage-payload-extraction.md` | hard M011 (capture and live proof) | A solved Startpage SERP yields parsed rows; unsolved stays `blocked`, drift stays `parse_error` |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -87,9 +91,12 @@ commit carries the records, roadmap status, and registry rows together. M004's l
 measurement gate, and M005's derived-intent reranking is applied on recorded tier-1 evidence rather
 than assumed.
 
-M006–M009 are registered: M006 and M007 are dependency-ready now that M004's measurement lane
-exists, and M009 still requires confirming rmcp support for the Tasks extension before committing to
-that shape.
+M006–M009 are now planned. M006 and M007 build on M004's measurement lane and M005's derived
+intent. M009's blocking question is resolved: rmcp 3.9.0 ships the Tasks runtime
+(`TaskManager`, `ServerHandler::get_task`/`update_task`/`cancel_task`, `CallToolResponse::Task`,
+`ServerCapabilitiesBuilder::enable_tasks`) and `Peer<RoleServer>::notify_progress`, so the
+milestone plans both a core-protocol progress path and a Tasks path gated on client capability,
+with a self-describing cursor that needs no negotiation.
 
 ## 7. Cross-cutting concerns
 
@@ -107,7 +114,20 @@ Deferred without a plan: answer synthesis, embeddings, semantic local code searc
 
 ## 9. Closure and status
 
-Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-status.md` recording implementation SHA, tests and outputs, measured deltas, unchanged safety evidence, failures, and residual risk. All five records exist and name implementation candidate `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; the closure commit carries the records, roadmap status, and registry rows together. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 is corrective: it references the scraper behaviour observed at baseline and must record why the existing verification did not catch it.
+Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-status.md` recording implementation SHA, tests and outputs, measured deltas, unchanged safety evidence, failures, and residual risk. All five records exist and name implementation candidate `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; the closure commit carries the records, roadmap status, and registry rows together. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 is corrective: it references the scraper behaviour observed at baseline and must record why the existing verification did not catch it. M006–M012 are implemented and carry closure records. Each closes only through its own record,
+and M012's fixture came from a solved session rather than a guessed page shape — which is what
+exposed M011's mandatory-`redir` defect.
+
+- M006 is `conditionally closed`: routing is implemented, tested, and evidence-backed, but
+  `intent_mode` ships `off` because the tier-1 lane does not model the shipped default provider set.
+  The condition is a shipped-set measurement, not an implementation gap.
+- M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
+  registry rows all landed in a single closure commit.
+- Two plan targets were found unreachable during implementation and are recorded rather than
+  restated: M008's compact `minimal` preset is 66% of compact `full` rather than under half (the
+  remainder is mandatory schema envelope), and M011's difficulty-6 opt-in requires raising
+  `max_attempts` alongside `max_difficulty` and the timeouts because the shipped attempt default
+  matches the shipped difficulty ceiling of 5.
 
 ## 10. Recorded decisions
 
@@ -118,3 +138,4 @@ These shapes are decided for this workstream. Changing one requires a new milest
 3. **Defaults follow the happy path.** Markdown negotiation is default-on with a bounded single fallback, not an opt-in flag. Intent derivation runs without a new required argument and becomes behaviour-affecting only after snapshot non-regression.
 4. **Tools may be hidden, never removed.** Advertisement presets are a server configuration knob that filters `tools/list`; hidden tools still execute, `next_actions` are filtered to the active preset, and the ten-tool contract is unchanged.
 5. **No objective argument.** Retrieval goal is derived deterministically from the query with fixed precedence and reported reasons; callers are never required to state it.
+6. **Challenges are solved under bounds, not delegated.** ADR-0009 governs. Only published computational proof-of-work (Anubis, ALTCHA) is solvable, only when the operator enables it, and only inside the difficulty, attempt, wall-clock, and solve-rate ceilings. The difficulty ceiling is operator configuration, not a hardcoded engine constant, so the cost/availability trade is explicit. Unsolved, unsupported, and budget-exhausted challenges stay `blocked`; interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing, and retry widening stay prohibited.

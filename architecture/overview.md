@@ -334,11 +334,12 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 

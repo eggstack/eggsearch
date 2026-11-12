@@ -175,7 +175,7 @@ Every tool module follows one pipeline:
 `map_tool_result` is the single result/error boundary:
 
 - `Ok(value)` → structured success (`CallToolResult::structured`: native `structuredContent` plus a text JSON fallback for older clients).
-- `ToolError::Validation` (legacy) and `ToolError::Execution { code, message, data, repair }` → repairable `isError: true` tool result with a stable `code` and bounded `RepairHint { field, accepted[<=20], suggested_value }`. Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`. Legacy `Validation` strings are code-inferred so old call sites stay repairable without a flag day.
+- `ToolError::Validation` (legacy) and `ToolError::Execution { code, message, data, repair }` → repairable `isError: true` tool result with a stable `code` and bounded `RepairHint { field, accepted[<=20], suggested_value }`. Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `cursor_mismatch`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`. Legacy `Validation` strings are code-inferred so old call sites stay repairable without a flag day.
 - `ToolError::InvalidRequest` → JSON-RPC `invalid_params`. Reserved for shapes that cannot be interpreted at all.
 - `ToolError::Internal` → JSON-RPC `internal_error` without stack traces. Reserved for server faults.
 
@@ -230,6 +230,65 @@ The registry is tested sorted, unique, and exactly 10 entries.
 
 ## `tools/list`: Name-Sorted Advertisement + FNV Fingerprint
 
+Advertisement is a three-stage pipeline with a fixed order: contract
+metadata is applied first, then the compact schema projection, then the preset
+filter from `[mcp].tool_preset`. The `ToolRouter` is built from the unfiltered
+set, so dispatch never consults the advertised copy — this is what makes a
+hidden tool still callable. The active preset is logged once at construction as
+`mcp advertisement preset=… schema_profile=… advertised=… hidden=…`, and
+`provider_status.mcp_advertisement` reports `tool_preset`, `schema_profile`,
+`advertised_count`, `advertised_tools` and `hidden_tools`. No `tools/list._meta`
+signal is emitted, deliberately: `MetaObject` is SEP-owned and a strict client
+may reject unknown keys.
+
+`next_actions` filtering happens at the single `EggsearchServer::respond` →
+`filter_payload` seam and covers top-level `next_actions`,
+`workflow_coverage.next_actions`, `step_tools`, and `steps`/`fallbacks`. Drops
+are counted in the additive `next_actions_omitted` field, never rewritten into
+another tool, and `full` is a strict no-op. Every non-`full` preset is closed
+under `ToolContract.next_tools` by test, so a preset cannot advertise a tool
+whose follow-up suggestions name a hidden one.
+
+## Pagination, progress, and tasks
+
+`src/mcp/cursor.rs` implements a self-describing replay cursor. It is canonical
+JSON, base64url-encoded without padding, prefixed `e1.`, and capped at 512
+transport bytes:
+
+```json
+{"v":1,"t":"web_fetch","k":"<16 hex FNV-1a plan key>","p":{"ord":3,"id":"..."},"d":{"timeout_ms":8000}}
+```
+
+`k` is built from `src/core/identity.rs` primitives over a fixed field order,
+with `canonicalize_url(final_url)` included for `web_fetch`. Decode rejects
+oversize, bad base64 or padding, non-canonical JSON, unknown fields, `v != 1`,
+and malformed `k`/`id` as `budget_invalid`; a cursor whose tool or plan key does
+not match the current request is `cursor_mismatch`; a cursor whose position is no
+longer present yields `cursor_status: "stale"` with the first page and no
+`next_cursor`. There is **no server-side cursor state** — the pipeline is
+re-run and resumed after `p.id`, so no cursor can be forged into unbounded memory.
+
+Pagination is wired in `web_fetch` (chunk ordinal), `batch_fetch` (global item
+index) and `research_search` (canonical group order). A resumed call uses
+`min(recorded, requested_or_config)` for both the client timeout and the call
+deadline, so a cursor never widens the original budget.
+
+`src/mcp/progress.rs` emits progress only when the request carries
+`_meta.progressToken`. Fixed phases are `plan`, `dispatch n/m`, `extract`,
+`merge`, `group`, `project`; notifications are rate-limited to one per 250 ms,
+capped at 64 per call and 4 KiB total, carry counts only with each message
+bounded to 64 bytes of ASCII, and are spawned so they can never delay the
+response.
+
+`src/mcp/tasks.rs` exposes the MCP Tasks extension only when `[mcp.tasks]`
+`enabled` is true **and** the client declared it. `ServerHandler::get_task`,
+`update_task` and `cancel_task` forward to `rmcp::task_manager::TaskManager`;
+without it they return `method_not_found`. Eligible calls are `research_search`
+with `depth = "deep"` and `batch_fetch` with more than eight items. At
+`max_concurrent` the call silently takes the synchronous path instead of
+failing. Cancellation is cooperative through the task context. Task ids are
+transport state and never enter evidence identity.
+
 `apply_contract_metadata()` runs once at construction: for each router-generated tool it overwrites `description` and `annotations` from the contract registry, attaches the compact `outputSchema` from `output_schema.rs`, then sorts by name so `tools/list` is deterministic and cacheable across transports and protocol eras.
 
 `contract_fingerprint()` hashes canonical names, descriptions, annotations, serialized input/output schemas, and canonical discovery metadata (domain, disclosure, purpose, use-when/not-for, keywords, aliases, related/next) with FNV-1a, formatted as 16 hex chars. It changes only when the public contract changes. Clients cache by fingerprint plus server version, never by tool count; hydration state is applied after retrieving a cached base surface.
@@ -259,6 +318,7 @@ Tool behavior modules carry unit coverage in-file plus the shared `tools/tests.r
 
 - `diagnostic` — full observability payload, passthrough with no added keys.
 - `standard` — specialist research/security default surface. Keeps full `retrieval_summary`, `conflict_metadata`, `workflow_coverage`, `evidence_role_summary`, `capability_enforcement`, and fetch/cache metadata; summarizes only `routing_decision` (→ `routing_summary`) and `telemetry.routing_decision`.
+- `excerpt economy` — orthogonal to the four detail levels and applied inside `compact` and `brief` for `web_search`, `repo_search`, `research_search` and `security_search`. One response-wide ceiling (`[mcp].excerpt_budget_chars`, default 4000, range 256–32000) bounds `snippet` plus `excerpts[].text` measured in serialized characters including trust framing. Passages whose normalized 4-token shingle sets overlap by at least 0.80 collapse to the earliest occurrence, confirmed by exact shingle comparison so a hash collision can never suppress on its own; passages under four tokens compare only by exact equality. The pass is greedy and first-wins, so output order is unchanged. A top-level `excerpt_economy` object reports `budget_chars`, `considered_count`, `admitted_count`, `redundant_count`, `over_budget_count`, `clipped_count`, `chars_before` and `chars_after`, with the invariant `admitted + redundant + over_budget == considered`; a card that lost passages carries `excerpts_suppressed`. Suppression never reorders results, changes a stable ID, or drops a whole result.
 - `compact` — ordinary agent operation. Trims excerpts to 1 per card, replaces `routing_decision` with `routing_summary`, replaces `retrieval_summary`/`conflict_metadata` with `retrieval_status`/`conflict_indicator`, drops `workflow_coverage`/`telemetry`/`document`/`links`, strips per-vulnerability `references`/`details`, caps `repo_map` entries at 50. Every projection stamps `response_detail` plus an explicit truncation marker (`projection_excerpts_trimmed`, `projection_entries_truncated`, `links_omitted_in_compact`).
 - `brief` — applies compact safety reductions, then retains identity, status, trust, warnings, applicability and citation fields using explicit allowlists. Content strings remain intact when the serialized response fits the configured `[mcp].brief_max_chars` budget; only oversized responses progressively clip strings at UTF-8 character boundaries before complete result records are omitted from the tail with `returned_count`, `omitted_count`, and `output_truncated`. Oversized applicability lists use an `applicability_summary` with affected, not-affected, unknown, total and omitted counts; provider failures expose `providers_failed_summary` when records are omitted. Omitted batch failure records retain their indexes in `failed_member_indices`. Text plus overlapping focus chunks are avoided through the existing compact fetch projection. The structured result and text fallback are both brief; callers request `diagnostic` for the full diagnostic payload.
 

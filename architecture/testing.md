@@ -16,7 +16,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
-| `tests/property_*.rs` (17 suites) | Pure-function `proptest` coverage |
+| `tests/property_*.rs` (19 suites) | Pure-function `proptest` coverage |
 | `tests/dispatch_fault_injection.rs` | Provider failure/timeout/concurrency/panic |
 | `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
@@ -150,6 +150,8 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored
 | `property_render_metadata` | `TrustMarkers` merge laws, outline-reference bounds |
 | `property_local_fs`, `property_local_fs_extended` | Path joining, traversal, symlinks, root containment |
 | `property_forge_url` | Forge URL builders and credential rejection |
+| `property_cursor` | Cursor round-trip, canonical encoding, 512-byte cap, plan-key mismatch and stale classification |
+| `property_excerpt_economy` | Excerpt budget monotonicity, deterministic shingle suppression, counter identity, termination |
 | `property_conflict` | Entity-scoped conflict detectors |
 | `property_retrieval` | Attempt ledger, absence kinds, truncation evidence |
 | `property_dependency_parse` | Dependency-parse dispatch determinism, per-file budgets, identity/provenance invariants, line bounds |

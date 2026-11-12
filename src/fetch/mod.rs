@@ -24,8 +24,10 @@ pub mod pdf;
 #[cfg(feature = "pdf")]
 mod pdf_quality;
 /// Bounded PDF stream-expansion scan (requires the `pdf` Cargo feature).
+/// Internal primitive exposed for the bound property tests; not part of
+/// the stable surface described in `lib.rs`.
 #[cfg(feature = "pdf")]
-mod pdf_stream;
+pub mod pdf_stream;
 /// HTML structural rendering (blocks, text, markdown).
 pub mod render;
 /// Symbol/span-aware block expansion for `repo_fetch`.

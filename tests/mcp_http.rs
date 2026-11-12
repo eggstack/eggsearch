@@ -268,8 +268,28 @@ async fn compact_profile_is_used_by_initialized_http_tools_list() {
     )
     .await;
     assert_eq!(
-        compact_call["result"]["structuredContent"],
-        full_call["result"]["structuredContent"]
+        compact_call["result"]["structuredContent"]["mcp_advertisement"]["schema_profile"],
+        "compact"
+    );
+    assert_eq!(
+        compact_call["result"]["structuredContent"]["mcp_advertisement"]["tool_preset"],
+        "full"
+    );
+    assert_eq!(
+        full_call["result"]["structuredContent"]["mcp_advertisement"]["schema_profile"],
+        "full"
+    );
+    let mut compact_content = compact_call["result"]["structuredContent"].clone();
+    let mut full_content = full_call["result"]["structuredContent"].clone();
+    for content in [&mut compact_content, &mut full_content] {
+        content
+            .as_object_mut()
+            .expect("provider_status payload is an object")
+            .remove("mcp_advertisement");
+    }
+    assert_eq!(
+        compact_content, full_content,
+        "the schema profile must not change provider_status beyond the advertisement block"
     );
     full_server.stop().await;
     server.stop().await;
@@ -627,4 +647,156 @@ fn router_requires_loopback_options() {
         &ServeOptions::default(),
         CancellationToken::new(),
     );
+}
+
+#[tokio::test]
+async fn minimal_preset_advertises_four_tools_and_still_executes_hidden_tool() {
+    let mut config = AppConfig::default();
+    config.mcp.tool_preset = eggsearch::core::config::McpToolPreset::Minimal;
+    let server = TestServer::start_with_config(config).await;
+    let (session_id, initialize) = initialize_legacy(&server).await;
+    let instructions = initialize["result"]["instructions"]
+        .as_str()
+        .expect("initialize must carry instructions");
+    assert!(
+        !instructions.contains("provider_status"),
+        "minimal instructions must not name a hidden tool: {instructions}"
+    );
+    assert!(instructions.contains("web_search"));
+
+    let listed = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )
+        .await,
+    )
+    .await;
+    let tools = listed["result"]["tools"].as_array().unwrap();
+    let names: Vec<&str> = tools
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "batch_fetch",
+            "build_evidence_bundle",
+            "web_fetch",
+            "web_search"
+        ]
+    );
+    assert!(!names.contains(&"provider_status"));
+    assert!(listed.get("error").is_none());
+    assert!(
+        listed["result"].get("_meta").is_none(),
+        "advertisement must not add a tools/list _meta signal: {listed}"
+    );
+    assert!(tools.iter().all(|tool| tool.get("_meta").is_none()));
+
+    let hidden = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0",
+                "id":3,
+                "method":"tools/call",
+                "params":{"name":"provider_status","arguments":{"probe":false}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        hidden.get("error").is_none(),
+        "transport must not reject a hidden tool: {hidden}"
+    );
+    assert_eq!(hidden["result"]["isError"], false, "{hidden}");
+    let payload = &hidden["result"]["structuredContent"];
+    assert!(payload["providers"].is_array());
+    assert_eq!(payload["mcp_advertisement"]["tool_preset"], "minimal");
+    assert_eq!(payload["mcp_advertisement"]["schema_profile"], "full");
+    assert_eq!(
+        payload["mcp_advertisement"]["advertised_tools"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        payload["mcp_advertisement"]["hidden_tools"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    let advertised = [
+        "batch_fetch",
+        "build_evidence_bundle",
+        "web_fetch",
+        "web_search",
+    ];
+    let mut saw_summary_steps = false;
+    for recipe in payload["workflow_recipes"].as_array().expect("recipes") {
+        if let Some(step_tools) = recipe["step_tools"].as_array() {
+            for tool in step_tools {
+                let tool = tool.as_str().unwrap();
+                assert!(
+                    advertised.contains(&tool),
+                    "summary step_tools leaked hidden tool {tool}: {recipe}"
+                );
+                saw_summary_steps = true;
+            }
+        }
+    }
+    assert!(saw_summary_steps, "summary recipes must expose step_tools");
+    assert!(
+        payload["next_actions_omitted"].as_u64().unwrap() >= 1,
+        "dropped pointers must be counted: {payload}"
+    );
+
+    let full_recipes = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0",
+                "id":4,
+                "method":"tools/call",
+                "params":{
+                    "name":"provider_status",
+                    "arguments":{"probe":false,"recipe_detail":"full"}
+                }
+            }),
+        )
+        .await,
+    )
+    .await;
+    let payload = &full_recipes["result"]["structuredContent"];
+    let mut saw_steps = false;
+    for recipe in payload["workflow_recipes"].as_array().expect("recipes") {
+        for step in recipe["steps"].as_array().into_iter().flatten() {
+            let tool = step["tool"].as_str().unwrap();
+            assert!(
+                advertised.contains(&tool),
+                "full recipe steps leaked hidden tool {tool}: {recipe}"
+            );
+            saw_steps = true;
+        }
+        for fallback in recipe["fallbacks"].as_array().into_iter().flatten() {
+            let tool = fallback["tool"].as_str().unwrap();
+            assert!(
+                advertised.contains(&tool),
+                "full recipe fallbacks leaked hidden tool {tool}: {recipe}"
+            );
+        }
+    }
+    assert!(saw_steps, "full recipes must expose steps");
+    assert!(
+        payload["next_actions_omitted"].as_u64().unwrap() >= 1,
+        "dropped pointers must be counted: {payload}"
+    );
+    server.stop().await;
 }

@@ -482,3 +482,487 @@ fn provider_status_pdf_capabilities_track_feature_and_config() {
         assert_eq!(caps["ocr"], "deferred");
     }
 }
+
+#[test]
+fn provider_status_reports_active_mcp_advertisement() {
+    let cases = [
+        (
+            eggsearch::core::config::McpToolPreset::Full,
+            10usize,
+            0usize,
+        ),
+        (eggsearch::core::config::McpToolPreset::Research, 7, 3),
+        (eggsearch::core::config::McpToolPreset::Code, 8, 2),
+        (eggsearch::core::config::McpToolPreset::Minimal, 4, 6),
+    ];
+    for (preset, advertised, hidden) in cases {
+        let mut cfg = AppConfig::default();
+        cfg.mcp.tool_preset = preset;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+        let payload = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("provider status");
+        let advertisement = &payload["mcp_advertisement"];
+        assert_eq!(advertisement["tool_preset"], preset.as_str());
+        assert_eq!(advertisement["schema_profile"], "full");
+        assert_eq!(
+            advertisement["advertised_count"].as_u64().unwrap(),
+            advertised as u64,
+            "{preset:?} advertised count"
+        );
+        assert_eq!(
+            advertisement["advertised_tools"].as_array().unwrap().len(),
+            advertised,
+            "{preset:?} advertised names"
+        );
+        assert_eq!(
+            advertisement["hidden_tools"].as_array().unwrap().len(),
+            hidden,
+            "{preset:?} hidden count"
+        );
+        for name in advertisement["advertised_tools"].as_array().unwrap() {
+            assert!(
+                eggsearch::mcp::tool_contract::is_known_tool(name.as_str().unwrap()),
+                "{preset:?} advertises a non-canonical name: {name}"
+            );
+        }
+        assert!(
+            payload.get("next_actions_omitted").is_none(),
+            "provider_status builds an unfiltered payload; the response seam filters"
+        );
+    }
+}
+
+// ---- M009 long-running progress and pagination ----
+
+mod pagination {
+    use super::*;
+    use eggsearch::core::batch_fetch::BatchFetchItem;
+    use eggsearch::mcp::cursor::{CursorTool, RetrievalCursor};
+    use eggsearch::mcp::progress::ProgressSink;
+    use httpmock::prelude::*;
+
+    fn long_page_server(chars: usize) -> MockServer {
+        let server = MockServer::start();
+        let paragraph = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ";
+        let mut body = String::from("<html><body>");
+        while body.len() < chars {
+            body.push_str("<p>");
+            body.push_str(paragraph);
+            body.push_str(paragraph);
+            body.push_str("</p>");
+        }
+        body.push_str("</body></html>");
+        server.mock(move |when, then| {
+            when.method(GET).path("/long");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(body);
+        });
+        server
+    }
+
+    fn small_page_server() -> MockServer {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/small");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body("short document body");
+        });
+        server
+    }
+
+    fn fetch_args(url: String) -> WebFetchArgs {
+        WebFetchArgs {
+            cursor: None,
+            url,
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            render: None,
+            browser_profile: None,
+            response_detail: None,
+        }
+    }
+
+    fn chunk_ids(value: &serde_json::Value) -> Vec<String> {
+        value["document"]["chunks"]
+            .as_array()
+            .map(|chunks| {
+                chunks
+                    .iter()
+                    .filter_map(|chunk| chunk["chunk_id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn legacy_client_payload_has_no_cursor_keys() {
+        let server = small_page_server();
+        let state = state_with_localhost();
+        let value = run_web_fetch(state, fetch_args(server.url("/small")))
+            .await
+            .expect("fetch works");
+        assert!(value.get("next_cursor").is_none());
+        assert!(value.get("cursor_status").is_none());
+        assert!(
+            value["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("short document body"),
+            "legacy text: {}",
+            value["text"]
+        );
+        assert_eq!(value["fetched"], true);
+    }
+
+    #[tokio::test]
+    async fn web_fetch_pages_cover_every_chunk_once() {
+        let server = long_page_server(40_000);
+        let state = state_with_localhost();
+        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
+            .await
+            .expect("first page");
+        let next = first["next_cursor"]
+            .as_str()
+            .expect("first page must offer a cursor")
+            .to_string();
+        let decoded = RetrievalCursor::decode(&next).expect("cursor round-trips");
+        assert_eq!(decoded.t, CursorTool::WebFetch);
+        assert_eq!(decoded.timeout_ms(), state.config.fetch.timeout_ms);
+
+        let mut args = fetch_args(server.url("/long"));
+        args.cursor = Some(next);
+        let second = run_web_fetch(state.clone(), args)
+            .await
+            .expect("second page");
+        assert_eq!(second["cursor_status"], "ok");
+        assert!(second.get("next_cursor").is_none(), "chain must terminate");
+
+        let mut first_ids = chunk_ids(&first);
+        let second_ids = chunk_ids(&second);
+        assert!(!first_ids.is_empty() && !second_ids.is_empty());
+        assert_eq!(first_ids.len() as u64, u64::from(decoded.p.ord));
+        let before = first_ids.len();
+        first_ids.extend(second_ids);
+        first_ids.sort();
+        first_ids.dedup();
+        assert_eq!(
+            first_ids.len(),
+            before + chunk_ids(&second).len(),
+            "pages must not repeat a chunk"
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_cursor_returns_the_complete_first_page() {
+        let server = long_page_server(40_000);
+        let state = state_with_localhost();
+        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
+            .await
+            .expect("first page");
+        let next = first["next_cursor"].as_str().unwrap().to_string();
+        let mut forged = RetrievalCursor::decode(&next).unwrap();
+        forged.p.id = "chunk_ffffffffffffffff".to_string();
+        let mut args = fetch_args(server.url("/long"));
+        args.cursor = Some(forged.encode().unwrap());
+        let stale = run_web_fetch(state, args)
+            .await
+            .expect("stale is not an error");
+        assert_eq!(stale["cursor_status"], "stale");
+        assert!(stale.get("next_cursor").is_none());
+        assert_eq!(chunk_ids(&stale), chunk_ids(&first));
+    }
+
+    #[tokio::test]
+    async fn cursor_from_another_tool_is_rejected() {
+        let server = long_page_server(40_000);
+        let state = state_with_localhost();
+        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
+            .await
+            .expect("first page");
+        let next = first["next_cursor"].as_str().unwrap().to_string();
+        let mut forged = RetrievalCursor::decode(&next).unwrap();
+        forged.t = CursorTool::BatchFetch;
+        let mut args = fetch_args(server.url("/long"));
+        args.cursor = Some(forged.encode().unwrap());
+        let error = run_web_fetch(state, args).await.expect_err("mismatch");
+        assert_eq!(error.code().as_str(), "cursor_mismatch");
+    }
+
+    #[tokio::test]
+    async fn cursor_for_another_request_is_rejected() {
+        let server = long_page_server(40_000);
+        let state = state_with_localhost();
+        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
+            .await
+            .expect("first page");
+        let next = first["next_cursor"].as_str().unwrap().to_string();
+        let mut args = fetch_args(server.url("/long"));
+        args.max_chars = Some(4_096);
+        args.cursor = Some(next);
+        let error = run_web_fetch(state, args)
+            .await
+            .expect_err("plan key mismatch");
+        assert_eq!(error.code().as_str(), "cursor_mismatch");
+    }
+
+    #[tokio::test]
+    async fn oversized_and_malformed_cursors_are_rejected() {
+        let server = small_page_server();
+        let state = state_with_localhost();
+        let mut args = fetch_args(server.url("/small"));
+        args.cursor = Some("A".repeat(600));
+        let error = run_web_fetch(state.clone(), args)
+            .await
+            .expect_err("oversize");
+        assert_eq!(error.code().as_str(), "budget_invalid");
+
+        let mut args = fetch_args(server.url("/small"));
+        args.cursor = Some("e1.not-base64!!".to_string());
+        let error = run_web_fetch(state, args).await.expect_err("malformed");
+        assert_eq!(error.code().as_str(), "budget_invalid");
+    }
+
+    #[tokio::test]
+    async fn progress_token_never_changes_the_payload() {
+        let server = long_page_server(40_000);
+        let state = state_with_localhost();
+        let mut bypass = fetch_args(server.url("/long"));
+        bypass.cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::Bypass);
+        let plain = run_web_fetch(state.clone(), bypass.clone())
+            .await
+            .expect("plain fetch");
+        let mut sink = ProgressSink::for_test(rmcp::model::ProgressToken(
+            rmcp::model::NumberOrString::String("progress-token".into()),
+        ));
+        let observed = eggsearch::mcp::tools::run_web_fetch_with_progress(state, bypass, &mut sink)
+            .await
+            .expect("fetch with progress");
+        assert!(sink.is_enabled());
+        assert!(sink.emitted_count() >= 1);
+        assert_eq!(plain, observed);
+    }
+
+    fn batch_items(server: &MockServer, count: usize) -> Vec<BatchFetchItem> {
+        (0..count)
+            .map(|index| BatchFetchItem::Web {
+                url: server.url(format!("/item{index}")),
+                extract_mode: None,
+                include_links: None,
+                max_chars: None,
+                cache_policy: None,
+                max_cache_age_seconds: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn batch_fetch_pages_every_item_once() {
+        let server = MockServer::start();
+        for index in 0..10 {
+            server.mock(move |when, then| {
+                when.method(GET).path(format!("/item{index}"));
+                then.status(200)
+                    .header("content-type", "text/plain")
+                    .body(format!("body {index}"));
+            });
+        }
+        let state = state_with_localhost();
+        let mut args = BatchFetchArgs {
+            cursor: None,
+            items: batch_items(&server, 10),
+            max_items: Some(4),
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+            response_detail: None,
+        };
+        let mut seen: Vec<u64> = Vec::new();
+        let mut pages = 0;
+        loop {
+            let value = run_batch_fetch(state.clone(), args.clone())
+                .await
+                .expect("batch page");
+            pages += 1;
+            for result in value["results"].as_array().expect("results") {
+                seen.push(result["index"].as_u64().expect("index"));
+            }
+            let Some(next) = value["next_cursor"].as_str().map(str::to_string) else {
+                break;
+            };
+            args.cursor = Some(next);
+        }
+        assert_eq!(seen, (0..10u64).collect::<Vec<_>>());
+        assert_eq!(pages, 3);
+    }
+
+    #[tokio::test]
+    async fn batch_fetch_above_page_capacity_still_terminates() {
+        let server = MockServer::start();
+        for index in 0..20 {
+            server.mock(move |when, then| {
+                when.method(GET).path(format!("/item{index}"));
+                then.status(200)
+                    .header("content-type", "text/plain")
+                    .body(format!("body {index}"));
+            });
+        }
+        let state = state_with_localhost();
+        let mut args = BatchFetchArgs {
+            cursor: None,
+            items: batch_items(&server, 20),
+            max_items: Some(3),
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+            response_detail: None,
+        };
+        let mut seen: Vec<u64> = Vec::new();
+        for _ in 0..16 {
+            let value = run_batch_fetch(state.clone(), args.clone())
+                .await
+                .expect("batch page");
+            for result in value["results"].as_array().expect("results") {
+                seen.push(result["index"].as_u64().expect("index"));
+            }
+            match value["next_cursor"].as_str() {
+                Some(next) => args.cursor = Some(next.to_string()),
+                None => break,
+            }
+        }
+        assert_eq!(seen, (0..20u64).collect::<Vec<_>>());
+    }
+
+    #[tokio::test]
+    async fn batch_fetch_cursor_mismatch_is_typed() {
+        let server = long_page_server(40_000);
+        let state = state_with_localhost();
+        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
+            .await
+            .expect("first page");
+        let cursor = first["next_cursor"].as_str().unwrap().to_string();
+        let small = small_page_server();
+        let args = BatchFetchArgs {
+            cursor: Some(cursor),
+            items: batch_items(&small, 1),
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+            response_detail: None,
+        };
+        let error = run_batch_fetch(state, args).await.expect_err("mismatch");
+        assert_eq!(error.code().as_str(), "cursor_mismatch");
+    }
+}
+
+#[cfg(feature = "mock")]
+mod research_pagination {
+    use super::*;
+    use eggsearch::mcp::cursor::RetrievalCursor;
+    use eggsearch::mcp::tools::{run_research_search, ResearchSearchArgs};
+
+    fn research_args(query: &str, max_groups: Option<usize>) -> ResearchSearchArgs {
+        ResearchSearchArgs {
+            cursor: None,
+            query: query.to_string(),
+            max_groups,
+            providers: vec!["mock_a".to_string()],
+            ..ResearchSearchArgs::default()
+        }
+    }
+
+    fn multi_group_state() -> (Arc<ServerState>, Vec<&'static str>) {
+        let results = vec![
+            MockResult::new(
+                "Tokio docs",
+                "https://docs.rs/tokio/latest/tokio/",
+                "mock_a",
+            ),
+            MockResult::new(
+                "Tokio source",
+                "https://github.com/tokio-rs/tokio/blob/master/README.md",
+                "mock_a",
+            ),
+            MockResult::new(
+                "Tokio issue",
+                "https://github.com/tokio-rs/tokio/issues/1234",
+                "mock_a",
+            ),
+            MockResult::new(
+                "Tokio discussion",
+                "https://news.ycombinator.com/item?id=1",
+                "mock_a",
+            ),
+            MockResult::new(
+                "HTTP semantics",
+                "https://www.ietf.org/rfc/rfc9110.html",
+                "mock_a",
+            ),
+        ];
+        let engines = vec![MockEngine::success("mock_a", results)];
+        let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+        (state, Vec::new())
+    }
+
+    #[tokio::test]
+    async fn research_search_pages_groups_without_gap_or_duplication() {
+        let (state, _) = multi_group_state();
+        let mut args = research_args("tokio runtime", Some(2));
+        let mut labels: Vec<String> = Vec::new();
+        let mut pages = 0;
+        for _ in 0..8 {
+            let value = run_research_search(state.clone(), args.clone())
+                .await
+                .expect("research page");
+            pages += 1;
+            for group in value["groups"].as_array().expect("groups") {
+                labels.push(group["label"].as_str().unwrap_or_default().to_string());
+            }
+            match value["next_cursor"].as_str() {
+                Some(next) => {
+                    RetrievalCursor::decode(next).expect("cursor round-trips");
+                    args.cursor = Some(next.to_string());
+                }
+                None => break,
+            }
+        }
+        assert!(pages > 1, "multiple groups must paginate: {labels:?}");
+        let unique: std::collections::BTreeSet<&String> = labels.iter().collect();
+        assert_eq!(
+            labels.len(),
+            unique.len(),
+            "no group may repeat: {labels:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn research_search_wide_max_groups_is_single_page() {
+        let (state, _) = multi_group_state();
+        let value = run_research_search(state, research_args("tokio runtime", None))
+            .await
+            .expect("research page");
+        assert!(value.get("next_cursor").is_none());
+    }
+}

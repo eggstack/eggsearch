@@ -11,13 +11,14 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
 cache_ttl_seconds = 300
 cache_max_entries = 128
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -47,6 +48,8 @@ config file:
 [mcp]
 schema_profile = "compact"
 brief_max_chars = 8000
+excerpt_budget_chars = 4000
+tool_preset = "full"
 ```
 
 Compact mode keeps all ten tool names and required inputs, trims optional
@@ -62,6 +65,45 @@ are also counted. The structured result and text fallback are both brief.
 Switch to `schema_profile = "full"` for complete
 schema guidance and the existing diagnostic-by-default response behavior.
 
+`tool_preset` selects how many tools `tools/list` advertises. It defaults to
+`full` and accepts `full`, `research`, `code`, or `minimal`; any other value is
+a parse error naming the four accepted values. Resolution order is fixed:
+contract metadata, then compact schema projection, then the preset filter.
+`tool_preset` never changes the `response_detail` default — that stays
+`schema_profile`'s job, and `full` plus `full` is byte-identical to the
+pre-capability advertisement.
+
+| Preset | Tools advertised |
+|--------|------------------|
+| `full` | all ten |
+| `research` | `provider_status`, `web_search`, `web_fetch`, `research_search`, `repo_fetch`, `batch_fetch`, `build_evidence_bundle` |
+| `code` | `provider_status`, `web_search`, `web_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle` |
+| `minimal` | `web_search`, `web_fetch`, `batch_fetch`, `build_evidence_bundle` |
+
+Hidden tools are hidden from `tools/list` only. They still execute when called
+directly, their argument schemas are unchanged, and no tool is removed or
+renamed. `next_actions` are filtered to the active preset so a model is never
+pointed at a tool it cannot see; each drop is counted in `next_actions_omitted`
+rather than rewriting the suggestion. Measured advertisement sizes (full /
+compact serialized bytes): `full` 73,161 / 19,611; `research` 65,560 / 16,498;
+`code` 68,429 / 16,820; `minimal` 57,985 / 13,116. The compact `minimal`
+preset is 66% of the compact `full` size — the remainder is mandatory schema
+envelope, so no preset reaches half without a schema change.
+
+`excerpt_budget_chars` defaults to 4,000 and must be between 256 and 32,000.
+It is one response-wide ceiling on card passage text — `snippet` plus
+`excerpts[].text` — measured in serialized characters including the
+`<<<EXTERNAL_UNTRUSTED …>>>` framing, not a per-card cap and not a token
+count. It applies to `compact` and `brief` only; `standard` and `diagnostic`
+responses are unchanged. Within the budget, passages whose normalized token
+shingles overlap by at least 0.80 collapse to the earliest occurrence, so an
+identical snippet repeated across results is not paid for twice. The response
+reports the outcome in a top-level `excerpt_economy` object
+(`budget_chars`, `considered_count`, `admitted_count`, `redundant_count`,
+`over_budget_count`, `clipped_count`, `chars_before`, `chars_after`), and a
+card whose passages were removed carries `excerpts_suppressed`. Suppression
+never reorders results, changes a stable ID, or drops a whole result.
+
 ## Provider Requirements
 
 All 44 built-in providers:
@@ -69,8 +111,8 @@ All 44 built-in providers:
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
 | `duckduckgo` | html_scrape | — | Default generic provider |
-| `brave` | html_scrape | — | |
-| `startpage` | html_scrape | — | Default generic provider |
+| `brave` | html_scrape | — | Default generic provider |
+| `startpage` | html_scrape | — | Selectable; upstream Anubis proof-of-work wall currently refuses every request |
 | `yahoo` | html_scrape | — | Default generic provider |
 | `mojeek` | html_scrape | — | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
@@ -122,7 +164,7 @@ The `Kind` column is the `provider_status` `kind` field. `structured_api` was ad
 The shipped generic search defaults require no API keys:
 
 - `duckduckgo`
-- `startpage`
+- `brave`
 - `yahoo`
 
 Other built-in providers can be enabled explicitly. Credentialed providers
@@ -144,6 +186,151 @@ Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`
 
 `repo_search` canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) selects workflow coverage; `goal = "debug"` enables exact-error behavior. Legacy `mode = "exact_error"`, `profile`, `workflow`, and `include_*` booleans remain accepted for backward compatibility.
 
+## Intent-Aware Provider Routing
+
+`web_search` already derives a retrieval intent from the query. Routing can use
+that intent to add specialist providers to the default candidate set — for
+example asking `osv` and `rustsec` on a security query, or `github_code` on a
+code query. Routing only **adds**: it never removes, reorders, or displaces an
+explicitly requested provider, a profile's providers, or the shipped default
+list.
+
+```toml
+[search.routing]
+intent_mode = "off"       # "off" | "apply"
+max_extra_providers = 2   # 0..=4
+```
+
+| Setting | Default | Bounds | Meaning |
+|---------|---------|--------|---------|
+| `intent_mode` | `off` | `off`, `apply` | `off` derives and reports the intent plus the routing decision but adds nothing. `apply` admits the intent's preferred providers. |
+| `max_extra_providers` | `2` | `0`–`4` | Cap on providers added by one routing decision. `0` reports without adding. |
+
+Precedence is fixed: an explicit `providers` argument wins, then a supplied
+`profile`, then the default path plus intent additions, then the existing
+cooldown and health filter.
+
+| Derived intent | Preferred providers, in order | Capability each must declare |
+|---|---|---|
+| `web`, `docs` | none | — |
+| `code` | `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph` | declares code-search or repository-filter support |
+| `issues` | `github_issues`, `gitlab_issues`, `gitea_issues`, `firecrawl_developer` | declares issue-search support |
+| `releases` | `github_releases`, `gitlab_releases`, `gitea_releases` | declares release-search support |
+| `security` | `osv`, `github_advisory`, `nvd` | declares security-search support |
+| `news` | `tavily`, `brave_api` | declares news support |
+
+`rustsec` is deliberately absent from the `security` row: it serves advisory-ID lookup only, so a routed keyword query would always fail as an unsupported operation rather than return evidence.
+
+A candidate is admitted only when it is enabled in `[search.providers]`, was
+actually built into the engine set, is not cooling down, and satisfies the
+capability predicate for its table row. Each disposition is reported in
+`provider_status` as `added`, `already_selected`, `not_enabled`, `not_built`,
+`cooling_down`, `capability_missing`, or `cap_exceeded`. A candidate excluded
+for capability reasons emits the `intent_routing_capability_excluded` warning
+rather than being silently dropped.
+
+`intent_mode` ships `off`. The `apply` default requires tier-1 snapshot
+non-regression measured against the shipped default provider set; that
+measurement does not yet exist, so enabling it is an explicit operator choice.
+
+## Pagination, Progress, and Tasks
+
+Long-running reads can return a resumable page instead of a truncated payload.
+
+```toml
+[mcp.tasks]
+enabled = false
+ttl_ms = 300000
+max_concurrent = 4
+poll_interval_ms = 1000
+```
+
+| Setting | Default | Bounds | Meaning |
+|---------|---------|--------|---------|
+| `enabled` | `false` | — | Exposes the MCP Tasks extension to clients that negotiate it. While off, every long call runs synchronously. |
+| `ttl_ms` | `300000` | `1000`–`3600000` | Lifetime of a task record held in process memory. |
+| `max_concurrent` | `4` | `1`–`16` | Concurrent task cap. Above it, a call silently falls back to the synchronous path — never an error. |
+| `poll_interval_ms` | `1000` | `250`–`10000` | Suggested client polling interval reported with a task. |
+
+**Pagination** is always available and needs no configuration. `web_fetch`,
+`batch_fetch`, and `research_search` may return `next_cursor` alongside the
+payload. Passing it back as `cursor` resumes after the last delivered item. The
+cursor is a self-describing `e1.` base64url token capped at 512 bytes; it carries
+a version, the tool, an FNV-1a plan key over the canonical request, and the last
+delivered ordinal plus id. Nothing is stored server-side, so the server re-runs
+the same bounded pipeline and resumes after that id.
+
+Two failure modes are explicit rather than silent: a cursor whose plan key does
+not match the current request is `cursor_mismatch`, and a cursor whose position
+is no longer present is `cursor_status: "stale"` with the first page returned and
+no `next_cursor`. A malformed or oversized cursor is `budget_invalid`. A resumed
+call never widens the original deadline — it uses `min(recorded, requested)`.
+
+**Progress** is emitted only when the client supplies a progress token. It is
+rate-limited to one notification per 250 ms, capped at 64 notifications and
+4 KiB per call, carries counts rather than content, and is sent without ever
+delaying the response.
+
+**Tasks** require the client to declare the extension; otherwise the call stays
+synchronous. Cancellation is cooperative. Task ids are transport state and never
+enter evidence identity.
+
+## Challenge Solving
+
+Some keyless upstreams answer a request with a computational proof-of-work
+challenge instead of results. ADR-0009 permits solving those in-process and
+permits nothing else: no interactive CAPTCHA, image puzzle, OCR, human or
+third-party solving service, credential bypass, proxy rotation, or
+user-agent spoofing. The capability is off by default.
+
+```toml
+[search.challenge]
+enabled = false           # operator opt-in
+max_difficulty = 5        # Anubis ceiling; difficulty 6 is ~16.8M candidates
+max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
+timeout_ms = 2000         # wall-clock ceiling per solve
+cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
+```
+
+| Setting | Default | Bounds | Meaning |
+|---------|---------|--------|---------|
+| `enabled` | `false` | — | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
+| `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. |
+| `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
+| `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
+| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long a pass cookie is reused for that provider. `0` disables reuse, so every request re-solves. |
+
+Two upstreams use this gate. `mojeek` publishes an ALTCHA challenge
+(`PBKDF2/SHA-256`, cost 8000); a captured live challenge resolved at counter
+291 in roughly 0.4 s. `startpage` publishes an Anubis `fast` challenge whose
+difficulty is risk-scored per client: the honest `eggsearch` user agent
+received difficulty 6 while a browser user agent received 4. Expected cost is
+`16^difficulty` SHA-256 candidates. A measured difficulty-6 solve took 23.07M
+candidates in 3.05 s on one core in a release build; difficulty 5 is roughly
+1.05M candidates and difficulty 4 roughly 65.5K. Debug builds are about two
+orders of magnitude slower and are not a valid baseline. Raising
+`max_difficulty` to 6 therefore also requires raising `max_attempts`, whose
+2,000,000 default matches the default ceiling of 5, plus `timeout_ms` and
+`[search].timeout_ms` of at least 8000.
+
+The solve is probabilistic: the nonce is uniform, so an attempt can legitimately
+reach `max_attempts` without a hit and report `blocked` with
+`challenge not solved: attempts exhausted`. At roughly twice the expected work
+about one attempt in seven does; a later call usually succeeds. Treat it as a
+retryable provider condition, not a defect.
+
+Solving is attempted at most once per provider per search request and reused
+for `cookie_ttl_seconds`. Pass cookies (`chllg`, `spchal-auth`) are held in
+process memory only, are never written to disk, and never appear in logs,
+`provider_status`, diagnostics, or fixtures. A challenged provider that is
+disabled, above the ceiling, unsupported, or out of budget still reports
+`error_class: blocked` with a reason naming the bound — never an empty result.
+A solved page that fails to parse is `parse_error`, not `blocked`.
+
+Raising `max_difficulty` does not by itself make `startpage` return rows: its
+result extraction needs the payload parser described in
+`architecture/engines.md` § Challenge solving.
+
 ## Provider Profiles
 
 All profiles are advisory routing preferences. Unavailable providers are skipped with warnings, never errors. **Profiles never require API keys to produce useful results.** Missing optional credentials result in provider-scoped skips and degraded coverage, not request failure.
@@ -159,11 +346,12 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -194,10 +382,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -217,10 +406,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["osv", "duckduckgo", "startpage"]
+default_providers = ["osv", "duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 osv = true
 ```
@@ -236,10 +426,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage"]
+default_providers = ["duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 ```
 
@@ -254,10 +445,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["github_code", "github_issues", "github_releases", "duckduckgo", "startpage"]
+default_providers = ["github_code", "github_issues", "github_releases", "duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = false
 mojeek = false
@@ -290,10 +482,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["osv", "duckduckgo", "startpage"]
+default_providers = ["osv", "duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 osv = true
 
@@ -313,10 +506,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["brave_api", "searxng", "duckduckgo", "startpage", "mojeek"]
+default_providers = ["brave_api", "searxng", "duckduckgo", "brave", "mojeek"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 mojeek = true
 searxng = true

@@ -99,6 +99,7 @@ fn repo_args_multi(providers: &[&str], query: &str) -> RepoSearchArgs {
 
 fn research_args(query: &str) -> ResearchSearchArgs {
     ResearchSearchArgs {
+        cursor: None,
         query: query.to_string(),
         providers: vec!["mock_a".into()],
         ..Default::default()
@@ -844,6 +845,7 @@ async fn corpus_research_architecture_decision() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "Rust web framework architecture decision axum vs actix-web".into(),
         workflow: Some("architecture_decision".into()),
         depth: Some("standard".into()),
@@ -900,6 +902,7 @@ async fn corpus_research_library_comparison() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "compare axum vs actix-web for REST API".into(),
         workflow: Some("library_comparison".into()),
         compare_targets: vec!["axum".into(), "actix-web".into()],
@@ -936,6 +939,7 @@ async fn corpus_research_counterpoints_gap_detection() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "tokio vs async-std async runtime".into(),
         include_counterpoints: Some(true),
         providers: vec!["mock_a".into()],
@@ -2069,6 +2073,7 @@ async fn corpus_batch_fetch_returns_structured_results() {
 
     let base = server.base_url();
     let args = BatchFetchArgs {
+        cursor: None,
         items: vec![
             BatchFetchItem::Web {
                 url: format!("{base}/page1.html"),
@@ -2144,6 +2149,7 @@ async fn corpus_batch_fetch_handles_mixed_success_failure() {
 
     let base = server.base_url();
     let args = BatchFetchArgs {
+        cursor: None,
         items: vec![
             BatchFetchItem::Web {
                 url: format!("{base}/ok.html"),
@@ -2458,6 +2464,7 @@ async fn corpus_research_performance_investigation() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "tokio vs async-std async runtime performance benchmarks".into(),
         workflow: Some("performance_investigation".into()),
         depth: Some("standard".into()),
@@ -2497,6 +2504,7 @@ async fn corpus_research_security_review() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "axum web framework security review CSRF authentication".into(),
         workflow: Some("security_review".into()),
         depth: Some("standard".into()),
@@ -2532,6 +2540,7 @@ async fn corpus_research_migration_planning() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "axum migration from 0.6 to 0.7 breaking changes".into(),
         workflow: Some("migration_planning".into()),
         depth: Some("standard".into()),
@@ -2563,6 +2572,7 @@ async fn corpus_research_ecosystem_survey() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "Rust web framework ecosystem 2024 axum actix-web rocket".into(),
         workflow: Some("ecosystem_survey".into()),
         depth: Some("standard".into()),
@@ -2606,6 +2616,7 @@ async fn corpus_ranking_research_prioritizes_official_docs() {
     )];
     let state = state_with(corpus_cfg(), engines, Duration::from_secs(5));
     let args = ResearchSearchArgs {
+        cursor: None,
         query: "axum official documentation and API reference".into(),
         include_primary_sources: Some(true),
         desired_source_types: vec!["official_docs".into()],

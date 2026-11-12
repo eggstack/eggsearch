@@ -255,6 +255,7 @@ pub async fn run_security_search(
         &state.config,
         state.adapter.health(),
         true,
+        None,
     )
     .map_err(|e| ToolError::Validation(e.to_string()))?;
 
@@ -298,10 +299,13 @@ pub async fn run_security_search(
         args.response_detail,
         state.config.mcp.schema_profile,
     );
-    Ok(crate::mcp::projection::project_with_budget(
+    Ok(crate::mcp::projection::project_with_limits(
         "security_search",
         value,
         detail,
-        state.config.mcp.brief_max_chars,
+        crate::mcp::projection::ProjectionLimits {
+            brief_max_chars: state.config.mcp.brief_max_chars,
+            excerpt_budget_chars: state.config.mcp.excerpt_budget_chars,
+        },
     ))
 }

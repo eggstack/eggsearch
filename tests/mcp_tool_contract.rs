@@ -593,3 +593,193 @@ fn compact_profile_advertises_all_tools_with_smaller_stable_contract() {
         );
     }
 }
+
+fn preset_server(
+    preset: eggsearch::core::config::McpToolPreset,
+    profile: eggsearch::core::config::McpSchemaProfile,
+) -> eggsearch::mcp::EggsearchServer {
+    let mut config = AppConfig::default();
+    config.mcp.tool_preset = preset;
+    config.mcp.schema_profile = profile;
+    let state = Arc::new(eggsearch::mcp::ServerState::build(config).expect("preset state"));
+    eggsearch::mcp::EggsearchServer::new(state)
+}
+
+fn advertised_names(server: &eggsearch::mcp::EggsearchServer) -> Vec<String> {
+    server
+        .tool_definitions()
+        .iter()
+        .map(|tool| tool.name.to_string())
+        .collect()
+}
+
+#[test]
+fn advertisement_presets_select_exact_name_subsets() {
+    use eggsearch::core::config::McpToolPreset;
+
+    let expected = [
+        (
+            McpToolPreset::Research,
+            vec![
+                "batch_fetch",
+                "build_evidence_bundle",
+                "provider_status",
+                "repo_fetch",
+                "research_search",
+                "web_fetch",
+                "web_search",
+            ],
+        ),
+        (
+            McpToolPreset::Code,
+            vec![
+                "batch_fetch",
+                "build_evidence_bundle",
+                "provider_status",
+                "repo_fetch",
+                "repo_map",
+                "repo_search",
+                "web_fetch",
+                "web_search",
+            ],
+        ),
+        (
+            McpToolPreset::Minimal,
+            vec![
+                "batch_fetch",
+                "build_evidence_bundle",
+                "web_fetch",
+                "web_search",
+            ],
+        ),
+    ];
+    let canonical: HashSet<&str> = tool_contract::ALL_CONTRACTS
+        .iter()
+        .map(|c| c.name)
+        .collect();
+    for (preset, names) in expected {
+        let server = preset_server(preset, eggsearch::core::config::McpSchemaProfile::Full);
+        assert_eq!(server.tool_preset(), preset);
+        let advertised = advertised_names(&server);
+        assert_eq!(advertised, names, "{preset:?} advertisement");
+        let mut sorted = advertised.clone();
+        sorted.sort();
+        assert_eq!(advertised, sorted, "{preset:?} must stay name-sorted");
+        for name in &advertised {
+            assert!(canonical.contains(name.as_str()), "{preset:?}: {name}");
+        }
+        let routed = server.routed_tool_names();
+        assert_eq!(
+            routed.len(),
+            10,
+            "{preset:?} must keep all ten tools registered for dispatch: {routed:?}"
+        );
+        for name in &advertised {
+            assert!(
+                routed.contains(name),
+                "{preset:?} advertises unroutable tool {name}"
+            );
+        }
+    }
+    let full = preset_server(
+        McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Full,
+    );
+    assert_eq!(advertised_names(&full).len(), 10);
+}
+
+#[test]
+fn full_preset_advertisement_is_byte_identical_to_the_pre_change_surface() {
+    let server = preset_server(
+        eggsearch::core::config::McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Full,
+    );
+    assert_eq!(
+        server.tool_fingerprint(),
+        "1c187545a3bf85de",
+        "the full+full advertisement fingerprint must not change"
+    );
+    let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
+    assert_eq!(
+        bytes.len(),
+        73_417,
+        "the full+full advertised tools/list bytes must not change"
+    );
+    let compact = preset_server(
+        eggsearch::core::config::McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Compact,
+    );
+    assert_eq!(compact.tool_fingerprint(), "75b732f7f19c24f7");
+    assert_eq!(
+        serde_json::to_string(&compact.tool_definitions())
+            .unwrap()
+            .len(),
+        19_818
+    );
+}
+
+#[test]
+fn presets_yield_distinct_stable_fingerprints() {
+    use eggsearch::core::config::{McpSchemaProfile, McpToolPreset};
+
+    let mut fingerprints = HashSet::new();
+    for preset in [
+        McpToolPreset::Full,
+        McpToolPreset::Research,
+        McpToolPreset::Code,
+        McpToolPreset::Minimal,
+    ] {
+        let first = preset_server(preset, McpSchemaProfile::Full);
+        let second = preset_server(preset, McpSchemaProfile::Full);
+        assert_eq!(
+            first.tool_fingerprint(),
+            second.tool_fingerprint(),
+            "{preset:?} fingerprint must be deterministic"
+        );
+        assert!(
+            fingerprints.insert(first.tool_fingerprint()),
+            "{preset:?} fingerprint must be distinct"
+        );
+    }
+    assert_eq!(fingerprints.len(), 4);
+}
+
+#[test]
+fn preset_advertisement_bytes_shrink_against_full() {
+    use eggsearch::core::config::{McpSchemaProfile, McpToolPreset};
+
+    let measure = |preset: McpToolPreset, profile: McpSchemaProfile| {
+        let server = preset_server(preset, profile);
+        serde_json::to_string(&server.tool_definitions())
+            .expect("tools serialize")
+            .len()
+    };
+    let mut full_compact = 0usize;
+    let mut minimal_compact = 0usize;
+    for profile in [McpSchemaProfile::Full, McpSchemaProfile::Compact] {
+        let full = measure(McpToolPreset::Full, profile);
+        let research = measure(McpToolPreset::Research, profile);
+        let code = measure(McpToolPreset::Code, profile);
+        let minimal = measure(McpToolPreset::Minimal, profile);
+        println!(
+            "preset-bytes schema_profile={:?} full={full} research={research} code={code} minimal={minimal}",
+            profile
+        );
+        assert!(
+            research < full && code < full && minimal < full,
+            "{profile:?}: every preset must shrink against full: {full} {research} {code} {minimal}"
+        );
+        assert!(
+            minimal < research && minimal < code,
+            "{profile:?}: minimal must be the smallest preset"
+        );
+        if profile == McpSchemaProfile::Compact {
+            full_compact = full;
+            minimal_compact = minimal;
+        }
+    }
+    println!(
+        "preset-bytes-ratio minimal_compact_percent_of_full_compact={}",
+        (minimal_compact * 100) / full_compact
+    );
+}

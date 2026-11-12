@@ -13,10 +13,7 @@ const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 const SHAPE: ScrapeShape = ScrapeShape {
     result_container: "div.algo-sr",
-    empty_markers: &[
-        PageMarker::Selector("div.dd.algo"),
-        PageMarker::Text("We did not find results for"),
-    ],
+    empty_markers: &[PageMarker::Text("We did not find results for")],
     blocked_markers: &[PageMarker::Text("Before you continue to Yahoo")],
 };
 
@@ -240,5 +237,21 @@ mod tests {
         let results = parse(html, 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://valid.com");
+    }
+
+    #[test]
+    fn test_drifted_result_container_is_parse_failed_not_empty() {
+        let html = r#"
+            <div class="dd fst algo algo-sr relsrch Sr">
+                <div class="compTitleRenamed">
+                    <a href="https://rust-lang.org/"><h3><span>Rust</span></h3></a>
+                </div>
+            </div>
+        "#;
+        let err = parse(html, 10).expect_err("a result container with no parseable row is drift");
+        assert!(
+            matches!(err, EngineError::ParseFailed { .. }),
+            "unexpected error: {err:?}"
+        );
     }
 }

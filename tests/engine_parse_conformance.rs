@@ -1,8 +1,9 @@
 #![cfg(feature = "mock")]
 //! Captured-fixture conformance for the five HTML search scrapers.
 //!
-//! Each engine must distinguish three outcomes from captured markup:
-//! parsed rows, an explicit empty state, and a structural parse failure.
+//! Each engine must distinguish four outcomes from captured markup:
+//! parsed rows, an explicit empty state, a blocked page, and a structural
+//! parse failure.
 //! A seeded drift case renames the result container and requires
 //! `EngineError::ParseFailed` instead of a bare empty result.
 
@@ -15,7 +16,7 @@ struct Case {
     provider: &'static str,
     first_title: &'static str,
     first_url: &'static str,
-    container_hint: &'static str,
+    drift_hint: &'static str,
     drift_from: &'static str,
     drift_to: &'static str,
 }
@@ -25,7 +26,7 @@ const CASES: [Case; 5] = [
         provider: "brave",
         first_title: "Rust Programming Language",
         first_url: "https://rust-lang.org/en-US/",
-        container_hint: "div[data-type='web']",
+        drift_hint: "div[data-type='web']",
         drift_from: "data-type=\"web\"",
         drift_to: "data-type=\"webs\"",
     },
@@ -33,7 +34,7 @@ const CASES: [Case; 5] = [
         provider: "duckduckgo",
         first_title: "Rust Programming Language",
         first_url: "https://www.rust-lang.org/",
-        container_hint: "div.result",
+        drift_hint: "div.result",
         drift_from: "class=\"result ",
         drift_to: "class=\"result-renamed ",
     },
@@ -41,23 +42,23 @@ const CASES: [Case; 5] = [
         provider: "mojeek",
         first_title: "Rust Programming Language",
         first_url: "https://www.rust-lang.org/",
-        container_hint: "results-standard",
+        drift_hint: "results-standard",
         drift_from: "class=\"results-standard\"",
         drift_to: "class=\"results-standard-renamed\"",
     },
     Case {
         provider: "startpage",
         first_title: "Rust Programming Language",
-        first_url: "https://www.rust-lang.org/",
-        container_hint: "div.result",
-        drift_from: "class=\"result css-o7i03b\"",
-        drift_to: "class=\"result-renamed css-o7i03b\"",
+        first_url: "https://www.rust-lang.org/en-US",
+        drift_hint: "payload",
+        drift_from: "\"clickUrl\"",
+        drift_to: "\"destinationUrl\"",
     },
     Case {
         provider: "yahoo",
         first_title: "Rust Programming Language",
         first_url: "https://www.rust-lang.org/",
-        container_hint: "div.algo-sr",
+        drift_hint: "div.algo-sr",
         drift_from: "class=\"algo-sr\"",
         drift_to: "class=\"algo-sr-renamed\"",
     },
@@ -169,10 +170,10 @@ fn seeded_drift_reports_parse_failed() {
             EngineError::ParseFailed { engine, reason } => {
                 assert_eq!(engine, case.provider, "drift engine id");
                 assert!(
-                    reason.contains(case.container_hint),
-                    "{} drift reason must name the container {:?}, got: {reason}",
+                    reason.contains(case.drift_hint),
+                    "{} drift reason must name the drifted shape {:?}, got: {reason}",
                     case.provider,
-                    case.container_hint
+                    case.drift_hint
                 );
             }
             other => panic!(

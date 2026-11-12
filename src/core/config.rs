@@ -93,39 +93,6 @@ pub enum Mode {
     Live,
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "lowercase")]
-#[allow(missing_docs)]
-pub enum McpSchemaProfile {
-    #[default]
-    Full,
-    Compact,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct McpSection {
-    #[serde(default)]
-    pub schema_profile: McpSchemaProfile,
-    #[serde(default = "default_brief_max_chars")]
-    pub brief_max_chars: usize,
-}
-
-fn default_brief_max_chars() -> usize {
-    8_000
-}
-
-impl Default for McpSection {
-    fn default() -> Self {
-        Self {
-            schema_profile: McpSchemaProfile::Full,
-            brief_max_chars: default_brief_max_chars(),
-        }
-    }
-}
-
 impl Mode {
     /// Parse a mode string. Only `"off"` and `"live"` are accepted; `"ask"`
     /// is a host-level policy and is not a valid value at this layer.
@@ -290,6 +257,14 @@ pub struct SearchSection {
     /// evict the whole cache.
     #[serde(default = "default_search_cache_max_entries")]
     pub cache_max_entries: usize,
+    /// Bounded challenge-solving configuration for keyless HTML
+    /// upstreams. Disabled by default. See ADR-0009.
+    #[serde(default)]
+    pub challenge: ChallengeSection,
+    /// Intent-aware provider routing. Off by default; see
+    /// `plans/implementation/agentic-retrieval-integrity/006-intent-aware-provider-routing.md`.
+    #[serde(default)]
+    pub routing: RoutingSection,
 }
 
 impl Default for SearchSection {
@@ -316,7 +291,7 @@ impl Default for SearchSection {
             timeout_ms: 8000,
             default_providers: vec![
                 "duckduckgo".to_string(),
-                "startpage".to_string(),
+                "brave".to_string(),
                 "yahoo".to_string(),
             ],
             providers,
@@ -330,6 +305,8 @@ impl Default for SearchSection {
             multiquery_provider_concurrency: default_multiquery_provider_concurrency(),
             cache_ttl_seconds: default_search_cache_ttl_seconds(),
             cache_max_entries: default_search_cache_max_entries(),
+            challenge: ChallengeSection::default(),
+            routing: RoutingSection::default(),
         }
     }
 }
@@ -1254,6 +1231,16 @@ impl AppConfig {
                 "[mcp].brief_max_chars must be between 512 and 32000".to_string(),
             ));
         }
+        if !(MIN_EXCERPT_BUDGET_CHARS..=MAX_EXCERPT_BUDGET_CHARS)
+            .contains(&self.mcp.excerpt_budget_chars)
+        {
+            return Err(CoreError::Config(
+                "[mcp].excerpt_budget_chars must be between 256 and 32000".to_string(),
+            ));
+        }
+        if let Err(message) = self.mcp.tasks.validate() {
+            return Err(CoreError::Config(message));
+        }
         if self.fetch.max_chars_cap < self.fetch.max_chars_default {
             return Err(CoreError::Config(format!(
                 "[fetch].max_chars_cap ({}) must be >= [fetch].max_chars_default ({})",
@@ -1322,6 +1309,8 @@ impl AppConfig {
                 self.search.cache_max_entries
             )));
         }
+        self.search.challenge.validate()?;
+        self.search.routing.validate()?;
 
         // Provider validation
         let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
@@ -1853,5 +1842,18 @@ pub fn default_config_path() -> PathBuf {
     PathBuf::from("eggsearch.toml")
 }
 
+mod challenge;
+mod mcp;
+mod routing;
+
 #[cfg(test)]
 mod tests;
+
+pub use challenge::ChallengeSection;
+pub use mcp::{
+    McpSchemaProfile, McpSection, McpTasksSection, McpToolPreset, DEFAULT_EXCERPT_BUDGET_CHARS,
+    DEFAULT_TASK_MAX_CONCURRENT, DEFAULT_TASK_POLL_INTERVAL_MS, DEFAULT_TASK_TTL_MS,
+    MAX_EXCERPT_BUDGET_CHARS, MAX_TASK_CONCURRENT, MAX_TASK_POLL_INTERVAL_MS, MAX_TASK_TTL_MS,
+    MIN_EXCERPT_BUDGET_CHARS, MIN_TASK_POLL_INTERVAL_MS, MIN_TASK_TTL_MS,
+};
+pub use routing::{IntentRoutingMode, RoutingSection, INTENT_ROUTING_MAX_EXTRA_PROVIDERS};

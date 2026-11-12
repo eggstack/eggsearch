@@ -28,6 +28,41 @@ fn default_config_loads() {
 }
 
 #[test]
+fn mcp_excerpt_budget_defaults_agree_and_validate() {
+    assert_eq!(
+        McpSection::default().excerpt_budget_chars,
+        DEFAULT_EXCERPT_BUDGET_CHARS
+    );
+    let parsed: AppConfig = toml::from_str("[mcp]\nbrief_max_chars = 8000\n").expect("parse");
+    assert_eq!(
+        parsed.mcp.excerpt_budget_chars,
+        DEFAULT_EXCERPT_BUDGET_CHARS
+    );
+    for value in [MIN_EXCERPT_BUDGET_CHARS, MAX_EXCERPT_BUDGET_CHARS] {
+        let mut c = AppConfig::default();
+        c.mcp.excerpt_budget_chars = value;
+        assert!(c.validate().is_ok(), "{value}");
+    }
+    for value in [MIN_EXCERPT_BUDGET_CHARS - 1, MAX_EXCERPT_BUDGET_CHARS + 1] {
+        let mut c = AppConfig::default();
+        c.mcp.excerpt_budget_chars = value;
+        let err = c.validate().expect_err("expected excerpt budget failure");
+        assert!(
+            err.to_string().contains("excerpt_budget_chars"),
+            "got: {err}"
+        );
+    }
+}
+
+#[test]
+fn mcp_excerpt_budget_is_independent_of_brief_floor() {
+    let mut c = AppConfig::default();
+    c.mcp.brief_max_chars = 512;
+    assert!(c.validate().is_ok());
+    assert_eq!(c.mcp.excerpt_budget_chars, DEFAULT_EXCERPT_BUDGET_CHARS);
+}
+
+#[test]
 fn default_providers_lists_known_engines() {
     let c = AppConfig::default();
     for expected in [
@@ -993,12 +1028,15 @@ fn resolve_profile_providers_coding_profile_uses_builtins() {
     assert!(!providers.is_empty());
     // Should have warnings about unavailable providers
     assert!(!warnings.is_empty());
-    // Available providers should be a subset of default_providers
-    // (the non-github ones that are enabled)
+    // Available providers should be a subset of the enabled set. A built-in
+    // profile is not required to be a subset of default_providers: `coding`
+    // lists `startpage`, which stays enabled and selectable even though it is
+    // no longer default-routed.
+    let enabled = c.effective_provider_ids();
     for p in &providers {
         assert!(
-            c.search.default_providers.contains(p),
-            "resolved provider {p} should be from default_providers"
+            enabled.contains(p),
+            "resolved provider {p} should be enabled"
         );
     }
 }
@@ -1201,4 +1239,143 @@ fn batch_config_toml_roundtrip() {
         c.fetch.batch_max_total_chars_cap
     );
     assert_eq!(parsed.fetch.batch_concurrency, c.fetch.batch_concurrency);
+}
+
+#[test]
+fn challenge_defaults_agree_across_sites() {
+    let defaulted = ChallengeSection::default();
+    let parsed: AppConfig = toml::from_str("").expect("empty config parses");
+    let from_search = AppConfig::default().search.challenge;
+    assert_eq!(parsed.search.challenge.enabled, defaulted.enabled);
+    assert_eq!(
+        parsed.search.challenge.max_difficulty,
+        defaulted.max_difficulty
+    );
+    assert_eq!(parsed.search.challenge.max_attempts, defaulted.max_attempts);
+    assert_eq!(parsed.search.challenge.timeout_ms, defaulted.timeout_ms);
+    assert_eq!(
+        parsed.search.challenge.cookie_ttl_seconds,
+        defaulted.cookie_ttl_seconds
+    );
+    assert_eq!(from_search.enabled, defaulted.enabled);
+    assert_eq!(from_search.max_difficulty, defaulted.max_difficulty);
+    assert_eq!(from_search.max_attempts, defaulted.max_attempts);
+    assert_eq!(from_search.timeout_ms, defaulted.timeout_ms);
+    assert_eq!(from_search.cookie_ttl_seconds, defaulted.cookie_ttl_seconds);
+}
+
+#[test]
+fn challenge_defaults_are_disabled_and_bounded() {
+    let challenge = ChallengeSection::default();
+    assert!(!challenge.enabled);
+    assert_eq!(challenge.max_difficulty, 5);
+    assert_eq!(challenge.max_attempts, 2_000_000);
+    assert_eq!(challenge.timeout_ms, 2000);
+    assert_eq!(challenge.cookie_ttl_seconds, 240);
+}
+
+#[test]
+fn config_without_challenge_table_keeps_today_behaviour() {
+    let parsed: AppConfig = toml::from_str("").expect("empty config parses");
+    assert!(!parsed.search.challenge.enabled);
+    assert_eq!(parsed.search.challenge.max_attempts, 2_000_000);
+    assert_eq!(parsed.search.challenge.timeout_ms, 2000);
+    assert_eq!(parsed.search.challenge.cookie_ttl_seconds, 240);
+    parsed.validate().expect("defaults validate");
+}
+
+#[test]
+fn challenge_table_parses_and_validates() {
+    let mut value: toml::Value =
+        toml::from_str(&toml::to_string(&AppConfig::default()).expect("serialize"))
+            .expect("toml value");
+    let challenge = value
+        .get_mut("search")
+        .and_then(|search| search.get_mut("challenge"))
+        .and_then(toml::Value::as_table_mut)
+        .expect("challenge table present");
+    challenge.insert("enabled".to_string(), toml::Value::Boolean(true));
+    challenge.insert("max_difficulty".to_string(), toml::Value::Integer(4));
+    challenge.insert("max_attempts".to_string(), toml::Value::Integer(1000));
+    challenge.insert("timeout_ms".to_string(), toml::Value::Integer(500));
+    challenge.insert("cookie_ttl_seconds".to_string(), toml::Value::Integer(0));
+
+    let parsed: AppConfig = value.try_into().expect("config parses");
+    assert!(parsed.search.challenge.enabled);
+    assert_eq!(parsed.search.challenge.max_difficulty, 4);
+    assert_eq!(parsed.search.challenge.max_attempts, 1000);
+    assert_eq!(parsed.search.challenge.timeout_ms, 500);
+    assert_eq!(parsed.search.challenge.cookie_ttl_seconds, 0);
+    parsed.validate().expect("explicit values validate");
+}
+
+#[test]
+fn validate_rejects_challenge_max_difficulty_out_of_range() {
+    for value in [0u8, 11] {
+        let mut c = AppConfig::default();
+        c.search.challenge.max_difficulty = value;
+        let err = c.validate().expect_err("expected max_difficulty failure");
+        assert!(
+            err.to_string()
+                .contains("[search.challenge].max_difficulty"),
+            "got: {err}"
+        );
+    }
+}
+
+#[test]
+fn validate_rejects_challenge_max_attempts_out_of_range() {
+    for value in [0u64, 100_000_001] {
+        let mut c = AppConfig::default();
+        c.search.challenge.max_attempts = value;
+        let err = c.validate().expect_err("expected max_attempts failure");
+        assert!(
+            err.to_string().contains("[search.challenge].max_attempts"),
+            "got: {err}"
+        );
+    }
+}
+
+#[test]
+fn validate_rejects_challenge_timeout_out_of_range() {
+    for value in [99u64, 30_001] {
+        let mut c = AppConfig::default();
+        c.search.challenge.timeout_ms = value;
+        let err = c.validate().expect_err("expected timeout_ms failure");
+        assert!(
+            err.to_string().contains("[search.challenge].timeout_ms"),
+            "got: {err}"
+        );
+    }
+}
+
+#[test]
+fn validate_rejects_challenge_cookie_ttl_out_of_range() {
+    let mut c = AppConfig::default();
+    c.search.challenge.cookie_ttl_seconds = 3601;
+    let err = c
+        .validate()
+        .expect_err("expected cookie_ttl_seconds failure");
+    assert!(
+        err.to_string()
+            .contains("[search.challenge].cookie_ttl_seconds"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn challenge_config_toml_roundtrip() {
+    let mut c = AppConfig::default();
+    c.search.challenge.enabled = true;
+    c.search.challenge.max_difficulty = 7;
+    c.search.challenge.max_attempts = 1234;
+    c.search.challenge.timeout_ms = 900;
+    c.search.challenge.cookie_ttl_seconds = 30;
+    let text = toml::to_string(&c).expect("serialize");
+    let parsed: AppConfig = toml::from_str(&text).expect("parse");
+    assert!(parsed.search.challenge.enabled);
+    assert_eq!(parsed.search.challenge.max_difficulty, 7);
+    assert_eq!(parsed.search.challenge.max_attempts, 1234);
+    assert_eq!(parsed.search.challenge.timeout_ms, 900);
+    assert_eq!(parsed.search.challenge.cookie_ttl_seconds, 30);
 }

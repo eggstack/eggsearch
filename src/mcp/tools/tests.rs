@@ -80,6 +80,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
     let web_error = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: url.clone(),
             max_chars: None,
             timeout_ms: None,
@@ -105,6 +106,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
     let batch_error = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![crate::core::batch_fetch::BatchFetchItem::Web {
                 url,
                 extract_mode: None,
@@ -482,6 +484,7 @@ async fn web_fetch_structured_warnings_present() {
     cfg.fetch.allow_private_network = true;
     let state = Arc::new(ServerState::build(cfg).unwrap());
     let args = WebFetchArgs {
+        cursor: None,
         url: server.url("/get"),
         max_chars: Some(1000),
         timeout_ms: Some(1000),
@@ -510,6 +513,7 @@ async fn web_fetch_rejects_zero_timeout() {
     let cfg = AppConfig::default();
     let state = Arc::new(ServerState::build(cfg).unwrap());
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://example.com/".to_string(),
         max_chars: Some(1000),
         timeout_ms: Some(0),

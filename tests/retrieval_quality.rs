@@ -60,9 +60,21 @@ struct Case {
     #[serde(default)]
     #[cfg(feature = "mock")]
     provider_lists: Vec<ProviderList>,
+    #[serde(default)]
+    #[cfg(feature = "mock")]
+    routing: Option<CaseRouting>,
     relevant_documents: Vec<Judgment>,
     #[serde(default)]
     results: Vec<ResultEnvelope>,
+}
+
+#[cfg(feature = "mock")]
+#[derive(Clone, Debug, Deserialize)]
+struct CaseRouting {
+    enabled_providers: Vec<String>,
+    default_providers: Vec<String>,
+    intent_mode: String,
+    max_extra_providers: usize,
 }
 
 #[cfg(feature = "mock")]
@@ -837,11 +849,10 @@ fn replay_case(
 }
 
 #[cfg(feature = "mock")]
-fn replay_case_with_intent(
+fn case_provider_lists(
     case: &Case,
-    knobs: eggsearch::selection_test::SelectionKnobs,
-    intent: eggsearch::core::query::SearchIntent,
-) -> Vec<ResultEnvelope> {
+    only: Option<&[String]>,
+) -> Vec<(String, Vec<eggsearch::meta::engines::models::SearchResult>)> {
     use eggsearch::meta::engines::models::{ResultMetadata, SearchResult};
 
     assert!(
@@ -861,6 +872,9 @@ fn replay_case_with_intent(
     );
     let mut lists: Vec<(String, Vec<SearchResult>)> = Vec::new();
     for list in &case.provider_lists {
+        if only.is_some_and(|ids| !ids.iter().any(|id| id == &list.provider_id)) {
+            continue;
+        }
         assert!(
             eggsearch::core::provider::KNOWN_PROVIDER_IDS.contains(&list.provider_id.as_str()),
             "snapshot case {} uses unknown provider {}",
@@ -890,6 +904,37 @@ fn replay_case_with_intent(
             .collect();
         lists.push((list.provider_id.clone(), results));
     }
+    if let Some(ids) = only {
+        for id in ids {
+            assert!(
+                case.provider_lists
+                    .iter()
+                    .any(|list| &list.provider_id == id),
+                "snapshot case {} routes {id} but records no candidate list for it",
+                case.id
+            );
+        }
+    }
+    lists
+}
+
+#[cfg(feature = "mock")]
+fn replay_case_with_intent(
+    case: &Case,
+    knobs: eggsearch::selection_test::SelectionKnobs,
+    intent: eggsearch::core::query::SearchIntent,
+) -> Vec<ResultEnvelope> {
+    replay_case_with_subset(case, knobs, intent, None)
+}
+
+#[cfg(feature = "mock")]
+fn replay_case_with_subset(
+    case: &Case,
+    knobs: eggsearch::selection_test::SelectionKnobs,
+    intent: eggsearch::core::query::SearchIntent,
+    only: Option<&[String]>,
+) -> Vec<ResultEnvelope> {
+    let lists = case_provider_lists(case, only);
     let rows = if knobs == eggsearch::selection_test::SelectionKnobs::production() {
         eggsearch::selection_test::select(lists, case.max_results, intent)
     } else {
@@ -1545,7 +1590,13 @@ async fn recorded_provider_queries(
     let mut req = WebSearchRequest::new(query);
     req.providers = vec!["mock_a".to_string()];
     adapter
-        .web_search_with_intent(&req, 5, 50, caller_intent)
+        .web_search_with_intent(
+            &req,
+            5,
+            50,
+            caller_intent,
+            eggsearch::core::config::IntentRoutingMode::Off,
+        )
         .await;
     let seen = queries.lock().map(|seen| seen.clone()).unwrap_or_default();
     seen
@@ -1780,6 +1831,401 @@ fn derived_intent_rollout_gate_matches_the_recorded_decision() {
             "signal_improved_metrics": signal_improved,
             "aggregate": aggregate_rows,
             "per_case": case_rows
+        }))
+        .unwrap()
+    );
+}
+
+#[cfg(feature = "mock")]
+const SECURITY_PREFERENCE_ORDER: [&str; 4] = ["osv", "github_advisory", "rustsec", "nvd"];
+
+#[cfg(feature = "mock")]
+const SECURITY_DISTRACTOR_ORDER: [&str; 4] = ["nvd", "osv", "github_advisory", "rustsec"];
+
+#[cfg(feature = "mock")]
+const INTENT_ROUTING_RECORDED_DECISION: &str = "observe_only";
+
+#[cfg(feature = "mock")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RoutingReplay {
+    Baseline,
+    Routed,
+    Ordered(&'static [&'static str], usize),
+}
+
+#[cfg(feature = "mock")]
+fn built_provider_ids(case: &Case) -> Vec<String> {
+    case.provider_lists
+        .iter()
+        .map(|list| list.provider_id.clone())
+        .collect()
+}
+
+#[cfg(feature = "mock")]
+fn routing_base(routing: &CaseRouting) -> Vec<String> {
+    routing
+        .default_providers
+        .iter()
+        .filter(|id| {
+            routing
+                .enabled_providers
+                .iter()
+                .any(|enabled| enabled == *id)
+        })
+        .cloned()
+        .collect()
+}
+
+#[cfg(feature = "mock")]
+fn routed_provider_ids(
+    case: &Case,
+    routing: &CaseRouting,
+    order: Option<&'static [&'static str]>,
+    max_extra: usize,
+) -> Vec<String> {
+    let built = built_provider_ids(case);
+    let base = routing_base(routing);
+    let mut routed = base.clone();
+    if routing.intent_mode != "apply" {
+        return routed;
+    }
+    let intent = live_intent(&case.intent);
+    let additions: Vec<String> = match order {
+        Some(order) => eggsearch::selection_test::route_with_order(
+            intent,
+            order,
+            &base,
+            &routing.enabled_providers,
+            &built,
+            &[],
+            max_extra,
+        )
+        .into_iter()
+        .filter(|outcome| outcome.disposition == "added")
+        .map(|outcome| outcome.provider_id)
+        .collect(),
+        None => eggsearch::selection_test::intent_additions(
+            intent,
+            &base,
+            &routing.enabled_providers,
+            &built,
+            &[],
+            max_extra,
+        ),
+    };
+    for id in additions {
+        if !routed.contains(&id) {
+            routed.push(id);
+        }
+    }
+    routed
+}
+
+#[cfg(feature = "mock")]
+fn replay_corpus_with_routing(corpus: &Corpus, replay: RoutingReplay) -> Corpus {
+    let mut replayed = corpus.clone();
+    for case in &mut replayed.cases {
+        if case.provider_lists.is_empty() {
+            continue;
+        }
+        let only = match (&case.routing, replay) {
+            (None, _) => None,
+            (Some(routing), RoutingReplay::Baseline) => Some(routing_base(routing)),
+            (Some(routing), RoutingReplay::Routed) => Some(routed_provider_ids(
+                case,
+                routing,
+                None,
+                routing.max_extra_providers,
+            )),
+            (Some(routing), RoutingReplay::Ordered(order, max_extra)) => {
+                Some(routed_provider_ids(case, routing, Some(order), max_extra))
+            }
+        };
+        case.results = replay_case_with_subset(
+            case,
+            eggsearch::selection_test::SelectionKnobs::production(),
+            live_intent(&case.intent),
+            only.as_deref(),
+        );
+    }
+    replayed
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn candidate_snapshot_routing_cases_route_only_native_specialists() {
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let baseline = replay_corpus_with_routing(&corpus, RoutingReplay::Baseline);
+    let routed = replay_corpus_with_routing(&corpus, RoutingReplay::Routed);
+    let mut rows = Vec::new();
+    for case in corpus.cases.iter().filter(|case| case.routing.is_some()) {
+        let routing = case.routing.as_ref().expect("routing block");
+        assert!(
+            matches!(routing.intent_mode.as_str(), "off" | "apply"),
+            "{} has unsupported intent_mode {}",
+            case.id,
+            routing.intent_mode
+        );
+        for id in &routing.default_providers {
+            assert!(
+                routing.enabled_providers.contains(id),
+                "{} routes an unenabled default provider {id}",
+                case.id
+            );
+        }
+        let derived = eggsearch::selection_test::derive_intent(&case.query);
+        assert_eq!(
+            derived.intent.as_str(),
+            case.intent,
+            "routing case {} must derive its annotated intent; classifier said {:?}",
+            case.id,
+            derived
+        );
+        let built = built_provider_ids(case);
+        let base = routing_base(routing);
+        let routed_ids = routed_provider_ids(case, routing, None, routing.max_extra_providers);
+        let additions: Vec<String> = routed_ids
+            .iter()
+            .filter(|id| !base.contains(id))
+            .cloned()
+            .collect();
+        assert!(
+            additions.len() <= routing.max_extra_providers,
+            "{} exceeded max_extra_providers",
+            case.id
+        );
+        let capable = eggsearch::selection_test::capable_providers(derived.intent, &built);
+        let unrouted: Vec<String> = capable
+            .iter()
+            .filter(|id| !routed_ids.contains(id))
+            .cloned()
+            .collect();
+        let base_metrics = case_metrics(&baseline, &case.id);
+        let routed_metrics = case_metrics(&routed, &case.id);
+        let mut deltas = Vec::new();
+        for spec in &ROLLOUT_METRICS {
+            let base_value = metric(&base_metrics, spec.key);
+            let routed_value = metric(&routed_metrics, spec.key);
+            let delta = routed_value - base_value;
+            let regression = if spec.higher_is_better {
+                delta < -1e-9
+            } else {
+                delta > 1e-9
+            };
+            assert!(
+                !regression,
+                "routing case {} regresses {}: baseline={base_value} routed={routed_value}",
+                case.id, spec.key
+            );
+            deltas.push(serde_json::json!({
+                "metric": spec.key,
+                "baseline": base_value,
+                "routed": routed_value,
+                "delta": delta
+            }));
+        }
+        rows.push(serde_json::json!({
+            "case": case.id,
+            "intent": case.intent,
+            "derived_intent": derived.intent.as_str(),
+            "intent_mode": routing.intent_mode,
+            "max_extra_providers": routing.max_extra_providers,
+            "base_providers": base,
+            "routed_providers": routed_ids,
+            "added_providers": additions,
+            "capable_enabled_providers": capable,
+            "unrouted_capable_providers": unrouted,
+            "exclusion_warning_would_fire": !unrouted.is_empty(),
+            "baseline": base_metrics,
+            "routed": routed_metrics,
+            "deltas": deltas
+        }));
+    }
+    assert!(
+        rows.len() >= 4,
+        "the routing lane needs at least four cases, got {}",
+        rows.len()
+    );
+    println!(
+        "retrieval-quality-routing-report {}",
+        serde_json::to_string(&serde_json::json!({
+            "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
+            "intent_mode": eggsearch::core::config::AppConfig::default().search.routing.intent_mode.as_str(),
+            "cases": rows
+        }))
+        .unwrap()
+    );
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn seeded_wrong_routing_order_is_detected_on_candidate_snapshots() {
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let correct = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_PREFERENCE_ORDER, 1),
+    );
+    let distractor = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
+    );
+    let repeated = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
+    );
+    for (left, right) in distractor.cases.iter().zip(&repeated.cases) {
+        assert_eq!(
+            left.results, right.results,
+            "distractor replay must be reproducible"
+        );
+    }
+    let correct_metrics = case_metrics(&correct, "security-osv-routing-001");
+    let distractor_metrics = case_metrics(&distractor, "security-osv-routing-001");
+    let drop = metric(&correct_metrics, "recall_at_5") - metric(&distractor_metrics, "recall_at_5");
+    assert!(
+        drop >= 0.25,
+        "the nvd-before-osv distractor must cost at least 0.25 recall_at_5 on the security routing case: correct={correct_metrics} distractor={distractor_metrics}"
+    );
+    println!(
+        "retrieval-quality-routing-negative-control {}",
+        serde_json::to_string(&serde_json::json!({
+            "case": "security-osv-routing-001",
+            "control": "security-nvd-first",
+            "correct_order": SECURITY_PREFERENCE_ORDER,
+            "distractor_order": SECURITY_DISTRACTOR_ORDER,
+            "recall_drop": drop,
+            "correct": correct_metrics,
+            "distractor": distractor_metrics
+        }))
+        .unwrap()
+    );
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn intent_routing_rollout_gate_matches_the_recorded_decision() {
+    use eggsearch::core::config::{AppConfig, IntentRoutingMode};
+
+    let corpus: Corpus = serde_json::from_str(CANDIDATE_SNAPSHOTS).expect("snapshot corpus parses");
+    let plain = replay_corpus(
+        &corpus,
+        eggsearch::selection_test::SelectionKnobs::production(),
+    );
+    let baseline = replay_corpus_with_routing(&corpus, RoutingReplay::Baseline);
+    let routed = replay_corpus_with_routing(&corpus, RoutingReplay::Routed);
+
+    let mut pre_existing_changed: Vec<String> = Vec::new();
+    for case in corpus.cases.iter().filter(|case| case.routing.is_none()) {
+        let plain_case = plain
+            .cases
+            .iter()
+            .find(|replayed| replayed.id == case.id)
+            .expect("plain replay");
+        let baseline_case = baseline
+            .cases
+            .iter()
+            .find(|replayed| replayed.id == case.id)
+            .expect("baseline replay");
+        let routed_case = routed
+            .cases
+            .iter()
+            .find(|replayed| replayed.id == case.id)
+            .expect("routed replay");
+        if plain_case.results != baseline_case.results || plain_case.results != routed_case.results
+        {
+            pre_existing_changed.push(case.id.clone());
+        }
+    }
+
+    let routing_cases: Vec<&Case> = corpus
+        .cases
+        .iter()
+        .filter(|case| case.routing.is_some())
+        .collect();
+    let mut improved: Vec<String> = Vec::new();
+    let mut worsened: Vec<String> = Vec::new();
+    for case in &routing_cases {
+        let base_metrics = case_metrics(&baseline, &case.id);
+        let routed_metrics = case_metrics(&routed, &case.id);
+        for spec in &ROLLOUT_METRICS {
+            let delta = metric(&routed_metrics, spec.key) - metric(&base_metrics, spec.key);
+            let improvement = if spec.higher_is_better { delta } else { -delta };
+            if improvement > 1e-9 {
+                improved.push(format!("{}:{}", case.id, spec.key));
+            }
+            if improvement < -1e-9 {
+                worsened.push(format!("{}:{}", case.id, spec.key));
+            }
+        }
+    }
+
+    let security_control = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_PREFERENCE_ORDER, 1),
+    );
+    let security_distractor = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
+    );
+    let negative_control_recall_drop = metric(
+        &case_metrics(&security_control, "security-osv-routing-001"),
+        "recall_at_5",
+    ) - metric(
+        &case_metrics(&security_distractor, "security-osv-routing-001"),
+        "recall_at_5",
+    );
+    let negative_control_detected = negative_control_recall_drop >= 0.25;
+
+    let shipped_defaults = AppConfig::default().search.default_providers;
+    let lane_measures_shipped_default_path = !routing_cases.is_empty()
+        && routing_cases.iter().all(|case| {
+            case.routing
+                .as_ref()
+                .is_some_and(|routing| routing.default_providers == shipped_defaults)
+        });
+
+    let should_apply = pre_existing_changed.is_empty()
+        && worsened.is_empty()
+        && !improved.is_empty()
+        && negative_control_detected
+        && lane_measures_shipped_default_path;
+    let decision = if should_apply {
+        "applied"
+    } else {
+        "observe_only"
+    };
+    assert_eq!(
+        decision, INTENT_ROUTING_RECORDED_DECISION,
+        "the recorded routing decision must follow the snapshot evidence: \
+         pre_existing_changed={pre_existing_changed:?} worsened={worsened:?} \
+         improved={improved:?} negative_control_recall_drop={negative_control_recall_drop} \
+         lane_measures_shipped_default_path={lane_measures_shipped_default_path}"
+    );
+    assert_eq!(
+        AppConfig::default().search.routing.intent_mode == IntentRoutingMode::Apply,
+        should_apply,
+        "the shipped [search.routing].intent_mode must equal the recorded decision: \
+         pre_existing_changed={pre_existing_changed:?} worsened={worsened:?} \
+         improved={improved:?} negative_control_recall_drop={negative_control_recall_drop} \
+         lane_measures_shipped_default_path={lane_measures_shipped_default_path}"
+    );
+    println!(
+        "retrieval-quality-routing-rollout {}",
+        serde_json::to_string(&serde_json::json!({
+            "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
+            "decision": decision,
+            "intent_mode": AppConfig::default().search.routing.intent_mode.as_str(),
+            "pre_existing_cases_changed": pre_existing_changed,
+            "worsened_metrics": worsened,
+            "improved_metrics": improved,
+            "negative_control": {
+                "case": "security-osv-routing-001",
+                "distractor": "security-nvd-first",
+                "recall_drop": negative_control_recall_drop,
+                "detected": negative_control_detected
+            },
+            "lane_measures_shipped_default_path": lane_measures_shipped_default_path,
+            "shipped_default_providers": shipped_defaults
         }))
         .unwrap()
     );

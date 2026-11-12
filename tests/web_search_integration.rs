@@ -2948,3 +2948,394 @@ mod search_result_cache {
         );
     }
 }
+
+#[test]
+fn challenge_config_is_disabled_by_default() {
+    let cfg = AppConfig::default();
+    assert!(!cfg.search.challenge.enabled);
+    assert_eq!(cfg.search.challenge.max_difficulty, 5);
+    assert_eq!(cfg.search.challenge.max_attempts, 2_000_000);
+    assert_eq!(cfg.search.challenge.timeout_ms, 2000);
+    assert_eq!(cfg.search.challenge.cookie_ttl_seconds, 240);
+}
+
+#[test]
+fn server_state_builds_with_challenge_enabled() {
+    let mut cfg = AppConfig::default();
+    cfg.search.challenge.enabled = true;
+    let _state = ServerState::build(cfg).expect("state builds with challenge enabled");
+}
+
+// ---------------------------------------------------------------------------
+// M006 — intent-aware provider routing end to end.
+//
+// Routing appends capability-valid providers on the default path, splits the
+// `native_*_unavailable` warnings so a real gap is still reported, and never
+// widens a Mode-Off denial.
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "mock")]
+mod intent_routing {
+    use super::*;
+    use eggsearch::core::config::IntentRoutingMode;
+    use eggsearch::core::query::SearchIntent;
+    use eggsearch::meta::engines::models::SearchResult;
+
+    struct CountingEngine {
+        name: &'static str,
+        results: Vec<SearchResult>,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingEngine {
+        fn new(name: &'static str, results: Vec<SearchResult>) -> Self {
+            Self {
+                name,
+                results,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl eggsearch::meta::engines::SearchEngine for CountingEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn search<'a>(
+            &'a self,
+            _request: &'a eggsearch::meta::engines::EngineSearchRequest,
+        ) -> eggsearch::meta::engines::BoxFuture<
+            'a,
+            Result<Vec<SearchResult>, eggsearch::meta::engines::error::EngineError>,
+        > {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let results = self.results.clone();
+            Box::pin(async move { Ok(results) })
+        }
+    }
+
+    fn result(provider: &'static str, title: &str, url: &str) -> SearchResult {
+        SearchResult {
+            title: title.to_string(),
+            url: url.to_string(),
+            snippet: None,
+            source_engine: provider.to_string(),
+            metadata: Default::default(),
+            excerpts: Vec::new(),
+            published_at: None,
+        }
+    }
+
+    fn routing_cfg(
+        intent_mode: IntentRoutingMode,
+        enabled: &[&str],
+        defaults: &[&str],
+        max_extra: usize,
+    ) -> AppConfig {
+        let mut cfg = AppConfig::default();
+        cfg.search.timeout_ms = 2_000;
+        cfg.search.max_query_chars = 256;
+        cfg.search.routing.intent_mode = intent_mode;
+        cfg.search.routing.max_extra_providers = max_extra;
+        cfg.search.default_providers = defaults.iter().map(|id| (*id).to_string()).collect();
+        for id in enabled {
+            cfg.search.providers.insert((*id).to_string(), true);
+        }
+        cfg
+    }
+
+    fn generic_engine() -> CountingEngine {
+        CountingEngine::new(
+            "duckduckgo",
+            vec![result(
+                "duckduckgo",
+                "Patch cadence for crypto libraries",
+                "https://blog.example.test/crypto-patch-cadence",
+            )],
+        )
+    }
+
+    fn advisory_engine() -> CountingEngine {
+        CountingEngine::new(
+            "osv",
+            vec![result(
+                "osv",
+                "CVE-2024-1234: heap overflow in X.509 name parsing",
+                "https://osv.dev/vulnerability/CVE-2024-1234",
+            )],
+        )
+    }
+
+    fn warning_messages(payload: &serde_json::Value) -> Vec<String> {
+        payload["warnings"]
+            .as_array()
+            .map(|warnings| {
+                warnings
+                    .iter()
+                    .filter_map(|warning| warning.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn warning_codes(payload: &serde_json::Value) -> Vec<String> {
+        payload["structured_warnings"]
+            .as_array()
+            .map(|warnings| {
+                warnings
+                    .iter()
+                    .filter_map(|warning| warning["code"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn apply_dispatches_the_enabled_capability_provider() {
+        let cfg = routing_cfg(
+            IntentRoutingMode::Apply,
+            &["duckduckgo", "osv"],
+            &["duckduckgo"],
+            2,
+        );
+        let state = state_with_arc_engines(
+            cfg,
+            vec![Arc::new(generic_engine()), Arc::new(advisory_engine())],
+            Duration::from_secs(5),
+        );
+        let mut args = args_for(&[], "CVE-2024-1234 openssl advisory");
+        args.response_detail = Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic);
+        let payload = run_web_search(state, args).await.expect("search succeeds");
+
+        assert_eq!(
+            payload["providers_queried"],
+            serde_json::json!(["duckduckgo", "osv"])
+        );
+        assert_eq!(payload["derived_intent"], "security");
+        assert_eq!(
+            payload["routing_decision"]["intent_routing"]["intent"],
+            "security"
+        );
+        assert_eq!(
+            payload["routing_decision"]["intent_routing"]["additions"],
+            serde_json::json!(["osv"])
+        );
+        let messages = warning_messages(&payload);
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.contains("native_advisory_search_unavailable")),
+            "a routed advisory provider must suppress the false warning: {messages:?}"
+        );
+
+        let dimension_providers: Vec<String> = payload["retrieval_summary"]["dimensions"]
+            .as_array()
+            .map(|dimensions| {
+                dimensions
+                    .iter()
+                    .filter_map(|dimension| dimension["provider_id"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut expected_dimension_providers = dimension_providers.clone();
+        expected_dimension_providers.sort();
+        expected_dimension_providers.dedup();
+        assert_eq!(
+            expected_dimension_providers,
+            vec!["duckduckgo".to_string(), "osv".to_string()],
+            "the attempt ledger must carry one row per routed provider: {dimension_providers:?}"
+        );
+        for dimension in payload["retrieval_summary"]["dimensions"]
+            .as_array()
+            .expect("dimensions")
+        {
+            let outcome = dimension["attempt_outcome"].as_str().unwrap_or_default();
+            assert!(
+                matches!(
+                    outcome,
+                    "success_with_results"
+                        | "success_zero_results"
+                        | "failed"
+                        | "timed_out"
+                        | "rate_limited"
+                        | "skipped_by_policy"
+                        | "skipped_capability_unavailable"
+                        | "not_applicable"
+                        | "interrupted_by_deadline"
+                        | "truncated_after_partial_success"
+                ),
+                "routing must not introduce a new outcome string: {outcome}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn off_is_identical_to_the_baseline_dispatch() {
+        let cfg = routing_cfg(
+            IntentRoutingMode::Off,
+            &["duckduckgo", "osv"],
+            &["duckduckgo"],
+            2,
+        );
+        let state = state_with_arc_engines(
+            cfg,
+            vec![Arc::new(generic_engine()), Arc::new(advisory_engine())],
+            Duration::from_secs(5),
+        );
+        let mut args = args_for(&[], "CVE-2024-1234 openssl advisory");
+        args.intent = Some(SearchIntent::Security);
+        let payload = run_web_search(state, args).await.expect("search succeeds");
+
+        assert_eq!(
+            payload["providers_queried"],
+            serde_json::json!(["duckduckgo"]),
+            "off mode must not append the capability provider"
+        );
+        assert_eq!(
+            payload["routing_decision"]["intent_routing"]["intent_mode"],
+            "off"
+        );
+        assert!(
+            payload["routing_decision"]["intent_routing"]["additions"].is_null(),
+            "off mode reports no additions at all"
+        );
+        let messages = warning_messages(&payload);
+        assert!(
+            messages.iter().any(|message| message
+                == "[_system] native_advisory_search_unavailable: intent=security requested but no provider has native security advisory search; results are from generic/contextual search"),
+            "off mode keeps the legacy warning byte-identical: {messages:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn excluded_capability_reports_the_new_warning_instead_of_the_false_gap() {
+        let cfg = routing_cfg(
+            IntentRoutingMode::Apply,
+            &["duckduckgo", "osv"],
+            &["duckduckgo"],
+            0,
+        );
+        let state = state_with_arc_engines(
+            cfg,
+            vec![Arc::new(generic_engine()), Arc::new(advisory_engine())],
+            Duration::from_secs(5),
+        );
+        let mut args = args_for(&[], "openssl advisory lookup");
+        args.intent = Some(SearchIntent::Security);
+        let payload = run_web_search(state, args).await.expect("search succeeds");
+
+        assert_eq!(
+            payload["providers_queried"],
+            serde_json::json!(["duckduckgo"]),
+            "max_extra_providers=0 adds nothing"
+        );
+        let messages = warning_messages(&payload);
+        let expected = "[_system] intent_routing_capability_excluded: intent=security requested; enabled native security advisory search provider(s) osv were not routed, so results are from generic/contextual search";
+        assert!(
+            messages.iter().any(|message| message == expected),
+            "expected the exclusion warning, got {messages:?}"
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.contains("native_advisory_search_unavailable")),
+            "a present-but-unrouted provider is not a capability gap: {messages:?}"
+        );
+        assert!(
+            warning_codes(&payload)
+                .iter()
+                .any(|code| code == "intent_routing_capability_excluded"),
+            "the exclusion warning must map to its own code: {:?}",
+            warning_codes(&payload)
+        );
+    }
+
+    #[tokio::test]
+    async fn true_capability_gap_keeps_the_legacy_warning() {
+        let cfg = routing_cfg(
+            IntentRoutingMode::Apply,
+            &["duckduckgo", "osv"],
+            &["duckduckgo"],
+            2,
+        );
+        let state = state_with_arc_engines(
+            cfg,
+            vec![Arc::new(generic_engine())],
+            Duration::from_secs(5),
+        );
+        let mut args = args_for(&[], "openssl advisory lookup");
+        args.intent = Some(SearchIntent::Security);
+        let payload = run_web_search(state, args).await.expect("search succeeds");
+
+        let messages = warning_messages(&payload);
+        assert!(
+            messages.iter().any(|message| message
+                == "[_system] native_advisory_search_unavailable: intent=security requested but no provider has native security advisory search; results are from generic/contextual search"),
+            "a real gap must still be reported: {messages:?}"
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.contains("intent_routing_capability_excluded")),
+            "no provider holds the capability, so nothing was excluded: {messages:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mode_off_denies_before_any_routing_dispatch() {
+        let mut cfg = routing_cfg(
+            IntentRoutingMode::Apply,
+            &["duckduckgo", "osv"],
+            &["duckduckgo"],
+            4,
+        );
+        cfg.search.mode = Mode::Off;
+        let generic = Arc::new(generic_engine());
+        let advisory = Arc::new(advisory_engine());
+        let state = state_with_arc_engines(
+            cfg,
+            vec![generic.clone(), advisory.clone()],
+            Duration::from_secs(5),
+        );
+        let mut args = args_for(&[], "CVE-2024-1234 openssl advisory");
+        args.intent = Some(SearchIntent::Security);
+        let err = run_web_search(state, args)
+            .await
+            .expect_err("mode off must deny web_search");
+        assert!(err.to_string().contains("disabled"), "got: {err}");
+        assert_eq!(generic.calls(), 0);
+        assert_eq!(advisory.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn derived_intent_feeds_routing_coherently() {
+        let cfg = routing_cfg(
+            IntentRoutingMode::Apply,
+            &["duckduckgo", "osv"],
+            &["duckduckgo"],
+            2,
+        );
+        let state = state_with_arc_engines(
+            cfg,
+            vec![Arc::new(generic_engine()), Arc::new(advisory_engine())],
+            Duration::from_secs(5),
+        );
+        let args = args_for(&[], "CVE-2024-1234 openssl advisory");
+        let payload = run_web_search(state, args).await.expect("search succeeds");
+
+        let derived = payload["derived_intent"].as_str().expect("derived intent");
+        assert_eq!(
+            payload["routing_decision"]["intent_routing"]["intent"], derived,
+            "routing must consume the same derived intent the response reports"
+        );
+        assert_eq!(
+            payload["providers_queried"],
+            serde_json::json!(["duckduckgo", "osv"])
+        );
+    }
+}

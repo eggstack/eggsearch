@@ -50,7 +50,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/egress_qualify_contract.rs` | None | Egress qualification CI contract: exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage (`packaging/check-egress-qualify-contract.sh` enforces the same in `make packaging-check`) |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
-| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
+| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, cursor codec, excerpt economy) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
@@ -70,7 +70,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
-This table is representative, not exhaustive — 79 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 83 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -163,7 +163,7 @@ duplicated rules are what go stale.
 - **Forgetting `--features mock`** — integration/corpus tests won't compile
 - **Adding random UUIDs** to stable output types — use FNV-1a hashes via `src/core/identity.rs`
 - **Bypassing sanitization** — all untrusted text must flow through `sanitize.rs`
-- **Treating HTML scrapers as legacy or fragile** — ADR-0006 makes keyless HTML engines first-class; the shipped defaults are scrapers. A parser that returns empty rows because a selector stopped matching reports absence instead of failure, which is a correctness defect. `finalize_scrape()` in `src/meta/engines/mod.rs` enforces the three-outcome contract, `EngineError::Blocked` covers challenge pages, and `tests/engine_parse_conformance.rs` fails if a parser regresses to bare empty output. Add captured fixtures under `tests/fixtures/engines/<provider>/` and never propose an API fallback as a "reliability" fix.
+- **Treating HTML scrapers as legacy or fragile** — ADR-0006 makes keyless HTML engines first-class; the shipped defaults are scrapers. A parser that returns empty rows because a selector stopped matching reports absence instead of failure, which is a correctness defect. `finalize_scrape()` in `src/meta/engines/mod.rs` enforces the four-outcome contract, `EngineError::Blocked` covers challenge pages, and `tests/engine_parse_conformance.rs` fails if a parser regresses to bare empty output. Bounded proof-of-work solving is permitted under ADR-0009 (opt-in, ceilinged, proof-of-work only) — do not restate the retired blanket ban, and do not extend it to interactive CAPTCHA, OCR, solving services, or proxy rotation, which stay prohibited. Add captured fixtures under `tests/fixtures/engines/<provider>/` and never propose an API fallback as a "reliability" fix.
 - **Caching a partial search fan-out** — any provider failure or deadline interruption must bypass the search cache and publish nothing to coalesced waiters; a hit must also skip health recording.
 - **Serving a markdown body for an HTML cache key** — `accept_policy` (`md1`/`html1`) is part of `RawCacheKey`; never collapse it, and never drop the `Vary: Accept` allowance without replacing the key dimension.
 - **Adding a required `intent` argument** — intent is derived deterministically when omitted and reported; explicit intent stays authoritative and suppresses the derived fields.

@@ -352,6 +352,7 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
     let result = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/get"),
             max_chars: None,
             timeout_ms: None,

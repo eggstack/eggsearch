@@ -152,7 +152,7 @@ Keyless HTML scraping is a first-class product capability, not a fallback awaiti
 maintenance cost of the design. Five engines parse HTML: `brave`, `duckduckgo`, `mojeek`,
 `startpage`, `yahoo`. `searxng` is a JSON API and is not part of this contract.
 
-Every HTML parser MUST distinguish three outcomes, because the retrieval ledger treats them
+Every HTML parser MUST distinguish four outcomes, because the retrieval ledger treats them
 differently:
 
 | Outcome | Return | Ledger effect |
@@ -170,7 +170,7 @@ real markup, never a guess.
 **Implementation.** `mod.rs` owns `ScrapeShape` (result container plus empty and blocked markers),
 `PageMarker` (a CSS selector or a literal run of rendered page text), and `finalize_scrape()`. Each
 scraper declares a `SHAPE` constant next to its parser and returns `finalize_scrape(...)`, so the
-three-outcome decision has exactly one implementation. Text markers are matched against rendered
+four-outcome decision has exactly one implementation. Text markers are matched against rendered
 text with `<script>` and `<style>` content excluded, so a locale bundle cannot masquerade as an
 empty-state marker. Ordering: parsed rows win; then a blocked marker; then an empty marker; then
 `ParseFailed` with a reason that names the container (`missing` versus `produced no parseable
@@ -194,7 +194,80 @@ Requirements for any change to an HTML parser:
 - `tests/engine_parse_conformance.rs` is table-driven over all five scrapers and asserts parsed
   rows, explicit empty state, block classification, and a seeded-drift case that renames the
   result container and requires `ParseFailed`. A parser that reverts to bare empty output fails it.
-- No CAPTCHA solving, user-agent spoofing, proxy rotation, or retry widening to conceal an outage.
+- Bounded computational challenge solving is permitted under ADR-0009 and must follow the rules in
+  § Challenge solving. Interactive CAPTCHA solving, OCR, third-party or human solving services,
+  credential bypass, proxy rotation, user-agent spoofing, and retry widening to conceal an outage
+  remain prohibited.
+
+## Challenge solving
+
+ADR-0009 permits in-process solving of published computational proof-of-work challenges and
+nothing else. The capability is off by default; when it is off or the budget is exhausted, the
+provider reports `blocked` exactly as it does today. Nothing in this section authorizes answering
+an interactive CAPTCHA, driving a browser, or contacting a solving service.
+
+Two upstreams in the engine set use this gate. Measured parameters on 2026-11-11:
+
+| Upstream | Scheme | What the server publishes | Cost model |
+|---|---|---|---|
+| `startpage` | Anubis `fast` (`script#anubis_challenge`) | `rules.difficulty`, `challenge.id`, `challenge.randomData`, `redir` | expected `16^difficulty` SHA-256 candidates; measured difficulty 6 at 23.07M candidates / 3.05 s single-core in a release build (debug builds are ~100× slower) |
+| `mojeek` | ALTCHA (`GET /captcha/challenge`) | `algorithm` (`PBKDF2/SHA-256`), `cost`, `keyLength`, `keyPrefix`, `salt`, `nonce` | up to `maxCounter` PBKDF2 derivations; measured `cost = 8000` solved at counter 291 in 0.42 s, worst case 1000 counters ≈ 1.4 s on one core |
+
+Anubis also exposes a `preact` method (`script#preact_info`): the response is
+`sha256(challenge)` submitted as `GET {base}{redir}&result=<hex>`, after honouring the server's
+minimum elapsed time. Solve `fast` when `challenge.method == "fast"`, `preact` when it is
+`"preact"`, and fail closed on any other method rather than guessing.
+
+Implementation:
+
+- One shared module, `src/meta/challenge/` (`anubis.rs`, `altcha.rs`, and the budget/cache/cookie
+  plumbing in `mod.rs`). Engines call it and do not carry per-engine solver copies; each file stays
+  inside the ordinary-file limits in `architecture/maintenance.md`.
+- `sha2` is the Anubis primitive; ALTCHA uses the `pbkdf2` and `base64` crates. All three are
+  offline, pure-computation dependencies and no network, TLS, browser, or service dependency was
+  added. The verify POST hand-builds its `multipart/form-data` body with a fixed boundary because
+  the guard `eggfetch_feature_budget_stays_bounded` forbids the `multipart` eggfetch feature.
+- Every solve runs under four ceilings: a challenge-difficulty ceiling, a total candidate/iteration
+  ceiling, a wall-clock ceiling, and one solve per provider per cookie TTL. A solve that reaches a
+  ceiling fails; it never loops. The ceilings are configuration, not constants. The shipped
+  `max_attempts` default of 2,000,000 matches the shipped difficulty ceiling of 5, so raising
+  `max_difficulty` to 6 also requires raising `max_attempts`; otherwise the attempt ceiling binds
+  before the wall clock and the solve is refused for the wrong reason.
+- Configuration surface, consistent with existing `[search.*]` tables:
+
+  ```toml
+  [search.challenge]
+  enabled = false           # ADR-0009 default; operator opts in
+  max_difficulty = 5        # Anubis ceiling; difficulty 6 needs ~16.8M expected candidates
+  max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
+  timeout_ms = 2000         # wall-clock ceiling per solve; 6 needs >= 8000
+  cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
+  ```
+
+- Pass cookies (`spchal-auth`, `chllg`) are secrets-like: replay them through the transport's
+  cookie jar or an explicit `Cookie` header, never log them, never serialize them into
+  `provider_status`, diagnostics, or fixtures.
+- Solving is attempted at most once per search request per provider. A solved request proceeds
+  through the normal parser and `finalize_scrape()`; a solved but unparseable page is still
+  `ParseFailed`, not `Blocked` and not empty.
+- Determinism: fixed constants for any client-chosen field the upstream does not verify (for
+  example ALTCHA's `solution.time`), so a recorded challenge always produces the same answer.
+- Tests: synthetic challenge fixtures with a known solution and a known-bad answer, budget
+  exhaustion for each ceiling, unsupported-method fail-closed, cookie replay against a mock
+  transport that issues a challenge and then serves a result page, and a negative control proving
+  a disabled solver still reports `blocked`. Live verification per provider is recorded in
+  `tests/fixtures/engines/README.md`.
+
+Anubis difficulty is risk-scored per client rather than fixed: on 2026-11-11 the honest `eggsearch`
+user agent received difficulty 6 while a Chrome user agent received 4. Budget for the honest agent.
+
+Alignment with SearXNG does not by itself restore `startpage`. SearXNG caps Anubis at
+`max_difficulty = 4` and raises above it, so it refuses today's difficulty-6 wall as well; and its
+Startpage *result extraction* reads the embedded React payload
+(`React.createElement(UIStartpage.AppSerp<Categ>, {...})` → `render.presenter.regions.mainline[]`)
+rather than the `div.result` DOM this repo parses. Reachability for Startpage therefore needs both
+a raised difficulty ceiling and a JSON-payload parser, tracked as separate work; Mojeek needs only
+the ALTCHA solver and its existing `ul.results-standard` parser.
 
 ---
 
@@ -209,9 +282,9 @@ IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilit
 |-------------|--------|------------------------|
 | `duckduckgo` | `DuckDuckGoEngine` | HTML scrape, keyless |
 | `brave` | `BraveEngine` | HTML scrape, keyless (distinct from `brave_api`) |
-| `startpage` | `StartpageEngine` | HTML scrape, keyless |
+| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). With `[search.challenge]` disabled or `max_difficulty` below the published difficulty the engine reports `blocked`; a permitted solve replays `spchal-auth`. Not in `default_providers` |
 | `yahoo` | `YahooEngine` | HTML scrape, keyless |
-| `mojeek` | `MojeekEngine` | HTML scrape, keyless |
+| `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. With `[search.challenge]` disabled the engine reports `blocked`; with it enabled the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs |
 | `searxng` | `SearxngEngine` | JSON API, self-hosted `base_url` required; skipped as `missing_searxng_config` otherwise; no native capability flags claimed |
 | `brave_api` | `BraveApiEngine` | JSON API, `BRAVE_API_KEY`; native safe-search, freshness/date-range, language, region, news, result timestamps |
 | `exa` | `ExaEngine` | JSON API (`POST /search`), `EXA_API_KEY`; native freshness/date-range, domain filters, result timestamps; highlights fetched only on excerpt demand |

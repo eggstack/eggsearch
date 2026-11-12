@@ -119,6 +119,7 @@ async fn web_fetch_disabled_by_policy_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: "https://example.com/".into(),
             max_chars: None,
             timeout_ms: None,
@@ -168,6 +169,7 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -206,6 +208,7 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: "https://example.com/".into(),
             max_chars: Some(0),
             timeout_ms: None,
@@ -253,6 +256,7 @@ async fn web_fetch_respects_include_links_default() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -305,6 +309,7 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -350,6 +355,7 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -405,6 +411,7 @@ async fn web_fetch_sanitize_emits_marker_warning() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/inject"),
             max_chars: None,
             timeout_ms: None,
@@ -458,6 +465,7 @@ async fn web_fetch_empty_url_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: "".into(),
             max_chars: None,
             timeout_ms: None,
@@ -488,6 +496,7 @@ async fn web_fetch_unsupported_scheme_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: "file:///etc/passwd".into(),
             max_chars: None,
             timeout_ms: None,
@@ -518,6 +527,7 @@ async fn web_fetch_embedded_credentials_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: "https://user:pass@example.com/secret".into(),
             max_chars: None,
             timeout_ms: None,
@@ -546,6 +556,7 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
         let res = run_web_fetch(
             state.clone(),
             WebFetchArgs {
+                cursor: None,
                 url: url.into(),
                 max_chars: None,
                 timeout_ms: None,
@@ -591,6 +602,7 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/redirect"),
             max_chars: None,
             timeout_ms: None,
@@ -646,6 +658,7 @@ async fn web_fetch_mcp_level_full_response_shape() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/article"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -793,6 +806,7 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -859,6 +873,7 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/meta"),
             max_chars: None,
             timeout_ms: None,
@@ -935,6 +950,7 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/doc"),
             max_chars: None,
             timeout_ms: None,
@@ -984,6 +1000,7 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/plain"),
             max_chars: None,
             timeout_ms: None,
@@ -1038,6 +1055,7 @@ async fn web_fetch_document_metadata_only_no_body_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/meta"),
             max_chars: None,
             timeout_ms: None,
@@ -1096,6 +1114,7 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/long"),
             max_chars: Some(30),
             timeout_ms: None,
@@ -1161,6 +1180,7 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/small"),
             max_chars: None,
             timeout_ms: None,
@@ -1224,6 +1244,7 @@ async fn web_fetch_document_has_blocks_and_chunks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/structured"),
             max_chars: None,
             timeout_ms: None,
@@ -1299,6 +1320,7 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/chunked"),
             max_chars: None,
             timeout_ms: None,
@@ -1385,6 +1407,7 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -1451,6 +1474,7 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/both"),
             max_chars: None,
             timeout_ms: None,
@@ -1518,6 +1542,7 @@ async fn web_fetch_document_outline_populated_from_title() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/outline"),
             max_chars: None,
             timeout_ms: None,
@@ -1585,6 +1610,7 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/sanitize"),
             max_chars: None,
             timeout_ms: None,
@@ -1649,6 +1675,7 @@ async fn web_fetch_document_rust_source_has_code_kind() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/main.rs"),
             max_chars: None,
             timeout_ms: None,
@@ -1711,6 +1738,7 @@ async fn web_fetch_document_json_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/data.json"),
             max_chars: None,
             timeout_ms: None,
@@ -1762,6 +1790,7 @@ async fn web_fetch_document_markdown_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/readme.md"),
             max_chars: None,
             timeout_ms: None,
@@ -1836,6 +1865,7 @@ async fn web_fetch_document_toml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/Cargo.toml"),
             max_chars: None,
             timeout_ms: None,
@@ -1889,6 +1919,7 @@ async fn web_fetch_document_yaml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/config.yaml"),
             max_chars: None,
             timeout_ms: None,
@@ -1939,6 +1970,7 @@ async fn web_fetch_document_diff_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/changes.diff"),
             max_chars: None,
             timeout_ms: None,
@@ -1992,6 +2024,7 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/prose.txt"),
             max_chars: None,
             timeout_ms: None,
@@ -2054,6 +2087,7 @@ async fn web_fetch_document_code_preserves_line_ranges() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/lib.rs"),
             max_chars: None,
             timeout_ms: None,
@@ -2118,6 +2152,7 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/config.json"),
             max_chars: None,
             timeout_ms: None,
@@ -2173,6 +2208,7 @@ async fn web_fetch_document_truncation_at_line_boundary() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/big.rs"),
             max_chars: Some(500), // Small budget
             timeout_ms: None,
@@ -2240,6 +2276,7 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/code.rs"),
             max_chars: None,
             timeout_ms: None,
@@ -2292,6 +2329,7 @@ async fn web_fetch_document_application_json_no_extension() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/api/data"),
             max_chars: None,
             timeout_ms: None,
@@ -2353,6 +2391,7 @@ async fn web_fetch_links_classification() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2430,6 +2469,7 @@ async fn web_fetch_links_seen_metadata() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2484,6 +2524,7 @@ async fn web_fetch_links_empty_when_not_requested() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2541,6 +2582,7 @@ async fn web_fetch_links_same_domain_detection() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2616,6 +2658,7 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/bundle.json"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2684,6 +2727,7 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/bundle.js"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2749,6 +2793,7 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/changes.diff"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2818,6 +2863,7 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/long.txt"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2892,6 +2938,7 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/minified.js"),
             max_chars: Some(200),
             timeout_ms: None,
@@ -3021,6 +3068,7 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/doc.pdf"),
             max_chars: None,
             timeout_ms: None,
@@ -3116,6 +3164,7 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/doc.pdf"),
             max_chars: None,
             timeout_ms: None,
@@ -3204,6 +3253,7 @@ async fn web_fetch_empty_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/sparse-main"),
             max_chars: None,
             timeout_ms: None,
@@ -3258,6 +3308,7 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/rich-main"),
             max_chars: None,
             timeout_ms: None,
@@ -3317,6 +3368,7 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/tiny-main"),
             max_chars: None,
             timeout_ms: None,
@@ -3369,6 +3421,7 @@ async fn web_fetch_body_only_page_still_works() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/body-only"),
             max_chars: None,
             timeout_ms: None,
@@ -3434,6 +3487,7 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/many-links"),
             max_chars: None,
             timeout_ms: None,
@@ -3515,6 +3569,7 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/few-links"),
             max_chars: None,
             timeout_ms: None,
@@ -3588,6 +3643,7 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/truncated-outline"),
             max_chars: Some(12),
             timeout_ms: None,
@@ -3675,6 +3731,7 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/retry-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3739,6 +3796,7 @@ async fn web_fetch_respects_deadline_during_retry() {
     let result = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/slow-503"),
             max_chars: None,
             timeout_ms: Some(200),
@@ -3792,6 +3850,7 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
             run_web_fetch(
                 s,
                 WebFetchArgs {
+                    cursor: None,
                     url,
                     max_chars: None,
                     timeout_ms: None,
@@ -3845,6 +3904,7 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/cache-hit-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3869,6 +3929,7 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/cache-hit-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3913,6 +3974,7 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/refresh-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3945,6 +4007,7 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/refresh-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3990,6 +4053,7 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/bypass-test"),
             max_chars: None,
             timeout_ms: None,
@@ -4021,6 +4085,7 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/bypass-test"),
             max_chars: None,
             timeout_ms: None,
@@ -4066,6 +4131,7 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/private-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4089,6 +4155,7 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/private-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4134,6 +4201,7 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/vary-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4157,6 +4225,7 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/vary-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4195,6 +4264,7 @@ async fn web_fetch_render_http_only_never_uses_browser() {
     cfg.fetch.allow_private_network = true;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/page", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4229,6 +4299,7 @@ async fn web_fetch_render_auto_returns_useful_http_content() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/article", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4263,6 +4334,7 @@ async fn web_fetch_render_auto_no_escalate_401() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/auth", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4296,6 +4368,7 @@ async fn web_fetch_render_auto_no_escalate_429() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/rate-limited", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4329,6 +4402,7 @@ async fn web_fetch_render_auto_no_escalate_404() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/not-found", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4362,6 +4436,7 @@ async fn web_fetch_render_auto_no_escalate_403() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/forbidden", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4386,6 +4461,7 @@ async fn web_fetch_render_auto_no_escalate_403() {
 async fn web_fetch_render_invalid_returns_validation_error() {
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://example.com".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4419,6 +4495,7 @@ async fn web_fetch_render_invalid_returns_validation_error() {
 async fn web_fetch_profile_with_http_only_rejected() {
     let state = state_with_default();
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://example.com".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4455,6 +4532,7 @@ async fn web_fetch_response_has_transport_field() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4511,6 +4589,7 @@ async fn web_fetch_profile_lock_acquired_and_released() {
     });
 
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://example.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4569,6 +4648,7 @@ async fn web_fetch_profile_origin_mismatch_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://other-site.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4614,6 +4694,7 @@ async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        cursor: None,
         url: format!("http://localhost:{}/article", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4653,6 +4734,7 @@ async fn web_fetch_explicit_browser_unavailable_returns_failure() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://example.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4704,6 +4786,7 @@ async fn web_fetch_profile_lock_contention_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        cursor: None,
         url: "https://example.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -5017,6 +5100,7 @@ async fn web_fetch_pdf_above_max_bytes_within_pdf_budget_extracts() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/paper.pdf"),
             max_chars: None,
             timeout_ms: None,
@@ -5074,6 +5158,7 @@ async fn web_fetch_pdf_above_pdf_budget_returns_size_outcome() {
     let err = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/huge.pdf"),
             max_chars: None,
             timeout_ms: None,

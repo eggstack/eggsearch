@@ -83,6 +83,8 @@ libc = "0.2"
 lru = "0.18"
 self-replace = "1"
 sha2 = "0.10"
+pbkdf2 = "0.12"
+base64 = "0.22"
 tempfile = "3"
 
 [dev-dependencies]

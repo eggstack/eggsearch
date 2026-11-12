@@ -277,6 +277,7 @@ async fn probe_explicit_request_still_routes_after_degraded() {
         &cfg,
         adapter.health(),
         true,
+        None,
     )
     .expect("explicit routing should succeed");
     assert_eq!(decision.selected_providers, vec!["duckduckgo".to_string()]);

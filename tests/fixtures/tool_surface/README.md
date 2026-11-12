@@ -72,6 +72,14 @@ Post-consolidation surface (Plans 001-005 landed, v0.3.9):
 - fingerprint:
   `eggsearch-0.3.9|tools=batch_fetch:150,build_evidence_bundle:144,provider_status:148,repo_fetch:150,repo_map:146,repo_search:186,research_search:160,security_search:159,web_fetch:159,web_search:160|bytes=73037`.
 
+Post M009 (additive `cursor` input on `web_fetch`/`batch_fetch`/
+`research_search`, `next_cursor`/`cursor_status` output keys):
+
+- total definition bytes: 73417 (+380 over the post-consolidation baseline);
+- full+full contract fingerprint: `1c187545a3bf85de`;
+- full+compact contract fingerprint: `75b732f7f19c24f7`;
+- compact definition bytes: 19818 (+207).
+
 The description/instruction cuts account for nearly all of the
 improvement; total bytes moved less because structured output schemas
 (Plan 003) are model-visible by design. Re-run after disclosure or

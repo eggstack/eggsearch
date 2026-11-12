@@ -681,6 +681,7 @@ mod security_context_safety {
         let v = run_batch_fetch(
             state,
             BatchFetchArgs {
+                cursor: None,
                 items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/get"),
                     extract_mode: Some(ExtractMode::Text),
@@ -744,6 +745,7 @@ mod security_context_safety {
         let v = run_batch_fetch(
             state,
             BatchFetchArgs {
+                cursor: None,
                 items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/big"),
                     extract_mode: Some(ExtractMode::Text),

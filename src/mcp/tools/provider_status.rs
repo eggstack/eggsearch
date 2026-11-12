@@ -132,6 +132,24 @@ fn build_payload_without_probe(
         "health": health_snapshots,
         "health_views": health_views,
         "mode": mode_str(state.config.search.mode),
+        "mcp_advertisement": {
+            "tool_preset": state.config.mcp.tool_preset.as_str(),
+            "schema_profile": state.config.mcp.schema_profile.as_str(),
+            "advertised_count": crate::mcp::advertisement::tools_for(
+                state.config.mcp.tool_preset
+            )
+            .len(),
+            "advertised_tools": crate::mcp::advertisement::tools_for(
+                state.config.mcp.tool_preset
+            ),
+            "hidden_tools": crate::mcp::advertisement::hidden_tools(
+                state.config.mcp.tool_preset
+            ),
+        },
+        "routing": crate::meta::routing::disclosure(
+            state.config.search.routing.intent_mode,
+            state.config.search.routing.max_extra_providers,
+        ),
         "server_capabilities": {
             "generic_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
             "explicit_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),

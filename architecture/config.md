@@ -56,7 +56,7 @@ defaulted, but `[search]` still requires `mode`, `default_max_results`,
 | `max_results_cap` | `usize` | `50` | Hard cap on caller-requested `max_results` |
 | `max_query_chars` | `usize` | `512` | Maximum accepted query length |
 | `timeout_ms` | `u64` | `8000` | Per-request search timeout |
-| `default_providers` | `Vec<String>` | `["duckduckgo", "startpage", "yahoo"]` | Providers queried when the caller names none |
+| `default_providers` | `Vec<String>` | `["duckduckgo", "brave", "yahoo"]` | Providers queried when the caller names none |
 | `providers` | `BTreeMap<String, bool>` | 13 entries (see below) | Per-provider enable/disable flags |
 | `searxng` | `SearxngConfig` | disabled | Self-hosted SearXNG upstream (`enabled`, `base_url`) |
 | `api` | `BTreeMap<String, ApiProviderConfig>` | empty | API-key providers (`enabled`, `api_key_env`, `base_url`) |
@@ -68,6 +68,35 @@ defaulted, but `[search]` still requires `mode`, `default_max_results`,
 | `multiquery_provider_concurrency` | `usize` | `2` | Per-provider in-flight dispatch cap |
 | `cache_ttl_seconds` | `u64` | `300` | `web_search` result-cache TTL (`0` disables; max 86400). A freshness bound, not a correctness guarantee |
 | `cache_max_entries` | `usize` | `128` | Bounded LRU entry count (`1..=4096`); each entry is capped at 1024 rows and is not stored above that |
+
+### `[search.routing]` — `RoutingSection`
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `intent_mode` | `IntentMode` | `off` | `off` derives and reports intent plus the routing decision but adds no provider; `apply` admits the intent's preferred providers. Unknown values are a parse error |
+| `max_extra_providers` | `usize` | `2` | Cap on providers added by one routing decision, bounded to 0–4. `0` reports without adding |
+
+Routing only adds. The precedence chain is explicit `providers`, then `profile`,
+then default providers plus intent additions, then the cooldown and health
+filter. Every table entry is admitted only when it is enabled, built, not
+cooling down, and satisfies the same capability predicate its warning uses, so
+routing cannot hide a real capability gap. `apply` is not the default: the
+tier-1 snapshot lane does not yet measure the shipped default provider set, so
+flipping the default would ship an unmeasured policy change.
+
+### `[search.challenge]` — `ChallengeSection`
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `enabled` | `bool` | `false` | Opt-in gate for bounded non-interactive proof-of-work solving (ADR-0009). While off, challenged providers behave exactly as before |
+| `max_difficulty` | `u8` | `5` | Refuses an Anubis challenge whose published `rules.difficulty` exceeds it; bounded to 1–10. Operator cost knob, not an engine constant |
+| `max_attempts` | `u64` | `2000000` | Candidate/derivation ceiling per solve, bounded to 1–100000000; reaching it fails the solve rather than looping |
+| `timeout_ms` | `u64` | `2000` | Wall-clock ceiling per solve, bounded to 100–30000; a difficulty-6 Anubis solve needs at least 8000 |
+| `cookie_ttl_seconds` | `u64` | `240` | Pass-cookie reuse window per provider, bounded to 0–3600; `0` re-solves every request |
+
+The section is serde-defaulted, so a config file without it keeps pre-ADR-0009
+behaviour exactly. Pass cookies live in process memory only and are never
+logged, persisted, or surfaced in `provider_status`.
 
 Default `providers` map: `duckduckgo = true`, `brave = true`,
 `startpage = true`, `yahoo = true`, `mojeek = false`,
@@ -176,6 +205,9 @@ being silently ignored.
 |-------|------|---------|---------|
 | `schema_profile` | `McpSchemaProfile` | `full` | `full` advertises the existing complete schemas; `compact` keeps all ten tool names while shortening descriptions and input schemas for context-heavy direct MCP clients |
 | `brief_max_chars` | `usize` | `8000` | Maximum serialized character count for brief MCP responses, bounded to 512–32000 |
+| `excerpt_budget_chars` | `usize` | `4000` | One response-wide ceiling on card passage text (`snippet` plus `excerpts[].text`) for `compact` and `brief` responses, bounded to 256–32000. Measured in serialized characters including trust framing; deterministic shingle-overlap suppression runs inside it and reports `excerpt_economy` |
+| `tool_preset` | `McpToolPreset` | `full` | `full` advertises all ten tools; `research` (7), `code` (8) and `minimal` (4) filter `tools/list` only. Hidden tools still execute, and `next_actions` are filtered to the active preset. Resolution order is contract metadata, then compact projection, then the preset filter; unknown values are a parse error |
+| `tasks` | `McpTasksSection` | disabled | Nested `[mcp.tasks]`: `enabled` (default `false`), `ttl_ms` (default `300000`, 1000–3600000), `max_concurrent` (default `4`, 1–16), `poll_interval_ms` (default `1000`, 250–10000). Tasks are exposed only when enabled **and** the client declared the extension; above `max_concurrent` a call falls back to the synchronous path |
 
 The compact profile is process-wide presentation configuration, shared by
 stdio and loopback HTTP. It does not restrict tool execution or change
@@ -252,7 +284,9 @@ issues / releases adapters plus `brave_api`, `searxng`,
 `duckduckgo`, `startpage`; `security` lists `osv`,
 `github_issues`, `brave_api`, `duckduckgo`, `startpage`; `research`
 lists `brave_api`, `searxng`, `duckduckgo`, `startpage`, `mojeek`.
-Profiles never require API keys; missing credentials are
+`startpage` remains listed by the built-in profiles even though its
+upstream currently refuses every request with an Anubis proof-of-work
+wall. Profiles never require API keys; missing credentials are
 provider-scoped skips, never request failures.
 
 ---
@@ -300,8 +334,8 @@ provider-scoped skips, never request failures.
 ## Keyless Healthy Default
 
 `AppConfig::default()` with no file and no credential env vars must
-produce a useful server: `duckduckgo`, `brave`, `startpage`, `yahoo`,
-and `osv` route keyless. CI enforces this by blanking all credential
+produce a useful server: `duckduckgo`, `brave`, `yahoo`, and `osv`
+route keyless. CI enforces this by blanking all credential
 env vars; missing credentials surface as provider-scoped skips, never
 global failures.
 

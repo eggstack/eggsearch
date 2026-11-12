@@ -68,6 +68,10 @@ pub(super) fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>,
             break;
         }
 
+        if element.value().classes().any(|class| class == "result--ad") {
+            continue;
+        }
+
         let Some(title_el) = element.select(&title_sel).next() else {
             continue;
         };
@@ -183,5 +187,26 @@ mod tests {
         let results = parse(html, 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://valid.com");
+    }
+
+    #[test]
+    fn test_parse_skips_sponsored_results() {
+        let html = r#"
+            <div class="result results_links results_links_deep result--ad ">
+                <h2 class="result__title">
+                    <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fy.js%3Fad_domain%3Dexample.com">Sponsored</a>
+                </h2>
+                <a class="result__snippet">Paid placement.</a>
+            </div>
+            <div class="result results_links results_links_deep web-result">
+                <h2 class="result__title">
+                    <a class="result__a" href="/l/?uddg=https%3A%2F%2Forganic.com">Organic</a>
+                </h2>
+                <a class="result__snippet">Editorial result.</a>
+            </div>
+        "#;
+        let results = parse(html, 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://organic.com");
     }
 }

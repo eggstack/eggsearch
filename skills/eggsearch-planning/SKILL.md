@@ -26,7 +26,7 @@ roadmaps are **repository security, supply-chain, and maintenance hardening**
 scheduled `dependency-security` workflow run), **Python PyPI distribution** (M001–M003
 closed, M004 blocked on ARMv7 physical evidence), **retrieval quality evidence
 extension** (closing), and **agentic retrieval integrity and context economy**
-(M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006/M007 dependency-ready without plans, M008/M009 proposed).
+(M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006/M007 dependency-ready without plans, M008/M009 proposed, M010–M012 ready under ADR-0009).
 Tool-surface
 M001–M007 are closed. `eggsearch` 0.4.1 is the current published release; `v0.4.0` is
 crate + tag only with no binaries.

@@ -84,6 +84,14 @@ pub async fn run_web_search(
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }
 
+    let routing_intent = caller_intent.unwrap_or_else(|| {
+        crate::meta::intent::derive_intent(
+            &req.query,
+            &crate::core::repo_query::RepoQueryHints::parse(&req.query),
+        )
+        .intent
+    });
+
     let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
         &args.providers,
         None,
@@ -91,6 +99,7 @@ pub async fn run_web_search(
         &state.config,
         state.adapter.health(),
         true,
+        Some(routing_intent),
     )
     .map_err(|e| ToolError::Validation(e.to_string()))?;
 
@@ -113,6 +122,7 @@ pub async fn run_web_search(
             resolution.effective,
             state.config.search.max_results_cap,
             caller_intent,
+            state.config.search.routing.intent_mode,
         )
         .await;
 
@@ -296,10 +306,13 @@ pub async fn run_web_search(
         args.response_detail,
         state.config.mcp.schema_profile,
     );
-    Ok(crate::mcp::projection::project_with_budget(
+    Ok(crate::mcp::projection::project_with_limits(
         "web_search",
         payload,
         detail,
-        state.config.mcp.brief_max_chars,
+        crate::mcp::projection::ProjectionLimits {
+            brief_max_chars: state.config.mcp.brief_max_chars,
+            excerpt_budget_chars: state.config.mcp.excerpt_budget_chars,
+        },
     ))
 }

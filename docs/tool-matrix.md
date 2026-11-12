@@ -33,6 +33,36 @@ The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
 
 Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
 
+## Advertisement presets
+
+`[mcp].tool_preset` filters what `tools/list` advertises. It is a server
+configuration knob, not a capability boundary: hidden tools still execute when
+called directly.
+
+| Preset | Tools advertised |
+|--------|------------------|
+| `full` (default) | all ten |
+| `research` | `provider_status`, `web_search`, `web_fetch`, `research_search`, `repo_fetch`, `batch_fetch`, `build_evidence_bundle` |
+| `code` | `provider_status`, `web_search`, `web_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle` |
+| `minimal` | `web_search`, `web_fetch`, `batch_fetch`, `build_evidence_bundle` |
+
+Resolution order is contract metadata, then compact schema projection, then the
+preset filter, so a preset composes with `schema_profile` instead of competing
+with it. Every non-`full` preset is closed under the contract's `next_tools`,
+which is enforced by test: a preset can never advertise a tool whose follow-up
+suggestions point at a hidden one.
+
+`next_actions` are filtered to the active preset at the single response seam.
+Dropped entries are counted in an additive `next_actions_omitted` field and are
+never rewritten into a different tool, so a model is never pointed at something
+it cannot see. `provider_status.mcp_advertisement` reports `tool_preset`,
+`schema_profile`, `advertised_count`, `advertised_tools`, and `hidden_tools`.
+There is deliberately no `tools/list._meta` signal.
+
+Measured advertisement size (full / compact serialized bytes): `full`
+73,161 / 19,611; `research` 65,560 / 16,498; `code` 68,429 / 16,820; `minimal`
+57,985 / 13,116.
+
 ## Progressive disclosure
 
 Keep the immediate palette small and hydrate specialists on demand:
@@ -52,7 +82,7 @@ by content fingerprint plus server version, never by count.
 
 Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema` (typed envelopes for seven tools, permissive stable envelopes for `web_search`/`web_fetch`/`provider_status`). `tools/list` is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
 
-Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
+Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `cursor_mismatch`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
 
 ## Response projection and context budgets
 

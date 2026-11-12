@@ -76,6 +76,50 @@ unsupported.
 
 ---
 
+## Bounded Challenge Solving
+
+Some keyless search engines answer automated queries with a published
+computational proof-of-work challenge instead of results. ADR-0009 permits
+solving those in-process; it permits nothing else.
+
+### Enabling
+
+Off by default. Opt in per deployment:
+
+```toml
+[search.challenge]
+enabled = true
+```
+
+### Capabilities
+
+- Solves the two schemes the engine set actually encounters: Anubis `fast`/`preact` (Startpage) and ALTCHA `PBKDF2/SHA-256` (Mojeek)
+- One shared solver module under `src/meta/challenge/`; engines call it rather than carrying per-engine copies
+- At most one solve per provider per search request, and one per `cookie_ttl_seconds`
+- A solved request runs through the normal parser and the normal four-outcome classification
+
+### Limits
+
+- Four ceilings apply to every solve: `max_difficulty`, `max_attempts`, `timeout_ms`, and the `cookie_ttl_seconds` reuse window
+- A solve that reaches any ceiling fails; it never loops or retries
+- Pass cookies are held in process memory only and never appear in logs, `provider_status`, diagnostics, or fixtures
+- The solver sends the operator's configured user agent unchanged and adds no evasion headers
+
+### Explicitly not permitted
+
+Interactive CAPTCHA or visual puzzle answering, OCR of challenge images,
+human or third-party solving services, credential or login bypass, session or
+cookie theft, proxy rotation, user-agent spoofing, and retry widening to
+conceal an outage. The browser path separately never clicks, simulates input,
+or uses external services for interactive challenges.
+
+### Outcome contract
+
+A challenged provider that is disabled, above the difficulty ceiling,
+unsupported, or out of budget reports `error_class: blocked` with a reason
+naming the bound — never an empty result. A solved page that fails to parse is
+`parse_error`, not `blocked`.
+
 ## Browser Rendering
 
 Optional headless Chrome/Chromium rendering for JavaScript-heavy pages that ordinary HTTP fetching cannot render.
@@ -112,7 +156,7 @@ The `render` parameter on `web_fetch` controls transport selection:
 
 - **Public-network-only**: Rejects localhost, private IPv4/IPv6, link-local, and cloud metadata addresses regardless of `allow_localhost`/`allow_private_network` settings
 - **No browser download**: Discovers an already-installed system Chrome/Chromium. Never downloads, installs, or manages browser updates
-- **No challenge solving**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured error codes — never clicked, simulated, or solved with external services
+- **No challenge solving**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured error codes — never clicked, simulated, or solved with external services. This rule is scoped to the browser path; engine-level proof-of-work solving under ADR-0009 is a separate, opt-in, non-interactive mechanism
 - **Deterministic executable path**: An explicitly configured invalid browser executable path fails deterministically — does not silently fall back to auto-discovery
 - **Request interception**: All observable requests are intercepted and checked against the network policy
 - **Bounded extraction**: DOM size, request count, navigation time, and post-load wait are all bounded by configuration

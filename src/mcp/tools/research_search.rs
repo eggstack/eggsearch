@@ -70,6 +70,8 @@ pub struct ResearchSearchArgs {
     /// Known context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
     /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
@@ -80,6 +82,40 @@ pub async fn run_research_search(
     state: Arc<ServerState>,
     args: ResearchSearchArgs,
 ) -> Result<serde_json::Value, ToolError> {
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    run_research_search_with_progress(state, args, &mut progress).await
+}
+
+pub const RESEARCH_PAGE_GROUPS: usize = 14;
+
+pub(crate) fn research_search_plan_key(args: &ResearchSearchArgs) -> String {
+    let mut key = crate::mcp::cursor::PlanKey::new(crate::mcp::cursor::CursorTool::ResearchSearch)
+        .str(&args.query)
+        .opt_str(args.research_domain.as_deref())
+        .opt_str(args.goal.as_deref())
+        .opt_str(args.workflow.as_deref())
+        .opt_str(args.depth.as_deref())
+        .opt_usize(args.max_results)
+        .opt_usize(args.max_per_group)
+        .opt_str(args.freshness.as_deref())
+        .opt_str(args.known_context.as_deref());
+    for source_type in &args.desired_source_types {
+        key = key.str(source_type);
+    }
+    for provider in &args.providers {
+        key = key.str(provider);
+    }
+    for target in &args.compare_targets {
+        key = key.str(target);
+    }
+    key.finish()
+}
+
+pub async fn run_research_search_with_progress(
+    state: Arc<ServerState>,
+    args: ResearchSearchArgs,
+    progress: &mut crate::mcp::progress::ProgressSink,
+) -> Result<serde_json::Value, ToolError> {
     use crate::core::research::{
         ResearchDepth, ResearchDomain, ResearchSearchRequest, ResearchSourceType,
     };
@@ -89,6 +125,33 @@ pub async fn run_research_search(
             "research_search",
         )));
     }
+
+    let plan_key = research_search_plan_key(&args);
+    let cursor = crate::mcp::cursor::cursor_args(args.cursor.as_deref()).map_err(|e| {
+        ToolError::budget_invalid(format!("cursor is not a valid replay token: {}", e.code()))
+    })?;
+    if let Some(ref cursor) = cursor {
+        cursor
+            .require_tool(crate::mcp::cursor::CursorTool::ResearchSearch)
+            .map_err(cursor_rejected)?;
+        cursor
+            .require_plan_key(&plan_key)
+            .map_err(cursor_rejected)?;
+    }
+    let budget_ms = cursor
+        .as_ref()
+        .map(|cursor| cursor.timeout_ms().min(state.config.search.timeout_ms))
+        .unwrap_or(state.config.search.timeout_ms);
+    if args.max_groups == Some(0) {
+        return Err(ToolError::Validation(
+            "invalid request: max_groups must be > 0".to_string(),
+        ));
+    }
+    let page_groups = args
+        .max_groups
+        .unwrap_or(RESEARCH_PAGE_GROUPS)
+        .min(RESEARCH_PAGE_GROUPS);
+    let mut cursor_status: Option<&'static str> = None;
 
     let research_domain = parse_strict_enum_arg(
         "research_domain",
@@ -154,10 +217,17 @@ pub async fn run_research_search(
         include_recent_discussion: resolved_includes.include_recent_discussion,
         include_security_considerations: resolved_includes.include_security_considerations,
         max_results: args.max_results,
-        max_groups: args.max_groups,
+        max_groups: Some(page_groups.max(RESEARCH_PAGE_GROUPS)),
         max_per_group: args.max_per_group,
         freshness,
-        timeout_ms: args.timeout_ms,
+        timeout_ms: match cursor.as_ref() {
+            Some(cursor) => Some(
+                cursor
+                    .timeout_ms()
+                    .min(args.timeout_ms.unwrap_or(cursor.timeout_ms())),
+            ),
+            None => args.timeout_ms,
+        },
         providers: args.providers,
         workflow,
         depth,
@@ -177,6 +247,7 @@ pub async fn run_research_search(
         &state.config,
         state.adapter.health(),
         true,
+        None,
     )
     .map_err(|e| ToolError::Validation(e.to_string()))?;
 
@@ -188,12 +259,62 @@ pub async fn run_research_search(
     let mut req = req;
     req.providers = routing_decision.selected_providers.clone();
 
+    progress.phase("plan");
     let mut response = state
         .adapter
         .research_search(&req, effective_max, state.config.search.max_results_cap)
         .await;
 
     merge_selection_stage_attempts(&routing_decision, &mut response.retrieval_summary);
+
+    progress.phase("merge");
+    let group_ids: Vec<String> = response
+        .groups
+        .iter()
+        .filter(|group| !group.results.is_empty())
+        .map(|group| {
+            group
+                .results
+                .last()
+                .and_then(|card| card.stable_id.clone().or_else(|| Some(card.id.clone())))
+                .unwrap_or_default()
+        })
+        .collect();
+    let non_empty: Vec<usize> = response
+        .groups
+        .iter()
+        .enumerate()
+        .filter(|(_, group)| !group.results.is_empty())
+        .map(|(index, _)| index)
+        .collect();
+    let resolved = crate::mcp::cursor::resolve_page(
+        group_ids.len(),
+        &group_ids,
+        cursor.as_ref(),
+        page_groups,
+        |_| 1,
+    );
+    if resolved.stale {
+        cursor_status = Some("stale");
+    } else if resolved.resumed {
+        cursor_status = Some("ok");
+    }
+    let next_cursor = crate::mcp::cursor::encode_next(
+        crate::mcp::cursor::CursorTool::ResearchSearch,
+        &plan_key,
+        &group_ids,
+        resolved.window,
+        budget_ms,
+    );
+    if resolved.window.end < non_empty.len() || resolved.window.start > 0 {
+        let selected: Vec<usize> = non_empty[resolved.window.start..resolved.window.end].to_vec();
+        let mut paged = Vec::with_capacity(selected.len());
+        for index in selected {
+            paged.push(response.groups[index].clone());
+        }
+        response.groups = paged;
+    }
+    progress.phase("group");
 
     // Add routing decision and capability enforcement telemetry
     if let Some(ref mut telem) = response.telemetry {
@@ -222,15 +343,20 @@ pub async fn run_research_search(
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
+    let value = with_cursor_keys(value, next_cursor, cursor_status);
 
     let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
         args.response_detail,
         state.config.mcp.schema_profile,
     );
-    Ok(crate::mcp::projection::project_with_budget(
+    progress.phase("project");
+    Ok(crate::mcp::projection::project_with_limits(
         "research_search",
         value,
         detail,
-        state.config.mcp.brief_max_chars,
+        crate::mcp::projection::ProjectionLimits {
+            brief_max_chars: state.config.mcp.brief_max_chars,
+            excerpt_budget_chars: state.config.mcp.excerpt_budget_chars,
+        },
     ))
 }

@@ -49,6 +49,7 @@ pub mod semantic_scholar;
 pub mod serpapi;
 pub mod sourcegraph;
 pub mod startpage;
+mod startpage_payload;
 pub mod tavily;
 #[cfg(feature = "mock")]
 pub mod test_harness;
@@ -150,6 +151,7 @@ pub struct BraveEngine {
 
 pub struct StartpageEngine {
     pub client: Arc<Client>,
+    pub challenge: Arc<crate::core::config::ChallengeSection>,
 }
 
 pub struct YahooEngine {
@@ -158,6 +160,7 @@ pub struct YahooEngine {
 
 pub struct MojeekEngine {
     pub client: Arc<Client>,
+    pub challenge: Arc<crate::core::config::ChallengeSection>,
 }
 
 pub struct SearxngEngine {
@@ -399,6 +402,7 @@ impl SearchEngine for StartpageEngine {
             &request.query,
             request.max_results,
             request.timeout,
+            &self.challenge,
         ))
     }
 }
@@ -435,6 +439,7 @@ impl SearchEngine for MojeekEngine {
             &request.query,
             request.max_results,
             request.timeout,
+            &self.challenge,
         ))
     }
 }

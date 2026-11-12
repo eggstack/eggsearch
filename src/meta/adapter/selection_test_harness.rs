@@ -159,3 +159,75 @@ pub fn select_with_knobs(
         })
         .collect()
 }
+
+/// One provider intent routing considered, with the disposition it chose.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoutingOutcome {
+    /// The provider id under consideration.
+    pub provider_id: String,
+    /// Stable disposition code, for example `added` or `not_enabled`.
+    pub disposition: String,
+}
+
+fn routing_outcomes(attempts: Vec<crate::meta::routing::RoutingAttempt>) -> Vec<RoutingOutcome> {
+    attempts
+        .into_iter()
+        .map(|attempt| RoutingOutcome {
+            provider_id: attempt.provider_id.to_string(),
+            disposition: attempt.disposition.as_str().to_string(),
+        })
+        .collect()
+}
+
+/// Replay the production default-path routing decision for `intent`.
+///
+/// `built` is the set of provider ids the adapter constructed, which is
+/// how the snapshot lane models engine presence.
+pub fn route_default(
+    intent: SearchIntent,
+    base: &[String],
+    enabled: &[String],
+    built: &[String],
+    cooling: &[String],
+    max_extra: usize,
+) -> Vec<RoutingOutcome> {
+    routing_outcomes(crate::meta::routing::select_intent_additions(
+        intent, base, enabled, built, cooling, max_extra,
+    ))
+}
+
+/// Same decision as [`route_default`] but with an explicit preference order,
+/// so a seeded negative control can prove the lane notices a worse ordering.
+pub fn route_with_order(
+    intent: SearchIntent,
+    providers: &'static [&'static str],
+    base: &[String],
+    enabled: &[String],
+    built: &[String],
+    cooling: &[String],
+    max_extra: usize,
+) -> Vec<RoutingOutcome> {
+    routing_outcomes(crate::meta::routing::select_intent_additions_with_order(
+        intent, providers, base, enabled, built, cooling, max_extra,
+    ))
+}
+
+/// The providers intent routing appends for a default-path call.
+pub fn intent_additions(
+    intent: SearchIntent,
+    base: &[String],
+    enabled: &[String],
+    built: &[String],
+    cooling: &[String],
+    max_extra: usize,
+) -> Vec<String> {
+    crate::meta::routing::added_ids(&crate::meta::routing::select_intent_additions(
+        intent, base, enabled, built, cooling, max_extra,
+    ))
+}
+
+/// The enabled and built providers that hold `intent`'s native capability,
+/// in preference-table order.
+pub fn capable_providers(intent: SearchIntent, built: &[String]) -> Vec<String> {
+    crate::meta::routing::capable_built_providers(intent, built)
+}

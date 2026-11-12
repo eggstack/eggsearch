@@ -80,6 +80,7 @@ fn article_body() -> Vec<u8> {
 
 fn batch_args(items: Vec<BatchFetchItem>) -> BatchFetchArgs {
     BatchFetchArgs {
+        cursor: None,
         items,
         max_items: None,
         max_chars_per_item: None,
@@ -223,6 +224,7 @@ async fn batch_aggregate_truncation_is_explicit() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: Some(4000),

@@ -284,6 +284,7 @@ impl ServerState {
             config.search.multiquery_concurrency,
             config.search.multiquery_provider_concurrency,
             &config.egress,
+            &config.search.challenge,
             search_cache,
         )?;
 

@@ -165,6 +165,7 @@ impl MetadataSearchAdapter {
             multiquery_concurrency,
             multiquery_provider_concurrency,
             &crate::core::config::EgressSection::default(),
+            &crate::core::config::ChallengeSection::default(),
             search_cache,
         )
     }
@@ -182,6 +183,7 @@ impl MetadataSearchAdapter {
         multiquery_concurrency: usize,
         multiquery_provider_concurrency: usize,
         egress: &crate::core::config::EgressSection,
+        challenge: &crate::core::config::ChallengeSection,
         search_cache: SearchCacheSettings,
     ) -> anyhow::Result<Self> {
         let searxng_configured = searxng_base_url.as_deref().is_some_and(|s| !s.is_empty());
@@ -191,6 +193,7 @@ impl MetadataSearchAdapter {
             searxng_base_url,
             api_providers,
             egress,
+            challenge,
         )?;
         if !skipped.is_empty() {
             let skipped_ids: Vec<String> = skipped.iter().map(|s| s.id.clone()).collect();

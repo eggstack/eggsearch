@@ -8,6 +8,8 @@
 pub mod adapter;
 /// Advisory affected/fixed range extraction from structured vulnerability metadata.
 pub mod advisory_range;
+/// Bounded, opt-in challenge solving for keyless HTML upstreams.
+pub mod challenge;
 /// Dependency/lock file parser for extracting dependency coordinates.
 pub mod dependency_parse;
 /// Bounded parallel dispatch for multi-subquery searches.
@@ -64,6 +66,7 @@ pub mod research_planner;
 pub mod research_suggested_fetches;
 pub mod research_workflow;
 pub mod response;
+pub(crate) mod routing;
 /// Race-resistant file opening using component-wise path walking.
 pub mod safe_open;
 /// Process-local cache and single-flight coalescer for `web_search` fan-outs.

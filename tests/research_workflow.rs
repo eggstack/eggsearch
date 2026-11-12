@@ -128,6 +128,7 @@ mod research_search {
 
     fn research_args(query: &str) -> ResearchSearchArgs {
         ResearchSearchArgs {
+            cursor: None,
             query: query.to_string(),
             providers: vec!["mock_a".into()],
             ..Default::default()
@@ -137,6 +138,7 @@ mod research_search {
     #[cfg(feature = "mock")]
     fn research_args_multi(providers: &[&str], query: &str) -> ResearchSearchArgs {
         ResearchSearchArgs {
+            cursor: None,
             query: query.to_string(),
             providers: providers.iter().map(|s| s.to_string()).collect(),
             ..Default::default()
@@ -162,6 +164,7 @@ mod research_search {
         let res = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "rust async".into(),
                 providers: vec!["mock_a".into()],
                 max_results: Some(0),
@@ -182,6 +185,7 @@ mod research_search {
         let res = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "rust async".into(),
                 providers: vec!["mock_a".into()],
                 timeout_ms: Some(0),
@@ -211,6 +215,7 @@ mod research_search {
         let res = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "rust async".into(),
                 providers: vec!["nope".into()],
                 ..Default::default()
@@ -453,6 +458,7 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "tokio async runtime performance".into(),
                 research_domain: Some("performance".into()),
                 providers: vec!["mock_a".into()],
@@ -596,6 +602,7 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "web framework architecture decisions".into(),
                 workflow: Some("architecture_decision".into()),
                 depth: Some("standard".into()),
@@ -643,6 +650,7 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "compare web frameworks".into(),
                 workflow: Some("library_comparison".into()),
                 compare_targets: vec!["axum".into(), "actix-web".into()],
@@ -674,6 +682,7 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
+                cursor: None,
                 query: "test query".into(),
                 workflow: Some("architecture_decision".into()),
                 providers: vec!["mock_a".into()],
@@ -1235,6 +1244,7 @@ async fn repo_fetch_via_web_fetch_full_file() {
             .expect("state"),
         ),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/src/main.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1282,6 +1292,7 @@ async fn repo_fetch_via_web_fetch_404() {
             .expect("state"),
         ),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/missing.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1331,6 +1342,7 @@ async fn repo_fetch_via_web_fetch_429() {
             .expect("state"),
         ),
         WebFetchArgs {
+            cursor: None,
             url: server.url("/rate-limited.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1379,6 +1391,7 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/injected.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1436,6 +1449,7 @@ async fn repo_fetch_via_web_fetch_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            cursor: None,
             url: server.url("/long.rs"),
             max_chars: Some(200),
             timeout_ms: None,
@@ -5592,6 +5606,7 @@ async fn batch_fetch_empty_items_returns_validation_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![],
             max_items: None,
             max_chars_per_item: None,
@@ -5616,6 +5631,7 @@ async fn batch_fetch_disabled_by_policy_returns_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -5659,6 +5675,7 @@ async fn batch_fetch_over_item_cap_returns_validation_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -5701,6 +5718,7 @@ async fn batch_fetch_single_web_item_succeeds() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/page"),
                 extract_mode: None,
@@ -5774,6 +5792,7 @@ async fn batch_fetch_multiple_web_items_return_in_order() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -5823,6 +5842,7 @@ async fn batch_fetch_web_item_failure_with_continue_on_error() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/fail"),
@@ -5885,6 +5905,7 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: "https://198.51.100.1/nope".to_string(),
@@ -5966,6 +5987,7 @@ async fn batch_fetch_per_item_max_chars_enforced() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/big"),
                 extract_mode: None,
@@ -6035,6 +6057,7 @@ async fn batch_fetch_total_budget_enforced() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6084,6 +6107,7 @@ async fn batch_fetch_continue_on_error_across_waves() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
@@ -6180,6 +6204,7 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6242,6 +6267,7 @@ async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6300,6 +6326,7 @@ async fn batch_fetch_empty_web_url_returns_error_in_result() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "  ".to_string(),
                 extract_mode: None,
@@ -6333,6 +6360,7 @@ async fn batch_fetch_invalid_repo_host_returns_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: Some("bitbucket".to_string()),
                 owner: "test".to_string(),
@@ -6399,6 +6427,7 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6482,6 +6511,7 @@ async fn batch_fetch_mixed_web_and_repo_items_return_separate_responses() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/doc"),
@@ -6593,6 +6623,7 @@ async fn batch_fetch_workspace_item_retains_local_trusted_and_marker_scan() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: Some("workspace".to_string()),
                 owner: root_name,
@@ -6668,6 +6699,7 @@ async fn batch_fetch_rejects_malformed_url() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "not-a-url".to_string(),
                 extract_mode: None,
@@ -6704,6 +6736,7 @@ async fn batch_fetch_rejects_unsupported_scheme() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "ftp://example.com/file".to_string(),
                 extract_mode: None,
@@ -6740,6 +6773,7 @@ async fn batch_fetch_rejects_absolute_repo_path() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: None,
                 owner: "test".to_string(),
@@ -6781,6 +6815,7 @@ async fn batch_fetch_rejects_path_traversal() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: None,
                 owner: "test".to_string(),
@@ -6822,6 +6857,7 @@ async fn batch_fetch_rejects_zero_max_chars_web() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -6858,6 +6894,7 @@ async fn batch_fetch_rejects_zero_max_chars_repo() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: None,
                 owner: "test".to_string(),
@@ -6899,6 +6936,7 @@ async fn batch_fetch_rejects_zero_max_items() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -6935,6 +6973,7 @@ async fn batch_fetch_rejects_zero_max_chars_per_item() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -6971,6 +7010,7 @@ async fn batch_fetch_rejects_zero_max_total_chars() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -7033,6 +7073,7 @@ async fn batch_fetch_budget_exhaustion_returns_warning() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7082,6 +7123,7 @@ async fn batch_fetch_budget_clamps_to_cap() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/page"),
                 extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
@@ -7145,6 +7187,7 @@ async fn batch_fetch_result_order_preserved() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7203,6 +7246,7 @@ async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7291,6 +7335,7 @@ async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order(
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7380,6 +7425,7 @@ async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7420,6 +7466,7 @@ async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "ftp://example.com/file".to_string(),
                 extract_mode: None,
@@ -7461,6 +7508,7 @@ async fn batch_fetch_rejects_zero_timeout_ms() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -7510,6 +7558,7 @@ async fn batch_fetch_uppercase_scheme_is_accepted() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
+            cursor: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: upper,
                 extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),

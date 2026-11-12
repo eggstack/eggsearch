@@ -21,6 +21,8 @@ The original verification missed this because engine tests build miniature hand-
 
 - No new providers, no replacement of scrapers with APIs, no selector redesign beyond what fixtures prove necessary.
 - No CAPTCHA solving, proxy rotation, user-agent spoofing, or retry-policy widening.
+  (Superseded in part by ADR-0009, accepted later: bounded, opt-in solving of published
+  computational proof-of-work challenges is now permitted. The rest of this non-goal stands.)
 - No change to RRF, ranking, tool schemas, or response projections.
 - No general HTML-parser replacement or dependency swap.
 

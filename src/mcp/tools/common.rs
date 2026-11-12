@@ -21,6 +21,7 @@ pub enum ToolErrorCode {
     ManualInteractionRequired,
     UpstreamFailed,
     InvalidRequest,
+    CursorMismatch,
     Internal,
 }
 
@@ -37,6 +38,7 @@ impl ToolErrorCode {
             Self::ManualInteractionRequired => "manual_interaction_required",
             Self::UpstreamFailed => "upstream_failed",
             Self::InvalidRequest => "invalid_request",
+            Self::CursorMismatch => "cursor_mismatch",
             Self::Internal => "internal",
         }
     }
@@ -111,6 +113,40 @@ pub enum ToolError {
         message: String,
         data: Option<serde_json::Value>,
     },
+}
+
+pub(crate) fn cursor_rejected(error: crate::mcp::cursor::CursorError) -> ToolError {
+    match error {
+        crate::mcp::cursor::CursorError::Invalid => {
+            ToolError::budget_invalid("cursor is not a valid replay token".to_string())
+        }
+        crate::mcp::cursor::CursorError::Mismatch => {
+            ToolError::cursor_mismatch("cursor does not belong to this request".to_string())
+        }
+    }
+}
+
+pub(crate) fn with_cursor_keys(
+    mut payload: serde_json::Value,
+    next_cursor: Option<String>,
+    cursor_status: Option<&'static str>,
+) -> serde_json::Value {
+    let Some(object) = payload.as_object_mut() else {
+        return payload;
+    };
+    if let Some(next_cursor) = next_cursor {
+        object.insert(
+            "next_cursor".to_string(),
+            serde_json::Value::String(next_cursor),
+        );
+    }
+    if let Some(cursor_status) = cursor_status {
+        object.insert(
+            "cursor_status".to_string(),
+            serde_json::Value::String(cursor_status.to_string()),
+        );
+    }
+    payload
 }
 
 impl ToolError {
@@ -201,6 +237,10 @@ impl ToolError {
 
     pub fn budget_invalid(message: impl Into<String>) -> Self {
         Self::execution(ToolErrorCode::BudgetInvalid, message)
+    }
+
+    pub fn cursor_mismatch(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::CursorMismatch, message)
     }
 
     pub fn locator_invalid(message: impl Into<String>) -> Self {

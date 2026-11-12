@@ -30,6 +30,7 @@ fn localhost_state() -> Arc<ServerState> {
 
 fn fetch_args(url: String) -> WebFetchArgs {
     WebFetchArgs {
+        cursor: None,
         url,
         max_chars: None,
         timeout_ms: None,
@@ -415,6 +416,7 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
         run_batch_fetch(
             state.clone(),
             eggsearch::mcp::tools::BatchFetchArgs {
+                cursor: None,
                 items,
                 max_items: None,
                 max_chars_per_item: None,
@@ -1165,4 +1167,125 @@ async fn unparseable_token_headers_are_omitted() {
         .expect("fetch works");
     assert!(v["document"]["metadata"]["x-markdown-tokens"].is_null());
     assert!(v["document"]["metadata"]["x-original-tokens"].is_null());
+}
+
+#[cfg(feature = "mock")]
+fn compact_search_args(
+    query: &str,
+    response_detail: eggsearch::mcp::projection::ResponseDetail,
+) -> eggsearch::mcp::tools::WebSearchArgs {
+    eggsearch::mcp::tools::WebSearchArgs {
+        query: query.to_string(),
+        max_results: None,
+        providers: vec!["mock_a".to_string()],
+        safe_search: None,
+        timeout_ms: None,
+        intent: None,
+        freshness: None,
+        date_range: None,
+        include_domains: Vec::new(),
+        exclude_domains: Vec::new(),
+        language: None,
+        region: None,
+        excerpt_count: None,
+        response_detail: Some(response_detail),
+    }
+}
+
+#[cfg(feature = "mock")]
+async fn run_mock_search(
+    results: Vec<eggsearch::meta::mock::MockResult>,
+    detail: eggsearch::mcp::projection::ResponseDetail,
+) -> serde_json::Value {
+    use eggsearch::meta::mock::{mock_engines, MockEngine};
+    use eggsearch::meta::MetadataSearchAdapter;
+    use std::time::Duration;
+
+    let engines = vec![MockEngine::success("mock_a", results)];
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    let adapter =
+        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+    run_web_search(state, compact_search_args("tokio runtime", detail))
+        .await
+        .expect("mock search works")
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_compact_collapses_cross_result_duplicate_passages() {
+    use eggsearch::mcp::projection::ResponseDetail;
+    use eggsearch::meta::mock::MockResult;
+
+    let shared =
+        "The tokio runtime drives async tasks to completion with a work stealing scheduler";
+    let results = vec![
+        MockResult::new("Title A", "https://example.com/a", "mock_a").with_snippet(shared),
+        MockResult::new("Title B", "https://example.com/b", "mock_a").with_snippet(shared),
+        MockResult::new("Title C", "https://example.com/c", "mock_a")
+            .with_snippet("An unrelated sentence about pasta recipes and dinner plans"),
+    ];
+    let diagnostic = run_mock_search(results.clone(), ResponseDetail::Diagnostic).await;
+    let compact = run_mock_search(results, ResponseDetail::Compact).await;
+
+    let economy = &compact["excerpt_economy"];
+    assert!(economy.is_object(), "compact must report excerpt_economy");
+    let admitted = economy["admitted_count"].as_u64().unwrap();
+    let redundant = economy["redundant_count"].as_u64().unwrap();
+    let over_budget = economy["over_budget_count"].as_u64().unwrap();
+    let considered = economy["considered_count"].as_u64().unwrap();
+    let chars_before = economy["chars_before"].as_u64().unwrap();
+    let chars_after = economy["chars_after"].as_u64().unwrap();
+    assert_eq!(admitted + redundant + over_budget, considered);
+    assert!(redundant >= 1, "duplicate passage must collapse: {economy}");
+    assert!(chars_after < chars_before);
+    println!(
+        "excerpt-economy duplicate-fixture considered={considered} admitted={admitted} redundant={redundant} over_budget={over_budget} chars_before={chars_before} chars_after={chars_after} compact_bytes={} diagnostic_bytes={}",
+        serde_json::to_string(&compact).unwrap().len(),
+        serde_json::to_string(&diagnostic).unwrap().len()
+    );
+
+    let compact_results = compact["results"].as_array().unwrap();
+    let diagnostic_results = diagnostic["results"].as_array().unwrap();
+    assert_eq!(compact_results.len(), diagnostic_results.len());
+    for (index, card) in compact_results.iter().enumerate() {
+        assert_eq!(card["stable_id"], diagnostic_results[index]["stable_id"]);
+        assert_eq!(card["url"], diagnostic_results[index]["url"]);
+    }
+    assert!(compact_results[0]["snippet"].is_string());
+    assert!(compact_results[1].get("snippet").is_none());
+    assert_eq!(compact_results[1]["excerpts_suppressed"], 1);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn web_search_compact_retains_distinct_passages() {
+    use eggsearch::mcp::projection::ResponseDetail;
+    use eggsearch::meta::mock::MockResult;
+
+    let results = vec![
+        MockResult::new("Title A", "https://example.com/a", "mock_a")
+            .with_snippet("The tokio runtime drives async tasks to completion"),
+        MockResult::new("Title B", "https://example.com/b", "mock_a")
+            .with_snippet("Cargo resolves dependencies from the registry index"),
+        MockResult::new("Title C", "https://example.com/c", "mock_a")
+            .with_snippet("An unrelated sentence about pasta recipes and dinner plans"),
+    ];
+    let compact = run_mock_search(results, ResponseDetail::Compact).await;
+    let economy = &compact["excerpt_economy"];
+    assert_eq!(economy["redundant_count"].as_u64(), Some(0));
+    assert_eq!(economy["considered_count"].as_u64(), Some(3));
+    assert_eq!(economy["admitted_count"].as_u64(), Some(3));
+    let chars_before = economy["chars_before"].as_u64().unwrap();
+    let chars_after = economy["chars_after"].as_u64().unwrap();
+    assert_eq!(chars_before, chars_after);
+    println!(
+        "excerpt-economy distinct-fixture chars_before={chars_before} chars_after={chars_after} compact_bytes={}",
+        serde_json::to_string(&compact).unwrap().len()
+    );
+    for card in compact["results"].as_array().unwrap() {
+        assert!(card["snippet"].is_string());
+        assert!(card.get("excerpts_suppressed").is_none());
+    }
 }

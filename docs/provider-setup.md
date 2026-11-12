@@ -32,16 +32,43 @@ These providers require no API key and work via HTML scraping.
 
 - ID: `brave`
 - Enabled by default: yes
-- Included in `default_providers`: no
-- Enable: set `brave = true` in `[search.providers]` (already true by default)
+- Included in `default_providers`: yes
+- No configuration needed
 - No API key required
 
-### Startpage (default)
+### Startpage
 
 - ID: `startpage`
 - Enabled by default: yes
-- Included in `default_providers`: yes
-- No configuration needed
+- Included in `default_providers`: **no**
+- No configuration needed, but the upstream currently refuses every request
+- Startpage fronts the search routes with an Anubis proof-of-work challenge (`#anubis_challenge`, currently difficulty 6 for the honest `eggsearch` user agent). Without challenge solving the engine reports `blocked` rather than parsing an empty SERP, so it is not part of the shipped defaults.
+- To opt into paying the solve cost, enable `[search.challenge]` and raise the ceiling to the published difficulty:
+
+  ```toml
+  [search]
+  timeout_ms = 8000
+
+  [search.providers]
+  startpage = true
+
+  [search.challenge]
+  enabled = true
+  max_difficulty = 6
+  max_attempts = 32000000
+  timeout_ms = 8000
+  ```
+
+  Three ceilings must move together, not just the difficulty. Expected work is `16^difficulty` SHA-256 candidates; a measured difficulty-6 wall took 23.07M candidates and 3.05 s on one core in a release build. The default `max_attempts = 2000000` matches the default ceiling of 5 and would stop a difficulty-6 solve before the wall clock does, so raise it too. Raise `[search].timeout_ms` as well, because the search deadline wins over the solve budget.
+
+  The solve is probabilistic, not deterministic: the nonce is uniform, so an attempt that reaches `max_attempts` without a hit is expected rather than abnormal. At `32000000` (roughly twice the expected work) about one attempt in seven exhausts the ceiling and reports `blocked` with `challenge not solved: attempts exhausted`; a later call usually succeeds. Raise `max_attempts` toward the validated maximum of `100000000` and the deadline with it if you need higher reliability, accepting the extra wall clock on the unlucky fraction.
+
+  With `max_difficulty = 5` (the default) a difficulty-6 wall is refused with a reason naming both values, and the provider stays `blocked`.
+- A solved search returns rows: the engine reads the inline React payload
+  (`React.createElement(UIStartpage.AppSerp…, {…})` → `render.presenter.regions.mainline[]`)
+  first and keeps the older `div.result` selectors as a fallback. Live verification on
+  2026-11-12 returned 5/5 rows with titles, URLs and snippets in 3.88 s including the solve.
+  See `architecture/engines.md` § Challenge solving and § Scraper Fidelity.
 
 ### Yahoo (default)
 
@@ -56,6 +83,16 @@ These providers require no API key and work via HTML scraping.
 - Enabled by default: **no**
 - Independent search engine with its own index
 - Enable: set `mojeek = true` in `[search.providers]`
+- Mojeek answers automated queries with an ALTCHA proof-of-work challenge. Without challenge solving the engine reports `blocked`. With `[search.challenge] enabled = true` it solves the published `PBKDF2/SHA-256` challenge (measured cost 8000, a captured live challenge resolved at counter 291 in roughly 0.4 s inside the default `max_attempts` and `timeout_ms`), caches the `chllg` pass cookie for `cookie_ttl_seconds`, replays it once, and then parses the normal `ul.results-standard` result list.
+- Solving is attempted at most once per search request and at most once per cookie TTL. A disabled solver, a ceiling breach, or an unsupported published algorithm returns `blocked` with a reason naming the bound; the pass cookie never appears in logs or `provider_status`.
+
+  ```toml
+  [search.providers]
+  mojeek = true
+
+  [search.challenge]
+  enabled = true
+  ```
 
 ## Keyless-Optional Developer Index
 
@@ -591,10 +628,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 ```
@@ -608,6 +646,36 @@ Any search tool (`web_search`, `repo_search`, `security_search`, `research_searc
 ### Profiles
 
 Search profiles (`generic`, `coding`, `security`, `research`) have their own provider ordering. When a profile is used and its providers are unavailable, eggsearch falls back to `default_providers`. A `profile_degraded` warning is emitted in this case.
+
+### Intent-Aware Routing
+
+When `[search.routing].intent_mode = "apply"`, the derived intent can add
+specialist providers to the candidate set. The precedence is fixed and
+non-negotiable: an explicit `providers` argument wins, then a supplied
+`profile`, then `default_providers` plus intent additions, then the existing
+cooldown and health filter.
+
+| Derived intent | Preferred providers, in order | Capability each must declare |
+|---|---|---|
+| `web`, `docs` | none | — |
+| `code` | `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph` | declares code-search or repository-filter support |
+| `issues` | `github_issues`, `gitlab_issues`, `gitea_issues`, `firecrawl_developer` | declares issue-search support |
+| `releases` | `github_releases`, `gitlab_releases`, `gitea_releases` | declares release-search support |
+| `security` | `osv`, `github_advisory`, `nvd` | declares security-search support |
+| `news` | `tavily`, `brave_api` | declares news support |
+
+`rustsec` is deliberately absent from the `security` row: it serves advisory-ID lookup only, so a routed keyword query would always fail as an unsupported operation rather than return evidence.
+
+Routing only adds providers; it never removes, reorders, or displaces one.
+`max_extra_providers` (default `2`, range `0`–`4`) caps how many one decision
+may add. Every candidate is reported in `provider_status` with one of `added`,
+`already_selected`, `not_enabled`, `not_built`, `cooling_down`,
+`capability_missing`, or `cap_exceeded`, and a capability exclusion emits the
+`intent_routing_capability_excluded` warning instead of vanishing silently.
+
+The default is `intent_mode = "off"`: intent is derived and reported, but no
+provider is added. Enabling `apply` is an operator decision until the tier-1
+snapshot lane measures the shipped default provider set.
 
 ### Misconfigured Defaults
 

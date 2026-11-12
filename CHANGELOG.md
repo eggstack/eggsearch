@@ -27,6 +27,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `web_search` derives `intent` from the query when the caller omits it and
   reports `derived_intent` / `derived_intent_reasons`. Query text sent to
   providers is unchanged; an explicit `intent` remains authoritative.
+- Bounded, opt-in challenge solving (ADR-0009). `[search.challenge]` gates a
+  shared solver for published computational proof-of-work: ALTCHA
+  (`PBKDF2/SHA-256`) for `mojeek` and Anubis `fast`/`preact` for `startpage`.
+  Off by default; four ceilings apply (`max_difficulty`, `max_attempts`,
+  `timeout_ms`, `cookie_ttl_seconds`), one solve per provider per request, and
+  pass cookies stay in process memory. Interactive CAPTCHA, OCR, solving
+  services, proxy rotation, and user-agent spoofing remain prohibited.
+- `startpage` returns rows again: it reads the served React payload
+  (`render.presenter.regions.mainline[]`) first and keeps the `div.result`
+  selectors as a fallback. `mojeek` works again with challenge solving enabled.
+- Intent-aware provider routing under `[search.routing]`. Routing only adds
+  specialist providers for the derived intent (`code`, `issues`, `releases`,
+  `security`, `news`), never removing or reordering a caller's choice.
+  `intent_mode` ships `off` because the shipped default provider set is not yet
+  measured by the snapshot lane.
+- One response-level excerpt budget with deterministic redundancy suppression
+  for `compact` and `brief` responses: `[mcp].excerpt_budget_chars` (default
+  4000) plus additive `excerpt_economy` counts and per-card
+  `excerpts_suppressed`.
+- Advertisement presets: `[mcp].tool_preset` (`full`, `research`, `code`,
+  `minimal`) filters `tools/list` while every tool stays callable, and
+  `next_actions` are filtered to the active preset with drops counted in
+  `next_actions_omitted`.
+- Resumable pagination for `web_fetch`, `batch_fetch`, and `research_search`
+  via a self-describing 512-byte `next_cursor` with no server-side state.
+  Token-gated bounded progress reporting, and an opt-in `[mcp.tasks]` path for
+  the MCP Tasks extension.
 
 ### Changed
 
@@ -36,6 +63,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidate-snapshot benchmark. No ranking behaviour changed.
 - Derived-intent reranking is applied on measured candidate-snapshot evidence
   (+0.136 recall@5, +0.176 nDCG@5, no regression).
+- `brave` HTML scraping is default-routed: the shipped `default_providers` are
+  `duckduckgo`, `brave`, and `yahoo`. `startpage` stays enabled and selectable
+  but is no longer default-routed, because its upstream answers every
+  non-browser request with an Anubis proof-of-work challenge.
+
+### Fixed
+
+- `duckduckgo` skips sponsored containers (`result--ad`) instead of returning
+  paid placements as organic results, and `startpage` classifies the Anubis
+  challenge page (`#anubis_challenge`) as `blocked` instead of `parse_error`.
 
 ## [0.4.4] - 2026-10-19
 
