@@ -1201,10 +1201,11 @@ MCP tools return `Result<serde_json::Value, ToolError>` via the single
 MCP tool errors (`isError: true`) with a stable `code`
 (`invalid_semantic_value`, `conflicting_arguments`,
 `capability_unavailable`, `provider_unavailable`, `policy_denied`,
-`budget_invalid`, `cursor_mismatch`, `locator_invalid`, `manual_interaction_required`,
-`upstream_failed`) and a bounded `repair { field, accepted[],
-suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC
-`invalid_params`; server faults are `internal_error`. The harness should:
+`budget_invalid`, `locator_invalid`, `manual_interaction_required`,
+`upstream_failed`, `plan_mismatch`, `document_unavailable`) and a bounded
+`repair { field, accepted[], suggested_value }`. Only uninterpretable
+invocation shapes are JSON-RPC `invalid_params`; server faults are
+`internal_error`. The harness should:
 
 1. Display the error message to the user.
 2. Check if partial results are still available (e.g. `repo_search`

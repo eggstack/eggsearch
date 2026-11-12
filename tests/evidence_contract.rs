@@ -150,7 +150,8 @@ async fn batch_fetch_returns_results_with_same_length_as_input() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -179,7 +180,8 @@ async fn batch_fetch_empty_items_returns_validation_not_empty_array() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![],
             max_items: None,
             max_chars_per_item: None,
@@ -217,7 +219,8 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
     let v1 = run_batch_fetch(
         state.clone(),
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/page"),
                 extract_mode: None,
@@ -247,7 +250,8 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
     let v2 = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/page"),
                 extract_mode: None,
@@ -290,7 +294,8 @@ async fn batch_fetch_with_single_empty_url_returns_validation_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "   ".to_string(),
                 extract_mode: None,
@@ -341,7 +346,8 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url: server.url("/shared-cache"),
             max_chars: None,
             timeout_ms: None,
@@ -365,7 +371,8 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
     let batch_result = run_batch_fetch(
         state.clone(),
         eggsearch::mcp::tools::BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/shared-cache"),
                 extract_mode: Some(ExtractMode::Text),
@@ -446,7 +453,8 @@ async fn batch_fetch_respects_per_origin_concurrency() {
     let result = run_batch_fetch(
         state.clone(),
         eggsearch::mcp::tools::BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -960,7 +968,8 @@ async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
     let result = run_batch_fetch(
         state.clone(),
         eggsearch::mcp::tools::BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,

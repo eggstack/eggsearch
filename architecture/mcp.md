@@ -175,7 +175,7 @@ Every tool module follows one pipeline:
 `map_tool_result` is the single result/error boundary:
 
 - `Ok(value)` → structured success (`CallToolResult::structured`: native `structuredContent` plus a text JSON fallback for older clients).
-- `ToolError::Validation` (legacy) and `ToolError::Execution { code, message, data, repair }` → repairable `isError: true` tool result with a stable `code` and bounded `RepairHint { field, accepted[<=20], suggested_value }`. Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `cursor_mismatch`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`. Legacy `Validation` strings are code-inferred so old call sites stay repairable without a flag day.
+- `ToolError::Validation` (legacy) and `ToolError::Execution { code, message, data, repair }` → repairable `isError: true` tool result with a stable `code` and bounded `RepairHint { field, accepted[<=20], suggested_value }`. Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, `plan_mismatch`, `document_unavailable`. Legacy `Validation` strings are code-inferred so old call sites stay repairable without a flag day.
 - `ToolError::InvalidRequest` → JSON-RPC `invalid_params`. Reserved for shapes that cannot be interpreted at all.
 - `ToolError::Internal` → JSON-RPC `internal_error` without stack traces. Reserved for server faults.
 
@@ -249,29 +249,67 @@ another tool, and `full` is a strict no-op. Every non-`full` preset is closed
 under `ToolContract.next_tools` by test, so a preset cannot advertise a tool
 whose follow-up suggestions name a hidden one.
 
-## Pagination, progress, and tasks
+## Offset windows, progress, and tasks
 
-`src/mcp/cursor.rs` implements a self-describing replay cursor. It is canonical
-JSON, base64url-encoded without padding, prefixed `e1.`, and capped at 512
-transport bytes:
+`web_fetch`, `batch_fetch` and `research_search` accept optional `offset` and
+`limit` for random access. A read is the original request re-specified with the
+window: the request-plan key is derived server-side from the fields that define
+the document or set, is never echoed by the caller, and deliberately excludes
+`offset`/`limit`. There is **no server-side addressing state** — no window,
+offset or page is retained across calls, so a window is a pure function of the
+request and the cached document.
 
-```json
-{"v":1,"t":"web_fetch","k":"<16 hex FNV-1a plan key>","p":{"ord":3,"id":"..."},"d":{"timeout_ms":8000}}
-```
+The unit and the ceiling differ by tool:
 
-`k` is built from `src/core/identity.rs` primitives over a fixed field order,
-with `canonicalize_url(final_url)` included for `web_fetch`. Decode rejects
-oversize, bad base64 or padding, non-canonical JSON, unknown fields, `v != 1`,
-and malformed `k`/`id` as `budget_invalid`; a cursor whose tool or plan key does
-not match the current request is `cursor_mismatch`; a cursor whose position is no
-longer present yields `cursor_status: "stale"` with the first page and no
-`next_cursor`. There is **no server-side cursor state** — the pipeline is
-re-run and resumed after `p.id`, so no cursor can be forged into unbounded memory.
+- `web_fetch` addresses characters of the addressable document text: every
+  chunk text joined by a single `\n`, measured before control-character
+  stripping and before trust framing. `offset` is zero-based; `limit` defaults
+  to the effective `max_chars` window and is clamped to `[fetch].max_chars_cap`.
+- `batch_fetch` addresses the item list. `limit` defaults to `max_items` and is
+  clamped to `[fetch].batch_max_items_cap`.
+- `research_search` addresses non-empty result groups. `limit` defaults to the
+  `max_groups`-derived page size and is clamped to `RESEARCH_PAGE_GROUPS` (14).
 
-Pagination is wired in `web_fetch` (chunk ordinal), `batch_fetch` (global item
-index) and `research_search` (canonical group order). A resumed call uses
-`min(recorded, requested_or_config)` for both the client timeout and the call
-deadline, so a cursor never widens the original budget.
+Ranges are half-open `[from, to)` in Unicode scalar values and clamp rather
+than error: `offset >= total` returns an empty window with `from == to == total`
+(and `text == ""` for `web_fetch`). A response is **addressed** when at least
+one of `offset`/`limit` is supplied. Only addressed responses carry window
+keys, and `with_addressing_keys` (`tools/common.rs`) declares the key strings
+once:
+
+| Tool | Keys added |
+|------|------------|
+| `web_fetch` | `text_from`, `text_to`, `text_total`, `doc_id`, plus `next_offset` when more text remains |
+| `batch_fetch` | `item_from`, `item_to`, `item_total`, plus `next_offset` when more items remain |
+| `research_search` | `group_from`, plus `next_offset` when more groups remain, `aggregate_scope: "document"`, `total_groups` and `returned_groups` |
+
+`web_fetch` also adds `focus_scope: "document"` whenever a non-null `focus`
+accompanies an addressed read, because focus selects over the whole document
+and is not recomputed per window. `text_total` is the Unicode scalar count of
+every chunk text joined by a single `\n`, measured before control-character
+stripping and before trust framing; it is not duplicated inside `document`, and
+`document.text_chars_returned` stays window-scoped. `doc_id` is the
+deterministic `doc_<16hex(url, title, kind)>` document identity — stable and
+never random, but not a content hash, so two different bodies at one URL under
+one title share it.
+
+A call that sends neither `offset` nor `limit` receives the pre-M020 payload
+with no addressing key added. `limit = 0` is `invalid_semantic_value` with
+`repair.field = "limit"`; a `limit` above the server maximum is clamped and
+reported in `structured_warnings` under `max_results_clamped`. A request whose
+caller-supplied plan bound the server had to clamp is `plan_mismatch`
+(`focus_max_chars` above `[fetch].max_chars_cap` for `web_fetch`; `max_items` or
+`max_total_chars` above their `[fetch]` caps for `batch_fetch`; `max_results`
+above `[search].max_results_cap` or `max_per_group` of 0 for
+`research_search`). An addressed `web_fetch` request that produced nothing to
+address — an unfetched page, `extract_mode: "metadata_only"`, or a document
+with no chunks — is `document_unavailable`, distinguishable from
+`upstream_failed`.
+
+Reading by offset never widens a bound: the effective timeout is
+`min(caller timeout_ms, [fetch].timeout_ms)`, and no call exceeds its character,
+item, or group ceiling. `chunk_id` remains the citation and evidence address;
+offsets are for reading and chunk ids are for citing.
 
 `src/mcp/progress.rs` emits progress only when the request carries
 `_meta.progressToken`. Fixed phases are `plan`, `dispatch n/m`, `extract`,

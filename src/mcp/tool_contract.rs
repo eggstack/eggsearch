@@ -312,7 +312,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         name: "web_fetch",
         description: "Fetch one known HTTP(S) URL with bounded extracted text. Use after search with `url`; for several targets use `batch_fetch`. Do not use for search or crawling.",
         purpose: "bounded single-URL inspection",
-        use_when: "one explicit URL from search results or user input must be read",
+        use_when: "one explicit URL from search results or user input must be read, including a later `offset`/`limit` window of a document already fetched",
         not_for: "search, crawling, or following links",
         domain: ToolDomain::Web,
         disclosure: ToolDisclosureHint::Core,
@@ -320,7 +320,10 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         related_tools: &["batch_fetch", "web_search"],
         next_tools: &["build_evidence_bundle"],
-        keywords: &["fetch", "url", "page", "extract", "read", "inspect"],
+        keywords: &[
+            "fetch", "url", "page", "extract", "read", "inspect", "offset", "limit", "window",
+            "range",
+        ],
         aliases: &["webfetch", "fetch", "page"],
     },
     ToolContract {

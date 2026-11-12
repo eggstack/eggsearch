@@ -606,6 +606,7 @@ pub fn browser_result_to_response(
     );
 
     let document = Some(FetchDocument {
+        doc_id: document_id.clone(),
         kind: DocumentKind::Html,
         render_format: RenderFormat::AgentBlocksV1,
         text_format: if extract_mode == crate::core::fetch::ExtractMode::Markdown {

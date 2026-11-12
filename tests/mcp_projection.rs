@@ -58,6 +58,24 @@ fn card(id: &str, excerpts: usize, injection_hits: u64) -> Value {
     })
 }
 
+fn assert_addressing_keys_present(payload: &Value, keys: &[&str], context: &str) {
+    for key in keys {
+        assert!(
+            payload.get(*key).is_some(),
+            "{context} must retain addressing key `{key}`: {payload}"
+        );
+    }
+}
+
+fn assert_addressing_keys_absent(payload: &Value, keys: &[&str], context: &str) {
+    for key in keys {
+        assert!(
+            payload.get(*key).is_none(),
+            "{context} must not invent addressing key `{key}`: {payload}"
+        );
+    }
+}
+
 #[test]
 fn diagnostic_is_passthrough_for_all_tools() {
     let tools = [
@@ -1367,4 +1385,286 @@ fn excerpt_economy_projection_is_byte_identical_across_runs() {
         serde_json::to_string(&first).unwrap(),
         serde_json::to_string(&second).unwrap()
     );
+}
+
+const WEB_FETCH_ADDRESSING_KEYS: &[&str] = &[
+    "text_from",
+    "text_to",
+    "text_total",
+    "next_offset",
+    "doc_id",
+    "focus_scope",
+];
+
+fn addressed_web_fetch_payload() -> Value {
+    json!({
+        "url": "https://example.com/guide",
+        "final_url": "https://example.com/guide",
+        "status": 200,
+        "content_type": "text/html",
+        "fetched": true,
+        "truncated": false,
+        "trust": "external_untrusted",
+        "text": "the addressed character window from the fetched document",
+        "focus": {"chunks": [{"text": "addressed passage", "line_start": 10, "line_end": 12}]},
+        "text_from": 40,
+        "text_to": 120,
+        "text_total": 500,
+        "next_offset": 120,
+        "doc_id": "doc_01",
+        "focus_scope": "document",
+        "warnings": [],
+        "structured_warnings": []
+    })
+}
+
+#[test]
+fn addressed_web_fetch_keeps_addressing_keys_under_brief_and_compact() {
+    let payload = addressed_web_fetch_payload();
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "web_fetch",
+            payload.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "web_fetch",
+            payload.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            let context = format!("web_fetch {detail:?}");
+            assert_addressing_keys_present(projected, WEB_FETCH_ADDRESSING_KEYS, &context);
+            assert_eq!(projected["text_from"], 40);
+            assert_eq!(projected["text_to"], 120);
+            assert_eq!(projected["text_total"], 500);
+            assert_eq!(projected["next_offset"], 120);
+            assert_eq!(projected["doc_id"], "doc_01");
+            assert_eq!(projected["focus_scope"], "document");
+        }
+    }
+
+    let mut without_focus = payload.clone();
+    for key in ["focus", "focus_scope"] {
+        without_focus.as_object_mut().unwrap().remove(key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let projected = project_with_limits(
+            "web_fetch",
+            without_focus.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        let context = format!("web_fetch {detail:?} without focus");
+        assert_addressing_keys_present(&projected, &WEB_FETCH_ADDRESSING_KEYS[..5], &context);
+        assert!(
+            projected.get("focus_scope").is_none(),
+            "{context} must not report a focus scope: {projected}"
+        );
+    }
+
+    let mut unaddressed = payload;
+    for key in WEB_FETCH_ADDRESSING_KEYS {
+        unaddressed.as_object_mut().unwrap().remove(*key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "web_fetch",
+            unaddressed.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "web_fetch",
+            unaddressed.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            assert_addressing_keys_absent(
+                projected,
+                WEB_FETCH_ADDRESSING_KEYS,
+                &format!("web_fetch unaddressed {detail:?}"),
+            );
+        }
+    }
+}
+
+const BATCH_FETCH_ADDRESSING_KEYS: &[&str] = &["item_from", "item_to", "item_total", "next_offset"];
+
+fn addressed_batch_fetch_payload() -> Value {
+    json!({
+        "fetched": 1,
+        "failed": 0,
+        "truncated": false,
+        "total_chars_returned": 5,
+        "results": [{
+            "index": 2,
+            "item_type": "web",
+            "stable_id": "s2",
+            "ok": true,
+            "error": null,
+            "response": {
+                "url": "https://example.com/a",
+                "final_url": "https://example.com/a",
+                "status": 200,
+                "fetched": true,
+                "truncated": false,
+                "text": "hello",
+                "warnings": [],
+                "structured_warnings": []
+            }
+        }],
+        "item_from": 2,
+        "item_to": 3,
+        "item_total": 5,
+        "next_offset": 3,
+        "warnings": [],
+        "structured_warnings": [],
+        "telemetry": {"items_requested": 5, "items_completed": 1, "items_failed": 0}
+    })
+}
+
+#[test]
+fn addressed_batch_fetch_keeps_item_window_under_brief_and_compact() {
+    let payload = addressed_batch_fetch_payload();
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "batch_fetch",
+            payload.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "batch_fetch",
+            payload.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            let context = format!("batch_fetch {detail:?}");
+            assert_addressing_keys_present(projected, BATCH_FETCH_ADDRESSING_KEYS, &context);
+            assert_eq!(projected["item_from"], 2);
+            assert_eq!(projected["item_to"], 3);
+            assert_eq!(projected["item_total"], 5);
+            assert_eq!(projected["next_offset"], 3);
+        }
+    }
+
+    let mut unaddressed = payload;
+    for key in BATCH_FETCH_ADDRESSING_KEYS {
+        unaddressed.as_object_mut().unwrap().remove(*key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "batch_fetch",
+            unaddressed.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "batch_fetch",
+            unaddressed.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            assert_addressing_keys_absent(
+                projected,
+                BATCH_FETCH_ADDRESSING_KEYS,
+                &format!("batch_fetch unaddressed {detail:?}"),
+            );
+        }
+    }
+}
+
+const RESEARCH_SEARCH_ADDRESSING_KEYS: &[&str] = &[
+    "group_from",
+    "next_offset",
+    "total_groups",
+    "returned_groups",
+    "aggregate_scope",
+];
+
+fn addressed_research_search_payload() -> Value {
+    json!({
+        "query": "distributed consensus",
+        "groups": [{
+            "group": "primary_sources",
+            "results": [{
+                "id": "r1",
+                "stable_id": "stable_r1",
+                "title": "Raft",
+                "url": "https://example.com/raft",
+                "trust": "external_untrusted",
+                "excerpts": [{"text": "leader election", "provenance": "content"}]
+            }]
+        }],
+        "group_from": 4,
+        "next_offset": 5,
+        "total_groups": 9,
+        "returned_groups": 1,
+        "aggregate_scope": "document",
+        "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+        "warnings": [],
+        "structured_warnings": [],
+        "conflict_metadata": [],
+        "next_actions": []
+    })
+}
+
+#[test]
+fn addressed_research_search_keeps_group_window_under_brief_and_compact() {
+    let payload = addressed_research_search_payload();
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "research_search",
+            payload.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "research_search",
+            payload.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            let context = format!("research_search {detail:?}");
+            assert_addressing_keys_present(projected, RESEARCH_SEARCH_ADDRESSING_KEYS, &context);
+            assert_eq!(projected["group_from"], 4);
+            assert_eq!(projected["next_offset"], 5);
+            assert_eq!(projected["total_groups"], 9);
+            assert_eq!(projected["returned_groups"], 1);
+            assert_eq!(projected["aggregate_scope"], "document");
+        }
+    }
+
+    let mut unaddressed = payload;
+    for key in RESEARCH_SEARCH_ADDRESSING_KEYS {
+        unaddressed.as_object_mut().unwrap().remove(*key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "research_search",
+            unaddressed.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "research_search",
+            unaddressed.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            assert_addressing_keys_absent(
+                projected,
+                RESEARCH_SEARCH_ADDRESSING_KEYS,
+                &format!("research_search unaddressed {detail:?}"),
+            );
+        }
+    }
 }

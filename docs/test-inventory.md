@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6192 | 27 |
-| `--features mock` | 5837 | 3 |
+| `--all-features` | 6194 | 28 |
+| `--features mock` | 5839 | 4 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -61,7 +61,7 @@ Placement authority is the table in `architecture/testing.md`.
 
 Every case is generated synthetically by this repository; no third-party document bytes are committed. `corpus.json` records the licence, page count, SHA-256, expected outcome, and a construction recipe per case. The suite asserts 116 baseline annotations and 15 recorded ADR-0008 target statuses (an improvement forces a manifest update), and the join-lines-and-strip-spaces negative control must be rejected by 25 declared metric groups, with the two-column case covering all five metric families plus running heads. Corpus budget: 3 MiB total and 1 MiB per case, asserted by the suite.
 
-## Property Tests (17 suites)
+## Property Tests (18 suites)
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
@@ -69,7 +69,6 @@ Every case is generated synthetically by this repository; no third-party documen
 | `property_identity` | None | 16 | source_id, canonicalize_url, cross-type collisions, Unicode normalization |
 | `property_identity2` | None | 15 | fetch_id, suggested_fetch_id, batch_fetch_id, doc_id |
 | `property_identity3` | None | 9 | chunk_id, code_span_id, locator_id |
-| `property_cursor` | None | 5 | Cursor round-trip, canonical encoding, 512-byte cap, plan-key mismatch, stale classification |
 | `property_excerpt_economy` | None | 5 | Excerpt budget monotonicity, deterministic shingle suppression, counter identity, termination |
 | `property_fetch_limits` | None | 13 | validate_url: scheme, length, localhost, private IP; (feature `pdf`) the stream-scan total never exceeds its budget and extraction reports only the configured budget |
 | `property_fetch_redirects` | None | 27 | validate_url: TLDs, IP ranges, ports, schemes |

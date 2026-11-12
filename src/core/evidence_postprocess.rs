@@ -395,12 +395,12 @@ pub fn postprocess(
     let conflict_metadata = detect_structured_conflicts(cards);
 
     let workflow_coverage = workflow_model.map(|model| {
-        let found_roles: Vec<EvidenceRole> = cards
-            .iter()
-            .map(assign_evidence_role)
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
+        let mut found_roles: Vec<EvidenceRole> = Vec::new();
+        for role in cards.iter().map(assign_evidence_role) {
+            if !found_roles.contains(&role) {
+                found_roles.push(role);
+            }
+        }
         let mut result = compute_coverage(model, &found_roles, retrieval_failures);
         result.resolution_source = resolution_source;
         result

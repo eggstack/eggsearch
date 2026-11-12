@@ -233,9 +233,10 @@ rather than being silently dropped.
 non-regression measured against the shipped default provider set; that
 measurement does not yet exist, so enabling it is an explicit operator choice.
 
-## Pagination, Progress, and Tasks
+## Offset Windows, Progress, and Tasks
 
-Long-running reads can return a resumable page instead of a truncated payload.
+Long-running reads accept a random-access window instead of returning one
+truncated payload.
 
 ```toml
 [mcp.tasks]
@@ -252,19 +253,42 @@ poll_interval_ms = 1000
 | `max_concurrent` | `4` | `1`–`16` | Concurrent task cap. Above it, a call silently falls back to the synchronous path — never an error. |
 | `poll_interval_ms` | `1000` | `250`–`10000` | Suggested client polling interval reported with a task. |
 
-**Pagination** is always available and needs no configuration. `web_fetch`,
-`batch_fetch`, and `research_search` may return `next_cursor` alongside the
-payload. Passing it back as `cursor` resumes after the last delivered item. The
-cursor is a self-describing `e1.` base64url token capped at 512 bytes; it carries
-a version, the tool, an FNV-1a plan key over the canonical request, and the last
-delivered ordinal plus id. Nothing is stored server-side, so the server re-runs
-the same bounded pipeline and resumes after that id.
+**Offset windows** are always available and need no configuration. `web_fetch`,
+`batch_fetch`, and `research_search` accept optional `offset` and `limit` for
+random access over what they address. A read is the original request
+re-specified with the window; nothing is stored server-side.
 
-Two failure modes are explicit rather than silent: a cursor whose plan key does
-not match the current request is `cursor_mismatch`, and a cursor whose position
-is no longer present is `cursor_status: "stale"` with the first page returned and
-no `next_cursor`. A malformed or oversized cursor is `budget_invalid`. A resumed
-call never widens the original deadline — it uses `min(recorded, requested)`.
+| Tool | Unit | `offset` | `limit` default | `limit` ceiling |
+|------|------|----------|-----------------|-----------------|
+| `web_fetch` | characters of the joined chunk text | zero-based scalar offset | the effective `max_chars` | `[fetch].max_chars_cap` |
+| `batch_fetch` | items | zero-based item index | `max_items` | `[fetch].batch_max_items_cap` |
+| `research_search` | non-empty result groups | zero-based group index | the `max_groups`-derived page size | 14 (`RESEARCH_PAGE_GROUPS`) |
+
+Ranges are half-open `[from, to)` in Unicode scalar values and clamp rather
+than error: an offset at or past the end returns an empty window with
+`from == to == total` (and `text == ""` for `web_fetch`). A response is
+addressed when at least one of `offset`/`limit` is supplied; addressed
+responses carry `text_from`/`text_to`/`text_total`/`doc_id` (`web_fetch`),
+`item_from`/`item_to`/`item_total` (`batch_fetch`), or `group_from` plus
+`aggregate_scope`/`total_groups`/`returned_groups` (`research_search`), and
+`next_offset` whenever more units remain. `web_fetch` also reports
+`focus_scope: "document"` when a non-null `focus` accompanies the read.
+
+`text_total` is the Unicode scalar count of every chunk text joined by a single
+`\n`, measured before control-character stripping and before trust framing;
+`document.text_chars_returned` stays window-scoped. `doc_id` is the deterministic
+`doc_<16hex(url, title, kind)>` document identity, not a content hash, so two
+different bodies at one URL under one title share it.
+
+`limit = 0` is `invalid_semantic_value` with `repair.field = "limit"`; a `limit`
+above the server maximum is clamped and reported in `structured_warnings` under
+`max_results_clamped`. An addressed request whose plan bound the server had to
+clamp is `plan_mismatch` (`focus_max_chars` above `[fetch].max_chars_cap`;
+`max_items` or `max_total_chars` above their `[fetch]` caps; `max_results` above
+`[search].max_results_cap` or `max_per_group` of 0). Reading by offset never
+widens a bound: the effective timeout is
+`min(caller timeout_ms, [fetch].timeout_ms)`, and no call exceeds its
+character, item, or group ceiling.
 
 **Progress** is emitted only when the client supplies a progress token. It is
 rate-limited to one notification per 250 ms, capped at 64 notifications and

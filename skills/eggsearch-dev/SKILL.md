@@ -50,7 +50,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/egress_qualify_contract.rs` | None | Egress qualification CI contract: exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage (`packaging/check-egress-qualify-contract.sh` enforces the same in `make packaging-check`) |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
-| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, cursor codec, excerpt economy) |
+| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, excerpt economy) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |

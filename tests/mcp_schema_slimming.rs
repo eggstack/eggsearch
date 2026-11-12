@@ -118,8 +118,8 @@ fn search_four_schema_bytes_stay_slim() {
         search_total += serialized_bytes(name);
     }
     assert!(
-        search_total <= 12_500,
-        "four search schemas total {search_total} bytes exceeds 12500 budget (pre-slim baseline 17723; 30% reduction target 12406)"
+        search_total <= 12_850,
+        "four search schemas total {search_total} bytes exceeds 12850 budget (pre-slim baseline 17723; 30% reduction target 12406; +318 for M020 offset addressing on research_search)"
     );
     let total: usize = tool_definitions()
         .iter()
@@ -130,8 +130,8 @@ fn search_four_schema_bytes_stay_slim() {
         })
         .sum();
     assert!(
-        total <= 74_000,
-        "all tool definitions total {total} bytes exceeds 74000 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control)"
+        total <= 74_450,
+        "all tool definitions total {total} bytes exceeds 74450 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search)"
     );
 }
 
@@ -152,8 +152,8 @@ fn search_tool_property_counts_stay_bounded() {
         prop_count(&repo)
     );
     assert!(
-        prop_count(&research) <= 15,
-        "research_search props {} exceeds 15",
+        prop_count(&research) <= 16,
+        "research_search props {} exceeds 16",
         prop_count(&research)
     );
     assert!(

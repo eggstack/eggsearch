@@ -58,8 +58,12 @@ pub struct WebFetchArgs {
     /// Requires the `browser` feature.
     #[serde(default)]
     pub browser_profile: Option<String>,
+    /// Zero-based character offset into the addressable document text.
     #[serde(default)]
-    pub cursor: Option<String>,
+    pub offset: Option<usize>,
+    /// Max characters from `offset`; clamped to the server maximum.
+    #[serde(default)]
+    pub limit: Option<usize>,
     /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default)]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
@@ -112,24 +116,33 @@ pub async fn run_web_fetch_with_progress(
         return Err(ToolError::Validation("timeout_ms must be > 0".to_string()));
     }
 
-    let cursor = crate::mcp::cursor::cursor_args(args.cursor.as_deref()).map_err(|e| {
-        ToolError::budget_invalid(format!("cursor is not a valid replay token: {}", e.code()))
-    })?;
-    if let Some(ref cursor) = cursor {
-        cursor
-            .require_tool(crate::mcp::cursor::CursorTool::WebFetch)
-            .map_err(cursor_rejected)?;
+    if let Some(0) = args.limit {
+        return Err(ToolError::execution_with_repair(
+            ToolErrorCode::InvalidSemanticValue,
+            "limit must be > 0; an addressed window is a half-open character range".to_string(),
+            RepairHint::new(Some("limit"), &[], None),
+        ));
     }
-    let mut cursor_status: Option<&'static str> = None;
-    let budget_ms = cursor
-        .as_ref()
-        .map(|cursor| cursor.timeout_ms().min(state.config.fetch.timeout_ms))
-        .unwrap_or(state.config.fetch.timeout_ms);
-    let effective_timeout_ms = if cursor.is_some() {
-        Some(budget_ms)
-    } else {
-        args.timeout_ms
-    };
+
+    let addressed = args.offset.is_some() || args.limit.is_some();
+    let max_chars_cap = state.config.fetch.max_chars_cap;
+    if addressed {
+        if let Some(supplied) = args.focus_max_chars {
+            let effective = supplied.min(max_chars_cap).max(1);
+            if effective != supplied {
+                return Err(addressing_rejected(AddressError::PlanMismatch {
+                    field: "focus_max_chars",
+                    supplied,
+                    effective,
+                }));
+            }
+        }
+    }
+
+    let effective_timeout_ms = args
+        .timeout_ms
+        .filter(|ms| *ms < state.config.fetch.timeout_ms);
+    let budget_ms = effective_timeout_ms.unwrap_or(state.config.fetch.timeout_ms);
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
 
@@ -303,6 +316,9 @@ pub async fn run_web_fetch_with_progress(
     let budgets =
         crate::fetch::budget::FetchBudgets::resolve(&state.config.fetch_limits(), args.max_chars);
     let requested_max_chars = budgets.window_chars();
+    let requested_limit = args.limit.unwrap_or(requested_max_chars);
+    let limit = requested_limit.min(max_chars_cap).max(1);
+    let limit_clamped = limit < requested_limit;
 
     let target_accept_policy = select_accept_policy(trimmed_url, extract_mode);
 
@@ -838,7 +854,7 @@ pub async fn run_web_fetch_with_progress(
                     data,
                 ));
             }
-            return Err(ToolError::internal(format!(
+            return Err(ToolError::upstream_failed(format!(
                 "{}: {}",
                 err.error_code(),
                 err
@@ -973,6 +989,12 @@ pub async fn run_web_fetch_with_progress(
             "link list was truncated; not all links are included".to_string(),
         ));
     }
+    if limit_clamped {
+        structured.push(crate::core::warning::AgentWarning::new(
+            crate::core::warning::WarningCode::MaxResultsClamped,
+            format!("limit was clamped to the server maximum of {max_chars_cap} characters"),
+        ));
+    }
     let focus_selection = crate::core::fetch_policy::apply_focus_to_document(
         resp.document.as_ref(),
         resp.fetched,
@@ -982,35 +1004,33 @@ pub async fn run_web_fetch_with_progress(
         requested_max_chars,
         state.config.fetch.max_chars_cap,
     );
-    let plan_key = crate::mcp::cursor::PlanKey::new(crate::mcp::cursor::CursorTool::WebFetch)
-        .str(trimmed_url)
-        .canonical_url(&resp.final_url)
-        .usize(requested_max_chars)
-        .opt_str(focus_query.as_deref())
-        .opt_usize(args.focus_max_chunks)
-        .opt_usize(args.focus_max_chars)
-        .flag(include_links)
-        .str(&serde_json::to_string(&extract_mode).unwrap_or_default())
-        .str(args.render.as_deref().unwrap_or(""))
-        .str(args.browser_profile.as_deref().unwrap_or(""))
-        .finish();
-    if let Some(ref cursor) = cursor {
-        cursor
-            .require_plan_key(&plan_key)
-            .map_err(cursor_rejected)?;
-    }
     progress.phase("extract");
     let windowed = windowed_fetch(
         &resp,
-        requested_max_chars,
-        budget_ms,
-        &plan_key,
-        cursor.as_ref(),
+        limit,
+        addressed,
+        args.offset,
         state.config.fetch.sanitize_output,
     );
-    if windowed.cursor_status.is_some() {
-        cursor_status = windowed.cursor_status;
+    if addressed && windowed.window.is_none() {
+        let (field, accepted): (&'static str, &'static [&'static str]) = if !resp.fetched {
+            ("url", &[])
+        } else if matches!(extract_mode, ExtractMode::MetadataOnly) {
+            ("extract_mode", &["text", "markdown"])
+        } else {
+            ("url", &[])
+        };
+        return Err(addressing_rejected(AddressError::DocumentUnavailable {
+            field,
+            accepted,
+        }));
     }
+    let WindowedFetch {
+        text: windowed_text,
+        document: windowed_document,
+        window,
+        doc_id,
+    } = windowed;
     let payload = serde_json::json!({
         "url": resp.url,
         "final_url": resp.final_url,
@@ -1024,14 +1044,14 @@ pub async fn run_web_fetch_with_progress(
         "fetched": resp.fetched,
         "truncated": resp.truncated,
         "trust": "external_untrusted",
-        "text": windowed.text.or(resp.text),
+        "text": windowed_text.or(resp.text),
         "links": resp.links,
         "links_seen": resp.links_seen,
         "links_truncated": resp.links_truncated,
         "warnings": resp.warnings,
         "trust_markers": serde_json::to_value(&resp.trust_markers)
             .unwrap_or(serde_json::json!({})),
-        "document": windowed.document.or(resp.document),
+        "document": windowed_document.or(resp.document),
         "focus": focus_selection,
         "fetch_transform": resp.fetch_transform,
         "structured_warnings": structured,
@@ -1045,7 +1065,24 @@ pub async fn run_web_fetch_with_progress(
         "transport": resp.transport.as_deref().unwrap_or("http"),
         "browser_escalated": resp.browser_escalated,
     });
-    let payload = with_cursor_keys(payload, windowed.next_cursor, cursor_status);
+    let payload = match window {
+        Some(window) => {
+            let mut payload = with_addressing_keys(payload, TEXT_ADDRESS_KEYS, window);
+            if let Some(object) = payload.as_object_mut() {
+                if let Some(doc_id) = doc_id {
+                    object.insert("doc_id".to_string(), serde_json::Value::from(doc_id));
+                }
+                if focus_selection.is_some() {
+                    object.insert(
+                        "focus_scope".to_string(),
+                        serde_json::Value::from("document"),
+                    );
+                }
+            }
+            payload
+        }
+        None => payload,
+    };
     let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
         args.response_detail,
         state.config.mcp.schema_profile,
@@ -1062,23 +1099,70 @@ pub async fn run_web_fetch_with_progress(
 struct WindowedFetch {
     text: Option<String>,
     document: Option<crate::core::document::FetchDocument>,
-    next_cursor: Option<String>,
-    cursor_status: Option<&'static str>,
+    window: Option<AddressWindow>,
+    doc_id: Option<String>,
+}
+
+fn addressable_text(document: &crate::core::document::FetchDocument) -> String {
+    document
+        .chunks
+        .iter()
+        .map(|chunk| chunk.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn default_page_chunk_count(
+    document: &crate::core::document::FetchDocument,
+    capacity: usize,
+) -> usize {
+    let mut used = 0usize;
+    let mut count = 0usize;
+    for chunk in &document.chunks {
+        let unit = chunk.text.chars().count().saturating_add(1);
+        let next = used.saturating_add(unit);
+        if count > 0 && next > capacity {
+            break;
+        }
+        used = next;
+        count += 1;
+    }
+    count
+}
+
+fn windowed_chunks(
+    document: &crate::core::document::FetchDocument,
+    window: AddressWindow,
+) -> Vec<crate::core::document::DocumentChunk> {
+    if window.len() == 0 {
+        return Vec::new();
+    }
+    let mut chunks = Vec::new();
+    let mut position = 0usize;
+    for chunk in &document.chunks {
+        let len = chunk.text.chars().count();
+        let start = position;
+        let end = start.saturating_add(len);
+        if start < window.to && end > window.from {
+            chunks.push(chunk.clone());
+        }
+        position = end.saturating_add(1);
+    }
+    chunks
 }
 
 fn windowed_fetch(
     resp: &crate::core::fetch::WebFetchResponse,
     capacity: usize,
-    budget_ms: u64,
-    plan_key: &str,
-    cursor: Option<&crate::mcp::cursor::RetrievalCursor>,
+    addressed: bool,
+    offset: Option<usize>,
     sanitize_output: bool,
 ) -> WindowedFetch {
     let unchanged = || WindowedFetch {
         text: None,
         document: None,
-        next_cursor: None,
-        cursor_status: None,
+        window: None,
+        doc_id: None,
     };
     let Some(document) = resp.document.as_ref() else {
         return unchanged();
@@ -1086,76 +1170,53 @@ fn windowed_fetch(
     if document.chunks.is_empty() {
         return unchanged();
     }
-    let ids: Vec<String> = document
-        .chunks
-        .iter()
-        .map(|chunk| chunk.chunk_id.clone())
-        .collect();
-    let chars: Vec<usize> = document
-        .chunks
-        .iter()
-        .map(|chunk| chunk.text.chars().count())
-        .collect();
-    let resolved = crate::mcp::cursor::resolve_page(ids.len(), &ids, cursor, capacity, |index| {
-        chars.get(index).copied().unwrap_or(0).saturating_add(1)
-    });
-    let cursor_status = if resolved.stale {
-        Some("stale")
-    } else if resolved.resumed {
-        Some("ok")
-    } else {
-        None
-    };
-    let window = resolved.window;
-    if window.start == 0 && window.end == ids.len() {
+    if !addressed {
+        let count = default_page_chunk_count(document, capacity);
+        if count == document.chunks.len() {
+            return unchanged();
+        }
+        let page_chunks = document.chunks[..count].to_vec();
+        let page = page_chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let page_chars = page.chars().count();
+        let (stripped, _) = crate::core::sanitize::strip_control_chars(&page);
+        let text = if sanitize_output {
+            crate::core::sanitize::frame(&stripped, "text", &resp.final_url)
+        } else {
+            stripped
+        };
+        let mut paged_document = document.clone();
+        paged_document.chunks = page_chunks;
+        paged_document.text_chars_returned = page_chars;
+        paged_document.text_truncated = count < document.chunks.len();
         return WindowedFetch {
-            text: None,
-            document: None,
-            next_cursor: None,
-            cursor_status,
+            text: Some(text),
+            document: Some(paged_document),
+            window: None,
+            doc_id: None,
         };
     }
-    if window.is_empty() {
-        return WindowedFetch {
-            text: None,
-            document: None,
-            next_cursor: None,
-            cursor_status: Some("stale"),
-        };
-    }
-    let page_chunks: Vec<crate::core::document::DocumentChunk> =
-        document.chunks[window.start..window.end].to_vec();
-    let joined = page_chunks
-        .iter()
-        .map(|chunk| chunk.text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let joined_chars = joined.chars().count();
-    let (stripped, _) = crate::core::sanitize::strip_control_chars(&joined);
-    let text = if sanitize_output {
+    let joined = addressable_text(document);
+    let total = joined.chars().count();
+    let window = AddressWindow::resolve(total, offset, capacity);
+    let slice = slice_chars(&joined, window.from, window.to);
+    let (stripped, _) = crate::core::sanitize::strip_control_chars(slice);
+    let text = if sanitize_output && !stripped.is_empty() {
         crate::core::sanitize::frame(&stripped, "text", &resp.final_url)
     } else {
         stripped
     };
     let mut paged_document = document.clone();
-    paged_document.chunks = page_chunks;
-    paged_document.text_chars_returned = joined_chars;
-    paged_document.text_truncated = window.end < ids.len();
-    let next_cursor = if resolved.stale {
-        None
-    } else {
-        crate::mcp::cursor::encode_next(
-            crate::mcp::cursor::CursorTool::WebFetch,
-            plan_key,
-            &ids,
-            window,
-            budget_ms,
-        )
-    };
+    paged_document.chunks = windowed_chunks(document, window);
+    paged_document.text_chars_returned = window.len();
+    paged_document.text_truncated = window.next_offset().is_some();
     WindowedFetch {
         text: Some(text),
         document: Some(paged_document),
-        next_cursor,
-        cursor_status,
+        window: Some(window),
+        doc_id: Some(document.doc_id.clone()),
     }
 }

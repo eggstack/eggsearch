@@ -970,6 +970,7 @@ pub fn extract_pdf_text(
     let text_chars_returned = bounded_legacy.chars().count();
 
     let document = FetchDocument {
+        doc_id: String::new(),
         kind: DocumentKind::Pdf,
         render_format: RenderFormat::AgentBlocksV1,
         text_format: "plain".to_string(),

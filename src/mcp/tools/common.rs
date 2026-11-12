@@ -21,7 +21,8 @@ pub enum ToolErrorCode {
     ManualInteractionRequired,
     UpstreamFailed,
     InvalidRequest,
-    CursorMismatch,
+    PlanMismatch,
+    DocumentUnavailable,
     Internal,
 }
 
@@ -38,7 +39,8 @@ impl ToolErrorCode {
             Self::ManualInteractionRequired => "manual_interaction_required",
             Self::UpstreamFailed => "upstream_failed",
             Self::InvalidRequest => "invalid_request",
-            Self::CursorMismatch => "cursor_mismatch",
+            Self::PlanMismatch => "plan_mismatch",
+            Self::DocumentUnavailable => "document_unavailable",
             Self::Internal => "internal",
         }
     }
@@ -115,38 +117,123 @@ pub enum ToolError {
     },
 }
 
-pub(crate) fn cursor_rejected(error: crate::mcp::cursor::CursorError) -> ToolError {
+pub(crate) enum AddressError {
+    PlanMismatch {
+        field: &'static str,
+        supplied: usize,
+        effective: usize,
+    },
+    DocumentUnavailable {
+        field: &'static str,
+        accepted: &'static [&'static str],
+    },
+}
+
+pub(crate) fn addressing_rejected(error: AddressError) -> ToolError {
     match error {
-        crate::mcp::cursor::CursorError::Invalid => {
-            ToolError::budget_invalid("cursor is not a valid replay token".to_string())
-        }
-        crate::mcp::cursor::CursorError::Mismatch => {
-            ToolError::cursor_mismatch("cursor does not belong to this request".to_string())
-        }
+        AddressError::PlanMismatch {
+            field,
+            supplied,
+            effective,
+        } => ToolError::execution_with_repair(
+            ToolErrorCode::PlanMismatch,
+            format!(
+                "addressing requires the request plan the server serves; {field}={supplied} is clamped to {effective}"
+            ),
+            RepairHint::new(Some(field), &[], Some(&effective.to_string())),
+        ),
+        AddressError::DocumentUnavailable { field, accepted } => ToolError::execution_with_repair(
+            ToolErrorCode::DocumentUnavailable,
+            format!("this request produces no addressable document; change {field}"),
+            RepairHint::new(Some(field), accepted, None),
+        ),
     }
 }
 
-pub(crate) fn with_cursor_keys(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AddressWindow {
+    pub from: usize,
+    pub to: usize,
+    pub total: usize,
+}
+
+impl AddressWindow {
+    pub(crate) fn resolve(total: usize, offset: Option<usize>, limit: usize) -> Self {
+        let from = offset.unwrap_or(0).min(total);
+        let to = from.saturating_add(limit).min(total);
+        Self { from, to, total }
+    }
+
+    pub(crate) fn len(self) -> usize {
+        self.to.saturating_sub(self.from)
+    }
+
+    pub(crate) fn next_offset(self) -> Option<usize> {
+        (self.to < self.total).then_some(self.to)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct AddressKeys {
+    from: &'static str,
+    to: Option<&'static str>,
+    total: Option<&'static str>,
+}
+
+pub(crate) const TEXT_ADDRESS_KEYS: AddressKeys = AddressKeys {
+    from: "text_from",
+    to: Some("text_to"),
+    total: Some("text_total"),
+};
+
+pub(crate) const ITEM_ADDRESS_KEYS: AddressKeys = AddressKeys {
+    from: "item_from",
+    to: Some("item_to"),
+    total: Some("item_total"),
+};
+
+pub(crate) const GROUP_ADDRESS_KEYS: AddressKeys = AddressKeys {
+    from: "group_from",
+    to: None,
+    total: None,
+};
+
+pub(crate) fn with_addressing_keys(
     mut payload: serde_json::Value,
-    next_cursor: Option<String>,
-    cursor_status: Option<&'static str>,
+    keys: AddressKeys,
+    window: AddressWindow,
 ) -> serde_json::Value {
     let Some(object) = payload.as_object_mut() else {
         return payload;
     };
-    if let Some(next_cursor) = next_cursor {
-        object.insert(
-            "next_cursor".to_string(),
-            serde_json::Value::String(next_cursor),
-        );
+    object.insert(keys.from.to_string(), serde_json::Value::from(window.from));
+    if let Some(to) = keys.to {
+        object.insert(to.to_string(), serde_json::Value::from(window.to));
     }
-    if let Some(cursor_status) = cursor_status {
-        object.insert(
-            "cursor_status".to_string(),
-            serde_json::Value::String(cursor_status.to_string()),
-        );
+    if let Some(total) = keys.total {
+        object.insert(total.to_string(), serde_json::Value::from(window.total));
+    }
+    if let Some(next) = window.next_offset() {
+        object.insert("next_offset".to_string(), serde_json::Value::from(next));
     }
     payload
+}
+
+pub(crate) fn slice_chars(text: &str, from: usize, to: usize) -> &str {
+    if to <= from {
+        return "";
+    }
+    let start = text
+        .char_indices()
+        .nth(from)
+        .map(|(index, _)| index)
+        .unwrap_or(text.len());
+    let end = text
+        .char_indices()
+        .nth(to)
+        .map(|(index, _)| index)
+        .unwrap_or(text.len());
+    &text[start..end]
 }
 
 impl ToolError {
@@ -239,8 +326,12 @@ impl ToolError {
         Self::execution(ToolErrorCode::BudgetInvalid, message)
     }
 
-    pub fn cursor_mismatch(message: impl Into<String>) -> Self {
-        Self::execution(ToolErrorCode::CursorMismatch, message)
+    pub fn plan_mismatch(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::PlanMismatch, message)
+    }
+
+    pub fn document_unavailable(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::DocumentUnavailable, message)
     }
 
     pub fn locator_invalid(message: impl Into<String>) -> Self {

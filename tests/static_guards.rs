@@ -2483,3 +2483,49 @@ fn pdf_inflation_enters_only_through_the_bounded_scanner() {
         pdf_inflation_violations("fn f() { let _ = scan_stream_budget(bytes, 1); }").is_empty()
     );
 }
+
+#[test]
+fn no_retired_replay_cursor_in_mcp_tree_or_docs() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mcp_root = format!("{manifest}/src/mcp");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        if !path.to_string_lossy().starts_with(&mcp_root) {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(manifest)
+            .expect("under manifest")
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        let source = std::fs::read_to_string(&path).expect("readable");
+        assert!(
+            !source.contains("cursor"),
+            "{rel} still mentions the retired replay cursor"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 20,
+        "the src/mcp walk must not be vacuous, checked {checked} files"
+    );
+
+    for file in [
+        "docs/config.md",
+        "docs/tool-matrix.md",
+        "docs/codegg-integration.md",
+        "architecture/mcp.md",
+        "architecture/codegg-contract.md",
+        "skills/eggsearch-mcp/SKILL.md",
+        "tests/fixtures/tool_surface/README.md",
+    ] {
+        let text = read_source(file);
+        for token in ["next_cursor", "cursor_status"] {
+            assert!(
+                !text.contains(token),
+                "{file} still documents the retired replay token `{token}`"
+            );
+        }
+    }
+}

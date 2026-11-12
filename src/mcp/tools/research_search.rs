@@ -70,8 +70,12 @@ pub struct ResearchSearchArgs {
     /// Known context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_context: Option<String>,
+    /// Zero-based index of the first non-empty group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
+    pub offset: Option<usize>,
+    /// Max groups from `offset`; clamped to the server maximum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
     /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
@@ -89,16 +93,25 @@ pub async fn run_research_search(
 pub const RESEARCH_PAGE_GROUPS: usize = 14;
 
 pub(crate) fn research_search_plan_key(args: &ResearchSearchArgs) -> String {
-    let mut key = crate::mcp::cursor::PlanKey::new(crate::mcp::cursor::CursorTool::ResearchSearch)
-        .str(&args.query)
-        .opt_str(args.research_domain.as_deref())
-        .opt_str(args.goal.as_deref())
-        .opt_str(args.workflow.as_deref())
-        .opt_str(args.depth.as_deref())
-        .opt_usize(args.max_results)
-        .opt_usize(args.max_per_group)
-        .opt_str(args.freshness.as_deref())
-        .opt_str(args.known_context.as_deref());
+    research_search_plan_key_over(args, args.max_results, args.max_per_group)
+}
+
+fn research_search_plan_key_over(
+    args: &ResearchSearchArgs,
+    max_results: Option<usize>,
+    max_per_group: Option<usize>,
+) -> String {
+    let mut key =
+        crate::mcp::plan_key::PlanKey::new(crate::mcp::plan_key::PlanTool::ResearchSearch)
+            .str(&args.query)
+            .opt_str(args.research_domain.as_deref())
+            .opt_str(args.goal.as_deref())
+            .opt_str(args.workflow.as_deref())
+            .opt_str(args.depth.as_deref())
+            .opt_usize(max_results)
+            .opt_usize(max_per_group)
+            .opt_str(args.freshness.as_deref())
+            .opt_str(args.known_context.as_deref());
     for source_type in &args.desired_source_types {
         key = key.str(source_type);
     }
@@ -126,22 +139,42 @@ pub async fn run_research_search_with_progress(
         )));
     }
 
-    let plan_key = research_search_plan_key(&args);
-    let cursor = crate::mcp::cursor::cursor_args(args.cursor.as_deref()).map_err(|e| {
-        ToolError::budget_invalid(format!("cursor is not a valid replay token: {}", e.code()))
-    })?;
-    if let Some(ref cursor) = cursor {
-        cursor
-            .require_tool(crate::mcp::cursor::CursorTool::ResearchSearch)
-            .map_err(cursor_rejected)?;
-        cursor
-            .require_plan_key(&plan_key)
-            .map_err(cursor_rejected)?;
+    if let Some(0) = args.limit {
+        return Err(ToolError::execution_with_repair(
+            ToolErrorCode::InvalidSemanticValue,
+            "limit must be > 0; an addressed window is a half-open group range".to_string(),
+            RepairHint::new(Some("limit"), &[], None),
+        ));
     }
-    let budget_ms = cursor
-        .as_ref()
-        .map(|cursor| cursor.timeout_ms().min(state.config.search.timeout_ms))
-        .unwrap_or(state.config.search.timeout_ms);
+    let addressed = args.offset.is_some() || args.limit.is_some();
+    let plan_key = research_search_plan_key(&args);
+    if addressed {
+        let served_results = args
+            .max_results
+            .map(|value| value.min(state.config.search.max_results_cap));
+        let served_per_group = args.max_per_group.map(|value| value.max(1));
+        let served = research_search_plan_key_over(&args, served_results, served_per_group);
+        if served != plan_key {
+            let (field, supplied, effective) = if served_results != args.max_results {
+                (
+                    "max_results",
+                    args.max_results.unwrap_or_default(),
+                    served_results.unwrap_or_default(),
+                )
+            } else {
+                (
+                    "max_per_group",
+                    args.max_per_group.unwrap_or_default(),
+                    served_per_group.unwrap_or_default(),
+                )
+            };
+            return Err(addressing_rejected(AddressError::PlanMismatch {
+                field,
+                supplied,
+                effective,
+            }));
+        }
+    }
     if args.max_groups == Some(0) {
         return Err(ToolError::Validation(
             "invalid request: max_groups must be > 0".to_string(),
@@ -151,7 +184,9 @@ pub async fn run_research_search_with_progress(
         .max_groups
         .unwrap_or(RESEARCH_PAGE_GROUPS)
         .min(RESEARCH_PAGE_GROUPS);
-    let mut cursor_status: Option<&'static str> = None;
+    let requested_limit = args.limit.unwrap_or(page_groups);
+    let limit = requested_limit.clamp(1, RESEARCH_PAGE_GROUPS);
+    let limit_clamped = limit < requested_limit;
 
     let research_domain = parse_strict_enum_arg(
         "research_domain",
@@ -220,14 +255,7 @@ pub async fn run_research_search_with_progress(
         max_groups: Some(page_groups.max(RESEARCH_PAGE_GROUPS)),
         max_per_group: args.max_per_group,
         freshness,
-        timeout_ms: match cursor.as_ref() {
-            Some(cursor) => Some(
-                cursor
-                    .timeout_ms()
-                    .min(args.timeout_ms.unwrap_or(cursor.timeout_ms())),
-            ),
-            None => args.timeout_ms,
-        },
+        timeout_ms: args.timeout_ms,
         providers: args.providers,
         workflow,
         depth,
@@ -287,27 +315,9 @@ pub async fn run_research_search_with_progress(
         .filter(|(_, group)| !group.results.is_empty())
         .map(|(index, _)| index)
         .collect();
-    let resolved = crate::mcp::cursor::resolve_page(
-        group_ids.len(),
-        &group_ids,
-        cursor.as_ref(),
-        page_groups,
-        |_| 1,
-    );
-    if resolved.stale {
-        cursor_status = Some("stale");
-    } else if resolved.resumed {
-        cursor_status = Some("ok");
-    }
-    let next_cursor = crate::mcp::cursor::encode_next(
-        crate::mcp::cursor::CursorTool::ResearchSearch,
-        &plan_key,
-        &group_ids,
-        resolved.window,
-        budget_ms,
-    );
-    if resolved.window.end < non_empty.len() || resolved.window.start > 0 {
-        let selected: Vec<usize> = non_empty[resolved.window.start..resolved.window.end].to_vec();
+    let window = AddressWindow::resolve(group_ids.len(), args.offset, limit);
+    if window.to < non_empty.len() || window.from > 0 {
+        let selected: Vec<usize> = non_empty[window.from..window.to].to_vec();
         let mut paged = Vec::with_capacity(selected.len());
         for index in selected {
             paged.push(response.groups[index].clone());
@@ -341,9 +351,33 @@ pub async fn run_research_search_with_progress(
             crate::meta::research_search_next_actions(&source_ids, has_suggested_fetches);
     }
 
-    let value = serde_json::to_value(&response)
+    if limit_clamped {
+        response
+            .structured_warnings
+            .push(crate::core::warning::AgentWarning::new(
+                crate::core::warning::WarningCode::MaxResultsClamped,
+                format!("limit was clamped to the server maximum of {RESEARCH_PAGE_GROUPS} groups"),
+            ));
+    }
+    let mut value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
-    let value = with_cursor_keys(value, next_cursor, cursor_status);
+    if addressed {
+        value = with_addressing_keys(value, GROUP_ADDRESS_KEYS, window);
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "aggregate_scope".to_string(),
+                serde_json::Value::from("document"),
+            );
+            object.insert(
+                "total_groups".to_string(),
+                serde_json::Value::from(window.total),
+            );
+            object.insert(
+                "returned_groups".to_string(),
+                serde_json::Value::from(window.len()),
+            );
+        }
+    }
 
     let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
         args.response_detail,

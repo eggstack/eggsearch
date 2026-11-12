@@ -586,6 +586,11 @@ impl FetchClient {
                     warnings,
                     trust_markers,
                     document: Some(FetchDocument {
+                        doc_id: crate::core::identity::doc_id(
+                            Some(&final_url),
+                            None,
+                            Some(DocumentKind::Pdf.as_str()),
+                        ),
                         kind: DocumentKind::Pdf,
                         render_format: RenderFormat::AgentBlocksV1,
                         text_format: "plain".to_string(),
@@ -684,6 +689,11 @@ impl FetchClient {
                 meta.content_length = content_length_header;
                 meta.redirects_followed = redirect_count;
             }
+            pdf_result.document.doc_id = crate::core::identity::doc_id(
+                Some(&final_url),
+                pdf_result.title.as_deref(),
+                Some(pdf_result.document.kind.as_str()),
+            );
 
             // Sanitize the legacy text field (Tier 1 + Tier 2/3).
             let mut warnings = pdf_result.warnings;
@@ -1128,6 +1138,7 @@ impl FetchClient {
             let chunks = build_document_chunks(&document_id, &outline, &blocks, document_chars);
 
             Some(FetchDocument {
+                doc_id: document_id.clone(),
                 kind: doc_kind,
                 render_format: RenderFormat::AgentBlocksV1,
                 text_format: if extract_mode == ExtractMode::Markdown {

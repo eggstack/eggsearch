@@ -26,8 +26,12 @@ pub struct BatchFetchArgs {
     /// Defaults to `true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continue_on_error: Option<bool>,
+    /// Zero-based index of the first item to process.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
+    pub offset: Option<usize>,
+    /// Max items from `offset`; clamped to the server maximum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
     /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
@@ -175,10 +179,18 @@ pub async fn run_batch_fetch(
 }
 
 pub(crate) fn batch_fetch_plan_key(args: &BatchFetchArgs) -> String {
-    let mut key = crate::mcp::cursor::PlanKey::new(crate::mcp::cursor::CursorTool::BatchFetch)
-        .opt_usize(args.max_items)
+    batch_fetch_plan_key_over(args, args.max_items, args.max_total_chars)
+}
+
+fn batch_fetch_plan_key_over(
+    args: &BatchFetchArgs,
+    max_items: Option<usize>,
+    max_total_chars: Option<usize>,
+) -> String {
+    let mut key = crate::mcp::plan_key::PlanKey::new(crate::mcp::plan_key::PlanTool::BatchFetch)
+        .opt_usize(max_items)
         .opt_usize(args.max_chars_per_item)
-        .opt_usize(args.max_total_chars)
+        .opt_usize(max_total_chars)
         .flag(args.continue_on_error.unwrap_or(true));
     for item in &args.items {
         key = key.str(&serde_json::to_string(item).unwrap_or_default());
@@ -227,14 +239,14 @@ pub async fn run_batch_fetch_with_progress(
     if let Some(0) = args.timeout_ms {
         return Err(ToolError::Validation("timeout_ms must be > 0".to_string()));
     }
-    let cursor = crate::mcp::cursor::cursor_args(args.cursor.as_deref()).map_err(|e| {
-        ToolError::budget_invalid(format!("cursor is not a valid replay token: {}", e.code()))
-    })?;
-    if let Some(ref cursor) = cursor {
-        cursor
-            .require_tool(crate::mcp::cursor::CursorTool::BatchFetch)
-            .map_err(cursor_rejected)?;
+    if let Some(0) = args.limit {
+        return Err(ToolError::execution_with_repair(
+            ToolErrorCode::InvalidSemanticValue,
+            "limit must be > 0; an addressed window is a half-open item range".to_string(),
+            RepairHint::new(Some("limit"), &[], None),
+        ));
     }
+    let addressed = args.offset.is_some() || args.limit.is_some();
 
     // Resolve effective limits
     let batch_max_items = args
@@ -260,57 +272,56 @@ pub async fn run_batch_fetch_with_progress(
     }
 
     let plan_key = batch_fetch_plan_key(&args);
-    if let Some(ref cursor) = cursor {
-        cursor
-            .require_plan_key(&plan_key)
-            .map_err(cursor_rejected)?;
+    if addressed {
+        let served_items = args
+            .max_items
+            .map(|value| value.min(state.config.fetch.batch_max_items_cap));
+        let served_total = args
+            .max_total_chars
+            .map(|value| value.min(state.config.fetch.batch_max_total_chars_cap));
+        let served = batch_fetch_plan_key_over(&args, served_items, served_total);
+        if served != plan_key {
+            let (field, supplied, effective) = if served_items != args.max_items {
+                (
+                    "max_items",
+                    args.max_items.unwrap_or_default(),
+                    served_items.unwrap_or_default(),
+                )
+            } else {
+                (
+                    "max_total_chars",
+                    args.max_total_chars.unwrap_or_default(),
+                    served_total.unwrap_or_default(),
+                )
+            };
+            return Err(addressing_rejected(AddressError::PlanMismatch {
+                field,
+                supplied,
+                effective,
+            }));
+        }
     }
-    let budget_ms = cursor
-        .as_ref()
-        .map(|cursor| cursor.timeout_ms().min(state.config.fetch.timeout_ms))
-        .unwrap_or(state.config.fetch.timeout_ms);
-    let item_ids: Vec<String> = args
-        .items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| crate::core::identity::batch_fetch_id(&item.label(), index))
-        .collect();
+    let item_total = args.items.len();
+    let requested_limit = args.limit.unwrap_or(batch_max_items);
+    let limit = requested_limit
+        .min(state.config.fetch.batch_max_items_cap)
+        .max(1);
+    let limit_clamped = limit < requested_limit;
     progress.phase("plan");
-    let resolved = crate::mcp::cursor::resolve_page(
-        item_ids.len(),
-        &item_ids,
-        cursor.as_ref(),
-        batch_max_items,
-        |_| 1,
-    );
-    let base = resolved.window.start;
-    let cursor_status = if resolved.stale {
-        Some("stale")
-    } else if resolved.resumed {
-        Some("ok")
-    } else {
-        None
-    };
-    let next_cursor = crate::mcp::cursor::encode_next(
-        crate::mcp::cursor::CursorTool::BatchFetch,
-        &plan_key,
-        &item_ids,
-        resolved.window,
-        budget_ms,
-    );
+    let window = AddressWindow::resolve(item_total, args.offset, limit);
     let effective_items: Vec<&BatchFetchItem> = args
         .items
         .iter()
-        .skip(base)
-        .take(resolved.window.len())
+        .skip(window.from)
+        .take(window.len())
         .collect();
     let mut warnings = Vec::new();
-    if effective_items.len() < args.items.len() {
+    if window.from > 0 || window.to < item_total {
         warnings.push(format!(
             "batch_item_count_truncated: requested {} items, processing {} from index {} (batch_max_items={})",
-            args.items.len(),
+            item_total,
             effective_items.len(),
-            base,
+            window.from,
             batch_max_items
         ));
     }
@@ -396,11 +407,8 @@ pub async fn run_batch_fetch_with_progress(
     })?;
     let client = prepare_batch_fetch_client(
         client,
-        if cursor.is_some() {
-            Some(budget_ms)
-        } else {
-            args.timeout_ms
-        },
+        args.timeout_ms
+            .filter(|ms| *ms < state.config.fetch.timeout_ms),
     )?;
 
     let concurrency = state.config.fetch.batch_concurrency;
@@ -435,7 +443,7 @@ pub async fn run_batch_fetch_with_progress(
                     "batch aborted due to previous failure".to_string()
                 };
                 results[i] = Some(BatchFetchResult {
-                    index: base + i,
+                    index: window.from + i,
                     item_type: match item {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
@@ -484,7 +492,7 @@ pub async fn run_batch_fetch_with_progress(
         {
             if budget_exhausted || spawned_in_wave >= launchable {
                 results[i] = Some(BatchFetchResult {
-                    index: base + i,
+                    index: window.from + i,
                     item_type: match item {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
@@ -504,7 +512,7 @@ pub async fn run_batch_fetch_with_progress(
             spawned_in_wave += 1;
 
             let fetch_future = make_batch_fetch_future(
-                base + i,
+                window.from + i,
                 item,
                 item_budget_cap,
                 state.clone(),
@@ -527,7 +535,7 @@ pub async fn run_batch_fetch_with_progress(
         while let Some(join_result) = join_set.join_next().await {
             match join_result {
                 Ok(Ok(batch_result)) => {
-                    let local = batch_result.index.saturating_sub(base);
+                    let local = batch_result.index.saturating_sub(window.from);
                     wave_results.insert(local, batch_result);
                 }
                 Ok(Err(tool_err)) => {
@@ -578,7 +586,7 @@ pub async fn run_batch_fetch_with_progress(
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
                     };
                     results[*idx] = Some(BatchFetchResult {
-                        index: base + *idx,
+                        index: window.from + *idx,
                         item_type,
                         label: effective_items[*idx].label(),
                         stable_id: None,
@@ -626,7 +634,7 @@ pub async fn run_batch_fetch_with_progress(
     for (item_index, (result, item)) in results.iter().zip(effective_items.iter()).enumerate() {
         debug_assert_eq!(
             result.index,
-            base + item_index,
+            window.from + item_index,
             "batch_fetch result out of input order"
         );
         if item.focus_query().is_some() && result.ok {
@@ -680,7 +688,7 @@ pub async fn run_batch_fetch_with_progress(
         cache_not_cacheable,
     };
 
-    let response = BatchFetchResponse {
+    let mut response = BatchFetchResponse {
         fetched,
         failed,
         truncated,
@@ -691,10 +699,25 @@ pub async fn run_batch_fetch_with_progress(
         telemetry: Some(telemetry),
     };
 
+    if limit_clamped {
+        response
+            .structured_warnings
+            .push(crate::core::warning::AgentWarning::new(
+                crate::core::warning::WarningCode::MaxResultsClamped,
+                format!(
+                    "limit was clamped to the server maximum of {} items",
+                    state.config.fetch.batch_max_items_cap
+                ),
+            ));
+    }
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
     progress.phase("merge");
-    let value = with_cursor_keys(value, next_cursor, cursor_status);
+    let value = if addressed {
+        with_addressing_keys(value, ITEM_ADDRESS_KEYS, window)
+    } else {
+        value
+    };
     let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
         args.response_detail,
         state.config.mcp.schema_profile,

@@ -689,32 +689,32 @@ fn advertisement_presets_select_exact_name_subsets() {
 }
 
 #[test]
-fn full_preset_advertisement_is_byte_identical_to_the_pre_change_surface() {
+fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
     let server = preset_server(
         eggsearch::core::config::McpToolPreset::Full,
         eggsearch::core::config::McpSchemaProfile::Full,
     );
     assert_eq!(
         server.tool_fingerprint(),
-        "1c187545a3bf85de",
-        "the full+full advertisement fingerprint must not change"
+        "8f2f6953a1fa6eb2",
+        "the full+full advertisement fingerprint is pinned"
     );
     let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
     assert_eq!(
         bytes.len(),
-        73_417,
-        "the full+full advertised tools/list bytes must not change"
+        74_422,
+        "the full+full advertised tools/list bytes are pinned"
     );
     let compact = preset_server(
         eggsearch::core::config::McpToolPreset::Full,
         eggsearch::core::config::McpSchemaProfile::Compact,
     );
-    assert_eq!(compact.tool_fingerprint(), "75b732f7f19c24f7");
+    assert_eq!(compact.tool_fingerprint(), "32f58c1c4cc33de3");
     assert_eq!(
         serde_json::to_string(&compact.tool_definitions())
             .unwrap()
             .len(),
-        19_818
+        20_196
     );
 }
 
@@ -742,6 +742,141 @@ fn presets_yield_distinct_stable_fingerprints() {
         );
     }
     assert_eq!(fingerprints.len(), 4);
+}
+
+fn collect_keys_containing(
+    value: &serde_json::Value,
+    needle: &str,
+    path: &str,
+    out: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, child) in object {
+                let child_path = format!("{path}/{key}");
+                if key.contains(needle) {
+                    out.push(child_path.clone());
+                }
+                collect_keys_containing(child, needle, &child_path, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, child) in items.iter().enumerate() {
+                collect_keys_containing(child, needle, &format!("{path}[{index}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn assert_no_replay_cursor_token(tool: &str, surface: &str, schema: &serde_json::Value) {
+    let serialized = serde_json::to_string(schema).expect("schema serializes");
+    for token in ["next_cursor", "cursor"] {
+        if serialized.contains(token) {
+            let mut keys = Vec::new();
+            collect_keys_containing(schema, token, "", &mut keys);
+            panic!(
+                "{surface} for tool '{tool}' advertises the retired replay token '{token}' (keys: {keys:?})"
+            );
+        }
+    }
+}
+
+#[test]
+fn advertised_schemas_carry_no_replay_cursor_tokens() {
+    use eggsearch::core::config::McpSchemaProfile;
+
+    let mut checked = 0usize;
+    for profile in [McpSchemaProfile::Full, McpSchemaProfile::Compact] {
+        let mut config = AppConfig::default();
+        config.mcp.schema_profile = profile;
+        let state = Arc::new(eggsearch::mcp::ServerState::build(config).expect("default state"));
+        let server = eggsearch::mcp::EggsearchServer::new(state);
+        for tool in server.tool_definitions() {
+            checked += 1;
+            let name = tool.name.to_string();
+            let input = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+            assert_no_replay_cursor_token(&name, &format!("{profile:?} input schema"), &input);
+            if matches!(
+                name.as_str(),
+                "web_fetch" | "batch_fetch" | "research_search"
+            ) {
+                let properties = tool
+                    .input_schema
+                    .get("properties")
+                    .and_then(serde_json::Value::as_object)
+                    .unwrap_or_else(|| panic!("tool '{name}' must advertise input properties"));
+                for key in ["offset", "limit"] {
+                    assert!(
+                        properties.contains_key(key),
+                        "tool '{name}' input schema must advertise optional `{key}`"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(
+        checked, 20,
+        "both schema profiles must advertise all ten tools"
+    );
+
+    for name in tool_contract::tool_names() {
+        let schema = eggsearch::mcp::output_schema::output_schema_for(name)
+            .unwrap_or_else(|| panic!("tool '{name}' must advertise an output schema"));
+        let value = serde_json::Value::Object(schema.as_ref().clone());
+        assert_no_replay_cursor_token(name, "output schema", &value);
+    }
+}
+
+#[test]
+fn stable_error_codes_include_addressing_failures_and_drop_cursor_mismatch() {
+    use eggsearch::mcp::tools::ToolErrorCode;
+
+    assert_eq!(ToolErrorCode::PlanMismatch.as_str(), "plan_mismatch");
+    assert_eq!(
+        ToolErrorCode::DocumentUnavailable.as_str(),
+        "document_unavailable"
+    );
+    assert_eq!(
+        serde_json::to_value(ToolErrorCode::PlanMismatch).unwrap(),
+        serde_json::json!("plan_mismatch")
+    );
+    assert_eq!(
+        serde_json::to_value(ToolErrorCode::DocumentUnavailable).unwrap(),
+        serde_json::json!("document_unavailable")
+    );
+    let codes = [
+        ToolErrorCode::InvalidSemanticValue,
+        ToolErrorCode::ConflictingArguments,
+        ToolErrorCode::CapabilityUnavailable,
+        ToolErrorCode::ProviderUnavailable,
+        ToolErrorCode::PolicyDenied,
+        ToolErrorCode::BudgetInvalid,
+        ToolErrorCode::LocatorInvalid,
+        ToolErrorCode::ManualInteractionRequired,
+        ToolErrorCode::UpstreamFailed,
+        ToolErrorCode::InvalidRequest,
+        ToolErrorCode::PlanMismatch,
+        ToolErrorCode::DocumentUnavailable,
+        ToolErrorCode::Internal,
+    ];
+    let names: Vec<&str> = codes.iter().copied().map(ToolErrorCode::as_str).collect();
+    assert!(
+        names.contains(&"plan_mismatch"),
+        "plan_mismatch must stay registered: {names:?}"
+    );
+    assert!(
+        names.contains(&"document_unavailable"),
+        "document_unavailable must stay registered: {names:?}"
+    );
+    assert!(
+        !names.contains(&"cursor_mismatch"),
+        "cursor_mismatch is retired and must not stringify from any variant: {names:?}"
+    );
+    assert!(
+        serde_json::from_str::<ToolErrorCode>("\"cursor_mismatch\"").is_err(),
+        "cursor_mismatch must not deserialize into the stable error registry"
+    );
 }
 
 #[test]

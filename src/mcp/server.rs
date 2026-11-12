@@ -231,7 +231,8 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
             "focus_max_chunks",
             "focus_max_chars",
             "render",
-            "cursor",
+            "offset",
+            "limit",
             "response_detail",
         ],
         "repo_fetch" => &[
@@ -265,14 +266,16 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
             "compare_targets",
             "constraints",
             "known_context",
-            "cursor",
+            "offset",
+            "limit",
             "response_detail",
         ],
         "batch_fetch" => &[
             "items",
             "max_chars_per_item",
             "total_max_chars",
-            "cursor",
+            "offset",
+            "limit",
             "response_detail",
         ],
         "repo_map" => &[

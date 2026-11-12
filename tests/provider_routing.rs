@@ -762,7 +762,8 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
 
     let state = state_with_default();
     let args = WebFetchArgs {
-        cursor: None,
+        offset: None,
+        limit: None,
         url: "https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string(),
         max_chars: None,
         timeout_ms: None,

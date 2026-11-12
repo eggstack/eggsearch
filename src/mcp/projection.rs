@@ -596,8 +596,19 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
         "returned_sources",
         "omitted_sources",
         "conflict_metadata",
-        "next_cursor",
-        "cursor_status",
+        "text_from",
+        "text_to",
+        "text_total",
+        "next_offset",
+        "doc_id",
+        "item_from",
+        "item_to",
+        "item_total",
+        "group_from",
+        "total_groups",
+        "returned_groups",
+        "aggregate_scope",
+        "focus_scope",
     ];
     match value {
         serde_json::Value::Object(object) => {

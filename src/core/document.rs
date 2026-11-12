@@ -376,6 +376,10 @@ fn current_heading_path(stack: &[(usize, String)]) -> Vec<String> {
 /// for agents that want to inspect content more selectively.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct FetchDocument {
+    /// Deterministic document identity: `doc_<16 hex>`.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub doc_id: String,
     /// The kind of document that was fetched.
     pub kind: DocumentKind,
     /// The render format used for blocks and chunks.

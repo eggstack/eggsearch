@@ -128,7 +128,8 @@ mod research_search {
 
     fn research_args(query: &str) -> ResearchSearchArgs {
         ResearchSearchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             query: query.to_string(),
             providers: vec!["mock_a".into()],
             ..Default::default()
@@ -138,7 +139,8 @@ mod research_search {
     #[cfg(feature = "mock")]
     fn research_args_multi(providers: &[&str], query: &str) -> ResearchSearchArgs {
         ResearchSearchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             query: query.to_string(),
             providers: providers.iter().map(|s| s.to_string()).collect(),
             ..Default::default()
@@ -164,7 +166,8 @@ mod research_search {
         let res = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "rust async".into(),
                 providers: vec!["mock_a".into()],
                 max_results: Some(0),
@@ -185,7 +188,8 @@ mod research_search {
         let res = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "rust async".into(),
                 providers: vec!["mock_a".into()],
                 timeout_ms: Some(0),
@@ -215,7 +219,8 @@ mod research_search {
         let res = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "rust async".into(),
                 providers: vec!["nope".into()],
                 ..Default::default()
@@ -458,7 +463,8 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "tokio async runtime performance".into(),
                 research_domain: Some("performance".into()),
                 providers: vec!["mock_a".into()],
@@ -602,7 +608,8 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "web framework architecture decisions".into(),
                 workflow: Some("architecture_decision".into()),
                 depth: Some("standard".into()),
@@ -650,7 +657,8 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "compare web frameworks".into(),
                 workflow: Some("library_comparison".into()),
                 compare_targets: vec!["axum".into(), "actix-web".into()],
@@ -682,7 +690,8 @@ mod research_search {
         let v = run_research_search(
             state,
             ResearchSearchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 query: "test query".into(),
                 workflow: Some("architecture_decision".into()),
                 providers: vec!["mock_a".into()],
@@ -705,6 +714,553 @@ mod research_search {
             telemetry.get("subqueries_generated").is_some(),
             "telemetry should have subqueries_generated"
         );
+    }
+
+    #[cfg(feature = "mock")]
+    fn offset_walk_engines() -> Vec<MockEngine> {
+        vec![MockEngine::success(
+            "mock_a",
+            vec![
+                MockResult::new(
+                    "Tokio runtime docs",
+                    "https://docs.rs/tokio/latest/tokio/",
+                    "mock_a",
+                )
+                .with_snippet("Async runtime reference"),
+                MockResult::new(
+                    "Tokio time module docs",
+                    "https://docs.rs/tokio/latest/tokio/time/index.html",
+                    "mock_a",
+                )
+                .with_snippet("Timers and interval reference"),
+                MockResult::new(
+                    "Tokio scheduler source",
+                    "https://github.com/tokio-rs/tokio/blob/master/tokio/src/runtime/scheduler.rs",
+                    "mock_a",
+                )
+                .with_snippet("Source file for the scheduler"),
+                MockResult::new(
+                    "Scheduler redesign proposal",
+                    "https://github.com/tokio-rs/tokio/pull/5000",
+                    "mock_a",
+                )
+                .with_snippet("Design discussion for the scheduler"),
+                MockResult::new(
+                    "Runtime benchmark results",
+                    "https://example.com/tokio-runtime-benchmark",
+                    "mock_a",
+                )
+                .with_snippet("Benchmark of the async runtime"),
+                MockResult::new(
+                    "Async runtime formal model",
+                    "https://arxiv.org/abs/2101.00001",
+                    "mock_a",
+                )
+                .with_snippet("Formal treatment of async runtimes"),
+            ],
+        )]
+    }
+
+    #[cfg(feature = "mock")]
+    fn addressing_args(
+        query: &str,
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> ResearchSearchArgs {
+        ResearchSearchArgs {
+            offset,
+            limit,
+            query: query.to_string(),
+            providers: vec!["mock_a".into()],
+            ..Default::default()
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    fn addressing_args_with_providers(
+        query: &str,
+        providers: &[&str],
+        offset: Option<usize>,
+        limit: Option<usize>,
+    ) -> ResearchSearchArgs {
+        ResearchSearchArgs {
+            offset,
+            limit,
+            query: query.to_string(),
+            providers: providers.iter().map(|id| id.to_string()).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn zero_dimension_durations(summary: &mut serde_json::Value) {
+        if let Some(dimensions) = summary
+            .get_mut("dimensions")
+            .and_then(|value| value.as_array_mut())
+        {
+            for dimension in dimensions {
+                if let Some(object) = dimension.as_object_mut() {
+                    object.insert("duration_ms".to_string(), serde_json::Value::from(0));
+                }
+            }
+        }
+    }
+
+    fn group_labels(value: &serde_json::Value) -> Vec<String> {
+        value["groups"]
+            .as_array()
+            .expect("groups is array")
+            .iter()
+            .map(|group| {
+                group["label"]
+                    .as_str()
+                    .expect("group label is string")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_offset_walk_visits_every_group_once_in_order() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+        let baseline = run_research_search(
+            state.clone(),
+            addressing_args("rust async runtime", None, None),
+        )
+        .await
+        .expect("unaddressed baseline");
+        let canonical = group_labels(&baseline);
+        let total = canonical.len();
+        assert!(
+            total >= 3,
+            "walk needs at least three non-empty groups: {canonical:?}"
+        );
+
+        let mut offset = Some(0usize);
+        let mut visited: Vec<String> = Vec::new();
+        let mut windows = 0usize;
+        loop {
+            let window = run_research_search(
+                state.clone(),
+                addressing_args("rust async runtime", offset, Some(2)),
+            )
+            .await
+            .expect("an addressed read is never an error");
+            windows += 1;
+            assert!(windows <= total + 1, "the offset walk must terminate");
+
+            let expected_from = offset.expect("walk always carries an offset");
+            assert_eq!(
+                window["group_from"].as_u64(),
+                Some(expected_from as u64),
+                "group_from is the absolute index of the first group on the page"
+            );
+            assert_eq!(window["total_groups"].as_u64(), Some(total as u64));
+            assert_eq!(window["aggregate_scope"], serde_json::json!("document"));
+            assert!(
+                window.get("next_cursor").is_none() && window.get("cursor_status").is_none(),
+                "the retired cursor keys must not reappear: {window}"
+            );
+
+            let groups = window["groups"].as_array().expect("groups is array");
+            assert_eq!(
+                window["returned_groups"].as_u64(),
+                Some(groups.len() as u64),
+                "returned_groups counts the groups on this page"
+            );
+            assert_eq!(groups.len(), 2.min(total - expected_from));
+
+            for (index, group) in groups.iter().enumerate() {
+                let label = group["label"].as_str().expect("group label");
+                assert_eq!(
+                    label,
+                    canonical[expected_from + index],
+                    "each window continues the canonical order with no gap"
+                );
+                visited.push(label.to_string());
+            }
+
+            match window.get("next_offset").and_then(|value| value.as_u64()) {
+                Some(next) => {
+                    assert!(
+                        next as usize > expected_from,
+                        "next_offset must advance the walk"
+                    );
+                    assert!(
+                        (next as usize) < total,
+                        "next_offset is present only when more groups remain"
+                    );
+                    assert_eq!(next as usize, expected_from + groups.len());
+                    offset = Some(next as usize);
+                }
+                None => {
+                    assert_eq!(
+                        expected_from + groups.len(),
+                        total,
+                        "the final window ends at the last group"
+                    );
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(
+            windows,
+            total.div_ceil(2),
+            "a limit of two over {total} groups takes ceil(total / 2) windows"
+        );
+        assert_eq!(visited, canonical, "every group is visited once in order");
+        let mut unique = visited.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), visited.len(), "no group is visited twice");
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_aggregates_are_document_scoped_across_windows() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+        let workflow_args = |offset: Option<usize>, limit: Option<usize>| ResearchSearchArgs {
+            workflow: Some("architecture_decision".into()),
+            ..addressing_args("rust async runtime", offset, limit)
+        };
+        let first = run_research_search(state.clone(), workflow_args(Some(0), Some(2)))
+            .await
+            .expect("first window");
+        let second = run_research_search(state.clone(), workflow_args(Some(2), Some(3)))
+            .await
+            .expect("second window");
+
+        assert_eq!(first["aggregate_scope"], serde_json::json!("document"));
+        assert_eq!(second["aggregate_scope"], serde_json::json!("document"));
+        assert_ne!(
+            first["aggregate_scope"].as_str(),
+            Some("page"),
+            "aggregates are never labelled page-scoped"
+        );
+        assert_ne!(second["aggregate_scope"].as_str(), Some("page"));
+
+        let total = first["total_groups"].as_u64().expect("total_groups");
+        assert_eq!(second["total_groups"].as_u64(), Some(total));
+        assert_eq!(first["returned_groups"].as_u64(), Some(2));
+        assert_eq!(second["returned_groups"].as_u64(), Some(3));
+        assert_ne!(
+            first["returned_groups"], second["returned_groups"],
+            "the windows return different numbers of groups"
+        );
+        assert_eq!(
+            total as usize,
+            group_labels(&first).len() + group_labels(&second).len(),
+            "the two windows partition the whole canonical group count"
+        );
+
+        assert!(
+            first["workflow_context"].is_object() && first["workflow_coverage"].is_object(),
+            "workflow aggregates must be exercised, not absent: {first}"
+        );
+        assert!(
+            !first["claims"].as_array().expect("claims").is_empty()
+                && !first["suggested_fetches"]
+                    .as_array()
+                    .expect("suggested_fetches")
+                    .is_empty()
+                && !first["source_quality"]
+                    .as_array()
+                    .expect("source_quality")
+                    .is_empty(),
+            "the aggregate comparison must not be vacuous: {first}"
+        );
+        assert!(
+            first["telemetry"].is_object() && first["retrieval_summary"].is_object(),
+            "telemetry and retrieval_summary must be present: {first}"
+        );
+        for field in [
+            "claims",
+            "conflicts",
+            "suggested_fetches",
+            "telemetry",
+            "workflow_context",
+            "trust_markers",
+            "source_quality",
+            "evidence_gaps",
+        ] {
+            assert_eq!(
+                first.get(field),
+                second.get(field),
+                "{field} is computed over the whole canonical order and must not vary by window"
+            );
+        }
+
+        let mut first_summary = first["retrieval_summary"].clone();
+        let mut second_summary = second["retrieval_summary"].clone();
+        zero_dimension_durations(&mut first_summary);
+        zero_dimension_durations(&mut second_summary);
+        assert_eq!(
+            first_summary, second_summary,
+            "retrieval_summary is computed over the whole canonical order and must not vary by window, apart from the clock-derived per-dimension duration_ms"
+        );
+
+        let first_coverage = &first["workflow_coverage"];
+        let second_coverage = &second["workflow_coverage"];
+        assert!(
+            first_coverage["found_roles"]
+                .as_array()
+                .is_some_and(|roles| !roles.is_empty()),
+            "workflow coverage must be populated for this window pair: {first_coverage}"
+        );
+        assert_eq!(
+            first_coverage, second_coverage,
+            "workflow_coverage is document-scoped and must not vary by window, including found_roles order"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_offset_at_or_past_total_returns_empty_window() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+        let baseline = run_research_search(
+            state.clone(),
+            addressing_args("rust async runtime", None, None),
+        )
+        .await
+        .expect("unaddressed baseline");
+        let total = group_labels(&baseline).len();
+        assert!(total >= 3, "boundary case needs a populated group list");
+
+        for offset in [total, total + 5] {
+            let window = run_research_search(
+                state.clone(),
+                addressing_args("rust async runtime", Some(offset), Some(2)),
+            )
+            .await
+            .expect("an offset at or past the total is clamped, never an error");
+
+            assert!(
+                window["groups"]
+                    .as_array()
+                    .expect("groups is array")
+                    .is_empty(),
+                "offset {offset} returns an empty group list"
+            );
+            assert_eq!(window["group_from"].as_u64(), Some(total as u64));
+            assert_eq!(window["total_groups"].as_u64(), Some(total as u64));
+            assert_eq!(window["returned_groups"].as_u64(), Some(0));
+            assert!(
+                window.get("next_offset").is_none(),
+                "no next window exists past the last group"
+            );
+            assert_eq!(window["aggregate_scope"], serde_json::json!("document"));
+            assert_eq!(
+                window.get("suggested_fetches"),
+                baseline.get("suggested_fetches"),
+                "aggregates still describe the whole canonical order"
+            );
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_zero_limit_is_a_repairable_rejection() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+        let error = run_research_search(
+            state,
+            addressing_args("rust async runtime", Some(0), Some(0)),
+        )
+        .await
+        .expect_err("a zero limit is rejected");
+        assert_eq!(error.code().as_str(), "invalid_semantic_value");
+        let mapped =
+            eggsearch::mcp::tools::map_tool_result(Err(error)).expect("maps to a tool error");
+        let payload = mapped.structured_content.expect("structured error payload");
+        assert_eq!(payload["code"], "invalid_semantic_value");
+        assert_eq!(payload["repair"]["field"], "limit");
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_addressed_plan_clamp_is_a_plan_mismatch() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+
+        let mut above_cap = addressing_args("rust async runtime", Some(0), Some(2));
+        above_cap.max_results = Some(51);
+        let error = run_research_search(state.clone(), above_cap)
+            .await
+            .expect_err("a server-clamped max_results cannot address a window");
+        assert_eq!(error.code().as_str(), "plan_mismatch");
+        let mapped =
+            eggsearch::mcp::tools::map_tool_result(Err(error)).expect("maps to a tool error");
+        let payload = mapped.structured_content.expect("structured error payload");
+        assert_eq!(payload["repair"]["field"], "max_results");
+        assert_eq!(payload["repair"]["suggested_value"], "50");
+
+        let mut zero_per_group = addressing_args("rust async runtime", Some(0), Some(2));
+        zero_per_group.max_per_group = Some(0);
+        let error = run_research_search(state, zero_per_group)
+            .await
+            .expect_err("a server-raised max_per_group cannot address a window");
+        assert_eq!(error.code().as_str(), "plan_mismatch");
+        let mapped =
+            eggsearch::mcp::tools::map_tool_result(Err(error)).expect("maps to a tool error");
+        let payload = mapped.structured_content.expect("structured error payload");
+        assert_eq!(payload["repair"]["field"], "max_per_group");
+        assert_eq!(payload["repair"]["suggested_value"], "1");
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_limit_above_page_max_is_clamped_with_warning() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+        let baseline = run_research_search(
+            state.clone(),
+            addressing_args("rust async runtime", None, None),
+        )
+        .await
+        .expect("unaddressed baseline");
+        let total = group_labels(&baseline).len();
+
+        let window = run_research_search(
+            state,
+            addressing_args("rust async runtime", Some(0), Some(20)),
+        )
+        .await
+        .expect("an over-large limit is clamped, not rejected");
+
+        let returned = window["returned_groups"].as_u64().expect("returned_groups") as usize;
+        assert_eq!(returned, group_labels(&window).len());
+        assert_eq!(returned, total);
+        assert!(
+            returned <= 14,
+            "RESEARCH_PAGE_GROUPS caps a page at 14 groups, got {returned}"
+        );
+        assert!(
+            window.get("next_offset").is_none(),
+            "the clamped page still covers the whole list"
+        );
+
+        let warnings = window["structured_warnings"]
+            .as_array()
+            .expect("structured_warnings is present");
+        let clamp = warnings
+            .iter()
+            .find(|warning| warning["code"] == "max_results_clamped")
+            .expect("limit clamp is reported through structured_warnings");
+        assert!(
+            clamp["message"]
+                .as_str()
+                .expect("warning message")
+                .contains("14"),
+            "the clamp message names the server maximum: {clamp}"
+        );
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_unaddressed_read_carries_no_addressing_keys() {
+        let state =
+            research_state_with_engines(test_cfg(), offset_walk_engines(), Duration::from_secs(5));
+        let value = run_research_search(state, research_args("rust async runtime"))
+            .await
+            .expect("ok");
+        assert!(
+            !value["groups"].as_array().expect("groups array").is_empty(),
+            "the unaddressed read still returns the groups"
+        );
+        for key in [
+            "group_from",
+            "next_offset",
+            "total_groups",
+            "returned_groups",
+            "aggregate_scope",
+            "next_cursor",
+            "cursor_status",
+        ] {
+            assert!(
+                value.get(key).is_none(),
+                "an unaddressed read must not carry {key}: {value}"
+            );
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[tokio::test]
+    async fn research_search_changed_query_addresses_the_new_group_list() {
+        let engines = vec![
+            offset_walk_engines().remove(0),
+            MockEngine::success(
+                "mock_b",
+                vec![
+                    MockResult::new(
+                        "Tokio release discussion",
+                        "https://news.ycombinator.com/item?id=1",
+                        "mock_b",
+                    ),
+                    MockResult::new(
+                        "Async runtime questions",
+                        "https://stackoverflow.com/questions/42",
+                        "mock_b",
+                    ),
+                ],
+            ),
+        ];
+        let state = research_state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+
+        let first = run_research_search(
+            state.clone(),
+            addressing_args_with_providers("rust async runtime", &["mock_a"], Some(0), Some(2)),
+        )
+        .await
+        .expect("first query window");
+        assert_eq!(first["group_from"].as_u64(), Some(0));
+        assert_eq!(first["next_offset"].as_u64(), Some(2));
+        let first_total = first["total_groups"].as_u64().expect("total_groups");
+
+        let fresh = run_research_search(
+            state.clone(),
+            addressing_args_with_providers(
+                "tokio migration guide",
+                &["mock_a", "mock_b"],
+                None,
+                None,
+            ),
+        )
+        .await
+        .expect("a changed query is a fresh read");
+        let fresh_labels = group_labels(&fresh);
+        assert!(
+            fresh_labels.len() > first_total as usize,
+            "the changed query addresses a different group list: {fresh_labels:?}"
+        );
+
+        let second = run_research_search(
+            state,
+            addressing_args_with_providers(
+                "tokio migration guide",
+                &["mock_a", "mock_b"],
+                Some(2),
+                Some(2),
+            ),
+        )
+        .await
+        .expect("the changed query is addressed over its own group list");
+        assert_eq!(
+            second["group_from"].as_u64(),
+            Some(2),
+            "group_from is the absolute index in the new list"
+        );
+        assert_eq!(
+            second["total_groups"].as_u64(),
+            Some(fresh_labels.len() as u64)
+        );
+        assert_eq!(second["returned_groups"].as_u64(), Some(2));
+        assert_eq!(group_labels(&second), fresh_labels[2..4].to_vec());
+        assert_eq!(second["next_offset"].as_u64(), Some(4));
+        assert_eq!(second["aggregate_scope"], serde_json::json!("document"));
     }
 }
 
@@ -1244,7 +1800,8 @@ async fn repo_fetch_via_web_fetch_full_file() {
             .expect("state"),
         ),
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url: server.url("/src/main.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1292,7 +1849,8 @@ async fn repo_fetch_via_web_fetch_404() {
             .expect("state"),
         ),
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url: server.url("/missing.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1342,7 +1900,8 @@ async fn repo_fetch_via_web_fetch_429() {
             .expect("state"),
         ),
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url: server.url("/rate-limited.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1391,7 +1950,8 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url: server.url("/injected.rs"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -1449,7 +2009,8 @@ async fn repo_fetch_via_web_fetch_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url: server.url("/long.rs"),
             max_chars: Some(200),
             timeout_ms: None,
@@ -5606,7 +6167,8 @@ async fn batch_fetch_empty_items_returns_validation_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![],
             max_items: None,
             max_chars_per_item: None,
@@ -5631,7 +6193,8 @@ async fn batch_fetch_disabled_by_policy_returns_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -5675,7 +6238,8 @@ async fn batch_fetch_over_item_cap_returns_validation_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -5718,7 +6282,8 @@ async fn batch_fetch_single_web_item_succeeds() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/page"),
                 extract_mode: None,
@@ -5792,7 +6357,8 @@ async fn batch_fetch_multiple_web_items_return_in_order() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -5842,7 +6408,8 @@ async fn batch_fetch_web_item_failure_with_continue_on_error() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/fail"),
@@ -5905,7 +6472,8 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: "https://198.51.100.1/nope".to_string(),
@@ -5987,7 +6555,8 @@ async fn batch_fetch_per_item_max_chars_enforced() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/big"),
                 extract_mode: None,
@@ -6057,7 +6626,8 @@ async fn batch_fetch_total_budget_enforced() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6107,7 +6677,8 @@ async fn batch_fetch_continue_on_error_across_waves() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
@@ -6204,7 +6775,8 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6267,7 +6839,8 @@ async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6326,7 +6899,8 @@ async fn batch_fetch_empty_web_url_returns_error_in_result() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "  ".to_string(),
                 extract_mode: None,
@@ -6360,7 +6934,8 @@ async fn batch_fetch_invalid_repo_host_returns_error() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: Some("bitbucket".to_string()),
                 owner: "test".to_string(),
@@ -6427,7 +7002,8 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -6511,7 +7087,8 @@ async fn batch_fetch_mixed_web_and_repo_items_return_separate_responses() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/doc"),
@@ -6623,7 +7200,8 @@ async fn batch_fetch_workspace_item_retains_local_trusted_and_marker_scan() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: Some("workspace".to_string()),
                 owner: root_name,
@@ -6699,7 +7277,8 @@ async fn batch_fetch_rejects_malformed_url() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "not-a-url".to_string(),
                 extract_mode: None,
@@ -6736,7 +7315,8 @@ async fn batch_fetch_rejects_unsupported_scheme() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "ftp://example.com/file".to_string(),
                 extract_mode: None,
@@ -6773,7 +7353,8 @@ async fn batch_fetch_rejects_absolute_repo_path() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: None,
                 owner: "test".to_string(),
@@ -6815,7 +7396,8 @@ async fn batch_fetch_rejects_path_traversal() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: None,
                 owner: "test".to_string(),
@@ -6857,7 +7439,8 @@ async fn batch_fetch_rejects_zero_max_chars_web() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -6894,7 +7477,8 @@ async fn batch_fetch_rejects_zero_max_chars_repo() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: None,
                 owner: "test".to_string(),
@@ -6936,7 +7520,8 @@ async fn batch_fetch_rejects_zero_max_items() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -6973,7 +7558,8 @@ async fn batch_fetch_rejects_zero_max_chars_per_item() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -7010,7 +7596,8 @@ async fn batch_fetch_rejects_zero_max_total_chars() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -7073,7 +7660,8 @@ async fn batch_fetch_budget_exhaustion_returns_warning() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7123,7 +7711,8 @@ async fn batch_fetch_budget_clamps_to_cap() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: server.url("/page"),
                 extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),
@@ -7187,7 +7776,8 @@ async fn batch_fetch_result_order_preserved() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7246,7 +7836,8 @@ async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7335,7 +7926,8 @@ async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order(
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7425,7 +8017,8 @@ async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items,
             max_items: None,
             max_chars_per_item: None,
@@ -7466,7 +8059,8 @@ async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "ftp://example.com/file".to_string(),
                 extract_mode: None,
@@ -7508,7 +8102,8 @@ async fn batch_fetch_rejects_zero_timeout_ms() {
     let res = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: "https://example.com".to_string(),
                 extract_mode: None,
@@ -7558,7 +8153,8 @@ async fn batch_fetch_uppercase_scheme_is_accepted() {
     let v = run_batch_fetch(
         state,
         BatchFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Web {
                 url: upper,
                 extract_mode: Some(eggsearch::core::fetch::ExtractMode::Text),

@@ -74,6 +74,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports window clipping only. The derived extraction cache key is
   document-scoped for HTML, so callers with different windows share one entry
   (`renderer_version` 5).
+- `web_fetch`, `batch_fetch`, and `research_search` replace the unreleased
+  replay cursor with offset windows. `cursor` is removed and `offset`/`limit`
+  select a half-open range over document characters, batch items, or non-empty
+  result groups; `limit` defaults to the tool's window size and clamps to its
+  ceiling. Addressed responses carry `text_from`/`text_to`/`text_total`/`doc_id`
+  (`web_fetch`), `item_from`/`item_to`/`item_total` (`batch_fetch`), or
+  `group_from` with `aggregate_scope`/`total_groups`/`returned_groups`
+  (`research_search`), plus `next_offset` when more units remain and
+  `focus_scope: "document"` for a focused addressed read. `next_cursor` and
+  `cursor_status` are gone; `cursor_mismatch` is removed and `plan_mismatch` and
+  `document_unavailable` are added.
 
 ### Fixed
 

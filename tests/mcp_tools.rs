@@ -543,7 +543,6 @@ fn provider_status_reports_active_mcp_advertisement() {
 mod pagination {
     use super::*;
     use eggsearch::core::batch_fetch::BatchFetchItem;
-    use eggsearch::mcp::cursor::{CursorTool, RetrievalCursor};
     use eggsearch::mcp::progress::ProgressSink;
     use httpmock::prelude::*;
 
@@ -567,6 +566,26 @@ mod pagination {
         server
     }
 
+    fn multibyte_page_server(chars: usize) -> MockServer {
+        let server = MockServer::start();
+        let paragraph = "héllo wörld — ünïcode ✓ 日本語 текст ";
+        let mut body = String::from("<html><body>");
+        while body.len() < chars {
+            body.push_str("<p>");
+            body.push_str(paragraph);
+            body.push_str(paragraph);
+            body.push_str("</p>");
+        }
+        body.push_str("</body></html>");
+        server.mock(move |when, then| {
+            when.method(GET).path("/uni");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(body);
+        });
+        server
+    }
+
     fn small_page_server() -> MockServer {
         let server = MockServer::start();
         server.mock(|when, then| {
@@ -580,7 +599,8 @@ mod pagination {
 
     fn fetch_args(url: String) -> WebFetchArgs {
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url,
             max_chars: None,
             timeout_ms: None,
@@ -619,6 +639,18 @@ mod pagination {
             .expect("fetch works");
         assert!(value.get("next_cursor").is_none());
         assert!(value.get("cursor_status").is_none());
+        for key in [
+            "text_from",
+            "text_to",
+            "text_total",
+            "next_offset",
+            "doc_id",
+        ] {
+            assert!(
+                value.get(key).is_none(),
+                "unaddressed payload carries {key}"
+            );
+        }
         assert!(
             value["text"]
                 .as_str()
@@ -631,117 +663,210 @@ mod pagination {
     }
 
     #[tokio::test]
-    async fn web_fetch_pages_cover_every_chunk_once() {
+    async fn web_fetch_offset_windows_compose_to_the_whole_document() {
         let server = long_page_server(40_000);
-        let state = state_with_localhost();
-        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
-            .await
-            .expect("first page");
-        let next = first["next_cursor"]
-            .as_str()
-            .expect("first page must offer a cursor")
-            .to_string();
-        let decoded = RetrievalCursor::decode(&next).expect("cursor round-trips");
-        assert_eq!(decoded.t, CursorTool::WebFetch);
-        assert_eq!(decoded.timeout_ms(), state.config.fetch.timeout_ms);
-
-        let mut collected = chunk_ids(&first);
-        assert_eq!(collected.len() as u64, u64::from(decoded.p.ord));
-        let mut pages = 1usize;
-        let mut pending = Some(next);
-        while let Some(cursor) = pending {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+        let limit = 2_000usize;
+        let mut offset = 0usize;
+        let mut composed = String::new();
+        let mut total: Option<usize> = None;
+        let mut doc_id: Option<String> = None;
+        let mut windows = 0usize;
+        loop {
             let mut args = fetch_args(server.url("/long"));
-            args.cursor = Some(cursor);
-            let page = run_web_fetch(state.clone(), args).await.expect("next page");
-            assert_eq!(page["cursor_status"], "ok");
-            let ids = chunk_ids(&page);
-            assert!(
-                !ids.is_empty(),
-                "every page must deliver at least one chunk"
-            );
-            collected.extend(ids);
-            pages += 1;
-            assert!(pages < 40, "the page chain must terminate");
-            pending = page["next_cursor"].as_str().map(str::to_string);
+            args.offset = Some(offset);
+            args.limit = Some(limit);
+            let page = run_web_fetch(state.clone(), args).await.expect("window");
+            windows += 1;
+            assert!(windows < 60, "the window chain must terminate");
+            let from = page["text_from"].as_u64().expect("text_from") as usize;
+            let to = page["text_to"].as_u64().expect("text_to") as usize;
+            let reported = page["text_total"].as_u64().expect("text_total") as usize;
+            assert_eq!(from, offset, "windows must start where the last ended");
+            assert!(to > from, "every window must return addressable text");
+            assert!(to <= reported);
+            assert_eq!(*total.get_or_insert(reported), reported);
+            let id = page["doc_id"].as_str().expect("doc_id").to_string();
+            assert_eq!(*doc_id.get_or_insert(id), page["doc_id"].as_str().unwrap());
+            composed.push_str(page["text"].as_str().unwrap_or_default());
+            match page["next_offset"].as_u64() {
+                Some(next) => {
+                    assert_eq!(next as usize, to, "next_offset is the window end");
+                    offset = next as usize;
+                }
+                None => break,
+            }
         }
-        assert!(
-            pages > 2,
-            "a 40k-character document must span more than two windows, saw {pages}"
-        );
-        let total = collected.len();
-        collected.sort();
-        collected.dedup();
-        assert_eq!(total, collected.len(), "pages must not repeat a chunk");
+        assert!(windows > 2, "a 40k document must span several windows");
+        assert_eq!(composed.chars().count(), total.expect("total"));
     }
 
     #[tokio::test]
-    async fn stale_cursor_returns_the_complete_first_page() {
-        let server = long_page_server(40_000);
-        let state = state_with_localhost();
-        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
-            .await
-            .expect("first page");
-        let next = first["next_cursor"].as_str().unwrap().to_string();
-        let mut forged = RetrievalCursor::decode(&next).unwrap();
-        forged.p.id = "chunk_ffffffffffffffff".to_string();
-        let mut args = fetch_args(server.url("/long"));
-        args.cursor = Some(forged.encode().unwrap());
-        let stale = run_web_fetch(state, args)
-            .await
-            .expect("stale is not an error");
-        assert_eq!(stale["cursor_status"], "stale");
-        assert!(stale.get("next_cursor").is_none());
-        assert_eq!(chunk_ids(&stale), chunk_ids(&first));
-    }
-
-    #[tokio::test]
-    async fn cursor_from_another_tool_is_rejected() {
-        let server = long_page_server(40_000);
-        let state = state_with_localhost();
-        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
-            .await
-            .expect("first page");
-        let next = first["next_cursor"].as_str().unwrap().to_string();
-        let mut forged = RetrievalCursor::decode(&next).unwrap();
-        forged.t = CursorTool::BatchFetch;
-        let mut args = fetch_args(server.url("/long"));
-        args.cursor = Some(forged.encode().unwrap());
-        let error = run_web_fetch(state, args).await.expect_err("mismatch");
-        assert_eq!(error.code().as_str(), "cursor_mismatch");
-    }
-
-    #[tokio::test]
-    async fn cursor_for_another_request_is_rejected() {
-        let server = long_page_server(40_000);
-        let state = state_with_localhost();
-        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
-            .await
-            .expect("first page");
-        let next = first["next_cursor"].as_str().unwrap().to_string();
-        let mut args = fetch_args(server.url("/long"));
-        args.max_chars = Some(4_096);
-        args.cursor = Some(next);
-        let error = run_web_fetch(state, args)
-            .await
-            .expect_err("plan key mismatch");
-        assert_eq!(error.code().as_str(), "cursor_mismatch");
-    }
-
-    #[tokio::test]
-    async fn oversized_and_malformed_cursors_are_rejected() {
+    async fn addressed_web_fetch_rejects_a_clamped_plan_field() {
         let server = small_page_server();
         let state = state_with_localhost();
         let mut args = fetch_args(server.url("/small"));
-        args.cursor = Some("A".repeat(600));
+        args.offset = Some(0);
+        args.focus = Some("body".to_string());
+        args.focus_max_chars = Some(state.config.fetch.max_chars_cap + 1);
+        let error = run_web_fetch(state, args)
+            .await
+            .expect_err("a clamped plan field is a mismatch");
+        assert_eq!(error.code().as_str(), "plan_mismatch");
+    }
+
+    #[tokio::test]
+    async fn windows_are_scalar_safe_on_multibyte_text() {
+        let server = multibyte_page_server(20_000);
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+        let mut whole = fetch_args(server.url("/uni"));
+        whole.offset = Some(0);
+        whole.limit = Some(50_000);
+        let whole = run_web_fetch(state.clone(), whole).await.expect("whole");
+        let total = whole["text_total"].as_u64().expect("text_total") as usize;
+        assert!(total > 1_000, "fixture must exceed one small window");
+        let whole_text = whole["text"].as_str().unwrap_or_default().to_string();
+        assert_eq!(whole_text.chars().count(), total);
+        assert!(
+            !whole_text.is_ascii(),
+            "the fixture must contain multi-byte scalars"
+        );
+
+        let limit = 1_001usize;
+        let mut offset = 0usize;
+        let mut composed = String::new();
+        let mut windows = 0usize;
+        loop {
+            let mut args = fetch_args(server.url("/uni"));
+            args.offset = Some(offset);
+            args.limit = Some(limit);
+            let page = run_web_fetch(state.clone(), args).await.expect("window");
+            windows += 1;
+            assert!(windows < 200, "the window chain must terminate");
+            let from = page["text_from"].as_u64().expect("text_from") as usize;
+            let to = page["text_to"].as_u64().expect("text_to") as usize;
+            assert_eq!(from, offset);
+            assert_eq!(to - from, limit.min(total - from));
+            let text = page["text"].as_str().unwrap_or_default();
+            assert_eq!(text.chars().count(), to - from);
+            assert!(!text.contains('\u{FFFD}'), "a scalar must never be split");
+            composed.push_str(text);
+            match page["next_offset"].as_u64() {
+                Some(next) => {
+                    assert_eq!(next as usize, to);
+                    offset = next as usize;
+                }
+                None => break,
+            }
+        }
+        assert!(windows > 2, "the fixture must span several windows");
+        assert_eq!(composed, whole_text);
+    }
+
+    #[tokio::test]
+    async fn trust_framing_never_moves_an_offset() {
+        let server = long_page_server(40_000);
+        let mut plain_cfg = AppConfig::default();
+        plain_cfg.fetch.allow_localhost = true;
+        plain_cfg.fetch.allow_private_network = true;
+        plain_cfg.fetch.sanitize_output = false;
+        let plain_state = Arc::new(ServerState::build(plain_cfg).expect("state builds"));
+        let framed_state = state_with_localhost();
+
+        let mut plain_args = fetch_args(server.url("/long"));
+        plain_args.offset = Some(1_000);
+        plain_args.limit = Some(500);
+        let plain = run_web_fetch(plain_state, plain_args)
+            .await
+            .expect("plain window");
+        let mut framed_args = fetch_args(server.url("/long"));
+        framed_args.offset = Some(1_000);
+        framed_args.limit = Some(500);
+        let framed = run_web_fetch(framed_state.clone(), framed_args)
+            .await
+            .expect("framed window");
+
+        for key in [
+            "text_from",
+            "text_to",
+            "text_total",
+            "next_offset",
+            "doc_id",
+        ] {
+            assert_eq!(plain[key], framed[key], "framing moved {key}");
+        }
+        let plain_text = plain["text"].as_str().unwrap_or_default();
+        let framed_text = framed["text"].as_str().unwrap_or_default();
+        assert_ne!(plain_text, framed_text, "framing must wrap the slice");
+        assert!(
+            framed_text.contains(plain_text),
+            "framing must wrap the same slice, not a different one"
+        );
+
+        let total = framed["text_total"].as_u64().expect("text_total") as usize;
+        let mut empty_args = fetch_args(server.url("/long"));
+        empty_args.offset = Some(total);
+        let empty = run_web_fetch(framed_state, empty_args)
+            .await
+            .expect("empty window");
+        assert_eq!(empty["text"].as_str(), Some(""));
+        assert_eq!(empty["text_from"].as_u64(), Some(total as u64));
+        assert_eq!(empty["text_to"].as_u64(), Some(total as u64));
+        assert!(empty.get("next_offset").is_none());
+
+        let mut past_args = fetch_args(server.url("/long"));
+        past_args.offset = Some(total + 50);
+        past_args.limit = Some(10);
+        let past = run_web_fetch(state_with_localhost(), past_args)
+            .await
+            .expect("an offset past the end clamps rather than failing");
+        assert_eq!(past["text"].as_str(), Some(""));
+        assert_eq!(past["text_from"].as_u64(), Some(total as u64));
+        assert_eq!(past["text_to"].as_u64(), Some(total as u64));
+        assert!(past.get("next_offset").is_none());
+    }
+
+    #[tokio::test]
+    async fn addressed_reads_report_distinguishable_codes() {
+        let server = small_page_server();
+        let state = state_with_localhost();
+        let mut args = fetch_args(server.url("/small"));
+        args.offset = Some(0);
+        args.extract_mode = Some(eggsearch::core::fetch::ExtractMode::MetadataOnly);
         let error = run_web_fetch(state.clone(), args)
             .await
-            .expect_err("oversize");
-        assert_eq!(error.code().as_str(), "budget_invalid");
+            .expect_err("metadata_only has no addressable text");
+        assert_eq!(error.code().as_str(), "document_unavailable");
 
+        let mut args = fetch_args("http://127.0.0.1:1/refused".to_string());
+        args.offset = Some(0);
+        let error = run_web_fetch(state, args)
+            .await
+            .expect_err("connection refused");
+        assert_eq!(error.code().as_str(), "upstream_failed");
+    }
+
+    #[tokio::test]
+    async fn zero_limit_is_a_repairable_rejection() {
+        let server = small_page_server();
+        let state = state_with_localhost();
         let mut args = fetch_args(server.url("/small"));
-        args.cursor = Some("e1.not-base64!!".to_string());
-        let error = run_web_fetch(state, args).await.expect_err("malformed");
-        assert_eq!(error.code().as_str(), "budget_invalid");
+        args.offset = Some(0);
+        args.limit = Some(0);
+        let error = run_web_fetch(state, args).await.expect_err("zero limit");
+        assert_eq!(error.code().as_str(), "invalid_semantic_value");
+        let result = eggsearch::mcp::tools::map_tool_result(Err(error)).expect("maps");
+        let payload = result.structured_content.expect("payload");
+        assert_eq!(payload["repair"]["field"], "limit");
     }
 
     #[tokio::test]
@@ -793,7 +918,8 @@ mod pagination {
         }
         let state = state_with_localhost();
         let mut args = BatchFetchArgs {
-            cursor: None,
+            offset: Some(0),
+            limit: None,
             items: batch_items(&server, 10),
             max_items: Some(4),
             max_chars_per_item: None,
@@ -812,10 +938,10 @@ mod pagination {
             for result in value["results"].as_array().expect("results") {
                 seen.push(result["index"].as_u64().expect("index"));
             }
-            let Some(next) = value["next_cursor"].as_str().map(str::to_string) else {
+            let Some(next) = value["next_offset"].as_u64() else {
                 break;
             };
-            args.cursor = Some(next);
+            args.offset = Some(next as usize);
         }
         assert_eq!(seen, (0..10u64).collect::<Vec<_>>());
         assert_eq!(pages, 3);
@@ -834,7 +960,8 @@ mod pagination {
         }
         let state = state_with_localhost();
         let mut args = BatchFetchArgs {
-            cursor: None,
+            offset: Some(0),
+            limit: None,
             items: batch_items(&server, 20),
             max_items: Some(3),
             max_chars_per_item: None,
@@ -851,8 +978,8 @@ mod pagination {
             for result in value["results"].as_array().expect("results") {
                 seen.push(result["index"].as_u64().expect("index"));
             }
-            match value["next_cursor"].as_str() {
-                Some(next) => args.cursor = Some(next.to_string()),
+            match value["next_offset"].as_u64() {
+                Some(next) => args.offset = Some(next as usize),
                 None => break,
             }
         }
@@ -860,38 +987,37 @@ mod pagination {
     }
 
     #[tokio::test]
-    async fn batch_fetch_cursor_mismatch_is_typed() {
-        let server = long_page_server(40_000);
+    async fn addressed_batch_fetch_rejects_a_clamped_plan_bound() {
+        let server = MockServer::start();
         let state = state_with_localhost();
-        let first = run_web_fetch(state.clone(), fetch_args(server.url("/long")))
-            .await
-            .expect("first page");
-        let cursor = first["next_cursor"].as_str().unwrap().to_string();
-        let small = small_page_server();
+        let cap = state.config.fetch.batch_max_items_cap;
         let args = BatchFetchArgs {
-            cursor: Some(cursor),
-            items: batch_items(&small, 1),
-            max_items: None,
+            offset: Some(0),
+            limit: None,
+            items: batch_items(&server, 1),
+            max_items: Some(cap + 1),
             max_chars_per_item: None,
             max_total_chars: None,
             timeout_ms: None,
             continue_on_error: None,
             response_detail: None,
         };
-        let error = run_batch_fetch(state, args).await.expect_err("mismatch");
-        assert_eq!(error.code().as_str(), "cursor_mismatch");
+        let error = run_batch_fetch(state, args)
+            .await
+            .expect_err("a clamped plan bound is a mismatch");
+        assert_eq!(error.code().as_str(), "plan_mismatch");
     }
 }
 
 #[cfg(feature = "mock")]
 mod research_pagination {
     use super::*;
-    use eggsearch::mcp::cursor::RetrievalCursor;
     use eggsearch::mcp::tools::{run_research_search, ResearchSearchArgs};
 
     fn research_args(query: &str, max_groups: Option<usize>) -> ResearchSearchArgs {
         ResearchSearchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             query: query.to_string(),
             max_groups,
             providers: vec!["mock_a".to_string()],
@@ -936,6 +1062,7 @@ mod research_pagination {
     async fn research_search_pages_groups_without_gap_or_duplication() {
         let (state, _) = multi_group_state();
         let mut args = research_args("tokio runtime", Some(2));
+        args.offset = Some(0);
         let mut labels: Vec<String> = Vec::new();
         let mut pages = 0;
         for _ in 0..8 {
@@ -946,11 +1073,8 @@ mod research_pagination {
             for group in value["groups"].as_array().expect("groups") {
                 labels.push(group["label"].as_str().unwrap_or_default().to_string());
             }
-            match value["next_cursor"].as_str() {
-                Some(next) => {
-                    RetrievalCursor::decode(next).expect("cursor round-trips");
-                    args.cursor = Some(next.to_string());
-                }
+            match value["next_offset"].as_u64() {
+                Some(next) => args.offset = Some(next as usize),
                 None => break,
             }
         }
@@ -969,7 +1093,8 @@ mod research_pagination {
         let value = run_research_search(state, research_args("tokio runtime", None))
             .await
             .expect("research page");
-        assert!(value.get("next_cursor").is_none());
+        assert!(value.get("next_offset").is_none());
+        assert!(value.get("group_from").is_none());
     }
 }
 
@@ -1017,7 +1142,8 @@ mod document_budget {
 
     fn args(url: String, max_chars: Option<usize>) -> WebFetchArgs {
         WebFetchArgs {
-            cursor: None,
+            offset: None,
+            limit: None,
             url,
             max_chars,
             timeout_ms: None,
@@ -1058,22 +1184,22 @@ mod document_budget {
     ) -> (Vec<serde_json::Value>, usize, usize) {
         let mut pages = Vec::new();
         let mut chars = 0usize;
-        let mut chunks = 0usize;
-        let mut cursor: Option<String> = None;
-        loop {
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut offset: Option<usize> = Some(0);
+        while let Some(from) = offset {
             let mut request = args(url.clone(), max_chars);
-            request.cursor = cursor;
-            let page = run_web_fetch(state.clone(), request).await.expect("page");
-            chars += page_chars(&page["document"]);
-            chunks += chunk_count(&page["document"]);
-            cursor = page["next_cursor"].as_str().map(str::to_string);
-            pages.push(page);
-            assert!(pages.len() < 40, "the page chain must terminate");
-            if cursor.is_none() {
-                break;
+            request.offset = Some(from);
+            let page = run_web_fetch(state.clone(), request).await.expect("window");
+            let to = page["text_to"].as_u64().expect("text_to") as usize;
+            chars += to.saturating_sub(from);
+            for chunk in page["document"]["chunks"].as_array().expect("chunks") {
+                seen.insert(chunk["chunk_id"].as_str().unwrap_or_default().to_string());
             }
+            offset = page["next_offset"].as_u64().map(|next| next as usize);
+            pages.push(page);
+            assert!(pages.len() < 40, "the window chain must terminate");
         }
-        (pages, chars, chunks)
+        (pages, chars, seen.len())
     }
 
     #[tokio::test]
@@ -1186,12 +1312,18 @@ mod document_budget {
 
             let mut seen = std::collections::HashSet::new();
             for page in &pages {
+                let mut per_page = std::collections::HashSet::new();
                 for chunk in page["document"]["chunks"].as_array().expect("chunks") {
                     let id = chunk["chunk_id"].as_str().unwrap_or_default().to_string();
-                    assert!(seen.insert(id), "a chunk must be delivered exactly once");
+                    assert!(
+                        per_page.insert(id.clone()),
+                        "a chunk must appear once per window"
+                    );
+                    seen.insert(id);
                 }
             }
-            assert_eq!(seen.len(), chunks, "no chunk may be lost across pages");
+            assert_eq!(seen.len(), chunks, "no chunk may be lost across windows");
+            assert!(chunks > 10, "the document must be chunked, saw {chunks}");
 
             let blocks = pages[0]["document"]["blocks"].as_array().expect("blocks");
             let mut expected_start = 0usize;

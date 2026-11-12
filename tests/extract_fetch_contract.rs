@@ -30,7 +30,8 @@ fn localhost_state() -> Arc<ServerState> {
 
 fn fetch_args(url: String) -> WebFetchArgs {
     WebFetchArgs {
-        cursor: None,
+        offset: None,
+        limit: None,
         url,
         max_chars: None,
         timeout_ms: None,
@@ -416,7 +417,8 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
         run_batch_fetch(
             state.clone(),
             eggsearch::mcp::tools::BatchFetchArgs {
-                cursor: None,
+                offset: None,
+                limit: None,
                 items,
                 max_items: None,
                 max_chars_per_item: None,
@@ -1288,4 +1290,197 @@ async fn web_search_compact_retains_distinct_passages() {
         assert!(card["snippet"].is_string());
         assert!(card.get("excerpts_suppressed").is_none());
     }
+}
+
+#[derive(serde::Deserialize)]
+struct FetchWindowCase {
+    id: String,
+    query: Option<String>,
+    content_type: String,
+    body: String,
+    answer_start: usize,
+    answer_end: usize,
+}
+
+#[derive(serde::Deserialize)]
+struct FetchWindowCorpus {
+    schema_version: u32,
+    cases: Vec<FetchWindowCase>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FetchWindowRecord {
+    id: String,
+    contained: bool,
+    answer_start: usize,
+    text_from: usize,
+    text_to: usize,
+    text_total: usize,
+}
+
+struct FetchWindowMeasurement {
+    records: Vec<FetchWindowRecord>,
+    doc_ids: Vec<String>,
+}
+
+fn fetch_window_corpus() -> FetchWindowCorpus {
+    let corpus: FetchWindowCorpus =
+        serde_json::from_str(include_str!("fixtures/fetch_windows/corpus.json"))
+            .expect("fetch-window corpus parses");
+    assert_eq!(
+        corpus.schema_version, 1,
+        "unsupported corpus schema version"
+    );
+    assert!(
+        (8..=12).contains(&corpus.cases.len()),
+        "corpus must hold 8 to 12 cases, found {}",
+        corpus.cases.len()
+    );
+    corpus
+}
+
+async fn measure_fetch_windows(corpus: &FetchWindowCorpus) -> FetchWindowMeasurement {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    for case in &corpus.cases {
+        let path = format!("/{}", case.id);
+        let body = case.body.clone();
+        let content_type = case.content_type.clone();
+        server.mock(move |when, then| {
+            when.method(GET).path(path.as_str());
+            then.status(200)
+                .header("content-type", content_type.as_str())
+                .body(body.as_str());
+        });
+    }
+    let state = localhost_state();
+    let mut records = Vec::with_capacity(corpus.cases.len());
+    let mut doc_ids = Vec::with_capacity(corpus.cases.len());
+    for case in &corpus.cases {
+        let mut args = fetch_args(server.url(format!("/{}", case.id)));
+        args.offset = Some(0);
+        args.focus = case.query.clone();
+        let payload = run_web_fetch(state.clone(), args)
+            .await
+            .unwrap_or_else(|error| panic!("fetch-window case {} failed: {error:?}", case.id));
+        let field = |name: &str| -> usize {
+            payload[name]
+                .as_u64()
+                .unwrap_or_else(|| panic!("fetch-window case {} lost {name}", case.id))
+                as usize
+        };
+        let text_from = field("text_from");
+        let text_to = field("text_to");
+        let text_total = field("text_total");
+        doc_ids.push(
+            payload["doc_id"]
+                .as_str()
+                .unwrap_or_else(|| panic!("fetch-window case {} lost doc_id", case.id))
+                .to_string(),
+        );
+        records.push(FetchWindowRecord {
+            id: case.id.clone(),
+            contained: case.answer_start >= text_from && case.answer_end <= text_to,
+            answer_start: case.answer_start,
+            text_from,
+            text_to,
+            text_total,
+        });
+    }
+    FetchWindowMeasurement { records, doc_ids }
+}
+
+fn median_chars_to_answer(values: &[usize]) -> usize {
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    match sorted.len() {
+        0 => 0,
+        len if len % 2 == 1 => sorted[len / 2],
+        len => (sorted[len / 2 - 1] + sorted[len / 2]) / 2,
+    }
+}
+
+#[tokio::test]
+async fn fetch_window_first_slice_precision_is_recorded() {
+    let corpus = fetch_window_corpus();
+    for case in &corpus.cases {
+        assert!(
+            case.answer_start < case.answer_end,
+            "fetch-window case {} has an empty answer span",
+            case.id
+        );
+    }
+
+    let first = measure_fetch_windows(&corpus).await;
+    let second = measure_fetch_windows(&corpus).await;
+    assert_eq!(
+        first.records, second.records,
+        "the fetch-window measurement must be repeatable"
+    );
+    assert_eq!(first.records.len(), corpus.cases.len());
+
+    for (record, case) in first.records.iter().zip(&corpus.cases) {
+        assert_eq!(record.id, case.id);
+        assert_eq!(
+            record.text_from, 0,
+            "fetch-window case {} must be addressed from the document origin",
+            record.id
+        );
+        assert!(
+            record.text_to > 0,
+            "fetch-window case {} returned an empty window",
+            record.id
+        );
+        assert!(
+            record.text_to <= record.text_total,
+            "fetch-window case {} window ends past the addressable total",
+            record.id
+        );
+        assert!(
+            case.answer_end <= record.text_total,
+            "fetch-window case {} span ends past the addressable total",
+            record.id
+        );
+    }
+    for (record, doc_id) in first.records.iter().zip(&first.doc_ids) {
+        assert!(
+            !doc_id.is_empty(),
+            "fetch-window case {} returned an empty doc_id",
+            record.id
+        );
+    }
+
+    let contained = first.records.iter().filter(|r| r.contained).count();
+    let total = first.records.len();
+    let starts: Vec<usize> = first.records.iter().map(|r| r.answer_start).collect();
+    println!(
+        "fetch-window first-slice measurement: default window (offset 0, no limit), {total} cases"
+    );
+    println!(
+        "{:<46} {:>9} {:>13} {:>11} {:>9}",
+        "id", "contained", "answer_start", "text_total", "text_to"
+    );
+    for record in &first.records {
+        println!(
+            "{:<46} {:>9} {:>13} {:>11} {:>9}",
+            record.id,
+            if record.contained { "yes" } else { "no" },
+            record.answer_start,
+            record.text_total,
+            record.text_to
+        );
+    }
+    println!(
+        "first-window recall: {contained}/{total} = {:.1}%",
+        contained as f64 * 100.0 / total as f64
+    );
+    println!(
+        "median chars-to-answer: {}",
+        median_chars_to_answer(&starts)
+    );
+    assert!(
+        first.records.iter().any(|r| r.contained) && first.records.iter().any(|r| !r.contained),
+        "the corpus must exercise both containment outcomes so the record is not vacuous"
+    );
 }
