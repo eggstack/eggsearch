@@ -1,6 +1,6 @@
 # M019 — Fetch Document Budget and Truncation Semantics
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M019
 Primary class: invariant (corrective)
 Baseline: `8b701e220244ddf6422b10fd7fb7ca71a0732587`

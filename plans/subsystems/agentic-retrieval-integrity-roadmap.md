@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready; M019 closed; M020 ready)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready; M019 closed; M020 conditionally closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -146,9 +146,13 @@ exposed M011's mandatory-`redir` defect.
   returned window, truncation reports document versus window facts separately, and HTML derived
   entries are shared across caller windows. Evidence:
   `plans/closure/agentic-retrieval-integrity/019-status.md`.
-- M020 is now dependency-ready. Its work package 0 requires M019's guarantees — exhaustive
-  contiguous chunk coverage and no pre-truncation at the caller's window — and both are established
-  and tested, so `text_total` over the chunk join is the true addressable total.
+- M020 is `conditionally closed`: offset addressing and the cursor retirement landed, and
+  `plans/closure/agentic-retrieval-integrity/020-status.md` carries the evidence. The named
+  condition is that `text_total` over the chunk join is the true document-budget total only for
+  HTML and browser-rendered documents; PDF and every other non-HTML body still extract at the
+  caller's window (M019's recorded deviation), so a window on those shapes cannot address past the
+  first one. Discharging it needs a new milestone over `src/fetch/**`, which M020's non-goals
+  exclude.
 - M013–M018 are registered corrective and extension work from the 2026-11-12 live review. ADR-0010
   is accepted and authorizes no behaviour change by itself: it widens method coverage to the
   published Anubis registry and records that the nonce search stays single-threaded, but every
