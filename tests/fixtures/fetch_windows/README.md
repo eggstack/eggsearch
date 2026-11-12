@@ -155,3 +155,24 @@ The numbers are a property of this corpus under the shipped selection code, not
 an estimate of production web quality: the corpus is synthetic, the cases are
 not independently adjudicated, four cases probe window-edge arithmetic directly,
 and three probe multi-byte skew.
+
+## Live two-window record
+
+`cargo test --locked --all-features --test web_fetch_integration -- --ignored offset_windows_live
+--nocapture` reads two disjoint windows of one real document and records them here:
+
+```
+url=https://www.rfc-editor.org/rfc/rfc9110.txt
+doc_id=doc_bdacf44c950f8e6d
+text_total=11981
+first=[0,4000)   first_chars=4000
+second=[5000,9000) second_chars=4000
+```
+
+The two windows share `doc_id` and `text_total`, are disjoint, and their union
+stays inside `text_total`. The same record is the live evidence for M020's named
+condition: RFC 9110 is a plain-text document far larger than the default window,
+but `text_total` is 11,981 — the caller-window bound inherited from M019, not the
+document size. HTML bodies do not have that bound: the 40 KB `fetch_windows`
+fixture used by the unit suites reports `text_total = 38,055` against a
+11,791-scalar first page.

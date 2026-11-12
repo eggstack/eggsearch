@@ -17,7 +17,9 @@ closure commit `8bb5c8a`.
 **Named condition.** `text_total` is the true document-budget total for HTML and browser-rendered
 documents only. For PDF and every other non-HTML body it remains bounded by the caller's window,
 inherited from M019's recorded deviation 1, so offset windows for those shapes cannot address past
-the first window. Discharging it requires moving those two extraction paths to the document budget,
+the first window. Measured, not inferred: a 40 KB HTML fixture reports `text_total = 38,055` for a
+11,791-scalar first page, while the live `text/plain` read of RFC 9110 reports `text_total = 11,981`
+(the 12,000 default window) for a document of several hundred kilobytes. Discharging it requires moving those two extraction paths to the document budget,
 which this plan's non-goals forbid (`src/fetch/**` other than the document identity) and which its
 fail-closed list names explicitly ("`text_total` cannot be made larger than a single window without
 changing extraction"). See "Residual risk" item 1 for the exact call sites.
@@ -147,6 +149,20 @@ corresponding commands above were run individually.
 
 ### Compatibility gate
 
+Measured across versions, not only asserted. A throwaway dump test built the same fixed-port
+fixture in a `8bb5c8a` worktree (pre-M020) and in the candidate tree, fetched the same URL with
+neither `offset` nor `limit`, and compared the parsed payloads:
+
+- single-window fixture (a 400-byte page): the two payloads are deeply **identical**, with no key
+  dropped at all — the baseline never emitted a cursor key for a page that fits one window;
+- multi-window fixture (a 40 KB page): the two payloads are deeply **identical after removing
+  exactly `next_cursor` and `cursor_status`**; chunk count 11 in both, `text` 11,791 scalars in
+  both, `document.text_truncated == true` in both, and no other field, type, or value differs.
+  The baseline emitted only `next_cursor` (no `cursor_status`, because a first page is neither
+  `stale` nor resumed), so the delta is precisely the retired token.
+
+The in-tree counterparts pin the same shape without a second worktree:
+
 - A single-window document read with no `offset`/`limit` carries neither `next_cursor`/
   `cursor_status` nor any addressing key. `tests/web_fetch_integration.rs::
   unaddressed_read_serves_the_chunk_aligned_first_window` asserts the absent key set, asserts
@@ -181,14 +197,22 @@ corresponding commands above were run individually.
 
 From `tests/mcp_tools.rs` (`pagination` and `document_budget` modules):
 
-| Case | Observed |
+Observed on one real worked example (40 KB HTML body, `[fetch]` defaults, `sanitize_output`
+off): `text_total = 38,055`, unaddressed first page = 11,791 scalars over 11 chunks.
+
+| Request | Observed |
 |---|---|
-| `offset == 0`, `limit == None` | window `[0, min(12_000, total))`, `next_offset` present when `total > 12_000` |
-| `offset == text_total` | `text == ""`, `text_from == text_to == text_total`, no `next_offset`, no error |
-| `offset > text_total` (total + 50) | identical to the above; clamped, never a validation failure |
-| window ending exactly at `text_total` | no `next_offset` |
+| no `offset`, no `limit` | no addressing key; `text` 11,791 scalars; 11 chunks; `document.text_truncated` true |
+| `offset=0`, `limit=1_000` | `text_from` 0, `text_to` 1_000, `next_offset` 1_000, 1 chunk, 1,000 scalars |
+| `offset=5_000`, `limit=1_000` | `text_from` 5,000, `text_to` 6_000, `next_offset` 6_000, 2 chunks (boundary straddles a chunk), 1,000 scalars |
+| `offset=5_000`, no `limit` | 5,000 -> 17,000 (the 12,000 default window), `next_offset` 17,000, 12 chunks |
+| no `offset`, `limit=2_000` | 0 -> 2,000, `next_offset` 2,000 |
+| `offset=11_791`, `limit=10` | 11,791 -> 11,801; an offset past the *first page* is still addressable |
+| `offset=99_999`, `limit=10` | clamped: `text_from == text_to == 38,055`, `text == ""`, no `next_offset`, 0 chunks, `text_truncated` false, no error |
+| `offset=0`, `limit=0` | `invalid_semantic_value`, `repair.field == "limit"` |
+| `offset=0`, `limit=1_000`, `focus` set | 1,000-scalar window plus `focus_scope: "document"` and a non-null `focus` |
+| `offset=0`, `extract_mode: "metadata_only"` | `document_unavailable` |
 | `limit` above `max_chars_cap` | clamped to the cap, `next_offset` present, `structured_warnings` carries `max_results_clamped` |
-| `limit == 0` | `invalid_semantic_value`, `repair.field == "limit"` (asserted through `map_tool_result`) |
 
 ### Framing and sanitization do not move an offset
 
@@ -291,14 +315,21 @@ threshold without a candidate-ranking change would be a requirement this milesto
 discharge. The corpus and its coordinate derivation are documented in
 `tests/fixtures/fetch_windows/README.md`.
 
-### Live two-window union (opt-in, not run here)
+### Live two-window union (opt-in, run once)
 
-`tests/web_fetch_integration.rs::offset_windows_live` (`#[ignore]`) reads two disjoint windows of
-one real document (`EGGSEARCH_LIVE_OFFSET_URL`, default `https://www.rfc-editor.org/rfc/rfc9110.txt`),
-prints the URL, `doc_id`, `text_total`, both ranges and both returned lengths, and asserts both
-windows share `text_total` and `doc_id`, are disjoint, and stay inside `text_total`. It was **not
-run** in this environment (no network); the URLs, offsets, and lengths it would record are
-therefore absent rather than reported as passing.
+`cargo test --locked --all-features --test web_fetch_integration -- --ignored offset_windows_live
+--nocapture` was run against the real network and passed:
+
+```
+url=https://www.rfc-editor.org/rfc/rfc9110.txt doc_id=doc_bdacf44c950f8e6d text_total=11981 first=[0,4000)
+first_chars=4000 second=[5000,9000) second_chars=4000
+```
+
+Both windows report the same `doc_id` and `text_total`, are disjoint, and stay inside
+`text_total`; 4,000 scalars returned per 4,000-scalar window. The same run is the live evidence
+for the named condition: RFC 9110 is a plain-text document far larger than 12,000 scalars, yet
+`text_total` is 11,981 — the caller-window bound, not the document size. The record is mirrored in
+`tests/fixtures/fetch_windows/README.md`.
 
 ## Gate results
 
