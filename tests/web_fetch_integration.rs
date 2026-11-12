@@ -2269,27 +2269,7 @@ async fn web_fetch_document_truncation_at_line_boundary() {
         .expect("document should be present");
     assert_eq!(doc["kind"], "code");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-
-    // Truncation should happen at line boundaries (blocks are not
-    // split mid-line). Each block's text should be complete lines.
-    let total_block_chars: usize = blocks
-        .iter()
-        .filter_map(|b| b["text"].as_str())
-        .map(|t| t.chars().count())
-        .sum();
-    assert!(
-        total_block_chars <= 500,
-        "total block chars {total_block_chars} should not exceed budget 500"
-    );
-
-    // Should report truncation
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "should indicate truncation"
-    );
+    assert_window_scoped_text(&v, 500, "code file at a line boundary");
 }
 
 #[tokio::test]
@@ -2669,10 +2649,10 @@ async fn web_fetch_links_same_domain_detection() {
 // ---------------------------------------------------------------------------
 // Phase D: Long-line / oversized-block truncation tests
 //
-// Verifies that render_code, render_diff, and render_plaintext never
-// return a block whose text exceeds the configured max_chars budget.
-// A single oversized line or paragraph must be char-truncated and
-// flagged, not silently pushed in full.
+// Verifies that render_code, render_diff, and render_plaintext build a
+// document-scoped block set while the legacy `text` field stays inside the
+// caller's window. A single oversized line is cut only at the document
+// budget, and the window cut is flagged.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -2728,22 +2708,7 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
     // Should be detected as JSON
     assert_eq!(doc["kind"], "json", "kind should be json");
 
-    // Block text must not exceed max_chars
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty(), "should have at least one block");
-    let block_text = blocks[0]["text"].as_str().expect("block text");
-    let block_chars = block_text.chars().count();
-    assert!(
-        block_chars <= 100,
-        "block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
-    );
-
-    // Truncation flags should be set
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set when a single line exceeds max_chars"
-    );
+    assert_window_scoped_text(&v, 100, "minified JSON");
 }
 
 #[tokio::test]
@@ -2791,24 +2756,7 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
     .await
     .expect("ok");
 
-    let doc = v["document"]
-        .as_object()
-        .expect("document should be present");
-
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-    let block_text = blocks[0]["text"].as_str().expect("block text");
-    let block_chars = block_text.chars().count();
-    assert!(
-        block_chars <= 100,
-        "block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
-    );
-
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set for oversized JS line"
-    );
+    assert_window_scoped_text(&v, 100, "minified JavaScript");
 }
 
 #[tokio::test]
@@ -2863,24 +2811,7 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
         .expect("document should be present");
     assert_eq!(doc["kind"], "diff", "kind should be diff");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-
-    // Every block's text must be <= max_chars
-    for (i, block) in blocks.iter().enumerate() {
-        let text = block["text"].as_str().expect("block text");
-        let chars = text.chars().count();
-        assert!(
-            chars <= 100,
-            "block {i} text chars ({chars}) must be <= max_chars (100), got: {text:?}"
-        );
-    }
-
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set for oversized diff line"
-    );
+    assert_window_scoped_text(&v, 100, "single-hunk diff");
 }
 
 #[tokio::test]
@@ -2934,25 +2865,9 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
         .expect("document should be present");
     assert_eq!(doc["kind"], "plain_text");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty(), "should have at least one block");
+    assert_window_scoped_text(&v, 100, "single long plain-text paragraph");
 
-    // The paragraph block text must be <= max_chars
-    let block_text = blocks[0]["text"].as_str().expect("block text");
-    let block_chars = block_text.chars().count();
-    assert!(
-        block_chars <= 100,
-        "paragraph block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
-    );
-
-    // Truncation flags should be set
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set for oversized paragraph"
-    );
-
-    // Line range should be preserved from the original paragraph
+    let blocks = v["document"]["blocks"].as_array().expect("blocks");
     assert_eq!(
         blocks[0]["line_start"], 1,
         "line_start should be 1 for the first paragraph"
@@ -2960,7 +2875,7 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
 }
 
 #[tokio::test]
-async fn web_fetch_code_block_text_never_exceeds_max_chars() {
+async fn web_fetch_code_block_text_covers_the_document_budget() {
     use httpmock::prelude::*;
 
     // A code file with one very long line (minified) and some normal lines.
@@ -3009,18 +2924,7 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
         .as_object()
         .expect("document should be present");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-
-    // No block should exceed the budget
-    for (i, block) in blocks.iter().enumerate() {
-        let text = block["text"].as_str().expect("block text");
-        let chars = text.chars().count();
-        assert!(
-            chars <= 200,
-            "block {i} text chars ({chars}) must be <= max_chars (200), got: {text:?}"
-        );
-    }
+    assert_window_scoped_text(&v, 200, "minified code block");
 
     // Should report truncation since the minified line was truncated
     assert!(
@@ -5408,6 +5312,33 @@ async fn non_pdf_declared_length_above_max_bytes_keeps_generic_cap() {
         }
         other => panic!("expected ContentTooLarge(5000, 1024), got: {other:?}"),
     }
+}
+
+fn assert_window_scoped_text(v: &serde_json::Value, max_chars: usize, label: &str) {
+    let doc = &v["document"];
+    let returned = doc["text_chars_returned"]
+        .as_u64()
+        .expect("text_chars_returned") as usize;
+    assert!(
+        returned <= max_chars,
+        "{label}: window-scoped text_chars_returned {returned} exceeds max_chars {max_chars}"
+    );
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty(), "{label}: blocks must be present");
+    let widest = blocks
+        .iter()
+        .map(|block| block["text"].as_str().unwrap_or_default().chars().count())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        widest > max_chars,
+        "{label}: blocks must cover the document, widest block {widest} never exceeded max_chars {max_chars}"
+    );
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "{label}: the window cut must be flagged"
+    );
 }
 
 fn long_html_server(body_chars: usize) -> httpmock::MockServer {

@@ -1071,12 +1071,11 @@ impl FetchClient {
                     block_truncated,
                     projected_truncated,
                 )
-            } else if let Some(ref t) = pre_framing_text {
-                // Non-HTML path: use detected kind to pick the right
-                // renderer. `text_chars` is computed from
-                // `pre_framing_text` (bounded by `max_chars`), not
-                // from `raw_text` which is bounded by `max_chars_cap`
-                // for internal consumers like `repo_fetch`.
+            } else if let Some(ref t) = raw_text {
+                // Non-HTML path: render from the document-bounded text so the
+                // block and chunk set covers the extracted document rather than
+                // the caller's window. `text_chars` stays window-scoped because
+                // it describes the legacy `text` field, not the addressable set.
                 let text_chars = pre_framing_text.as_ref().map_or(0, |t| t.chars().count());
 
                 let rendered = match detected.kind {

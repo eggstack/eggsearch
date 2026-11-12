@@ -1436,3 +1436,33 @@ async fn pdf_fidelity_recorder_downloads_and_measures_reference_documents() {
         }
     }
 }
+
+#[test]
+fn pdf_chunks_are_document_scoped_while_legacy_text_follows_max_chars() {
+    let corpus = load_corpus();
+    let case = corpus
+        .cases
+        .iter()
+        .find(|case| case.document_class == "clean_text")
+        .expect("a clean_text case is committed");
+    let bytes = std::fs::read(corpus_root().join(&case.file))
+        .unwrap_or_else(|error| panic!("fixture {} is readable: {error}", case.file));
+    let window = 100usize;
+    let result =
+        extract_pdf_text(&bytes, window, &extraction_limits(), None).expect("extraction succeeds");
+
+    assert!(
+        result.text.chars().count() <= window,
+        "the legacy text field follows the caller's max_chars"
+    );
+    let chunk_chars: usize = result
+        .document
+        .chunks
+        .iter()
+        .map(|chunk| chunk.text.chars().count())
+        .sum();
+    assert!(
+        chunk_chars > window,
+        "PDF chunks address the document, not max_chars; saw {chunk_chars}"
+    );
+}

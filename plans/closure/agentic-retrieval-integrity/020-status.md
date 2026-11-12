@@ -1,6 +1,6 @@
 # M020 Offset Addressing and Cursor Retirement — Closure Status
 
-Status: conditionally closed
+Status: closed
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`
 
@@ -14,15 +14,29 @@ Implementation candidate and closure commit: the commit that carries this record
 closure evidence, roadmap status, and the registry row all moved in that commit on top of M019's
 closure commit `8bb5c8a`.
 
-**Named condition.** `text_total` is the true document-budget total for HTML and browser-rendered
-documents only. For PDF and every other non-HTML body it remains bounded by the caller's window,
-inherited from M019's recorded deviation 1, so offset windows for those shapes cannot address past
-the first window. Measured, not inferred: a 40 KB HTML fixture reports `text_total = 38,055` for a
-11,791-scalar first page, while the live `text/plain` read of RFC 9110 reports `text_total = 11,981`
-(the 12,000 default window) for a document of several hundred kilobytes. Discharging it requires moving those two extraction paths to the document budget,
-which this plan's non-goals forbid (`src/fetch/**` other than the document identity) and which its
-fail-closed list names explicitly ("`text_total` cannot be made larger than a single window without
-changing extraction"). See "Residual risk" item 1 for the exact call sites.
+## Named condition — discharged
+
+The condition as recorded here was that `text_total` is the true document-budget total for HTML and
+browser-rendered documents only, leaving PDF and every other non-HTML body bounded by the caller's
+window. Two things changed after this record was written, both measured:
+
+1. **The PDF half was recorded wrongly, and the record is corrected here.** PDF blocks are bounded
+   by `PdfLimits` (`max_chars_per_page` 12,000, `max_total_chars` 50,000) and the single chunk is
+   built from all blocks, so `extract_pdf_text`'s `max_chars` argument bounds only the legacy `text`
+   field and its counts. A six-page fixture fetched at `limit = 50,000` with a 12,000 default window
+   reports `text_total = 12,599` — already past the window. PDF was never window-scoped; the
+   `client.rs:677` call site named in the original text does not have that effect.
+2. **The non-HTML half was real, and is discharged by M021.** Measurement at `3259166` on a
+   20,063-byte `text/plain` body: the addressed read reported `text_total = 12,000`, no
+   `next_offset` and `document.text_truncated = false`, while the unaddressed read of the same
+   document reported `document.text_truncated = true` and `offset = 13,000` clamped to an empty
+   window. That is silent under-reporting, not merely a missing capability.
+
+M021 (`plans/closure/agentic-retrieval-integrity/021-status.md`) renders the non-HTML block set from
+the document-bounded text. The same 20 KB fixture now reports `text_total = 19,733` with
+`next_offset = 12,000`; the live RFC 9110 read moved from `text_total = 11,981` to `49,852`; and the
+unaddressed and addressed reads agree on both truncation flags. Discharged at M021's candidate
+commit.
 
 ## Result
 
@@ -325,6 +339,9 @@ url=https://www.rfc-editor.org/rfc/rfc9110.txt doc_id=doc_bdacf44c950f8e6d text_
 first_chars=4000 second=[5000,9000) second_chars=4000
 ```
 
+Re-run after M021: the same document reports `text_total = 49,852` (the 50,000-scalar extraction
+budget) instead of 11,981, which is the discharge evidence for the non-HTML half of the condition.
+
 Both windows report the same `doc_id` and `text_total`, are disjoint, and stay inside
 `text_total`; 4,000 scalars returned per 4,000-scalar window. The same run is the live evidence
 for the named condition: RFC 9110 is a plain-text document far larger than 12,000 scalars, yet
@@ -395,18 +412,21 @@ through the in-process test harness:
 4. **`workflow_coverage.found_roles` ordering was fixed in `src/core/evidence_postprocess.rs`.**
    The plan forbids `src/fetch/**` changes but says nothing about `src/core/**`; the determinism
    invariant is unachievable without it, and it is a membership-preserving reorder.
-5. **`text_total` is document-scoped only for HTML and browser reads** (the named condition above).
-   PDF and other non-HTML bodies inherit M019's caller-window bound.
+5. **`text_total` scope** — the named condition. Corrected and discharged: PDF was already
+   document-scoped (this record originally claimed otherwise, which was wrong), and the non-HTML
+   gap was real and is fixed by M021.
 
 ## Residual risk
 
-1. **`text_total` is window-scoped for PDF and non-HTML bodies.**
-   `src/fetch/client.rs:675` calls `extract_pdf_text(&body, window_chars, ...)` (the budget is the
-   argument at `:677`), and the non-HTML renderer at `:1074` consumes `pre_framing_text`, which is
-   the window-bounded text. An `offset` window on such a document
-   cannot address past that bound; `text_total` reports what is addressable, so no invariant is
-   violated, but the capability is narrower than for HTML. Discharging it is a new milestone over
-   `src/fetch/**`, not a corrective patch inside M020.
+1. **Truncation flags on the PDF path are conflated.** `pdf.rs` sets
+   `document_truncated = text_truncated`, and `text_truncated` there is true whenever the *legacy*
+   text is cut at `max_chars`; a fully extracted six-page fixture therefore reports
+   `document_truncated = true`. The addressing layer then overwrites `document.text_truncated` from
+   `next_offset`, so an addressed PDF read can report `text_truncated = false` beside
+   `document_truncated = true` for a document that was extracted in full. This is pre-existing, does
+   not affect `text_total` or offsets, and is recorded for the PDF ingestion subsystem alongside the
+   hardcoded `chunk_0`, the silent `max_pages` cut, and the whole-chunk-per-window behaviour (see
+   M021's findings).
 2. **A cache miss extracts the whole document even for a small window**, so CPU and memory per
    fetch rise, and `max_chars_cap` is now a real cost knob rather than only a validation ceiling.
 3. **`doc_id` is a document identity, not a content hash.** Two different bodies at one URL under

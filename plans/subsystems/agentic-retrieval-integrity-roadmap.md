@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready; M019 closed; M020 conditionally closed)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready; M019 closed; M020 closed; M021 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -72,7 +72,7 @@ M014 pass-cookie lifetime and egress binding    (independent)
 M015 challenge solvability observability        (independent)
 M017 routing shipped-set evidence               (discharges M006's named condition)
 M018 pagination consistency across pages        (corrective to M009)
-ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement
+ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
 ## 6. Milestones and exit boundaries
@@ -99,6 +99,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009 | Pages carry comparable content, `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
 | M019 — fetch document budget and truncation semantics | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md` | none (ADR-0011 accepted) | The extracted document exceeds one caller's window, and truncation is reported as two distinct facts so a caller is never told "not truncated" while holding less than the document contains |
 | M020 — offset addressing and cursor retirement | capability (interface) | `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md` | hard M019 (closed) | A caller reads any window of a fetched document in one call by re-specifying the request with `offset`/`limit`; no opaque token remains in any advertised schema |
+| M021 — non-HTML document-scoped addressable text | invariant (corrective; discharges M020's named condition) | `plans/implementation/agentic-retrieval-integrity/021-non-html-document-scoped-addressable-text.md` | hard M020 (closed) | For every representation, `text_total` is the extracted document rather than the caller's window, so an addressed read never reports a document as complete while text remains unreachable |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -146,13 +147,20 @@ exposed M011's mandatory-`redir` defect.
   returned window, truncation reports document versus window facts separately, and HTML derived
   entries are shared across caller windows. Evidence:
   `plans/closure/agentic-retrieval-integrity/019-status.md`.
-- M020 is `conditionally closed`: offset addressing and the cursor retirement landed, and
-  `plans/closure/agentic-retrieval-integrity/020-status.md` carries the evidence. The named
-  condition is that `text_total` over the chunk join is the true document-budget total only for
-  HTML and browser-rendered documents; PDF and every other non-HTML body still extract at the
-  caller's window (M019's recorded deviation), so a window on those shapes cannot address past the
-  first one. Discharging it needs a new milestone over `src/fetch/**`, which M020's non-goals
-  exclude.
+- M020 is `closed`: offset addressing and the cursor retirement landed, and
+  `plans/closure/agentic-retrieval-integrity/020-status.md` carries the evidence and the discharged
+  condition. The condition was recorded as `text_total` being document-scoped only for HTML and
+  browser-rendered documents, with PDF and non-HTML bodies bounded by the caller window; M021's
+  measurements showed the PDF half was recorded wrongly (PDF blocks are bounded by `PdfLimits` and
+  its chunk is built from all blocks, so a six-page fixture reports `text_total` 12,599 against a
+  12,000 window) and the non-HTML half was real.
+- M021 is `closed`: it renders the non-HTML block set from the document-bounded text, so
+  `text_total`, `next_offset` and offset windows mean the same for `text/plain`, CSV, code,
+  notebooks and markdown source as for HTML, and an addressed read no longer claims completeness
+  while text is unreachable. Evidence: `plans/closure/agentic-retrieval-integrity/021-status.md`.
+  That record also carries the PDF findings this work exposed — flag conflation, the hardcoded
+  `chunk_0`, the silent `max_pages` cut, and the whole-chunk-per-window payload — which belong to
+  the PDF ingestion subsystem, whose ready M005 must be reconciled with it.
 - M013–M018 are registered corrective and extension work from the 2026-11-12 live review. ADR-0010
   is accepted and authorizes no behaviour change by itself: it widens method coverage to the
   published Anubis registry and records that the nonce search stays single-threaded, but every

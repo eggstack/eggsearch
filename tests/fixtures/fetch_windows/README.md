@@ -117,17 +117,17 @@ answer ending exactly at `text_to` is contained
 not (`html-answer-starts-at-window-edge`), and an answer straddling it is not
 (`html-answer-straddles-window-edge`).
 
-## Observed basis for non-HTML documents (recorded, not asserted)
+## Addressable basis for non-HTML documents
 
-HTML bodies are extracted at the document budget, so `text_total` exceeds one
-window (`html-answer-far-past-window` reports 14,033) and the answer can sit far
-past the first window. `text/plain` bodies are not: the non-HTML path in
-`src/fetch/client.rs` renders blocks from the window-bounded text, so chunking
-never sees more than the caller window. `text-body-exceeds-window-cap` has a
-13,584-character body and reports `text_total` = 11,997. For that reason no
-plain-text case places its answer past the first window, and this corpus records
-the behaviour instead of asserting a larger total than the implementation
-produces.
+Every representation is addressed on the same basis: blocks are rendered from
+the document-bounded text, so `text_total` is the extracted document rather than
+the caller window. `text-body-exceeds-window-cap` (13,584-character
+`text/plain` body) reports `text_total` = 13,581 against a 12,000-scalar window,
+and `html-answer-far-past-window` reports 14,033. Before M021 the non-HTML path
+rendered from the window-bounded text, so that case reported 11,997 and no
+plain-text case could place an answer past the first window; the corpus now
+treats both representations identically and the row below is the recorded
+consequence.
 
 ## Recorded run
 
@@ -146,7 +146,7 @@ html-multibyte-answer-inside-window                  yes          4200        48
 html-multibyte-answer-far-past-window                 no         12350       13117     12000
 text-multibyte-answer-inside-window                  yes           760        1161      1161
 text-no-focus-answer-inside-first-window             yes           240         620       620
-text-body-exceeds-window-cap                         yes           900       11997     11997
+text-body-exceeds-window-cap                         yes           900       13581     12000
 first-window recall: 7/11 = 63.6%
 median chars-to-answer: 4200
 ```
@@ -164,15 +164,15 @@ and three probe multi-byte skew.
 ```
 url=https://www.rfc-editor.org/rfc/rfc9110.txt
 doc_id=doc_bdacf44c950f8e6d
-text_total=11981
+text_total=49852
 first=[0,4000)   first_chars=4000
 second=[5000,9000) second_chars=4000
 ```
 
 The two windows share `doc_id` and `text_total`, are disjoint, and their union
-stays inside `text_total`. The same record is the live evidence for M020's named
+stays inside `text_total`. This is the record that discharged M020's named
 condition: RFC 9110 is a plain-text document far larger than the default window,
-but `text_total` is 11,981 — the caller-window bound inherited from M019, not the
-document size. HTML bodies do not have that bound: the 40 KB `fetch_windows`
-fixture used by the unit suites reports `text_total = 38,055` against a
-11,791-scalar first page.
+and after M021 `text_total` is 49,852 — the document bounded by the 50,000-scalar
+extraction budget — where the same measurement previously reported 11,981, the
+caller-window bound. The 148 scalars beyond the extraction budget are reported by
+`document.document_truncated`, not hidden.

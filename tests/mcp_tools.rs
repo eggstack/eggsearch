@@ -1202,6 +1202,110 @@ mod document_budget {
         (pages, chars, seen.len())
     }
 
+    fn windowed_text_server(chars: usize) -> MockServer {
+        let server = MockServer::start();
+        let paragraph = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ";
+        let mut body = String::new();
+        while body.len() < chars {
+            body.push_str(paragraph);
+            body.push_str(paragraph);
+            body.push_str("\n\n");
+        }
+        server.mock(move |when, then| {
+            when.method(GET).path("/text");
+            then.status(200)
+                .header("content-type", "text/plain")
+                .body(body);
+        });
+        server
+    }
+
+    #[tokio::test]
+    async fn plain_text_total_does_not_vary_with_the_caller_window() {
+        let server = windowed_text_server(20_000);
+        let state = plain_state();
+        let mut totals = Vec::new();
+        for window in [2_000usize, 8_000, 12_000] {
+            let mut request = args(server.url("/text"), Some(window));
+            request.offset = Some(0);
+            request.limit = Some(50_000);
+            let value = run_web_fetch(state.clone(), request)
+                .await
+                .expect("wide read");
+            assert_eq!(value["text_from"].as_u64(), Some(0));
+            totals.push(value["text_total"].as_u64().expect("text_total"));
+        }
+        assert!(
+            totals.iter().all(|total| *total == totals[0]),
+            "text_total must not vary with the caller window: {totals:?}"
+        );
+        assert!(
+            totals[0] > 12_000,
+            "the document must exceed the default window, saw {}",
+            totals[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn plain_text_windows_reach_the_tail_and_compose() {
+        let server = windowed_text_server(20_000);
+        let state = plain_state();
+        let url = server.url("/text");
+
+        let mut wide_args = args(url.clone(), None);
+        wide_args.offset = Some(0);
+        wide_args.limit = Some(50_000);
+        let wide = run_web_fetch(state.clone(), wide_args)
+            .await
+            .expect("wide read");
+        let total = wide["text_total"].as_u64().expect("text_total") as usize;
+        let whole = wide["text"].as_str().unwrap_or_default().to_string();
+        assert_eq!(whole.chars().count(), total);
+
+        let limit = 2_000usize;
+        let mut offset = 0usize;
+        let mut composed = String::new();
+        let mut windows = 0usize;
+        loop {
+            let mut request = args(url.clone(), None);
+            request.offset = Some(offset);
+            request.limit = Some(limit);
+            let page = run_web_fetch(state.clone(), request).await.expect("window");
+            windows += 1;
+            assert!(windows < 40, "the window chain must terminate");
+            let from = page["text_from"].as_u64().expect("text_from") as usize;
+            let to = page["text_to"].as_u64().expect("text_to") as usize;
+            assert_eq!(from, offset);
+            assert_eq!(page["text_total"].as_u64(), Some(total as u64));
+            composed.push_str(page["text"].as_str().unwrap_or_default());
+            match page["next_offset"].as_u64() {
+                Some(next) => {
+                    assert_eq!(next as usize, to);
+                    offset = next as usize;
+                }
+                None => break,
+            }
+        }
+        assert!(windows > 5, "a 20k document must span several windows");
+        assert_eq!(composed, whole);
+
+        let plain = run_web_fetch(state.clone(), args(url.clone(), None))
+            .await
+            .expect("unaddressed");
+        assert_eq!(plain["document"]["text_truncated"], serde_json::json!(true));
+        assert!(plain.get("text_total").is_none());
+        assert!(plain.get("next_offset").is_none());
+
+        let mut first_args = args(url, None);
+        first_args.offset = Some(0);
+        first_args.limit = Some(limit);
+        let first = run_web_fetch(state, first_args)
+            .await
+            .expect("first window");
+        assert_eq!(first["document"]["text_truncated"], serde_json::json!(true));
+        assert!(first["next_offset"].as_u64().is_some());
+    }
+
     #[tokio::test]
     async fn a_document_larger_than_one_window_is_still_served() {
         let server = windowed_page_server(40_000);

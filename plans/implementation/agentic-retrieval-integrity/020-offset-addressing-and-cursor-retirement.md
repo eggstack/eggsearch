@@ -1,6 +1,6 @@
 # M020 — Offset Addressing and Cursor Retirement
 
-Status: conditionally closed — evidence in `plans/closure/agentic-retrieval-integrity/020-status.md`; the named condition is that `text_total` is the true document-budget total for HTML and browser-rendered documents only, because the PDF and non-HTML extraction paths still bound at the caller window (M019 deviation 1) and this plan's non-goals exclude `src/fetch/**` changes
+Status: closed — evidence and the discharged condition in `plans/closure/agentic-retrieval-integrity/020-status.md`; the non-HTML half was discharged by M021 (`plans/closure/agentic-retrieval-integrity/021-status.md`) and the record corrects the PDF claim, which was wrong
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M020
 Primary class: capability
 Baseline: `8b701e220244ddf6422b10fd7fb7ca71a0732587`
