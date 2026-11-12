@@ -358,8 +358,17 @@ through the in-process test harness:
 - `cargo test --locked --features mock -- --list`: 5839 tests, 4 ignored.
 - `python3 packaging/check-planning-consistency.py`: `planning-consistency: ok`.
 - `./packaging/check-repo-hygiene.sh`: `repo-hygiene: ok`.
-- `make check` does not complete here: `packaging-check` stops at
-  `mavis-trash: unsupported OS: Plan9`. All sub-checks that run before that point pass.
+- `make dependency-policy`: `advisories ok, bans ok, licenses ok, sources ok`.
+- `make check` does not complete on this workstation: `packaging/check-contract.sh` passes
+  `workflow-pin-check`, `planning-consistency`, the eggpack qualifier contract and the egress
+  qualification contract, then stops at `mavis-trash: unsupported OS: Plan9` (the helper misdetects
+  the host). The missing coverage is the hosted gate, not a code check.
+- **Hosted CI: run 43284917524 passed** on `189ee07` (19m15s) — the Ubuntu `ci` job (`make ci`,
+  which is `make check`: fmt, clippy, no-default check, the full all-features suite, hygiene,
+  dependency policy and packaging-check), the macOS canonical-verification and local-filesystem
+  portability job, and the Windows `x86_64-pc-windows-msvc` all-features check. The only commits
+  after that SHA are this record and one fixture README, so the code under CI is the code at
+  `HEAD`.
 
 ## Recorded deviations from the plan
 
