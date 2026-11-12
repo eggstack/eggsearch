@@ -487,7 +487,7 @@ async fn navigate_and_extract(
 pub fn browser_result_to_response(
     result: BrowserFetchResult,
     requested_url: &str,
-    max_chars: Option<usize>,
+    budgets: crate::fetch::budget::FetchBudgets,
     extract_mode: crate::core::fetch::ExtractMode,
     include_links: bool,
     sanitize_output: bool,
@@ -499,7 +499,8 @@ pub fn browser_result_to_response(
 
     let body = &result.response.body;
     let final_url = &result.response.final_url;
-    let max = max_chars.unwrap_or(12000);
+    let document_chars = budgets.document_chars();
+    let window_chars = budgets.window_chars();
     let mut warnings = result.warnings;
     let mut trust_markers = result.trust_markers;
 
@@ -525,7 +526,7 @@ pub fn browser_result_to_response(
         render_blocks(
             body,
             final_url,
-            max,
+            document_chars,
             extract_mode == crate::core::fetch::ExtractMode::Markdown,
         );
     warnings.extend(render_warnings);
@@ -544,24 +545,19 @@ pub fn browser_result_to_response(
 
     let title = result.extracted_title.or(rendered_title);
     let description = rendered_desc;
-    let text_chars = rendered_blocks
-        .blocks
-        .iter()
-        .map(|b| b.text.chars().count())
-        .sum::<usize>();
-
     let mut blocks = rendered_blocks.blocks;
     for block in &mut blocks {
         let (stripped, _) = strip_control_chars(&block.text);
-        let (bounded, _) = bound_text(&stripped, max);
+        let (bounded, _) = bound_text(&stripped, document_chars);
         block.text = bounded;
     }
 
-    let text = if extract_mode == crate::core::fetch::ExtractMode::Markdown {
-        crate::fetch::render::markdown::render_blocks_markdown(&blocks)
-    } else {
-        crate::fetch::render::text::render_blocks_text(&blocks)
-    };
+    let (text, text_clipped) = crate::fetch::projection::project_document_text(
+        &blocks,
+        window_chars,
+        extract_mode == crate::core::fetch::ExtractMode::Markdown,
+    );
+    let text_chars = text.chars().count();
 
     let (title, description, text) = if sanitize_output {
         trust_markers.text_framed = true;
@@ -602,7 +598,12 @@ pub fn browser_result_to_response(
         title.as_deref(),
         Some(DocumentKind::Html.as_str()),
     );
-    let chunks = crate::core::document::build_document_chunks(&document_id, &outline, &blocks, max);
+    let chunks = crate::core::document::build_document_chunks(
+        &document_id,
+        &outline,
+        &blocks,
+        document_chars,
+    );
 
     let document = Some(FetchDocument {
         kind: DocumentKind::Html,
@@ -613,8 +614,9 @@ pub fn browser_result_to_response(
             "plain".to_string()
         },
         text_chars_returned: text_chars,
-        text_truncated: trust_markers.text_truncated,
+        text_truncated: text_clipped,
         block_truncated: rendered_blocks.block_truncated,
+        document_truncated: rendered_blocks.block_truncated,
         link_truncated: link_result.truncated,
         metadata: Some(FetchRenderMetadata {
             bytes_read: Some(body.len()),
@@ -734,7 +736,7 @@ mod tests {
         let response = browser_result_to_response(
             result,
             "https://example.com",
-            None,
+            crate::fetch::budget::FetchBudgets::new(50_000, 12_000),
             crate::core::fetch::ExtractMode::Text,
             false,
             true,

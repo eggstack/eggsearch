@@ -630,7 +630,7 @@ batch_concurrency = 2
 | `timeout_ms` | `8000` |
 | `max_bytes` | `2_000_000` |
 | `max_chars_default` | `12_000` |
-| `max_chars_cap` | `50_000` |
+| `max_chars_cap` | `50_000` (document/extraction budget and cost knob, not the returned-text ceiling; validation requires `max_chars_cap >= max_chars_default`) |
 | `redirect_limit` | `5` |
 | `allow_private_network` | `false` |
 | `allow_localhost` | `false` |
@@ -643,7 +643,7 @@ batch_concurrency = 2
 | `pdf_max_bytes` | `16_777_216` |
 | `pdf_max_decompressed_bytes` | `67_108_864` |
 
-The fetch side is bounded by both byte and character caps. The byte cap is a hard response limit; the character cap is an extraction limit.
+The fetch side is bounded by both byte and character budgets. The byte cap is a hard response limit. `max_chars_cap` is the document/extraction budget — how much of the page is extracted and addressable in `document.blocks` / `document.chunks` — and therefore the cost knob; it is not the returned-text ceiling. `max_chars_default` (and the caller's `max_chars`) bounds only the returned `text` window, clamped to `max_chars_cap`. `document.document_truncated` reports extraction stopping at the document budget; `document.text_truncated` reports window clipping.
 
 `max_bytes` is the body cap for everything except PDF documents. A response
 identified as PDF by `Content-Type: application/pdf` or by a `.pdf` URL path

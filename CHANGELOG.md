@@ -67,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `duckduckgo`, `brave`, and `yahoo`. `startpage` stays enabled and selectable
   but is no longer default-routed, because its upstream answers every
   non-browser request with an Anubis proof-of-work challenge.
+- Fetch extraction is document-scoped: the page is extracted at the
+  `[fetch].max_chars_cap` document budget and `max_chars` bounds only the
+  returned text window. `document.document_truncated` is new and reports
+  extraction stopping at the document budget; `document.text_truncated` now
+  reports window clipping only. The derived extraction cache key is
+  document-scoped for HTML, so callers with different windows share one entry
+  (`renderer_version` 5).
 
 ### Fixed
 

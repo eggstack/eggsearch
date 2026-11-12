@@ -645,27 +645,33 @@ mod pagination {
         assert_eq!(decoded.t, CursorTool::WebFetch);
         assert_eq!(decoded.timeout_ms(), state.config.fetch.timeout_ms);
 
-        let mut args = fetch_args(server.url("/long"));
-        args.cursor = Some(next);
-        let second = run_web_fetch(state.clone(), args)
-            .await
-            .expect("second page");
-        assert_eq!(second["cursor_status"], "ok");
-        assert!(second.get("next_cursor").is_none(), "chain must terminate");
-
-        let mut first_ids = chunk_ids(&first);
-        let second_ids = chunk_ids(&second);
-        assert!(!first_ids.is_empty() && !second_ids.is_empty());
-        assert_eq!(first_ids.len() as u64, u64::from(decoded.p.ord));
-        let before = first_ids.len();
-        first_ids.extend(second_ids);
-        first_ids.sort();
-        first_ids.dedup();
-        assert_eq!(
-            first_ids.len(),
-            before + chunk_ids(&second).len(),
-            "pages must not repeat a chunk"
+        let mut collected = chunk_ids(&first);
+        assert_eq!(collected.len() as u64, u64::from(decoded.p.ord));
+        let mut pages = 1usize;
+        let mut pending = Some(next);
+        while let Some(cursor) = pending {
+            let mut args = fetch_args(server.url("/long"));
+            args.cursor = Some(cursor);
+            let page = run_web_fetch(state.clone(), args).await.expect("next page");
+            assert_eq!(page["cursor_status"], "ok");
+            let ids = chunk_ids(&page);
+            assert!(
+                !ids.is_empty(),
+                "every page must deliver at least one chunk"
+            );
+            collected.extend(ids);
+            pages += 1;
+            assert!(pages < 40, "the page chain must terminate");
+            pending = page["next_cursor"].as_str().map(str::to_string);
+        }
+        assert!(
+            pages > 2,
+            "a 40k-character document must span more than two windows, saw {pages}"
         );
+        let total = collected.len();
+        collected.sort();
+        collected.dedup();
+        assert_eq!(total, collected.len(), "pages must not repeat a chunk");
     }
 
     #[tokio::test]
@@ -964,5 +970,286 @@ mod research_pagination {
             .await
             .expect("research page");
         assert!(value.get("next_cursor").is_none());
+    }
+}
+
+mod document_budget {
+    use super::*;
+    use httpmock::prelude::*;
+
+    fn windowed_page_server(chars: usize) -> MockServer {
+        let server = MockServer::start();
+        let paragraph = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ";
+        let mut body = String::from("<html><body>");
+        while body.len() < chars {
+            body.push_str("<p>");
+            body.push_str(paragraph);
+            body.push_str(paragraph);
+            body.push_str("</p>");
+        }
+        body.push_str("</body></html>");
+        server.mock(move |when, then| {
+            when.method(GET).path("/long");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(body);
+        });
+        server
+    }
+
+    fn plain_state() -> Arc<ServerState> {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        Arc::new(ServerState::build(cfg).expect("state builds"))
+    }
+
+    fn capped_state(cap: usize) -> Arc<ServerState> {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.sanitize_output = false;
+        cfg.fetch.max_chars_default = cap;
+        cfg.fetch.max_chars_cap = cap;
+        Arc::new(ServerState::build(cfg).expect("capped state builds"))
+    }
+
+    fn args(url: String, max_chars: Option<usize>) -> WebFetchArgs {
+        WebFetchArgs {
+            cursor: None,
+            url,
+            max_chars,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+            render: None,
+            browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            response_detail: None,
+        }
+    }
+
+    fn page_chars(document: &serde_json::Value) -> usize {
+        document["chunks"]
+            .as_array()
+            .map(|chunks| {
+                chunks
+                    .iter()
+                    .map(|chunk| chunk["text"].as_str().unwrap_or_default().chars().count())
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
+    fn chunk_count(document: &serde_json::Value) -> usize {
+        document["chunks"].as_array().map_or(0, Vec::len)
+    }
+
+    async fn walk_document(
+        state: Arc<ServerState>,
+        url: String,
+        max_chars: Option<usize>,
+    ) -> (Vec<serde_json::Value>, usize, usize) {
+        let mut pages = Vec::new();
+        let mut chars = 0usize;
+        let mut chunks = 0usize;
+        let mut cursor: Option<String> = None;
+        loop {
+            let mut request = args(url.clone(), max_chars);
+            request.cursor = cursor;
+            let page = run_web_fetch(state.clone(), request).await.expect("page");
+            chars += page_chars(&page["document"]);
+            chunks += chunk_count(&page["document"]);
+            cursor = page["next_cursor"].as_str().map(str::to_string);
+            pages.push(page);
+            assert!(pages.len() < 40, "the page chain must terminate");
+            if cursor.is_none() {
+                break;
+            }
+        }
+        (pages, chars, chunks)
+    }
+
+    #[tokio::test]
+    async fn a_document_larger_than_one_window_is_still_served() {
+        let server = windowed_page_server(40_000);
+        let (pages, chars, chunks) =
+            walk_document(plain_state(), server.url("/long"), Some(2_000)).await;
+
+        assert!(pages.len() > 1, "a 40k page cannot fit one 2k window");
+        assert!(
+            chars > 20_000,
+            "the document must cover most of the page, saw {chars}"
+        );
+        assert!(chunks > 10, "the document must be chunked, saw {chunks}");
+        for page in &pages {
+            for chunk in page["document"]["chunks"].as_array().expect("chunks") {
+                let chars = chunk["text"].as_str().unwrap_or_default().chars().count();
+                assert!(
+                    chars <= 4_096,
+                    "a chunk must stay inside the chunk budget, saw {chars}"
+                );
+            }
+        }
+        let first_text = pages[0]["text"].as_str().unwrap_or_default();
+        assert!(!first_text.is_empty());
+    }
+
+    #[tokio::test]
+    async fn truncation_flags_never_claim_completeness_below_the_document() {
+        let long = windowed_page_server(40_000);
+        let small = windowed_page_server(400);
+
+        let cases = [
+            (
+                "small page, no window",
+                run_web_fetch(plain_state(), args(small.url("/long"), None)).await,
+            ),
+            (
+                "small page, explicit window",
+                run_web_fetch(plain_state(), args(small.url("/long"), Some(4_000))).await,
+            ),
+            (
+                "long page, default window",
+                run_web_fetch(plain_state(), args(long.url("/long"), None)).await,
+            ),
+            (
+                "long page, cap reached",
+                run_web_fetch(capped_state(2_000), args(long.url("/long"), None)).await,
+            ),
+        ];
+
+        for (label, result) in cases {
+            let value = result.expect(label);
+            let document = &value["document"];
+            let text_truncated = document["text_truncated"].as_bool().unwrap_or_default();
+            let document_truncated = document
+                .get("document_truncated")
+                .and_then(|flag| flag.as_bool())
+                .unwrap_or(false);
+            let returned = document["text_chars_returned"].as_u64().unwrap_or_default() as usize;
+            let addressable = page_chars(document);
+            let boundaries = chunk_count(document);
+
+            if !text_truncated && !document_truncated {
+                assert!(
+                    returned + boundaries >= addressable,
+                    "{label}: both flags are false but only {returned} of {addressable} characters are returned"
+                );
+            }
+
+            match label {
+                "small page, no window" | "small page, explicit window" => {
+                    assert!(!text_truncated, "{label}: a 400-byte page fits the window");
+                    assert!(
+                        !document_truncated,
+                        "{label}: nothing was extracted past a cap"
+                    );
+                }
+                "long page, default window" => {
+                    assert!(text_truncated, "{label}: the window clipped the document");
+                    assert!(
+                        !document_truncated,
+                        "{label}: extraction reached the whole page"
+                    );
+                }
+                _ => {
+                    assert!(
+                        document_truncated,
+                        "{label}: extraction stopped at the configured cap"
+                    );
+                    assert!(
+                        returned <= 2_000,
+                        "{label}: the returned text must stay inside the cap-sized window"
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn document_total_is_caller_independent() {
+        let server = windowed_page_server(40_000);
+        let state = plain_state();
+        let mut totals = Vec::new();
+        for window in [2_000usize, 8_000, 12_000] {
+            let (pages, chars, chunks) =
+                walk_document(state.clone(), server.url("/long"), Some(window)).await;
+            totals.push(chars);
+            assert!(chunks > 0);
+
+            let mut seen = std::collections::HashSet::new();
+            for page in &pages {
+                for chunk in page["document"]["chunks"].as_array().expect("chunks") {
+                    let id = chunk["chunk_id"].as_str().unwrap_or_default().to_string();
+                    assert!(seen.insert(id), "a chunk must be delivered exactly once");
+                }
+            }
+            assert_eq!(seen.len(), chunks, "no chunk may be lost across pages");
+
+            let blocks = pages[0]["document"]["blocks"].as_array().expect("blocks");
+            let mut expected_start = 0usize;
+            for chunk in pages[0]["document"]["chunks"].as_array().expect("chunks") {
+                let start = chunk["block_start"].as_u64().unwrap_or_default() as usize;
+                let end = chunk["block_end"].as_u64().unwrap_or_default() as usize;
+                assert_eq!(start, expected_start, "chunk coverage must be contiguous");
+                assert!(end >= start);
+                expected_start = end + 1;
+            }
+            assert!(expected_start <= blocks.len());
+        }
+        assert_eq!(totals[0], totals[1]);
+        assert_eq!(totals[1], totals[2]);
+    }
+
+    #[tokio::test]
+    async fn cache_hit_matches_miss_and_reprojects_per_window() {
+        let server = windowed_page_server(40_000);
+        let url = server.url("/long");
+
+        let cold_4k = run_web_fetch(plain_state(), args(url.clone(), Some(4_000)))
+            .await
+            .expect("cold 4k");
+        assert_eq!(cold_4k["cache_status"], serde_json::json!("miss"));
+
+        let warm_state = plain_state();
+        let wide = run_web_fetch(warm_state.clone(), args(url.clone(), Some(8_000)))
+            .await
+            .expect("wide");
+        let hit_4k = run_web_fetch(warm_state.clone(), args(url.clone(), Some(4_000)))
+            .await
+            .expect("hit 4k");
+        assert_eq!(wide["cache_status"], serde_json::json!("miss"));
+        assert_eq!(hit_4k["cache_status"], serde_json::json!("hit"));
+
+        let mut left = cold_4k.clone();
+        let mut right = hit_4k.clone();
+        left["cache_status"] = serde_json::Value::Null;
+        right["cache_status"] = serde_json::Value::Null;
+        assert_eq!(
+            left, right,
+            "a cache hit must return the bytes a cold fetch of the same window returns"
+        );
+
+        let narrow_chars = hit_4k["text"].as_str().unwrap_or_default().chars().count();
+        let wide_chars = wide["text"].as_str().unwrap_or_default().chars().count();
+        assert!(
+            narrow_chars <= 4_000,
+            "the narrow window must bound its own text, saw {narrow_chars}"
+        );
+        assert!(
+            narrow_chars < wide_chars,
+            "a shared document must still project per caller window"
+        );
+        assert_eq!(
+            hit_4k["document"]["text_truncated"],
+            serde_json::json!(true)
+        );
     }
 }

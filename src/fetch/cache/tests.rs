@@ -584,12 +584,12 @@ fn build_conditional_headers_etag_takes_precedence() {
 }
 
 #[test]
-fn derived_keys_do_not_share_max_chars_buckets() {
+fn html_derived_keys_share_one_entry_across_caller_windows() {
     let low = build_derived_key(
         &CacheScope::Anonymous,
         1,
         ExtractMode::Text,
-        1000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         None,
         None,
@@ -600,7 +600,34 @@ fn derived_keys_do_not_share_max_chars_buckets() {
         &CacheScope::Anonymous,
         1,
         ExtractMode::Text,
-        4096,
+        ExtractionBudgetClass::document_scoped(50_000),
+        false,
+        None,
+        None,
+        false,
+        false,
+    );
+    assert_eq!(low, high);
+}
+
+#[test]
+fn non_html_derived_keys_still_vary_by_caller_window() {
+    let low = build_derived_key(
+        &CacheScope::Anonymous,
+        1,
+        ExtractMode::Text,
+        ExtractionBudgetClass::caller_scoped(50_000, 2_000),
+        false,
+        None,
+        None,
+        false,
+        false,
+    );
+    let high = build_derived_key(
+        &CacheScope::Anonymous,
+        1,
+        ExtractMode::Text,
+        ExtractionBudgetClass::caller_scoped(50_000, 12_000),
         false,
         None,
         None,
@@ -745,7 +772,7 @@ async fn cache_derived_insert_and_get() {
         raw_content_hash: 12345,
         extraction_key: ExtractionCacheKey {
             extract_mode: ExtractMode::Text,
-            max_chars_class: 12000,
+            budget: ExtractionBudgetClass::document_scoped(50_000),
             include_links: false,
             pdf_pages: None,
             pdf_ocr: None,
@@ -787,7 +814,7 @@ fn make_derived_entry(raw_content_hash: u64, text_len: usize) -> DerivedDocument
         raw_content_hash,
         extraction_key: ExtractionCacheKey {
             extract_mode: ExtractMode::Text,
-            max_chars_class: 12000,
+            budget: ExtractionBudgetClass::document_scoped(50_000),
             include_links: false,
             pdf_pages: None,
             pdf_ocr: None,
@@ -822,7 +849,7 @@ fn make_derived_key(raw_content_hash: u64) -> DerivedCacheKey {
         raw_content_hash,
         extraction_key: ExtractionCacheKey {
             extract_mode: ExtractMode::Text,
-            max_chars_class: 12000,
+            budget: ExtractionBudgetClass::document_scoped(50_000),
             include_links: false,
             pdf_pages: None,
             pdf_ocr: None,
@@ -946,7 +973,7 @@ fn build_derived_key_distinguishes_modes() {
         &scope,
         100,
         ExtractMode::Text,
-        12000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         None,
         None,
@@ -957,7 +984,7 @@ fn build_derived_key_distinguishes_modes() {
         &scope,
         100,
         ExtractMode::Markdown,
-        12000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         None,
         None,
@@ -973,14 +1000,14 @@ fn derived_key_renderer_version_isolates_pre_encryption_refusal_entries() {
         &CacheScope::Anonymous,
         100,
         ExtractMode::Text,
-        12000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         None,
         None,
         false,
         true,
     );
-    assert_eq!(current.extraction_key.renderer_version, 4);
+    assert_eq!(current.extraction_key.renderer_version, 5);
     let mut legacy = current.clone();
     legacy.extraction_key.renderer_version = 3;
     assert_ne!(
@@ -1006,14 +1033,14 @@ async fn cache_derived_does_not_serve_pre_encryption_refusal_entries() {
         &CacheScope::Anonymous,
         7,
         ExtractMode::Text,
-        12000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         None,
         None,
         false,
         true,
     );
-    assert_eq!(current.extraction_key.renderer_version, 4);
+    assert_eq!(current.extraction_key.renderer_version, 5);
     assert!(
         cache.get_derived(&current).await.is_none(),
         "a derived entry written before the encryption-refusal bump must not be served"
@@ -1027,7 +1054,7 @@ fn build_derived_key_distinguishes_pdf_pages() {
         &scope,
         100,
         ExtractMode::Text,
-        12000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         Some("1-3"),
         None,
@@ -1038,7 +1065,7 @@ fn build_derived_key_distinguishes_pdf_pages() {
         &scope,
         100,
         ExtractMode::Text,
-        12000,
+        ExtractionBudgetClass::document_scoped(50_000),
         false,
         Some("1-5"),
         None,
@@ -1049,13 +1076,13 @@ fn build_derived_key_distinguishes_pdf_pages() {
 }
 
 #[test]
-fn build_derived_key_distinguishes_max_chars() {
+fn pdf_derived_keys_still_vary_by_caller_window() {
     let scope = CacheScope::Anonymous;
     let k1 = build_derived_key(
         &scope,
         100,
         ExtractMode::Text,
-        8000,
+        ExtractionBudgetClass::caller_scoped(50_000, 8_000),
         false,
         None,
         None,
@@ -1066,7 +1093,7 @@ fn build_derived_key_distinguishes_max_chars() {
         &scope,
         100,
         ExtractMode::Text,
-        10000,
+        ExtractionBudgetClass::caller_scoped(50_000, 10_000),
         false,
         None,
         None,

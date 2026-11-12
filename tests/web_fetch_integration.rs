@@ -3638,6 +3638,8 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
+    cfg.fetch.max_chars_default = 12;
+    cfg.fetch.max_chars_cap = 12;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let v = run_web_fetch(
@@ -3673,7 +3675,9 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     // The truncation must have actually triggered for this test to be
     // meaningful.
     assert!(
-        doc["block_truncated"].as_bool().unwrap_or(false)
+        doc.get("block_truncated")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
             || doc["text_truncated"].as_bool().unwrap_or(false),
         "expected truncation flag, got: {doc:?}"
     );

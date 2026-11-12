@@ -72,9 +72,38 @@ pub fn render_blocks(
         0,
     );
 
-    // Block-boundary-aware truncation: walk blocks, accumulate chars,
-    // and truncate when the budget is exhausted.
-    let mut char_budget = max_chars;
+    let block_truncated = truncate_blocks_at_budget(&mut blocks, max_chars);
+
+    // After truncation, prune outline entries whose `block_index`
+    // points beyond the retained block list. Heading blocks that
+    // were dropped by the budget would leave stale index references
+    // otherwise. Title-derived fallback entries (block_index = None)
+    // are emitted later in `FetchClient` and are unaffected here.
+    prune_outline_to_blocks(&mut outline, blocks.len());
+
+    // If we truncated, emit a warning.
+    if block_truncated {
+        warnings.push("content truncated at block boundary".to_string());
+    }
+
+    let text_truncated = block_truncated;
+
+    (
+        title,
+        description,
+        RenderedBlocks {
+            blocks,
+            outline,
+            text_truncated,
+            block_truncated,
+        },
+        warnings,
+        non_utf8,
+    )
+}
+
+pub(crate) fn truncate_blocks_at_budget(blocks: &mut Vec<RenderedBlock>, budget: usize) -> bool {
+    let mut char_budget = budget;
     let mut block_truncated = false;
     let mut last_valid = blocks.len();
     for (i, block) in blocks.iter().enumerate() {
@@ -107,33 +136,7 @@ pub fn render_blocks(
         }
     }
     blocks.truncate(last_valid);
-
-    // After truncation, prune outline entries whose `block_index`
-    // points beyond the retained block list. Heading blocks that
-    // were dropped by the budget would leave stale index references
-    // otherwise. Title-derived fallback entries (block_index = None)
-    // are emitted later in `FetchClient` and are unaffected here.
-    prune_outline_to_blocks(&mut outline, blocks.len());
-
-    // If we truncated, emit a warning.
-    if block_truncated {
-        warnings.push("content truncated at block boundary".to_string());
-    }
-
-    let text_truncated = block_truncated;
-
-    (
-        title,
-        description,
-        RenderedBlocks {
-            blocks,
-            outline,
-            text_truncated,
-            block_truncated,
-        },
-        warnings,
-        non_utf8,
-    )
+    block_truncated
 }
 
 fn decode_html(html: &[u8]) -> (String, Vec<String>, bool) {

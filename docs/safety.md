@@ -102,7 +102,7 @@ Setting `sanitize_output = false` disables framing and marker scanning, but cont
 
 ### raw_text (internal)
 
-`raw_text` is an internal field on `WebFetchResponse`, bounded by `max_chars_cap` (default 50k). It is **not** serialized in MCP tool output. It provides Tier-1-only text for internal consumers like `repo_fetch` line/span selection. Related metadata fields (`raw_text_chars_returned`, `raw_text_truncated`, `raw_text_cap`) are also internal-only.
+`raw_text` is an internal field on `WebFetchResponse`, bounded by `max_chars_cap` (default 50k). It is **not** serialized in MCP tool output. It provides Tier-1-only text for internal consumers like `repo_fetch` line/span selection. `max_chars_cap` is also the document-extraction budget, so internal consumers still see the full source text even when the caller's returned-text window is smaller. Related metadata fields (`raw_text_chars_returned`, `raw_text_truncated`, `raw_text_cap`) are also internal-only.
 
 ## `metadata_only`
 

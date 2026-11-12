@@ -768,7 +768,7 @@ fn bench_derived_cache_hits(c: &mut Criterion) {
     use eggsearch::core::fetch::ExtractMode;
     use eggsearch::fetch::cache::{
         CacheScope, CachedExtractedDocument, DerivedCacheKey, DerivedDocumentCacheEntry,
-        ExtractionCacheKey, FetchCache,
+        ExtractionBudgetClass, ExtractionCacheKey, FetchCache,
     };
     use std::time::SystemTime;
     use tokio::runtime::Runtime;
@@ -779,7 +779,7 @@ fn bench_derived_cache_hits(c: &mut Criterion) {
             raw_content_hash: 42,
             extraction_key: ExtractionCacheKey {
                 extract_mode: ExtractMode::Text,
-                max_chars_class: 50_000,
+                budget: ExtractionBudgetClass::document_scoped(50_000),
                 include_links: false,
                 pdf_pages: None,
                 pdf_ocr: None,

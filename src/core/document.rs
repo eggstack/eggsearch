@@ -227,13 +227,13 @@ pub fn build_document_chunks(
     doc_id: &str,
     outline: &[DocumentOutlineEntry],
     blocks: &[RenderedBlock],
-    max_chars: usize,
+    document_chars: usize,
 ) -> Vec<DocumentChunk> {
     if blocks.is_empty() {
         return Vec::new();
     }
 
-    let chunk_char_limit = max_chars.clamp(1, DEFAULT_CHUNK_CHAR_LIMIT);
+    let chunk_char_limit = document_chars.clamp(1, DEFAULT_CHUNK_CHAR_LIMIT);
     let chunk_block_limit = DEFAULT_CHUNK_BLOCK_LIMIT.max(1);
     let has_heading_blocks = blocks.iter().any(|block| block.kind == BlockKind::Heading);
     let mut heading_stack: Vec<(usize, String)> = if has_heading_blocks {
@@ -389,6 +389,9 @@ pub struct FetchDocument {
     /// Whether the block list was truncated.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub block_truncated: bool,
+    /// Whether extraction stopped at the document budget.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub document_truncated: bool,
     /// Whether the link list was truncated.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub link_truncated: bool,

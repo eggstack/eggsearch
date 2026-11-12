@@ -738,10 +738,65 @@ pub(crate) async fn run_browser_fetch(
     result
 }
 
+pub(crate) fn project_cached_response(
+    response: &mut crate::core::fetch::WebFetchResponse,
+    window_chars: usize,
+    sanitize_output: bool,
+) {
+    let Some(document) = response.document.as_mut() else {
+        return;
+    };
+    if document.kind != crate::core::document::DocumentKind::Html || document.blocks.is_empty() {
+        return;
+    }
+    let final_url = response.final_url.clone();
+    let markdown = document.text_format == "markdown";
+    let (projected, truncated) =
+        crate::fetch::projection::project_document_text(&document.blocks, window_chars, markdown);
+    let chars = projected.chars().count();
+    let text = if sanitize_output {
+        crate::core::sanitize::frame(&projected, "text", &final_url)
+    } else {
+        projected
+    };
+    response.text = Some(text);
+    document.text_chars_returned = chars;
+    document.text_truncated = truncated;
+}
+
+pub(crate) fn project_cached_document(
+    document: &mut crate::fetch::cache::CachedExtractedDocument,
+    final_url: &str,
+    window_chars: usize,
+    sanitize_output: bool,
+) {
+    let Some(structured) = document.document.as_mut() else {
+        return;
+    };
+    if structured.kind != crate::core::document::DocumentKind::Html || structured.blocks.is_empty()
+    {
+        return;
+    }
+    let markdown = structured.text_format == "markdown";
+    let (projected, truncated) =
+        crate::fetch::projection::project_document_text(&structured.blocks, window_chars, markdown);
+    let chars = projected.chars().count();
+    let text = if sanitize_output {
+        crate::core::sanitize::frame(&projected, "text", final_url)
+    } else {
+        projected
+    };
+    document.text = Some(text);
+    structured.text_chars_returned = chars;
+    structured.text_truncated = truncated;
+}
+
 pub(crate) fn cached_document_response(
     requested_url: &str,
     raw: &crate::fetch::cache::RawFetchCacheEntry,
     document: &crate::fetch::cache::CachedExtractedDocument,
+    window_chars: usize,
+    sanitize_output: bool,
 ) -> crate::core::fetch::WebFetchResponse {
     let structured_document = document.document.clone().map(|mut structured_document| {
         if let Some(metadata) = structured_document.metadata.as_mut() {
@@ -750,7 +805,7 @@ pub(crate) fn cached_document_response(
         }
         structured_document
     });
-    crate::core::fetch::WebFetchResponse {
+    let mut response = crate::core::fetch::WebFetchResponse {
         url: requested_url.to_string(),
         final_url: raw.final_url.clone(),
         stable_id: Some(crate::core::identity::fetch_id(
@@ -797,7 +852,9 @@ pub(crate) fn cached_document_response(
         manual_interaction_required: false,
         focus: None,
         raw_body: None,
-    }
+    };
+    project_cached_response(&mut response, window_chars, sanitize_output);
+    response
 }
 
 pub(crate) fn derived_cache_entry(

@@ -179,18 +179,7 @@ impl FetchClient {
             (initial_url, None)
         };
 
-        let max_chars = max_chars
-            .unwrap_or(self.limits.max_chars_default)
-            .min(self.limits.max_chars_cap);
-
-        // `max_chars_raw` bounds the body text stored in
-        // `WebFetchResponse::raw_text`. Use the configured
-        // `max_chars_cap` so that internal consumers (e.g.
-        // `repo_fetch` line/span selection) get the full source text
-        // even when the caller's requested `max_chars` is small. This
-        // is the input budget for line selection, not the tool output
-        // budget; output is still clamped to the caller's `max_chars`.
-        let max_chars_raw = self.limits.max_chars_cap;
+        let budgets = crate::fetch::budget::FetchBudgets::resolve(&self.limits, max_chars);
 
         let mut current_url = fetch_url;
         let mut redirect_count: usize = 0;
@@ -458,8 +447,7 @@ impl FetchClient {
             redirect_count,
             body,
             truncated,
-            max_chars,
-            max_chars_raw,
+            budgets,
             extract_mode,
             include_links,
             pdf_options,
@@ -479,8 +467,7 @@ impl FetchClient {
         redirect_count: usize,
         body: Vec<u8>,
         truncated: bool,
-        max_chars: usize,
-        max_chars_raw: usize,
+        budgets: crate::fetch::budget::FetchBudgets,
         extract_mode: ExtractMode,
         include_links: bool,
         pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
@@ -488,6 +475,9 @@ impl FetchClient {
     ) -> Result<WebFetchResponse, FetchError> {
         #[cfg(not(feature = "pdf"))]
         let _ = pdf_options;
+
+        let document_chars = budgets.document_chars();
+        let window_chars = budgets.window_chars();
 
         let final_url_parsed = url::Url::parse(&final_url).ok();
 
@@ -602,6 +592,7 @@ impl FetchClient {
                         text_chars_returned: 0,
                         text_truncated: false,
                         block_truncated: false,
+                        document_truncated: false,
                         link_truncated: false,
                         metadata: Some(FetchRenderMetadata {
                             bytes_read: Some(body.len()),
@@ -678,7 +669,7 @@ impl FetchClient {
 
             let mut pdf_result = super::pdf::extract_pdf_text(
                 &body,
-                max_chars,
+                window_chars,
                 &pdf_limits,
                 pdf_extract_opts.as_ref(),
             )?;
@@ -716,12 +707,12 @@ impl FetchClient {
 
             // Sanitize the legacy text field
             let (stripped_text, _) = strip_control_chars(&pdf_result.text);
-            let (bounded_text, _) = bound_text(&stripped_text, max_chars);
+            let (bounded_text, _) = bound_text(&stripped_text, window_chars);
             let (text, text_markers) = sanitize_field(
                 &bounded_text,
                 "text",
                 &final_url,
-                max_chars,
+                window_chars,
                 self.sanitize_output,
                 &mut warnings,
             );
@@ -793,6 +784,7 @@ impl FetchClient {
             mut text,
             links,
             extract_warnings,
+            document_truncated,
             text_truncated,
             links_seen,
             links_truncated,
@@ -801,7 +793,7 @@ impl FetchClient {
                 // Keep metadata extraction bounded, but skip body text
                 // and structured document construction.
                 let (t, d, _blocks, w, _) =
-                    render::blocks::render_blocks(&body, &final_url, max_chars, false);
+                    render::blocks::render_blocks(&body, &final_url, document_chars, false);
                 let LinkExtractionResult {
                     links,
                     total_seen,
@@ -815,14 +807,24 @@ impl FetchClient {
                         truncated: false,
                     }
                 };
-                (t, d, None, links, w, false, total_seen, truncated)
+                (t, d, None, links, w, false, false, total_seen, truncated)
             } else {
-                (None, None, None, Vec::new(), Vec::new(), false, 0, false)
+                (
+                    None,
+                    None,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    false,
+                    false,
+                    0,
+                    false,
+                )
             }
         } else if kind.is_html {
             let is_markdown = extract_mode == ExtractMode::Markdown;
             let (t, d, rendered, w, _non_utf8) =
-                render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown);
+                render::blocks::render_blocks(&body, &final_url, document_chars, is_markdown);
             let LinkExtractionResult {
                 links,
                 total_seen,
@@ -841,9 +843,9 @@ impl FetchClient {
                 ExtractMode::Markdown => render::markdown::render_blocks_markdown(&rendered.blocks),
                 _ => render::text::render_blocks_text(&rendered.blocks),
             };
-            let tt = rendered.text_truncated;
+            let document_truncated = rendered.text_truncated;
             // Truncate text to max_chars
-            let (bounded_txt, txt_truncated) = bound_text(&txt, max_chars);
+            let (bounded_txt, text_truncated) = bound_text(&txt, window_chars);
             // Cache rendered blocks for document construction (avoids
             // a second render_blocks call below).
             cached_html_render = Some(rendered);
@@ -853,20 +855,14 @@ impl FetchClient {
                 Some(bounded_txt),
                 links,
                 w,
-                tt || txt_truncated,
+                document_truncated,
+                text_truncated,
                 total_seen,
                 truncated,
             )
         } else {
-            let mut text = String::new();
-            let mut tt = false;
-            for (char_count, ch) in decoded.chars().enumerate() {
-                if char_count >= max_chars {
-                    tt = true;
-                    break;
-                }
-                text.push(ch);
-            }
+            let (full_text, document_truncated) = bound_text(&decoded, document_chars);
+            let (text, text_truncated) = bound_text(&full_text, window_chars);
             let LinkExtractionResult {
                 links,
                 total_seen,
@@ -886,7 +882,8 @@ impl FetchClient {
                 Some(text),
                 links,
                 Vec::new(),
-                tt,
+                document_truncated,
+                text_truncated,
                 total_seen,
                 truncated,
             )
@@ -897,7 +894,7 @@ impl FetchClient {
         let pre_framing_text = text.clone();
         let raw_text: Option<String> = if extract_mode != ExtractMode::MetadataOnly {
             let (stripped, _) = strip_control_chars(&decoded);
-            let (bounded, raw_bounded) = bound_text(&stripped, max_chars_raw);
+            let (bounded, raw_bounded) = bound_text(&stripped, document_chars);
             if raw_bounded {
                 raw_capped = true;
             }
@@ -949,7 +946,7 @@ impl FetchClient {
                 &t,
                 "text",
                 &final_url,
-                max_chars,
+                window_chars,
                 self.sanitize_output,
                 &mut warnings,
             );
@@ -1001,28 +998,28 @@ impl FetchClient {
                 })
                 .filter(|e| !e.is_empty());
 
-            let outer_text_truncated = text_truncated;
-            let (blocks, outline, text_chars, block_truncated, doc_text_truncated) = if kind.is_html
+            let mut document_truncated = document_truncated;
+            let (blocks, outline, text_chars, block_truncated, window_text_truncated) = if kind
+                .is_html
             {
                 // Reuse cached render from the extraction phase (avoids
                 // a second parse + DOM walk of the same HTML body).
                 let rendered = cached_html_render.take().unwrap_or_else(|| {
                     let is_markdown = extract_mode == ExtractMode::Markdown;
-                    render::blocks::render_blocks(&body, &final_url, max_chars, is_markdown).2
+                    render::blocks::render_blocks(&body, &final_url, document_chars, is_markdown).2
                 });
                 // text_chars is computed from the truncated text
                 // (`pre_framing_text`, bounded by `max_chars`), not
                 // from the new `raw_text` field which is bounded by
                 // `max_chars_cap` for internal consumers like
                 // `repo_fetch`.
-                let text_chars = pre_framing_text.as_ref().map_or(0, |t| t.chars().count());
                 let block_truncated = rendered.block_truncated;
 
                 // Apply Tier 1 (strip + bound) to each block's text
                 let mut blocks = rendered.blocks;
                 for block in &mut blocks {
                     let (stripped, _) = strip_control_chars(&block.text);
-                    let (bounded, _) = bound_text(&stripped, max_chars);
+                    let (bounded, _) = bound_text(&stripped, document_chars);
                     block.text = bounded;
                 }
 
@@ -1049,12 +1046,20 @@ impl FetchClient {
                     }
                 }
 
+                let (projected_text, projected_truncated) =
+                    crate::fetch::projection::project_document_text(
+                        &blocks,
+                        window_chars,
+                        extract_mode == ExtractMode::Markdown,
+                    );
+                let text_chars = projected_text.chars().count();
+
                 (
                     blocks,
                     outline,
                     text_chars,
                     block_truncated,
-                    outer_text_truncated,
+                    projected_truncated,
                 )
             } else if let Some(ref t) = pre_framing_text {
                 // Non-HTML path: use detected kind to pick the right
@@ -1065,14 +1070,15 @@ impl FetchClient {
                 let text_chars = pre_framing_text.as_ref().map_or(0, |t| t.chars().count());
 
                 let rendered = match detected.kind {
-                    DocumentKind::Notebook => render::notebook::render_notebook(t, max_chars),
-                    DocumentKind::Csv => render::csv::render_csv(t, max_chars),
+                    DocumentKind::Notebook => render::notebook::render_notebook(t, document_chars),
+                    DocumentKind::Csv => render::csv::render_csv(t, document_chars),
                     DocumentKind::Xml | DocumentKind::Rst | DocumentKind::AsciiDoc => {
-                        render::code::render_plaintext(t, max_chars)
+                        render::code::render_plaintext(t, document_chars)
                     }
                     _ if detected.line_preserving => match detected.kind {
                         DocumentKind::Markdown => {
-                            let md = render::markdown_source::render_markdown_source(t, max_chars);
+                            let md =
+                                render::markdown_source::render_markdown_source(t, document_chars);
                             render::code::RenderedContent {
                                 blocks: md.blocks,
                                 outline: md.outline,
@@ -1081,18 +1087,22 @@ impl FetchClient {
                             }
                         }
                         DocumentKind::Diff | DocumentKind::Patch => {
-                            render::code::render_diff(t, max_chars)
+                            render::code::render_diff(t, document_chars)
                         }
-                        _ => render::code::render_code(t, detected.language.as_deref(), max_chars),
+                        _ => render::code::render_code(
+                            t,
+                            detected.language.as_deref(),
+                            document_chars,
+                        ),
                     },
-                    _ => render::code::render_plaintext(t, max_chars),
+                    _ => render::code::render_plaintext(t, document_chars),
                 };
 
                 // Apply Tier 1 (strip + bound) to each block's text
                 let mut blocks = rendered.blocks;
                 for block in &mut blocks {
                     let (stripped, _) = strip_control_chars(&block.text);
-                    let (bounded, _) = bound_text(&stripped, max_chars);
+                    let (bounded, _) = bound_text(&stripped, document_chars);
                     block.text = bounded;
                 }
 
@@ -1103,17 +1113,11 @@ impl FetchClient {
                     entry.title = bounded;
                 }
                 let block_truncated = rendered.block_truncated;
-                let doc_text_truncated = outer_text_truncated || rendered.text_truncated;
+                document_truncated |= rendered.text_truncated;
 
-                (
-                    blocks,
-                    outline,
-                    text_chars,
-                    block_truncated,
-                    doc_text_truncated,
-                )
+                (blocks, outline, text_chars, block_truncated, text_truncated)
             } else {
-                (Vec::new(), Vec::new(), 0, false, outer_text_truncated)
+                (Vec::new(), Vec::new(), 0, false, text_truncated)
             };
 
             let document_id = crate::core::identity::doc_id(
@@ -1121,7 +1125,7 @@ impl FetchClient {
                 raw_title.as_deref(),
                 Some(doc_kind.as_str()),
             );
-            let chunks = build_document_chunks(&document_id, &outline, &blocks, max_chars);
+            let chunks = build_document_chunks(&document_id, &outline, &blocks, document_chars);
 
             Some(FetchDocument {
                 kind: doc_kind,
@@ -1132,8 +1136,9 @@ impl FetchClient {
                     "plain".to_string()
                 },
                 text_chars_returned: text_chars,
-                text_truncated: doc_text_truncated,
+                text_truncated: window_text_truncated,
                 block_truncated,
+                document_truncated,
                 link_truncated: links_truncated,
                 metadata: Some(FetchRenderMetadata {
                     bytes_read: Some(body.len()),
@@ -1178,7 +1183,7 @@ impl FetchClient {
             raw_text,
             raw_text_chars_returned,
             raw_text_truncated: raw_capped,
-            raw_text_cap: Some(max_chars_raw),
+            raw_text_cap: Some(document_chars),
             links,
             links_seen: if links_seen > 0 {
                 Some(links_seen)
@@ -1609,8 +1614,7 @@ mod tests {
                 0,
                 body.to_vec(),
                 false,
-                12_000,
-                50_000,
+                crate::fetch::budget::FetchBudgets::new(50_000, 12_000),
                 ExtractMode::Markdown,
                 true,
                 None,

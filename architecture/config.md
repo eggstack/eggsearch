@@ -114,8 +114,8 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `enabled` | `bool` | `true` | Whether fetch tools are available |
 | `timeout_ms` | `u64` | `8000` | Request timeout |
 | `max_bytes` | `usize` | `2_000_000` | Hard response body cap |
-| `max_chars_default` | `usize` | `12_000` | Default extraction limit |
-| `max_chars_cap` | `usize` | `50_000` | Hard extraction upper bound |
+| `max_chars_default` | `usize` | `12_000` | Default returned-text window when a caller omits `max_chars` |
+| `max_chars_cap` | `usize` | `50_000` | Document/extraction budget and the cost knob: how much of the page is extracted and addressable; caller `max_chars` windows clamp to it |
 | `redirect_limit` | `usize` | `5` | Redirect chain limit |
 | `allow_private_network` | `bool` | `false` | SSRF escape hatch: RFC 1918 / CGNAT / link-local |
 | `allow_localhost` | `bool` | `false` | SSRF escape hatch: loopback, independent of the above |

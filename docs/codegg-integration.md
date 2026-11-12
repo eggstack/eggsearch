@@ -114,7 +114,7 @@ enabled = true
 timeout_ms = 8000
 max_bytes = 2000000
 max_chars_default = 12000
-max_chars_cap = 50000
+max_chars_cap = 50000                # document/extraction budget and cost knob; max_chars bounds the returned-text window
 redirect_limit = 5
 allow_private_network = false
 allow_localhost = false
@@ -339,7 +339,7 @@ brave = true
 [fetch]
 enabled = true
 max_chars_default = 25000
-max_chars_cap = 75000
+max_chars_cap = 75000                # document/extraction budget and cost knob (not the returned-text ceiling)
 
 [local]
 enabled = false
@@ -1331,7 +1331,7 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 | Tool | Field | Default | Cap |
 |------|-------|---------|-----|
 | `web_search` | `max_results` | 10 | 50 (`max_results_cap`) |
-| `web_fetch` | `max_chars` | 12,000 | 50,000 (`max_chars_cap`) |
+| `web_fetch` | `max_chars` (returned-text window) | 12,000 | 50,000 (`max_chars_cap` document/extraction budget and cost knob) |
 | `batch_fetch` | `max_chars` (per item) | 12,000 | — |
 | `batch_fetch` | `max_total_chars` | 50,000 | 120,000 |
 | `batch_fetch` | items count | 8 | 20 |
@@ -1357,7 +1357,7 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 
 ### Reducing Response Size
 
-- Set `max_chars` on fetch calls to limit extracted text.
+- Set `max_chars` on fetch calls to limit the returned-text window; the document is still extracted at `max_chars_cap`.
 - Set `max_results` on search calls to limit result count.
 - Use `include_links = false` (default) on fetch to skip link extraction.
 - Use `metadata_only` extract mode on `web_fetch` to get metadata without body content.

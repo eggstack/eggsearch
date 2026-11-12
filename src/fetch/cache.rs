@@ -22,10 +22,45 @@ pub struct DerivedCacheKey {
     pub extraction_key: ExtractionCacheKey,
 }
 
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+pub struct ExtractionBudgetClass {
+    pub document_chars: usize,
+    pub caller_chars: Option<usize>,
+}
+
+impl ExtractionBudgetClass {
+    pub fn document_scoped(document_chars: usize) -> Self {
+        Self {
+            document_chars,
+            caller_chars: None,
+        }
+    }
+
+    pub fn caller_scoped(document_chars: usize, caller_chars: usize) -> Self {
+        Self {
+            document_chars,
+            caller_chars: Some(caller_chars),
+        }
+    }
+
+    pub fn for_fetch(
+        content_type: Option<&str>,
+        document_chars: usize,
+        caller_chars: usize,
+    ) -> Self {
+        let html = content_type.is_some_and(|value| value.to_ascii_lowercase().contains("html"));
+        if html {
+            Self::document_scoped(document_chars)
+        } else {
+            Self::caller_scoped(document_chars, caller_chars)
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct ExtractionCacheKey {
     pub extract_mode: ExtractMode,
-    pub max_chars_class: usize,
+    pub budget: ExtractionBudgetClass,
     pub include_links: bool,
     pub pdf_pages: Option<String>,
     pub pdf_ocr: Option<String>,
@@ -566,25 +601,24 @@ pub fn build_derived_key(
     scope: &CacheScope,
     raw_hash: u64,
     extract_mode: ExtractMode,
-    max_chars: usize,
+    budget: ExtractionBudgetClass,
     include_links: bool,
     pdf_pages: Option<&str>,
     pdf_ocr: Option<&str>,
     include_media: bool,
     sanitize_output: bool,
 ) -> DerivedCacheKey {
-    let max_chars_class = max_chars;
     DerivedCacheKey {
         scope: scope.clone(),
         raw_content_hash: raw_hash,
         extraction_key: ExtractionCacheKey {
             extract_mode,
-            max_chars_class,
+            budget,
             include_links,
             pdf_pages: pdf_pages.map(|s| s.to_string()),
             pdf_ocr: pdf_ocr.map(|s| s.to_string()),
             include_media,
-            renderer_version: 4,
+            renderer_version: 5,
             sanitize_output,
         },
     }

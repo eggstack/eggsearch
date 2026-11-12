@@ -976,6 +976,7 @@ pub fn extract_pdf_text(
         text_chars_returned,
         text_truncated,
         block_truncated: false,
+        document_truncated: text_truncated,
         link_truncated: false,
         metadata: Some(FetchRenderMetadata {
             bytes_read: Some(bytes.len()),

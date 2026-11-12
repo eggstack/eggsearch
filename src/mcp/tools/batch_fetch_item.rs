@@ -57,6 +57,7 @@ pub(crate) fn make_batch_fetch_future(
             let focus_chunks = *focus_max_chunks;
             let focus_chars = *focus_max_chars;
             let max_chars_cap = state.config.fetch.max_chars_cap;
+            let budgets = crate::fetch::budget::FetchBudgets::new(max_chars_cap, em);
             if let Some(age) = item_max_age {
                 if age > crate::core::fetch::MAX_CACHE_AGE_SECONDS {
                     return Box::pin(async move {
@@ -138,15 +139,26 @@ pub(crate) fn make_batch_fetch_future(
                                     &scope,
                                     build_raw_response_hash(&raw_entry.body),
                                     mode,
-                                    em,
+                                    crate::fetch::cache::ExtractionBudgetClass::for_fetch(
+                                        raw_entry.content_type.as_deref(),
+                                        budgets.document_chars(),
+                                        budgets.window_chars(),
+                                    ),
                                     il,
                                     None,
                                     None,
                                     false,
                                     state.config.fetch.sanitize_output,
                                 );
-                                if let Some(derived) = cache.get_derived_shared(&derived_key).await
+                                if let Some(mut derived) =
+                                    cache.get_derived_shared(&derived_key).await
                                 {
+                                    super::common::project_cached_document(
+                                        &mut std::sync::Arc::make_mut(&mut derived).response,
+                                        &raw_entry.final_url,
+                                        budgets.window_chars(),
+                                        state.config.fetch.sanitize_output,
+                                    );
                                     let raw_payload = serde_json::json!({
                                         "url": url,
                                         "final_url": raw_entry.final_url,
@@ -261,16 +273,27 @@ pub(crate) fn make_batch_fetch_future(
                                                         &scope,
                                                         build_raw_response_hash(&raw_entry.body),
                                                         mode,
-                                                        em,
+                                                        crate::fetch::cache::ExtractionBudgetClass::for_fetch(
+                                                            raw_entry.content_type.as_deref(),
+                                                            budgets.document_chars(),
+                                                            budgets.window_chars(),
+                                                        ),
                                                         il,
                                                         None,
                                                         None,
                                                         false,
                                                         state.config.fetch.sanitize_output,
                                                     );
-                                                if let Some(derived) =
+                                                if let Some(mut derived) =
                                                     cache.get_derived_shared(&derived_key).await
                                                 {
+                                                    super::common::project_cached_document(
+                                                        &mut std::sync::Arc::make_mut(&mut derived)
+                                                            .response,
+                                                        &raw_entry.final_url,
+                                                        budgets.window_chars(),
+                                                        state.config.fetch.sanitize_output,
+                                                    );
                                                     let mut updated_freshness =
                                                         raw_entry.freshness.clone();
                                                     updated_freshness.fetched_at =
@@ -573,7 +596,11 @@ pub(crate) fn make_batch_fetch_future(
                                     &scope,
                                     raw_hash,
                                     mode,
-                                    em,
+                                    crate::fetch::cache::ExtractionBudgetClass::for_fetch(
+                                        resp.content_type.as_deref(),
+                                        budgets.document_chars(),
+                                        budgets.window_chars(),
+                                    ),
                                     il,
                                     None,
                                     None,

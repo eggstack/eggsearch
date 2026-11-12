@@ -300,10 +300,9 @@ pub async fn run_web_fetch_with_progress(
         .as_ref()
         .and_then(|p| p.include_media.unwrap_or(false).then_some(true))
         .unwrap_or(false);
-    let requested_max_chars = args
-        .max_chars
-        .unwrap_or(state.config.fetch.max_chars_default)
-        .min(state.config.fetch.max_chars_cap);
+    let budgets =
+        crate::fetch::budget::FetchBudgets::resolve(&state.config.fetch_limits(), args.max_chars);
+    let requested_max_chars = budgets.window_chars();
 
     let target_accept_policy = select_accept_policy(trimmed_url, extract_mode);
 
@@ -351,7 +350,11 @@ pub async fn run_web_fetch_with_progress(
                         &scope,
                         raw_hash,
                         extract_mode,
-                        requested_max_chars,
+                        crate::fetch::cache::ExtractionBudgetClass::for_fetch(
+                            raw_entry.content_type.as_deref(),
+                            budgets.document_chars(),
+                            budgets.window_chars(),
+                        ),
                         include_links,
                         pdf_pages,
                         pdf_ocr.as_deref(),
@@ -369,8 +372,7 @@ pub async fn run_web_fetch_with_progress(
                             raw_entry.redirect_count,
                             raw_entry.body.to_vec(),
                             raw_entry.truncated,
-                            requested_max_chars,
-                            state.config.fetch.max_chars_cap,
+                            budgets,
                             extract_mode,
                             include_links,
                             args.pdf.as_ref(),
@@ -404,6 +406,8 @@ pub async fn run_web_fetch_with_progress(
                                     trimmed_url,
                                     &raw_entry,
                                     &derived.response,
+                                    budgets.window_chars(),
+                                    state.config.fetch.sanitize_output,
                                 ))
                             } else {
                                 derive().await.ok()
@@ -463,6 +467,8 @@ pub async fn run_web_fetch_with_progress(
                                                 trimmed_url,
                                                 &raw_entry,
                                                 &derived.response,
+                                                budgets.window_chars(),
+                                                state.config.fetch.sanitize_output,
                                             );
                                             resp.cache_status =
                                                 crate::fetch::cache::CacheStatus::Revalidated;
@@ -490,6 +496,8 @@ pub async fn run_web_fetch_with_progress(
                                                     trimmed_url,
                                                     &raw_entry,
                                                     &derived.response,
+                                                    budgets.window_chars(),
+                                                    state.config.fetch.sanitize_output,
                                                 )),
                                                 None => derive().await.ok(),
                                             };
@@ -549,7 +557,7 @@ pub async fn run_web_fetch_with_progress(
                         let resp = crate::fetch::browser::browser_result_to_response(
                             result,
                             trimmed_url,
-                            args.max_chars,
+                            budgets,
                             extract_mode,
                             include_links,
                             state.config.fetch.sanitize_output,
@@ -690,7 +698,7 @@ pub async fn run_web_fetch_with_progress(
                                                 crate::fetch::browser::browser_result_to_response(
                                                     result,
                                                     trimmed_url,
-                                                    args.max_chars,
+                                                    budgets,
                                                     extract_mode,
                                                     include_links,
                                                     state.config.fetch.sanitize_output,
@@ -935,7 +943,11 @@ pub async fn run_web_fetch_with_progress(
                     &scope,
                     raw_hash,
                     extract_mode,
-                    requested_max_chars,
+                    crate::fetch::cache::ExtractionBudgetClass::for_fetch(
+                        resp.content_type.as_deref(),
+                        budgets.document_chars(),
+                        budgets.window_chars(),
+                    ),
                     include_links,
                     pdf_pages,
                     pdf_ocr.as_deref(),

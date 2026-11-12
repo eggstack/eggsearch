@@ -7,6 +7,8 @@ pub mod accept;
 #[cfg(feature = "browser")]
 #[allow(missing_docs)]
 pub mod browser;
+/// Extraction versus output character budgets for a single fetch.
+pub mod budget;
 #[allow(missing_docs)]
 pub mod cache;
 pub mod client;
@@ -28,6 +30,7 @@ mod pdf_quality;
 /// the stable surface described in `lib.rs`.
 #[cfg(feature = "pdf")]
 pub mod pdf_stream;
+pub(crate) mod projection;
 /// HTML structural rendering (blocks, text, markdown).
 pub mod render;
 /// Symbol/span-aware block expansion for `repo_fetch`.

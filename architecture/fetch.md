@@ -70,10 +70,15 @@ reported via `FetchTransform`.
 ### Per-fetch loop (`fetch`)
 
 1. `validate_url` on the initial URL, then optional code-host rewrite.
-2. Clamp caller `max_chars` to `[1, max_chars_cap]`; keep a separate
-   `max_chars_raw = max_chars_cap` budget for `raw_text` so internal consumers
-   (`repo_fetch` line/span selection) see full source text while tool output
-   stays clamped to the caller budget.
+2. Resolve two budgets: extraction runs at the document budget
+   `document_chars = max_chars_cap`, while the returned `text` is projected at
+   `window_chars = caller max_chars` (or `max_chars_default`), clamped to
+   `max_chars_cap`. `raw_text` stays at `max_chars_cap` so internal consumers
+   (`repo_fetch` line/span selection) see full source text.
+   `document.document_truncated` reports extraction stopping at the document
+   budget; `document.text_truncated` reports window clipping. `document.blocks`
+   / `document.chunks` can therefore cover a document larger than one `text`
+   window.
 3. Loop: validate current URL with resolved addresses → send (with the selected `Accept` policy on
    every hop; conditional `ETag`/`Last-Modified` stay first-hop-only) → on 3xx require a non-empty
    `Location`, resolve relative targets, reject past `redirect_limit`, re-validate the target
@@ -125,7 +130,7 @@ Responses carry `representation: markdown | html`, and `FetchRenderMetadata` sur
 | Policy | Rule |
 |--------|------|
 | Timeout | `FetchLimits::timeout_ms` (default 8000). DNS phase consumes at most half (1500 ms floor); the remainder covers the HTTP round-trip plus body streaming. Send errors mapping to timeout become `FetchError::Timeout(timeout_ms)`. |
-| Bytes | `FetchLimits::body_cap` caps the streamed body: `pdf_max_bytes` (default 16,777,216) when the response is PDF-identified by Content-Type or a `.pdf` path, `max_bytes` (default 2,000,000) otherwise. `max_chars_default` (12,000) and `max_chars_cap` (50,000) cap extracted text and `raw_text` respectively. `max_url_len` is 8192 bytes. |
+| Bytes | `FetchLimits::body_cap` caps the streamed body: `pdf_max_bytes` (default 16,777,216) when the response is PDF-identified by Content-Type or a `.pdf` path, `max_bytes` (default 2,000,000) otherwise. `max_chars_default` (12,000) is the returned-text window when a caller omits `max_chars`, and `max_chars_cap` (50,000) is both the document-extraction budget and the `raw_text` bound. `max_url_len` is 8192 bytes. |
 | Redirects | `redirect_limit` (default 5) counts followed hops; exceeding it returns `RedirectLimitExceeded`. Missing/empty `Location` is `InvalidRedirectLocation`. |
 | Content-type | HTML (`text/html`, `application/xhtml+xml`), text (`text/*`, JSON/TOML/YAML/JS/XML families), and PDF (by type, `.pdf` extension, or magic) are accepted; anything else is `UnsupportedContentType`. PDF additionally requires the compile feature **and** `pdf_enabled` (`PdfNotCompiledIn` / `PdfDisabled`). |
 
