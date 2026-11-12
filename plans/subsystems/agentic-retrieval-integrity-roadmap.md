@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M019 ready; M020 blocked on M019)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready; M019 closed; M020 ready)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -98,7 +98,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M017 — routing shipped-set evidence and keyword predicate | invariant (corrective to M006) | `plans/implementation/agentic-retrieval-integrity/017-routing-shipped-set-evidence-and-keyword-predicate.md` | hard M004, M005, M006 | The shipped default provider set is measured, so `intent_mode` is decided by evidence; and no routing entry can be one that rejects a keyword query |
 | M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009 | Pages carry comparable content, `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
 | M019 — fetch document budget and truncation semantics | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md` | none (ADR-0011 accepted) | The extracted document exceeds one caller's window, and truncation is reported as two distinct facts so a caller is never told "not truncated" while holding less than the document contains |
-| M020 — offset addressing and cursor retirement | capability (interface) | `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md` | hard M019 — blocked until M019 closes | A caller reads any window of a fetched document in one call by re-specifying the request with `offset`/`limit`; no opaque token remains in any advertised schema |
+| M020 — offset addressing and cursor retirement | capability (interface) | `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md` | hard M019 (closed) | A caller reads any window of a fetched document in one call by re-specifying the request with `offset`/`limit`; no opaque token remains in any advertised schema |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -142,9 +142,13 @@ exposed M011's mandatory-`redir` defect.
   from M009 in part and the page-budget mechanism from M018 in part: the cursor was unreleased, so
   this is a replacement rather than a deprecation, and M018's `focus_scope`/`aggregate_scope`
   labelling survives while its chunk-packing mechanism is replaced by offset windows.
-- M020 is `blocked`, not `ready`, because its hard dependency M019 is still open: offset addressing
-  over a document still truncated at the caller's `max_chars` would be correct arithmetic over the
-  wrong total. It becomes dependency-ready when M019 closes with a closure record.
+- M019 is `closed`: extraction runs at the document budget while `max_chars` bounds only the
+  returned window, truncation reports document versus window facts separately, and HTML derived
+  entries are shared across caller windows. Evidence:
+  `plans/closure/agentic-retrieval-integrity/019-status.md`.
+- M020 is now dependency-ready. Its work package 0 requires M019's guarantees — exhaustive
+  contiguous chunk coverage and no pre-truncation at the caller's window — and both are established
+  and tested, so `text_total` over the chunk join is the true addressable total.
 - M013–M018 are registered corrective and extension work from the 2026-11-12 live review. ADR-0010
   is accepted and authorizes no behaviour change by itself: it widens method coverage to the
   published Anubis registry and records that the nonce search stays single-threaded, but every
