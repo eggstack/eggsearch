@@ -331,6 +331,24 @@ for the named condition: RFC 9110 is a plain-text document far larger than 12,00
 `text_total` is 11,981 — the caller-window bound, not the document size. The record is mirrored in
 `tests/fixtures/fetch_windows/README.md`.
 
+### Transport-level check (`mcp stdio`)
+
+The built binary was driven over a real client-owned stdio session (`initialize`, `tools/list`,
+`tools/call`) by a throwaway Python client, so the contract was observed on the wire rather than
+through the in-process test harness:
+
+- `tools/list` advertises all ten tools; `web_fetch`'s input schema carries `offset` and `limit`
+  with `required == ["url"]`, and neither its input nor its output schema contains `cursor`,
+  `next_cursor`, or `cursor_status`.
+- `web_fetch {offset: 0, limit: 25}` on `https://example.com/` returns
+  `text_from=0, text_to=25, text_total=156, next_offset=25, doc_id=doc_c45cd26d8d5e9b58` with 95
+  returned scalars. The 25-scalar slice occupies 95 scalars on the wire because the 70-scalar trust
+  envelope is wrapped around it: framing is an output transform, exactly as the offsets invariant
+  requires.
+- The same URL without `offset`/`limit` returns none of the addressing keys.
+- `limit: 0` returns `isError` with `code=invalid_semantic_value` and `repair.field="limit"`;
+  `extract_mode: "metadata_only"` with `offset` returns `code=document_unavailable`.
+
 ## Gate results
 
 - `cargo fmt --all -- --check`: clean.
