@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -66,6 +66,12 @@ M005 deterministic intent derivation ──> M006
 M008 tool advertisement presets (interface ADR-0001)
 M009 long-running progress and pagination (interface MCP 2026-07-28 Tasks)
 M010 challenge-solving framework + ALTCHA ──> M011 Anubis solver + difficulty ceiling ──> M012 Startpage payload extraction
+ADR-0010 solver coverage and cost policy ──> M016 Anubis metarefresh
+M013 challenge solver conformance corrections  (ADR-0010 coverage; independent)
+M014 pass-cookie lifetime and egress binding    (independent)
+M015 challenge solvability observability        (independent)
+M017 routing shipped-set evidence               (discharges M006's named condition)
+M018 pagination consistency across pages        (corrective to M009)
 ```
 
 ## 6. Milestones and exit boundaries
@@ -84,6 +90,12 @@ M010 challenge-solving framework + ALTCHA ──> M011 Anubis solver + difficult
 | M010 — bounded challenge-solving framework and ALTCHA | capability | `plans/implementation/agentic-retrieval-integrity/010-challenge-solving-framework-and-altcha.md` | none (ADR-0009 accepted) | With `[search.challenge]` enabled, Mojeek returns rows inside configured ceilings; disabled, it stays `blocked` |
 | M011 — Anubis solver and operator difficulty ceiling | capability | `plans/implementation/agentic-retrieval-integrity/011-anubis-solver-and-difficulty-ceiling.md` | hard M010 | Raising `max_difficulty` is the supported way to pay for a harder challenge; the default ceiling leaves Startpage `blocked` with a named reason |
 | M012 — Startpage payload extraction | capability | `plans/implementation/agentic-retrieval-integrity/012-startpage-payload-extraction.md` | hard M011 (capture and live proof) | A solved Startpage SERP yields parsed rows; unsolved stays `blocked`, drift stays `parse_error` |
+| M013 — challenge solver conformance corrections | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/013-challenge-solver-conformance-corrections.md` | none (ADR-0010 accepted) | A prefixed deployment and a `slow` deployment both solve; a spent, over-budget, or unprojectable challenge fails closed with a named reason before any hashing |
+| M014 — pass-cookie lifetime and egress binding | capability | `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md` | none | A cookie is reused for the lifetime the upstream actually published, clamped by configuration, so repeat searches re-solve far less often |
+| M015 — challenge solvability observability | capability | `plans/implementation/agentic-retrieval-integrity/015-challenge-solvability-observability.md` | none | An operator can see solve attempts, outcomes by bound, and cookie cache hits without reading logs, and no secret material appears |
+| M016 — Anubis `metarefresh` solver | capability | `plans/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md` | ADR-0010 | A deployment offering only the no-JavaScript method is reachable with zero hashing, and the echoed payload contains only published values |
+| M017 — routing shipped-set evidence and keyword predicate | invariant (corrective to M006) | `plans/implementation/agentic-retrieval-integrity/017-routing-shipped-set-evidence-and-keyword-predicate.md` | hard M004, M005, M006 | The shipped default provider set is measured, so `intent_mode` is decided by evidence; and no routing entry can be one that rejects a keyword query |
+| M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009 | Pages carry comparable content, `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -123,6 +135,10 @@ exposed M011's mandatory-`redir` defect.
   The condition is a shipped-set measurement, not an implementation gap.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
+- M013–M018 are registered corrective and extension work from the 2026-11-12 live review. ADR-0010
+  is accepted and authorizes no behaviour change by itself: it widens method coverage to the
+  published Anubis registry and records that the nonce search stays single-threaded, but every
+  method still lands through its own plan with fixtures and budget tests.
 - Two plan targets were found unreachable during implementation and are recorded rather than
   restated: M008's compact `minimal` preset is 66% of compact `full` rather than under half (the
   remainder is mandatory schema envelope), and M011's difficulty-6 opt-in requires raising
@@ -138,4 +154,12 @@ These shapes are decided for this workstream. Changing one requires a new milest
 3. **Defaults follow the happy path.** Markdown negotiation is default-on with a bounded single fallback, not an opt-in flag. Intent derivation runs without a new required argument and becomes behaviour-affecting only after snapshot non-regression.
 4. **Tools may be hidden, never removed.** Advertisement presets are a server configuration knob that filters `tools/list`; hidden tools still execute, `next_actions` are filtered to the active preset, and the ten-tool contract is unchanged.
 5. **No objective argument.** Retrieval goal is derived deterministically from the query with fixed precedence and reported reasons; callers are never required to state it.
-6. **Challenges are solved under bounds, not delegated.** ADR-0009 governs. Only published computational proof-of-work (Anubis, ALTCHA) is solvable, only when the operator enables it, and only inside the difficulty, attempt, wall-clock, and solve-rate ceilings. The difficulty ceiling is operator configuration, not a hardcoded engine constant, so the cost/availability trade is explicit. Unsolved, unsupported, and budget-exhausted challenges stay `blocked`; interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing, and retry widening stay prohibited.
+6. **Challenges are solved under bounds, not delegated.** ADR-0009 governs, with method coverage and the cost policy extended by ADR-0010 (see decision 7). Only published, evaluated challenge methods are solvable, only when the operator enables it, and only inside the difficulty, attempt, wall-clock, and solve-rate ceilings. The difficulty ceiling is operator configuration, not a hardcoded engine constant, so the cost/availability trade is explicit. Unsolved, unsupported, and budget-exhausted challenges stay `blocked`; interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing, and retry widening stay prohibited.
+
+7. **Solver coverage follows the published registry; cost is the control.** ADR-0010 governs.
+   Every challenge method a supported deployment publishes is in scope once it has been evaluated
+   against the prohibition list — `fast`, `slow` as an alias of `fast`, `preact`, and
+   `metarefresh` — because refusing a method by name produces a false `unsupported scheme`. The
+   nonce search stays single-threaded deliberately: a Rust solver already pays roughly 1/300th of
+   the browser cost Anubis budgeted for, so the operator ceiling must remain the binding control on
+   solve rate. Changing either half of that requires a superseding ADR, not a milestone.

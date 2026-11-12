@@ -108,6 +108,24 @@ request remains behind `read_bounded_body`/`read_bounded_response`. Cookie value
 and must never be logged, serialized into diagnostics, or written to fixtures. A challenge is
 answered at most once per provider per TTL, so solving cannot amplify request volume.
 
+## Superseding record
+
+ADR-0010 supersedes two clauses of this record only. First, the decision bullet that names the
+permitted methods — "The permitted class is a published proof-of-work: Anubis (`fast` and `preact`
+methods) and ALTCHA PBKDF2 challenges" — is widened to the published Anubis registry the scheme
+actually exposes (`fast`, `slow` as a deprecated alias of `fast`, `preact`, and `metarefresh`) plus
+ALTCHA KDF challenges, because naming a subset produced a false `unsupported scheme` refusal for a
+method this code already solves. Second, this record is silent on search parallelism; ADR-0010 adds
+an explicit policy that the nonce search stays single-threaded so the operator ceiling, not the
+solver's throughput, remains the binding control on solve rate.
+
+Every prohibition in this record stands unchanged and is not reopened: interactive CAPTCHA or
+visual puzzle answering, OCR of challenge images, third-party or human solving services, credential
+or login bypass, session or cookie theft, proxy rotation, user-agent spoofing, and retry widening
+to conceal an outage. Opt-in default-off behaviour, the four ceilings, deterministic solver output
+for fields the upstream verifies, per-provider pass-cookie caching, and `blocked`-never-empty
+classification also stand.
+
 ## Verification and status
 
 Adoption authorizes the capability; it does not by itself change production behaviour. Enabling it
