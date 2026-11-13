@@ -205,6 +205,18 @@ fn annotations_match_contract_hints() {
             "tool '{}' open_world_hint must match contract",
             tool.name
         );
+        assert_eq!(
+            annotations.destructive_hint,
+            Some(false),
+            "tool '{}' destructive_hint must be explicit and false",
+            tool.name
+        );
+        assert_eq!(
+            annotations.idempotent_hint,
+            Some(true),
+            "tool '{}' idempotent_hint must be explicit and true",
+            tool.name
+        );
         assert!(
             contract.read_only,
             "all stable tools are currently read-only: {}",
@@ -696,25 +708,25 @@ fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
     );
     assert_eq!(
         server.tool_fingerprint(),
-        "b83b05e08d72e072",
+        "9dda33adb68596a9",
         "the full+full advertisement fingerprint is pinned"
     );
     let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
     assert_eq!(
         bytes.len(),
-        74_459,
+        75_119,
         "the full+full advertised tools/list bytes are pinned"
     );
     let compact = preset_server(
         eggsearch::core::config::McpToolPreset::Full,
         eggsearch::core::config::McpSchemaProfile::Compact,
     );
-    assert_eq!(compact.tool_fingerprint(), "32f58c1c4cc33de3");
+    assert_eq!(compact.tool_fingerprint(), "c8890791e48b6607");
     assert_eq!(
         serde_json::to_string(&compact.tool_definitions())
             .unwrap()
             .len(),
-        20_196
+        20_656
     );
 }
 

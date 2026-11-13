@@ -1332,13 +1332,17 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 | Tool | Field | Default | Cap |
 |------|-------|---------|-----|
 | `web_search` | `max_results` | 10 | 50 (`max_results_cap`) |
-| `web_fetch` | `max_chars` (returned-text window) | 12,000 | 50,000 (`max_chars_cap` document/extraction budget and cost knob) |
+| `web_fetch` | `max_chars` (returned-text window; also accepted as `max_length`) | 12,000 | 50,000 (`max_chars_cap` document/extraction budget and cost knob) |
 | `batch_fetch` | `max_chars` (per item) | 12,000 | — |
 | `batch_fetch` | `max_total_chars` | 50,000 | 120,000 |
 | `batch_fetch` | items count | 8 | 20 |
 | `repo_fetch` | `max_chars` | 12,000 | 50,000 |
 | `repo_search` | `max_results` | 10 | 50 |
 | `repo_search` | `max_per_group` | 4 | 10 |
+
+`web_fetch` also accepts `start_index` for `offset` and `question` or `prompt`
+for `focus` as wire compatibility aliases; the canonical field names remain the
+documented ones.
 
 ### Concurrency Controls
 

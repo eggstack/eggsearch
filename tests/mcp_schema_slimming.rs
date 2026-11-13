@@ -118,8 +118,8 @@ fn search_four_schema_bytes_stay_slim() {
         search_total += serialized_bytes(name);
     }
     assert!(
-        search_total <= 12_850,
-        "four search schemas total {search_total} bytes exceeds 12850 budget (pre-slim baseline 17723; 30% reduction target 12406; +318 for M020 offset addressing on research_search)"
+        search_total <= 13_100,
+        "four search schemas total {search_total} bytes exceeds 13100 budget (pre-slim baseline 17723; 30% reduction target 12406; +318 for M020 offset addressing on research_search; +184 for explicit destructive/idempotent hints on the four search tools)"
     );
     let total: usize = tool_definitions()
         .iter()
@@ -130,8 +130,8 @@ fn search_four_schema_bytes_stay_slim() {
         })
         .sum();
     assert!(
-        total <= 74_487,
-        "all tool definitions total {total} bytes exceeds 74487 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver)"
+        total <= 75_200,
+        "all tool definitions total {total} bytes exceeds 75200 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver; +632 for explicit behavior hints on all ten tools and the web_search evidence-only sentence)"
     );
 }
 

@@ -79,6 +79,11 @@ pub struct ToolContract {
     pub read_only: bool,
     /// Whether the tool interacts with the open world.
     pub open_world: bool,
+    /// Whether the tool may make destructive changes. Only meaningful when
+    /// `read_only` is false.
+    pub destructive: bool,
+    /// Whether repeating an identical call has no additional effect.
+    pub idempotent: bool,
     /// Semantically neighboring tools.
     pub related_tools: &'static [&'static str],
     /// Likely follow-up tools after a successful call.
@@ -95,8 +100,8 @@ impl ToolContract {
         ToolAnnotations::from_raw(
             None,
             Some(self.read_only),
-            None,
-            None,
+            Some(self.destructive),
+            Some(self.idempotent),
             Some(self.open_world),
         )
     }
@@ -143,6 +148,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Deferred,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["repo_fetch", "repo_search", "web_fetch", "web_search"],
         next_tools: &["build_evidence_bundle"],
         keywords: &[
@@ -167,6 +174,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Deferred,
         read_only: true,
         open_world: false,
+        destructive: false,
+        idempotent: true,
         related_tools: &[
             "batch_fetch",
             "repo_fetch",
@@ -190,6 +199,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Diagnostic,
         read_only: true,
         open_world: false,
+        destructive: false,
+        idempotent: true,
         related_tools: &[],
         next_tools: &[],
         keywords: &["providers", "capabilities", "diagnostic", "health", "recipes"],
@@ -205,6 +216,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Deferred,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["batch_fetch", "repo_map", "repo_search", "web_fetch"],
         next_tools: &["build_evidence_bundle"],
         keywords: &[
@@ -223,6 +236,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Deferred,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["repo_fetch", "repo_search"],
         next_tools: &["repo_search"],
         keywords: &[
@@ -246,6 +261,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Core,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["repo_fetch", "repo_map", "web_search"],
         next_tools: &["batch_fetch", "repo_fetch", "repo_map"],
         keywords: &[
@@ -270,6 +287,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Deferred,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["batch_fetch", "repo_search", "web_fetch", "web_search"],
         next_tools: &["batch_fetch", "build_evidence_bundle", "repo_fetch", "web_fetch"],
         keywords: &[
@@ -293,6 +312,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Deferred,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["batch_fetch", "web_fetch", "web_search"],
         next_tools: &["batch_fetch", "build_evidence_bundle", "web_fetch"],
         keywords: &[
@@ -318,6 +339,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Core,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &["batch_fetch", "web_search"],
         next_tools: &["build_evidence_bundle"],
         keywords: &[
@@ -328,7 +351,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "web_search",
-        description: "Find candidate public web sources as source cards. Use for general research with `query`; inspect content with `web_fetch`. Returns cards only, never page text.",
+        description: "Find candidate public web sources as source cards. Use for general research with `query`; inspect content with `web_fetch`. Returns source cards only, never page text or a synthesized answer.",
         purpose: "general web source discovery",
         use_when: "candidate sources must be discovered before any fetch",
         not_for: "fetching page content or inspecting a known URL",
@@ -336,6 +359,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         disclosure: ToolDisclosureHint::Core,
         read_only: true,
         open_world: true,
+        destructive: false,
+        idempotent: true,
         related_tools: &[
             "batch_fetch",
             "repo_search",

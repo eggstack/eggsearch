@@ -720,6 +720,46 @@ mod pagination {
     }
 
     #[tokio::test]
+    async fn web_fetch_accepts_reference_compatibility_aliases() {
+        let server = small_page_server();
+        let state = state_with_localhost();
+        let args: WebFetchArgs = serde_json::from_value(serde_json::json!({
+            "url": server.url("/small"),
+            "start_index": 6,
+            "max_length": 8,
+            "question": "document",
+        }))
+        .expect("reference-style fetch aliases deserialize");
+        assert_eq!(args.offset, Some(6));
+        assert_eq!(args.max_chars, Some(8));
+        assert_eq!(args.focus.as_deref(), Some("document"));
+
+        let page = run_web_fetch(state, args)
+            .await
+            .expect("aliased fetch succeeds");
+        assert_eq!(page["text_from"], 6);
+        assert_eq!(page["text_to"], 14);
+        assert!(
+            page["focus"]["chunks"].is_array(),
+            "the question alias reaches focus selection: {page}"
+        );
+    }
+
+    #[test]
+    fn web_fetch_rejects_a_canonical_field_and_its_alias_together() {
+        let error = serde_json::from_value::<WebFetchArgs>(serde_json::json!({
+            "url": "https://example.com",
+            "offset": 1,
+            "start_index": 2,
+        }))
+        .expect_err("sending both spellings is ambiguous");
+        assert!(
+            error.to_string().contains("duplicate field"),
+            "got: {error}"
+        );
+    }
+
+    #[tokio::test]
     async fn windows_are_scalar_safe_on_multibyte_text() {
         let server = multibyte_page_server(20_000);
         let mut cfg = AppConfig::default();

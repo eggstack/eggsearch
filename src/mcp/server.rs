@@ -501,8 +501,13 @@ fn compact_schema_value(value: &mut serde_json::Value, allowed: &[&str]) {
 impl EggsearchServer {
     #[tool(
         name = "web_search",
-        description = "Find candidate public web sources as source cards. Use for general research with `query`; inspect content with `web_fetch`. Returns cards only, never page text.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        description = "Find candidate public web sources as source cards. Use for general research with `query`; inspect content with `web_fetch`. Returns source cards only, never page text or a synthesized answer.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn web_search(
         &self,
@@ -515,7 +520,12 @@ impl EggsearchServer {
     #[tool(
         name = "provider_status",
         description = "Report configured providers, capabilities, and recipes for diagnostics. Use only when availability is in question; not a normal first research step.",
-        annotations(read_only_hint = true, open_world_hint = false)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn provider_status(
         &self,
@@ -528,7 +538,12 @@ impl EggsearchServer {
     #[tool(
         name = "repo_search",
         description = "Discover evidence for a repository across source, docs, issues, releases, and package metadata. Use for codebase investigation; use `repo_fetch` only after a concrete file/span is known.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn repo_search(
         &self,
@@ -543,7 +558,12 @@ impl EggsearchServer {
     #[tool(
         name = "web_fetch",
         description = "Fetch one known HTTP(S) URL with bounded extracted text. Use after search with `url`; for several targets use `batch_fetch`. Do not use for search or crawling.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn web_fetch(
         &self,
@@ -558,7 +578,12 @@ impl EggsearchServer {
     #[tool(
         name = "repo_fetch",
         description = "Fetch a known repository file or span by structured locator. Use after `repo_search` with `owner`, `repo`, `path`; for arbitrary URLs use `web_fetch`.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn repo_fetch(
         &self,
@@ -573,7 +598,12 @@ impl EggsearchServer {
     #[tool(
         name = "security_search",
         description = "Find vulnerability and advisory evidence with applicability context. Use for CVE/GHSA/advisory questions with `query`; for general background use `web_search`.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn security_search(
         &self,
@@ -586,7 +616,12 @@ impl EggsearchServer {
     #[tool(
         name = "research_search",
         description = "Gather multi-source evidence for complex architectural questions. Use when flat search is insufficient with `query`; does not synthesize answers or fetch pages.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn research_search(
         &self,
@@ -611,7 +646,12 @@ impl EggsearchServer {
     #[tool(
         name = "batch_fetch",
         description = "Fetch several known URLs or repo locators in one bounded call. Use for fan-out over selected `items`; not a crawler. Each item reports its own result.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn batch_fetch(
         &self,
@@ -637,7 +677,12 @@ impl EggsearchServer {
     #[tool(
         name = "repo_map",
         description = "Describe a repository layout without file contents. Use to orient before `repo_search` with `owner`, `repo`; not a substitute for search or fetch.",
-        annotations(read_only_hint = true, open_world_hint = true)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
     )]
     async fn repo_map(
         &self,
@@ -652,7 +697,12 @@ impl EggsearchServer {
     #[tool(
         name = "build_evidence_bundle",
         description = "Package already-selected search and fetch evidence for handoff. Use with gathered `sources` and `fetches`; does not search, fetch, or summarize.",
-        annotations(read_only_hint = true, open_world_hint = false)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     fn build_evidence_bundle(
         &self,

@@ -128,8 +128,11 @@ Start with the tool that matches the task: `web_search` for research, `repo_sear
 for codebases, `security_search` for advisories, `research_search` for comparisons.
 `provider_status` is for hosts and troubleshooting, not a first research step.
 Responses carry machine-readable `next_actions` — keep the working set small and
-hydrate specialists on demand. See [Tool matrix](docs/tool-matrix.md) and
-[Agent workflows](docs/agent-workflows.md).
+hydrate specialists on demand. `web_search` returns source cards, not a
+synthesized answer; read the sources you keep with `web_fetch`. `web_fetch`
+also accepts the reference fetch server's `max_length`/`start_index` and the
+common `question`/`prompt` spelling for `max_chars`/`offset`/`focus`. See
+[Tool matrix](docs/tool-matrix.md) and [Agent workflows](docs/agent-workflows.md).
 
 ## Safety
 

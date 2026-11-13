@@ -4,8 +4,8 @@ Compact reference for the ten stable MCP tools.
 
 | Tool | Purpose | Key Inputs | Output | Trust | When to Use |
 |------|---------|------------|--------|-------|-------------|
-| `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `date_range` (`YYYY-MM-DD` start/end, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (lowercase hostnames, max 32; natively enforced by `exa`/`tavily`, otherwise local enforcement), `language`/`region` (best-effort unless enforced; native on Brave API and Tavily when representable), `excerpt_count` (0-3, default 0), `max_results`. Advanced `providers`/`timeout_ms` remain accepted but are hidden from the ordinary schema | `Vec<SourceCard>` plus `next_actions` and `capability_enforcement` telemetry (`requested`/`enforced`/`approximated`/`not_enforced`). When `intent` is omitted the response also carries `derived_intent` and `derived_intent_reasons` (deterministic lexical derivation; an explicit `intent` is authoritative and suppresses both; compact detail keeps the intent string only). Cards carry `excerpts` (bounded source passages, only when requested) and `metadata.published_at` (RFC 3339, when a provider returned parseable timestamp evidence) | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
-| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars`, `offset`/`limit` (half-open character window over the document text), `include_links`, `pdf` (page selection, OCR policy), `focus` (query-focused chunk selection, max 512 chars), `focus_max_chunks` (1-5), `focus_max_chars`, `cache_policy` (`default`/`bypass`/`refresh`), `max_cache_age_seconds` (0-2592000, tightens only) | `WebFetchResponse` with optional `FetchDocument` and additive `focus` selection (`chunks`, `truncated`, `total_chars`) | `external_untrusted` | Inspect a selected page or document |
+| `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `date_range` (`YYYY-MM-DD` start/end, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (lowercase hostnames, max 32; natively enforced by `exa`/`tavily`, otherwise local enforcement), `language`/`region` (best-effort unless enforced; native on Brave API and Tavily when representable), `excerpt_count` (0-3, default 0), `max_results`. Advanced `providers`/`timeout_ms` remain accepted but are hidden from the ordinary schema | `Vec<SourceCard>` plus `next_actions` and `capability_enforcement` telemetry (`requested`/`enforced`/`approximated`/`not_enforced`). When `intent` is omitted the response also carries `derived_intent` and `derived_intent_reasons` (deterministic lexical derivation; an explicit `intent` is authoritative and suppresses both; compact detail keeps the intent string only). Cards carry `excerpts` (bounded source passages, only when requested) and `metadata.published_at` (RFC 3339, when a provider returned parseable timestamp evidence). Source cards only; the tool never returns a synthesized answer | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
+| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars` (also accepted as `max_length`), `offset`/`limit` (half-open character window over the document text; `offset` also accepted as `start_index`), `include_links`, `pdf` (page selection, OCR policy), `focus` (query-focused chunk selection, max 512 chars; also accepted as `question` or `prompt`), `focus_max_chunks` (1-5), `focus_max_chars`, `cache_policy` (`default`/`bypass`/`refresh`), `max_cache_age_seconds` (0-2592000, tightens only) | `WebFetchResponse` with optional `FetchDocument` and additive `focus` selection (`chunks`, `truncated`, `total_chars`) | `external_untrusted` | Inspect a selected page or document |
 | `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators | `items`, optional `max_items`, `offset`/`limit` (half-open item-index window), `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error`. Web and repo items accept per-item `focus`/`focus_max_chunks` (1-5)/`focus_max_chars` (same validation as `web_fetch`; rejected with `metadata_only`); web items accept per-item `cache_policy`/`max_cache_age_seconds` | `BatchFetchResponse` with per-item results, aggregate `max_total_chars` budget (request-order/fair-share, explicit truncation), and `telemetry` (items, focused chunks/chars, budget exhausted, cache hit/revalidated/miss/bypassed/not_cacheable) | `external_untrusted` or `local_trusted` | Fetch several known targets in one call with per-item focus |
 | `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), `probe` (bool, bounded live liveness check) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health, including `parse_shape` = `ok`/`empty`/`shifted` for observed providers), `code_hosts`, `health` (snapshots), `probe` (`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes`, and a diagnostic-only `search_cache { entries, hits, misses, coalesced, bypassed, evictions }` block when the process-local search cache is enabled | `local_trusted` | Diagnostics and troubleshooting only; not a normal research step. Hosts may inspect during bootstrap; agents call only when provider availability itself is relevant |
 | `repo_search` | Structured repository evidence discovery with grouped bundles | `query`, `goal` (understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change), `sources` (code, docs, registry, issues, pull_requests, releases, examples, changelog, migration_guides, security; omit for goal defaults), optional repo locator fields, package fields, `include_local`. Legacy `profile`/`mode`/`workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but are hidden from the ordinary schema | `RepoSearchResponse` with grouped `SourceCard` bundles and `next_actions` | `external_untrusted` or `local_trusted` | Find code, issues, releases, docs, and repo metadata. With search mode off, an enabled local workspace is searched under explicit no-remote-dispatch policy; absent or disabled local search is rejected. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. Local matches carry `symbol_provenance` (`structured`/`regex_fallback`), `enclosing_symbol`, and `is_exact_definition`; structured definitions score above lexical matches with `Exact` confidence. |
@@ -32,6 +32,32 @@ The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
 - Diagnostic, host/operator use: `provider_status`
 
 Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
+
+## Annotations
+
+Every tool advertises all four static behavior hints: `readOnlyHint: true`,
+`destructiveHint: false`, `idempotentHint: true`, plus an accurate
+`openWorldHint` (`false` only for `provider_status` and
+`build_evidence_bundle`). The hints never vary by arguments.
+
+## Compatibility aliases
+
+`web_fetch` accepts the field names used by the reference MCP fetch server and
+common search/fetch servers, so an agent trained on those shapes can call it
+unchanged:
+
+| Accepted alias | Canonical field |
+|---|---|
+| `max_length` | `max_chars` |
+| `start_index` | `offset` |
+| `question`, `prompt` | `focus` |
+
+Aliases are accepted on the wire, not advertised as separate schema
+properties; each canonical field's description names its alias. Send one
+spelling per field: a canonical field together with its alias is a
+duplicate-field invalid-arguments error rather than a silent precedence rule.
+Validation, budgeting, and response shape are identical to the canonical
+field.
 
 ## Advertisement presets
 

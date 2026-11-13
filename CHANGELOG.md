@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `web_fetch` accepts the field names used by the reference MCP fetch server and common
+  search/fetch servers as compatibility aliases: `max_length` for `max_chars`, `start_index` for
+  `offset`, and `question` or `prompt` for `focus`. Aliases are wire-level spellings, not separate
+  schema properties; each canonical field's description names its alias, and sending both spellings
+  is a duplicate-field invalid-arguments error rather than a silent precedence rule. Validation,
+  budgets, and response shape are unchanged.
 - Pass-cookie reuse now follows the lifetime each upstream publishes. `Max-Age` (which wins over
   `Expires`) and `Expires` are parsed once by `src/meta/challenge/cookie.rs` and clamped by
   `cookie_ttl_seconds`, so a short-lived cookie is no longer replayed after it died and a
@@ -116,6 +122,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Every tool now advertises all four static MCP behavior hints: `readOnlyHint: true`,
+  `destructiveHint: false`, `idempotentHint: true`, and an accurate `openWorldHint` (`false` only
+  for `provider_status` and `build_evidence_bundle`). The hints are explicit rather than relying on
+  spec defaults and never vary by arguments.
+- `web_search`'s description states that it returns source cards, never a synthesized answer, so an
+  agent does not probe it for one.
 - The post-dispatch selection sequence (RRF, conversion, domain filter,
   reranking, truncation) has one implementation in
   `src/meta/adapter/selection.rs`, shared by production and the offline

@@ -273,6 +273,11 @@ re-specified with the window; nothing is stored server-side.
 | `batch_fetch` | items | zero-based item index | `max_items` | `[fetch].batch_max_items_cap` |
 | `research_search` | non-empty result groups | zero-based group index | the `max_groups`-derived page size | 14 (`RESEARCH_PAGE_GROUPS`) |
 
+`web_fetch` also accepts `start_index` for `offset`, `max_length` for
+`max_chars`, and `question` or `prompt` for `focus` as wire compatibility
+aliases; see the [tool matrix](tool-matrix.md#compatibility-aliases). Aliases
+do not change the window rules below.
+
 Ranges are half-open `[from, to)` in Unicode scalar values and clamp rather
 than error: an offset at or past the end returns an empty window with
 `from == to == total` (and `text == ""` for `web_fetch`). A response is

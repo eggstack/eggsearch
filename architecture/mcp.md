@@ -122,7 +122,7 @@ Registration lives in `server.rs`; behavior lives in `tools/`; semantics live in
 
 | Tool | Purpose | Key Parameters | Backend Path |
 |------|---------|---------------|--------------|
-| `web_search` | Live metasearch returning source cards, never page text | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `safe_search`, `excerpt_count` | `MetadataSearchAdapter::web_search` (+ `resolve_provider_routing` selection) |
+| `web_search` | Live metasearch returning source cards, never page text or a synthesized answer | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `safe_search`, `excerpt_count` | `MetadataSearchAdapter::web_search` (+ `resolve_provider_routing` selection) |
 | `web_fetch` | Bounded extraction of one explicit HTTP(S) URL | `url`, `max_chars`, `timeout_ms`, `extract_mode`, `include_links`, `pdf`, `cache_policy`, `focus`/`focus_max_chunks`/`focus_max_chars`, `render`, `browser_profile` | `FetchClient` (+ cache tiers, `OriginController`, optional browser transport) |
 | `batch_fetch` | Bounded fan-out over explicit URLs or repo locators, per-item results | `items` (web + repo, each with `focus` projection), `max_items`, `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error` | `FetchClient` per web item + repo-fetch handler per repo item; deterministic `project_*` per payload |
 | `provider_status` | Diagnostic provider/capability report with optional bounded live probe | `probe`, `recipe_detail` (`none`/`summary`/`full`) | `adapter.provider_status()` + health registry; probe path uses the shared probe service |
@@ -206,6 +206,15 @@ Ordinary agent schemas stay slim. The canonical vocabulary is:
 
 Advanced fields (`providers`, `timeout_ms`, `profile`, `mode`, `workflow`, legacy `include_*`) remain accepted at runtime but are hidden from `tools/list` input schemas (`#[schemars(skip)]`). When both forms are present they must agree; disagreement is a repairable `ConflictingArguments`/`InvalidSemanticValue` error with a bounded repair hint, never a silent override. Unknown tokens are `InvalidSemanticValue` with the accepted list echoed.
 
+Wire compatibility aliases are serde-only spellings for agents trained on other
+search/fetch servers. `web_fetch` accepts `max_length` for `max_chars`,
+`start_index` for `offset`, and `question` or `prompt` for `focus`. An alias is
+not a second schema property: the canonical field's description names the
+accepted spelling, and sending a canonical field together with its alias is a
+duplicate-field deserialization error (a repairable invalid-arguments result),
+not a silent precedence rule. Aliases never change validation, budgeting, or
+response shape.
+
 ---
 
 ## Semantic Contract (`tool_contract.rs`)
@@ -217,7 +226,7 @@ One `ToolContract` per stable tool is the authoritative source for selection sem
 - `purpose` / `use_when` / `not_for` — one-phrase capability, selection trigger, explicit non-goal.
 - `domain` — `web`, `fetch`, `repository`, `security`, `research`, `evidence`, `diagnostic`.
 - `disclosure` — advisory host hint only, never policy-enforcing: `core` (`web_search`, `web_fetch`, `repo_search`), `deferred` (specialists), `diagnostic` (`provider_status`).
-- `read_only` / `open_world` — static MCP annotation hints. All 10 tools are read-only; all except `provider_status` and `build_evidence_bundle` are open-world. `provider_status` reports `open_world_hint=false` even though `probe=true` performs bounded live checks, because annotations never vary by arguments.
+- `read_only` / `destructive` / `idempotent` / `open_world` — static MCP annotation hints, always emitted explicitly. All 10 tools report `readOnlyHint=true`, `destructiveHint=false`, and `idempotentHint=true`; all except `provider_status` and `build_evidence_bundle` report `openWorldHint=true`. `provider_status` uses `openWorldHint=false` even though `probe=true` performs bounded live checks, because annotations never vary by arguments.
 - `keywords` — discovery terms (e.g. `cve`, `ghsa`, `kev` for `security_search`; `batch`, `fan-out` for `batch_fetch`).
 - `aliases` — discovery-only index names (e.g. `websearch`, code-search alias, `deep_research`). Never wire names; never valid in `next_actions`.
 - `related_tools` / `next_tools` — semantic neighborhood and likely follow-ups (e.g. `web_search` → `web_fetch`, `batch_fetch`; `repo_search` → `repo_fetch`, `repo_map`).

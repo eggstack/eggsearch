@@ -9,8 +9,9 @@ use std::sync::Arc;
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
     pub url: String,
-    /// Maximum characters to extract. Defaults to server config.
-    #[serde(default)]
+    /// Maximum characters to extract. `max_length` is accepted as a
+    /// compatibility alias. Defaults to server config.
+    #[serde(default, alias = "max_length")]
     pub max_chars: Option<usize>,
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default)]
@@ -36,7 +37,8 @@ pub struct WebFetchArgs {
     pub max_cache_age_seconds: Option<u64>,
     /// Optional focus query for deterministic query-focused chunk
     /// selection over the extracted document. No extra URL traversal.
-    #[serde(default)]
+    /// `question` and `prompt` are accepted as compatibility aliases.
+    #[serde(default, alias = "question", alias = "prompt")]
     pub focus: Option<String>,
     /// Maximum focused chunks to return (1-5, default 5).
     #[serde(default)]
@@ -59,7 +61,8 @@ pub struct WebFetchArgs {
     #[serde(default)]
     pub browser_profile: Option<String>,
     /// Zero-based character offset into the addressable document text.
-    #[serde(default)]
+    /// `start_index` is accepted as a compatibility alias.
+    #[serde(default, alias = "start_index")]
     pub offset: Option<usize>,
     /// Max characters from `offset`; clamped to the server maximum.
     #[serde(default)]
