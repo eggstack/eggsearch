@@ -85,6 +85,9 @@ which the detector deliberately does not treat as a challenge.
 - Detection is heuristic. A page that obfuscates its challenge ids or uses a new family is not
   marked; a legitimate page that quotes `anubis_challenge` or `captcha-wrap` would be marked.
   Neither was observed, but the second is a false-positive channel.
+- Detection reads the bounded body (`max_chars_cap`), not the whole response, so a marker past the
+  cap is missed. Anubis and ALTCHA place their markers in the document head, which the cap covers
+  in every observed page.
 - The flag and warning are produced on the live fetch path. Cache-hit paths in
   `batch_fetch_item.rs` still hardcode `manual_interaction_required: false` because the cached
   derived entry carries no warning set; a cached challenge page can therefore lose the signal on a
