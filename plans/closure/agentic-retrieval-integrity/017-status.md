@@ -113,6 +113,10 @@ the attempt ledger, and the cache key.
 - The security specialist distractor is a mirror host to keep both the routing and derived-intent
   lanes host-neutral.
 
+
+Hosted CI: run `43472592990` on `0019f48` passed all three jobs — Ubuntu `ci` (12m11s),
+Windows all-features check, and macOS canonical verification plus filesystem portability.
+
 ## Residual risk
 
 - A future engine that rejects keyword queries could be added to the allowlist without evidence;

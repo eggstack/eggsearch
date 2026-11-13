@@ -52,3 +52,6 @@ passed.
   recorded.
 - No separate implementation exists to regress; the surface is covered by M020's offset tests and
   the three tests above.
+
+Hosted CI: run `43472592990` on `0019f48` passed all three jobs — Ubuntu `ci` (12m11s),
+Windows all-features check, and macOS canonical verification plus filesystem portability.

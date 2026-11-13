@@ -89,6 +89,10 @@ engines.
 - Advertisement pins move only for the full profile (+37 bytes, +9 estimated tokens); the compact
   profile strips `output_schema`.
 
+
+Hosted CI: run `43472592990` on `0019f48` passed all three jobs — Ubuntu `ci` (12m11s),
+Windows all-features check, and macOS canonical verification plus filesystem portability.
+
 ## Residual risk
 
 - Counters are process-lifetime totals that reset on restart and are not rates; a long-running

@@ -120,6 +120,10 @@ a lifetime beyond the ceiling being clamped, zero TTL solving every time, and re
 - The egress decision is "keep using the cached cookie, evict on rejection, document and warn"; no
   address detection and no route-dependent TTL shortening.
 
+
+Hosted CI: run `43472592990` on `0019f48` passed all three jobs — Ubuntu `ci` (12m11s),
+Windows all-features check, and macOS canonical verification plus filesystem portability.
+
 ## Residual risk
 
 - A system-clock step can extend a stored `Expires`-derived window by at most `cookie_ttl_seconds`;

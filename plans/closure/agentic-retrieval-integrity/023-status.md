@@ -81,6 +81,10 @@ coverage: multi-`Set-Cookie` join and first-hop-only attachment.
 - The replay targets the caller's URL; a wall reached only after a redirect is not solved because
   the cookie is first-hop-only.
 
+
+Hosted CI: run `43472592990` on `0019f48` passed all three jobs — Ubuntu `ci` (12m11s),
+Windows all-features check, and macOS canonical verification plus filesystem portability.
+
 ## Residual risk
 
 - `batch_fetch` and `repo_fetch` do not solve; a wall fetched through them stays marked.
