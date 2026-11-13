@@ -88,6 +88,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Anubis solver now follows the published method registry (ADR-0010):
+  `slow` is solved as the `fast` alias, `metarefresh` echoes the published
+  token after the published wait, a non-empty `anubis_base_prefix` is honoured,
+  an already-spent challenge is refused as `already spent`, and the expected
+  `16^difficulty` cost is projected against `max_attempts` and the wall clock
+  before any hashing. A published `redir` is accepted only when it is
+  same-origin or a single-slash path, so the `preact` submission cannot send
+  challenge cookies to a foreign origin.
+- `web_fetch` recognises anti-bot challenge pages on the plain HTTP path
+  (`fetch_challenge_page` plus `manual_interaction_required: true`) instead of
+  returning an Anubis or ALTCHA wall as a short ordinary document, and
+  `render: "auto"` now escalates those pages to the browser when one is
+  available.
 - `duckduckgo` skips sponsored containers (`result--ad`) instead of returning
   paid placements as organic results, and `startpage` classifies the Anubis
   challenge page (`#anubis_challenge`) as `blocked` instead of `parse_error`.

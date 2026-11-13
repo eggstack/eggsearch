@@ -21,12 +21,17 @@ pub const BOUND_MALFORMED: &str = "malformed parameters";
 pub const BOUND_MISSING_COOKIE: &str = "pass cookie absent";
 /// Bound name reported when the upstream rejects a pass cookie.
 pub const BOUND_COOKIE_REJECTED: &str = "pass cookie rejected";
+/// Bound name reported when a published base prefix is unusable.
+pub const BOUND_BASE_PREFIX: &str = "unsafe base prefix";
+/// Bound name reported when a challenge was already spent.
+pub const BOUND_SPENT: &str = "already spent";
 
 /// Attempt, wall-clock, and difficulty ceilings for one solve.
 #[derive(Clone, Copy, Debug)]
 pub struct SolveBudget {
     max_attempts: u64,
     max_difficulty: u8,
+    timeout: Duration,
     deadline: Instant,
     attempts: u64,
 }
@@ -38,9 +43,22 @@ impl SolveBudget {
         Self {
             max_attempts,
             max_difficulty,
+            timeout,
             deadline: Instant::now() + timeout,
             attempts: 0,
         }
+    }
+
+    /// Configured wall-clock ceiling for this solve.
+    #[must_use]
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Wall clock still available before the ceiling.
+    #[must_use]
+    pub fn remaining_time(&self) -> Duration {
+        self.deadline.saturating_duration_since(Instant::now())
     }
 
     /// Attempts consumed so far. Never exceeds [`Self::max_attempts`].

@@ -213,10 +213,37 @@ Two upstreams in the engine set use this gate. Measured parameters on 2026-11-11
 | `startpage` | Anubis `fast` (`script#anubis_challenge`) | `rules.difficulty`, `challenge.id`, `challenge.randomData`, `redir` | expected `16^difficulty` SHA-256 candidates; measured difficulty 6 at 23.07M candidates / 3.05 s single-core in a release build (debug builds are ~100× slower) |
 | `mojeek` | ALTCHA (`GET /captcha/challenge`) | `algorithm` (`PBKDF2/SHA-256`), `cost`, `keyLength`, `keyPrefix`, `salt`, `nonce` | up to `maxCounter` PBKDF2 derivations; measured `cost = 8000` solved at counter 291 in 0.42 s, worst case 1000 counters ≈ 1.4 s on one core |
 
-Anubis also exposes a `preact` method (`script#preact_info`): the response is
-`sha256(challenge)` submitted as `GET {base}{redir}&result=<hex>`, after honouring the server's
-minimum elapsed time. Solve `fast` when `challenge.method == "fast"`, `preact` when it is
-`"preact"`, and fail closed on any other method rather than guessing.
+Anubis registers four challenge methods; ADR-0010 makes the published registry the permitted set
+rather than a hardcoded pair. Coverage is:
+
+| Method | Trigger | Answer |
+|---|---|---|
+| `fast` | `challenge.method == "fast"` | ascending nonce search over `randomData` until the digest carries `difficulty` leading hex zeros |
+| `slow` | `challenge.method == "slow"` | deprecated alias of `fast`; identical scheme, submission, and cost |
+| `preact` | `challenge.method == "preact"` (`script#preact_info`) | `sha256(challenge)` submitted as `GET {base}{redir}&result=<hex>` after the minimum elapsed time |
+| `metarefresh` | `challenge.method == "metarefresh"` | echo the published token at the published target after the `<meta http-equiv="refresh">` wait; no hashing and no attempt consumed |
+
+A method string outside that evaluated set still fails closed as `unsupported scheme`; it never
+inherits permission from the list. `metarefresh` is a time challenge, not a proof-of-work: it
+submits only values the challenge itself published, and the wait is read from the served document
+rather than derived from difficulty.
+
+Four parse-time rules apply to every Anubis method, all before any hashing or request:
+
+- `script#anubis_base_prefix` is honoured. The payload is a JSON string (Anubis publishes `""`),
+  validated as a bounded path prefix: at most 256 bytes, leading `/`, no `//`, no scheme, query,
+  fragment, backslash, control or whitespace character, and no `..` segment. An unusable value is
+  `unsafe base prefix`, never silently ignored.
+- `challenge.spent == true` is refused as `already spent`; an absent field means unspent, and a
+  present non-boolean is malformed.
+- The cost is projected before hashing. Expected candidates are `16^difficulty`; with the recorded
+  release cost of 130 ns per candidate, a challenge that exceeds `max_attempts` or the remaining
+  wall clock is refused with the projection and the operative ceiling in the sentence. The
+  projection is an admission check: an admitted challenge still stops on the per-attempt ceiling.
+- A published `redir` is accepted only as a same-origin absolute URL or a single-slash root-relative
+  path with no `..` segment and no control characters. Anything else falls back to the request URL,
+  so no non-`http(s)` scheme reaches the query string and a `preact` submission can never carry the
+  challenge cookies to a foreign origin.
 
 Implementation:
 
@@ -232,7 +259,9 @@ Implementation:
   ceiling fails; it never loops. The ceilings are configuration, not constants. The shipped
   `max_attempts` default of 2,000,000 matches the shipped difficulty ceiling of 5, so raising
   `max_difficulty` to 6 also requires raising `max_attempts`; otherwise the attempt ceiling binds
-  before the wall clock and the solve is refused for the wrong reason.
+  before the wall clock and the solve is refused for the wrong reason. The pre-flight projection
+  makes that relationship visible: it refuses a challenge whose expected candidates or projected
+  milliseconds cannot fit the configured ceilings, naming both numbers.
 - Configuration surface, consistent with existing `[search.*]` tables:
 
   ```toml

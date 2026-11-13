@@ -1169,6 +1169,7 @@ impl FetchClient {
         };
 
         let raw_text_chars_returned = raw_text.as_ref().map(|t| t.chars().count());
+        let challenge = super::challenge::detect_html(kind.is_html, raw_title.as_deref(), &body);
 
         Ok(WebFetchResponse {
             url: url_str.to_string(),
@@ -1205,7 +1206,7 @@ impl FetchClient {
             trust_markers,
             document,
             fetch_transform,
-            structured_warnings: Vec::new(),
+            structured_warnings: super::challenge::warnings(challenge),
             pdf_page_metadata: None,
             pdf_document_metadata: None,
             pdf_quality_score: None,
@@ -1222,7 +1223,7 @@ impl FetchClient {
             transport: Some("http".to_string()),
             browser_escalated: false,
             accept_policy: None,
-            manual_interaction_required: false,
+            manual_interaction_required: challenge.is_some(),
             focus: None,
             raw_body: Some(body),
         })

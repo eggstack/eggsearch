@@ -11,6 +11,8 @@ pub mod browser;
 pub mod budget;
 #[allow(missing_docs)]
 pub mod cache;
+/// Anti-bot challenge detection for plain HTTP responses.
+pub mod challenge;
 pub mod client;
 pub mod detect;
 pub mod egress;

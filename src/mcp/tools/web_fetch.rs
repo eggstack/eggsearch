@@ -687,11 +687,17 @@ pub async fn run_web_fetch_with_progress(
                             text_len,
                             body_bytes,
                         );
-                        let should_escalate = matches!(
-                            classification,
-                            crate::fetch::browser::FetchDisposition::JavascriptShell
-                                | crate::fetch::browser::FetchDisposition::NonInteractiveVerification
-                        );
+                        let challenge_detected = crate::fetch::challenge::detect(
+                            Some(title_str),
+                            &String::from_utf8_lossy(body_bytes),
+                        )
+                        .is_some();
+                        let should_escalate = challenge_detected
+                            || matches!(
+                                classification,
+                                crate::fetch::browser::FetchDisposition::JavascriptShell
+                                    | crate::fetch::browser::FetchDisposition::NonInteractiveVerification
+                            );
                         if should_escalate {
                             let remaining =
                                 deadline.saturating_duration_since(std::time::Instant::now());
@@ -983,6 +989,7 @@ pub async fn run_web_fetch_with_progress(
     }
 
     let mut structured = crate::core::warning::convert_fetch_warnings(&resp.warnings);
+    structured.extend(resp.structured_warnings.iter().cloned());
     if resp.links_truncated {
         structured.push(crate::core::warning::AgentWarning::new(
             crate::core::warning::WarningCode::FetchLinksTruncated,
@@ -1061,7 +1068,7 @@ pub async fn run_web_fetch_with_progress(
         "origin_backoff_ms": metadata.origin_backoff_ms,
         "browser_profile": used_profile_name,
         "browser_profile_scope": if used_profile_name.is_some() { "persistent" } else { "ephemeral" },
-        "manual_interaction_required": false,
+        "manual_interaction_required": resp.manual_interaction_required,
         "transport": resp.transport.as_deref().unwrap_or("http"),
         "browser_escalated": resp.browser_escalated,
     });

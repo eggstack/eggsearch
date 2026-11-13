@@ -5519,3 +5519,68 @@ async fn offset_windows_live() {
         "both windows must return text"
     );
 }
+
+#[tokio::test]
+async fn web_fetch_marks_anubis_and_altcha_challenge_pages() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/anubis");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<!DOCTYPE html><html><head><script id="anubis_version">"v1.26.4"</script><script id="anubis_challenge">{"rules":{"difficulty":6}}</script></head><body><div id="app"></div><p>Anubis could not load its JavaScript.</p></body></html>"#,
+            );
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/altcha");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<html><body><div class="captcha-wrap">JavaScript is required to complete this challenge</div></body></html>"#,
+            );
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/ordinary");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                "<html><head><title>Docs</title></head><body><h1>Hello</h1><p>World</p></body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    for (path, family) in [("/anubis", "anubis"), ("/altcha", "altcha")] {
+        let v = run_web_fetch(state.clone(), fetch_args_for(server.url(path)))
+            .await
+            .expect("challenge page fetch succeeds");
+        assert_eq!(v["fetched"], true, "{path}");
+        assert_eq!(v["status"], 200, "{path}");
+        assert_eq!(v["manual_interaction_required"], true, "{path}");
+        let warnings = v["structured_warnings"]
+            .as_array()
+            .expect("structured warnings");
+        let challenge = warnings
+            .iter()
+            .find(|warning| warning["code"] == "fetch_challenge_page")
+            .expect("challenge warning present");
+        let message = challenge["message"].as_str().unwrap_or_default();
+        assert!(message.contains(family), "{path}: got {message}");
+    }
+
+    let ordinary = run_web_fetch(state, fetch_args_for(server.url("/ordinary")))
+        .await
+        .expect("ordinary fetch succeeds");
+    assert_eq!(ordinary["manual_interaction_required"], false);
+    let warnings = ordinary["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(!warnings
+        .iter()
+        .any(|warning| warning["code"] == "fetch_challenge_page"));
+}

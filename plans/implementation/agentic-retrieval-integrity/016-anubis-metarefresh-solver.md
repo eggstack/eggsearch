@@ -1,6 +1,6 @@
 # M016 — Anubis `metarefresh` Solver
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M016
 Primary class: capability
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0` (the worktree also carries the uncommitted ADR-0010 file and its edits to ADR-0009 and the roadmap; re-read `git status` before starting)

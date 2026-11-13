@@ -326,7 +326,7 @@ cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
 
 Two upstreams use this gate. `mojeek` publishes an ALTCHA challenge
 (`PBKDF2/SHA-256`, cost 8000); a captured live challenge resolved at counter
-291 in roughly 0.4 s. `startpage` publishes an Anubis `fast` challenge whose
+291 in roughly 0.4 s. `startpage` publishes an Anubis challenge whose
 difficulty is risk-scored per client: the honest `eggsearch` user agent
 received difficulty 6 while a browser user agent received 4. Expected cost is
 `16^difficulty` SHA-256 candidates. A measured difficulty-6 solve took 23.07M
@@ -336,6 +336,22 @@ orders of magnitude slower and are not a valid baseline. Raising
 `max_difficulty` to 6 therefore also requires raising `max_attempts`, whose
 2,000,000 default matches the default ceiling of 5, plus `timeout_ms` and
 `[search].timeout_ms` of at least 8000.
+
+Anubis method coverage follows the published registry: `fast`, `slow` (the
+deprecated alias of `fast`), `preact`, and `metarefresh`, which echoes the
+published token after the published meta-refresh wait and performs no hashing.
+A `metarefresh` wait longer than `timeout_ms` is refused with
+`challenge not solved: wall clock exhausted` rather than sleeping past the
+budget.
+
+Before hashing, the solver projects `16^difficulty` candidates against the
+configured ceilings and refuses with the projection in the reason, for example
+`anubis difficulty 7 projects 268M candidates, beyond the configured attempt
+ceiling 2000000` or `anubis difficulty 5 projects 1M candidates (~136 ms),
+beyond the configured wall-clock budget 50 ms`. The projection admits a
+challenge; it never replaces the per-attempt or wall-clock ceiling. An already
+spent challenge reports `already spent`, and an unusable published base prefix
+reports `unsafe base prefix`, both before any request or hashing.
 
 The solve is probabilistic: the nonce is uniform, so an attempt can legitimately
 reach `max_attempts` without a hit and report `blocked` with

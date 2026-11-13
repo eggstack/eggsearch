@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6197 | 28 |
-| `--features mock` | 5841 | 4 |
+| `--all-features` | 6225 | 28 |
+| `--features mock` | 5869 | 4 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -18,7 +18,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
 | `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection, derived-intent reporting and applied reranking, search-result cache hit/miss/coalesce equivalence and partial-fan-out bypass, blocked-provider classification |
 | `engine_parse_conformance` | `mock` | Captured-fixture conformance for the five HTML scrapers: parsed rows, explicit empty state, block classification, and a seeded-drift negative control that requires `parse_error` |
-| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds |
+| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`) |
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
@@ -93,7 +93,7 @@ Every case is generated synthetically by this repository; no third-party documen
 | `adversarial_corpus` | None | 28 | Structural validation of adversarial corpus JSON files, plus (feature `pdf`) pre-parse decompression-bound bombs for content, object, xref and chained-filter streams, `/W` geometry and `LZWDecode` refusals, the `/FlateDecode`-then-unknown-filter chain, and the `/Encrypt` with/without-password matrix |
 | `provider_request_contract` | `mock` | 36 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, credentialed-provider wire contracts (SerpApi pinned engine/no extra verticals/query-parameter credential; Kagi v1 POST + bearer + search-only collection, terminal quota), provider-scoped failures, credential redaction in every error path, and oversized-body rejection |
 | `extract_fetch_contract` | `mock` (1 test) | 24 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls, markdown-first negotiation (Accept policy, cache-key isolation, bounded fallback, `Vary: Accept`, markdown link extraction, controlled A/B) |
-| `batch_fetch_retrieval` | `mock` | 13 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers |
+| `batch_fetch_retrieval` | `mock` | 14 | Mixed focused/unfocused batch, web+workspace repo batch, aggregate truncation, UTF-8 boundaries, focus with cache hit, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, locator/policy helpers, per-item challenge marking |
 | `provider_capability_contract` | None | 23 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl/serpapi/kagi), HTML-scraper none, domain-filter exclusivity, keyless source-provider inventory/keyless/default-exclusion/timestamp/freshness claims (incl. `nvd` freshness non-enforcement), credentialed-provider required-key posture/opt-in exclusion/engine-builder reachability with typed missing-key skips, `structured_api` exclusivity, AGENTS.md prose agreement |
 | `provider_workstream_regression` | `mock` | 7 | Provider inventory (44 IDs), capability descriptors, constraint enforcement matrix, keyless vs optional-credential posture, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |
 | `egress_routing` | None (proxy composition under `egress`) | 35 | Egress config validation (incl. IPv6 literals), credential redaction, custom-dialer SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, handshake cancellation/deadline, HTTPS TLS/SNI through CONNECT, gzip/Brotli decode with decoded-body limits, authenticated HTTP/SOCKS with credential non-forwarding, malformed-proxy fail-closed, routed redirects |

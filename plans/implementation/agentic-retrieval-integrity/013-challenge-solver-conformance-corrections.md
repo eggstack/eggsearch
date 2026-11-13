@@ -1,6 +1,6 @@
 # M013 — Challenge Solver Conformance Corrections
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M013
 Primary class: invariant (corrective)
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0`

@@ -621,6 +621,8 @@ pub(crate) fn make_batch_fetch_future(
                         let truncated = resp.truncated;
                         let structured =
                             crate::core::warning::convert_fetch_warnings(&resp.warnings);
+                        let mut structured = structured;
+                        structured.extend(resp.structured_warnings.iter().cloned());
                         let raw_payload = serde_json::json!({
                             "url": resp.url,
                             "final_url": resp.final_url,
@@ -651,7 +653,7 @@ pub(crate) fn make_batch_fetch_future(
                             "origin_backoff_ms": serde_json::Value::Null,
                             "browser_profile": serde_json::Value::Null,
                             "browser_profile_scope": "ephemeral",
-                            "manual_interaction_required": false,
+                            "manual_interaction_required": resp.manual_interaction_required,
                             "transport": resp.transport.as_deref().unwrap_or("http"),
                             "browser_escalated": resp.browser_escalated,
                         });

@@ -135,6 +135,58 @@ async fn mixed_focused_unfocused_batch_items() {
 }
 
 #[tokio::test]
+async fn batch_marks_challenge_pages_per_item() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/wall");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<html><head><script id="anubis_challenge">{}</script></head><body><div id="app"></div></body></html>"#,
+            );
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/ok");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(article_body());
+    });
+    let state = localhost_state();
+    let v = run_batch_fetch(
+        state,
+        batch_args(vec![
+            web_item(server.url("/wall")),
+            web_item(server.url("/ok")),
+        ]),
+    )
+    .await
+    .expect("batch works");
+
+    let wall = &v["results"][0]["response"];
+    assert_eq!(wall["manual_interaction_required"], true);
+    let warnings = wall["structured_warnings"]
+        .as_array()
+        .expect("structured warnings");
+    let challenge = warnings
+        .iter()
+        .find(|warning| warning["code"] == "fetch_challenge_page")
+        .expect("challenge warning present");
+    assert!(
+        challenge["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("anubis"),
+        "got: {}",
+        challenge["message"]
+    );
+    assert_eq!(
+        v["results"][1]["response"]["manual_interaction_required"],
+        false
+    );
+}
+
+#[tokio::test]
 async fn batch_focus_validation_aligned_to_web_fetch() {
     let state = localhost_state();
     let bad_empty = BatchFetchItem::Web {

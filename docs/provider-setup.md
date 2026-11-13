@@ -64,6 +64,7 @@ These providers require no API key and work via HTML scraping.
   The solve is probabilistic, not deterministic: the nonce is uniform, so an attempt that reaches `max_attempts` without a hit is expected rather than abnormal. At `32000000` (roughly twice the expected work) about one attempt in seven exhausts the ceiling and reports `blocked` with `challenge not solved: attempts exhausted`; a later call usually succeeds. Raise `max_attempts` toward the validated maximum of `100000000` and the deadline with it if you need higher reliability, accepting the extra wall clock on the unlucky fraction.
 
   With `max_difficulty = 5` (the default) a difficulty-6 wall is refused with a reason naming both values, and the provider stays `blocked`.
+- Anubis method coverage follows the published registry: `fast`, `slow` (solved as the `fast` alias), `preact`, and `metarefresh` (a published-wait echo with no hashing). The shipped Startpage wall publishes `fast`; `slow`, `preact`, and `metarefresh` are synthetic-fixture verified only, because no deployment publishing them was observed.
 - A solved search returns rows: the engine reads the inline React payload
   (`React.createElement(UIStartpage.AppSerp…, {…})` → `render.presenter.regions.mainline[]`)
   first and keeps the older `div.result` selectors as a fallback. Live verification on

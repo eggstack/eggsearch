@@ -369,7 +369,11 @@ mod tests {
 
     const DIFFICULTY_SIX_PAGE: &str = r#"<html><head><script id="anubis_version" type="application/json">"v1.26.4"</script><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"fast","difficulty":6},"challenge":{"issuedAt":"2026-11-11T00:00:00Z","metadata":{"User-Agent":"eggsearch"},"id":"01a1cc17-0000-7000-8000-000000000000","method":"fast","randomData":"570d0182c0ffee","redir":"/search?q=rust","policyRuleHash":"00","difficulty":6,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
 
-    const UNKNOWN_METHOD_PAGE: &str = r#"<html><head><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"slow","difficulty":2},"challenge":{"id":"01a1cc17","method":"slow","randomData":"abc123def456","redir":"/search?q=rust"}}</script></head><body></body></html>"#;
+    const UNKNOWN_METHOD_PAGE: &str = r#"<html><head><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"quantum","difficulty":2},"challenge":{"id":"01a1cc17","method":"quantum","randomData":"abc123def456","redir":"/search?q=rust"}}</script></head><body></body></html>"#;
+
+    const DIFFICULTY_SEVEN_PAGE: &str = r#"<html><head><script id="anubis_version" type="application/json">"v1.26.4"</script><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"fast","difficulty":7},"challenge":{"id":"01a1cc17","method":"fast","randomData":"570d0182c0ffee","redir":"/search?q=rust","difficulty":7,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
+
+    const METAREFRESH_CHALLENGE_PAGE: &str = r#"<html><head><meta http-equiv="refresh" content="0; url=/metarefresh-check"><script id="anubis_version" type="application/json">"v1.26.4"</script><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"metarefresh","difficulty":1},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"metarefresh","challenge":"published-token-123","redir":"/search?q=rust","difficulty":1,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
 
     const RESULT_PAGE: &str = r#"<html><body><div class="result css-o7i03b"><a class="result-title result-link" href="https://example.com"><h2 class="wgl-title">Example Site</h2></a><p class="description">An example website.</p></div></body></html>"#;
 
@@ -534,6 +538,343 @@ mod tests {
             pass_cookie_cache().get(ENGINE).as_deref(),
             Some("pass-cookie-123")
         );
+    }
+
+    #[tokio::test]
+    async fn prefixed_challenge_solves_under_the_published_prefix() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let page = CHALLENGE_PAGE.replacen(
+            "<script id=\"anubis_version\"",
+            "<script id=\"anubis_base_prefix\" type=\"application/json\">\"/anubis\"</script><script id=\"anubis_version\"",
+            1,
+        );
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .matches(no_cookie_header);
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(page);
+        });
+        let pass_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/anubis/.within.website/x/cmd/anubis/api/pass-challenge")
+                .query_param("nonce", "185");
+            then.status(302)
+                .header("set-cookie", "spchal-auth=prefixed-pass; Path=/");
+        });
+        let replay_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .header("Cookie", "spchal-auth=prefixed-pass");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(RESULT_PAGE);
+        });
+
+        let results = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &enabled_section(),
+        )
+        .await
+        .expect("prefixed challenge solves");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(pass_mock.hits(), 1);
+        assert_eq!(replay_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn slow_method_solves_through_the_fast_path() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let page = CHALLENGE_PAGE.replace("\"method\":\"fast\"", "\"method\":\"slow\"");
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .matches(no_cookie_header);
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(page);
+        });
+        let pass_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(PASS_CHALLENGE_PATH)
+                .query_param("nonce", "185")
+                .query_param(
+                    "response",
+                    "002786c8b408cf14bf6ddc2aeb6b6f1fcdf6b453986796fbec919a88de759708",
+                );
+            then.status(302)
+                .header("set-cookie", "spchal-auth=slow-pass; Path=/");
+        });
+        let replay_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .header("Cookie", "spchal-auth=slow-pass");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(RESULT_PAGE);
+        });
+
+        let results = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &enabled_section(),
+        )
+        .await
+        .expect("slow challenge solves");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(pass_mock.hits(), 1);
+        assert_eq!(replay_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn spent_challenge_is_blocked_without_a_submission() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let page = CHALLENGE_PAGE.replace("\"spent\":false", "\"spent\":true");
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(page);
+        });
+        let pass_mock = server.mock(|when, then| {
+            when.method(GET).path(PASS_CHALLENGE_PATH);
+            then.status(302)
+                .header("set-cookie", "spchal-auth=unexpected");
+        });
+
+        let err = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &enabled_section(),
+        )
+        .await
+        .expect_err("spent challenge blocks");
+
+        assert!(
+            err.to_string()
+                .contains("challenge not solved: already spent"),
+            "got: {err}"
+        );
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(pass_mock.hits(), 0);
+    }
+
+    #[tokio::test]
+    async fn projection_breach_is_blocked_without_a_submission() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(DIFFICULTY_SEVEN_PAGE);
+        });
+        let pass_mock = server.mock(|when, then| {
+            when.method(GET).path(PASS_CHALLENGE_PATH);
+            then.status(302)
+                .header("set-cookie", "spchal-auth=unexpected");
+        });
+
+        let challenge = ChallengeSection {
+            enabled: true,
+            max_difficulty: 7,
+            max_attempts: 2_000_000,
+            timeout_ms: 20000,
+            cookie_ttl_seconds: 240,
+        };
+        let err = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &challenge,
+        )
+        .await
+        .expect_err("projection breach blocks");
+
+        assert!(
+            err.to_string().contains(
+                "anubis difficulty 7 projects 268M candidates, beyond the configured attempt ceiling 2000000"
+            ),
+            "got: {err}"
+        );
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(pass_mock.hits(), 0);
+    }
+
+    #[tokio::test]
+    async fn metarefresh_challenge_solves_and_replays_once() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .matches(no_cookie_header);
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(METAREFRESH_CHALLENGE_PAGE);
+        });
+        let submit_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/metarefresh-check")
+                .query_param("id", "01a1cc17-0000-7000-8000-000000000000")
+                .query_param("result", "published-token-123");
+            then.status(200)
+                .header("set-cookie", "spchal-auth=metarefresh-pass; Path=/");
+        });
+        let replay_mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/search")
+                .query_param("q", "rust")
+                .header("Cookie", "spchal-auth=metarefresh-pass");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(RESULT_PAGE);
+        });
+
+        let results = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &enabled_section(),
+        )
+        .await
+        .expect("metarefresh challenge solves");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(submit_mock.hits(), 1);
+        assert_eq!(replay_mock.hits(), 1);
+    }
+
+    #[tokio::test]
+    async fn metarefresh_wait_beyond_budget_is_blocked_without_a_submission() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let page = METAREFRESH_CHALLENGE_PAGE.replace(
+            "content=\"0; url=/metarefresh-check\"",
+            "content=\"5; url=/metarefresh-check\"",
+        );
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(page);
+        });
+        let submit_mock = server.mock(|when, then| {
+            when.method(GET).path("/metarefresh-check");
+            then.status(200)
+                .header("set-cookie", "spchal-auth=unexpected");
+        });
+
+        let err = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &enabled_section(),
+        )
+        .await
+        .expect_err("wait beyond the budget blocks");
+
+        assert!(
+            err.to_string()
+                .contains("challenge not solved: wall clock exhausted"),
+            "got: {err}"
+        );
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(submit_mock.hits(), 0);
+    }
+
+    #[tokio::test]
+    async fn disabled_metarefresh_keeps_blocked_with_one_request() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().clear();
+
+        let server = MockServer::start();
+        let challenge_page_mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body(METAREFRESH_CHALLENGE_PAGE);
+        });
+        let submit_mock = server.mock(|when, then| {
+            when.method(GET).path("/metarefresh-check");
+            then.status(200)
+                .header("set-cookie", "spchal-auth=unexpected");
+        });
+
+        let challenge = ChallengeSection {
+            enabled: false,
+            ..ChallengeSection::default()
+        };
+        let err = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &challenge,
+        )
+        .await
+        .expect_err("challenge page blocks");
+
+        assert!(matches!(err, EngineError::Blocked { .. }));
+        assert_eq!(challenge_page_mock.hits(), 1);
+        assert_eq!(submit_mock.hits(), 0);
     }
 
     #[tokio::test]

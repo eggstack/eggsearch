@@ -112,6 +112,8 @@ pub enum WarningCode {
     FetchLinksTruncated,
     /// Generic fetch-layer warning not matching a known prefix.
     FetchWarning,
+    /// The fetched body is an anti-bot challenge page, not the requested document.
+    FetchChallengePage,
 
     // --- PDF Quality ---
     /// A PDF page has sparse or low-quality extracted text.
@@ -264,6 +266,7 @@ impl WarningCode {
             Self::FetchContentTruncated => "fetch_content_truncated",
             Self::FetchLinksTruncated => "fetch_links_truncated",
             Self::FetchWarning => "fetch_warning",
+            Self::FetchChallengePage => "fetch_challenge_page",
             Self::PdfPageSparseText => "pdf_page_sparse_text",
             Self::PdfPageCidCorrupt => "pdf_page_cid_corrupt",
             Self::PdfPageLikelyScanned => "pdf_page_likely_scanned",
@@ -357,6 +360,7 @@ impl WarningCode {
             | Self::FetchContentTruncated
             | Self::FetchLinksTruncated
             | Self::FetchWarning
+            | Self::FetchChallengePage
             | Self::PdfPageSparseText
             | Self::PdfPageCidCorrupt
             | Self::PdfPageLikelyScanned
@@ -511,6 +515,9 @@ impl WarningCode {
             Self::FetchWarning => {
                 Some("Fetch-layer warning; review the original message for details.")
             }
+            Self::FetchChallengePage => Some(
+                "Retry with render=\"auto\" or a browser transport; the body is an anti-bot challenge, not the requested document.",
+            ),
             Self::PdfPageSparseText => {
                 Some("Page has sparse text; content may be incomplete or degraded.")
             }

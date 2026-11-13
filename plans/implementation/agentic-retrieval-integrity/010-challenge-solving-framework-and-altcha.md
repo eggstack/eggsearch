@@ -1,6 +1,6 @@
 # M010 — Bounded Challenge-Solving Framework and ALTCHA (Mojeek)
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M010
 Primary class: capability
 Baseline: `d751bd7471a647e651ee41b8e51199c66d04d01a` (the worktree also carries the uncommitted retrieval-defaults change from the prior turn; re-read `git status` before starting)

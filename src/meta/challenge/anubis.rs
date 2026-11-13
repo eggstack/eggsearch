@@ -6,22 +6,29 @@ use eggfetch_core::{Client, RedirectPolicy};
 use scraper::Html;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+use url::Url;
 
 use super::{
-    SolveBudget, SolveOutcome, BOUND_ATTEMPTS, BOUND_COOKIE_REJECTED, BOUND_MALFORMED,
-    BOUND_MISSING_COOKIE, BOUND_UNSUPPORTED_SCHEME, BOUND_WALL_CLOCK,
+    SolveBudget, SolveOutcome, BOUND_ATTEMPTS, BOUND_BASE_PREFIX, BOUND_COOKIE_REJECTED,
+    BOUND_MALFORMED, BOUND_MISSING_COOKIE, BOUND_SPENT, BOUND_UNSUPPORTED_SCHEME, BOUND_WALL_CLOCK,
 };
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::{engine_timeout, map_request_error, read_bounded_body};
 
 /// Anubis `fast` method name.
 pub const METHOD_FAST: &str = "fast";
+/// Anubis `slow` method name, the deprecated alias of `fast` with an identical scheme.
+pub const METHOD_SLOW: &str = "slow";
 /// Anubis `preact` method name.
 pub const METHOD_PREACT: &str = "preact";
+/// Anubis `metarefresh` method name, a time challenge that performs no hashing.
+pub const METHOD_METAREFRESH: &str = "metarefresh";
 /// Script element id carrying the `fast` challenge document.
 pub const FAST_SCRIPT_ID: &str = "anubis_challenge";
 /// Script element id carrying the `preact` challenge document.
 pub const PREACT_SCRIPT_ID: &str = "preact_info";
+/// Script element id carrying the published path prefix.
+pub const BASE_PREFIX_SCRIPT_ID: &str = "anubis_base_prefix";
 /// Pass-challenge endpoint path, relative to the upstream origin.
 pub const PASS_CHALLENGE_PATH: &str = "/.within.website/x/cmd/anubis/api/pass-challenge";
 /// Pass cookie the endpoint sets on success.
@@ -30,6 +37,10 @@ pub const PASS_COOKIE_NAME: &str = "spchal-auth";
 pub const ELAPSED_TIME: u64 = 1;
 /// Published minimum elapsed time per difficulty unit, in seconds.
 pub const PREACT_MIN_ELAPSED_PER_DIFFICULTY: f64 = 0.08;
+/// Release-build nanoseconds per SHA-256 candidate, from the measured difficulty-6 solve
+/// recorded in `plans/closure/agentic-retrieval-integrity/011-status.md`: 23,070,878
+/// candidates in 3.05 s on one core is 0.13 µs, rounded to a whole nanosecond.
+pub const CANDIDATE_NANOS: u64 = 130;
 
 const MAX_PASS_BYTES: usize = 16 * 1024;
 
@@ -40,6 +51,8 @@ pub enum AnubisMethod {
     Fast,
     /// Single SHA-256 digest of the published challenge string.
     Preact,
+    /// Meta-refresh time challenge: echo the published token after the published wait.
+    Metarefresh,
 }
 
 /// One solved Anubis challenge.
@@ -68,6 +81,9 @@ pub struct AnubisChallenge {
     random_data: String,
     challenge: String,
     redir: Option<String>,
+    base_prefix: String,
+    wait: Option<Duration>,
+    target: Option<String>,
 }
 
 impl std::fmt::Debug for AnubisChallenge {
@@ -79,6 +95,9 @@ impl std::fmt::Debug for AnubisChallenge {
             .field("random_data", &"<redacted>")
             .field("challenge", &"<redacted>")
             .field("redir", &"<redacted>")
+            .field("base_prefix", &"<redacted>")
+            .field("target", &"<redacted>")
+            .field("wait", &self.wait)
             .finish()
     }
 }
@@ -87,6 +106,7 @@ impl AnubisChallenge {
     /// Parse a published Anubis challenge page.
     pub fn parse(html: &str) -> Result<Self, &'static str> {
         let document = Html::parse_document(html);
+        let base_prefix = parse_base_prefix(&document)?;
         let fast = script_payload(&document, FAST_SCRIPT_ID)?;
         let preact = script_payload(&document, PREACT_SCRIPT_ID)?;
 
@@ -106,26 +126,37 @@ impl AnubisChallenge {
                     .get("method")
                     .and_then(Value::as_str)
                     .ok_or(BOUND_MALFORMED)?;
+                refuse_spent(challenge)?;
                 match method {
-                    METHOD_FAST => Ok(Self {
+                    METHOD_FAST | METHOD_SLOW => Ok(Self {
                         method: AnubisMethod::Fast,
                         difficulty,
                         id: required_str(challenge, "id")?,
                         random_data: required_str(challenge, "randomData")?,
                         challenge: String::new(),
                         redir: optional_str(challenge, "redir"),
+                        base_prefix,
+                        wait: None,
+                        target: None,
                     }),
-                    METHOD_PREACT => Self::from_preact_info(preact.ok_or(BOUND_MALFORMED)?),
+                    METHOD_PREACT => {
+                        Self::from_preact_info(preact.ok_or(BOUND_MALFORMED)?, base_prefix)
+                    }
+                    METHOD_METAREFRESH => {
+                        let (wait, target) = published_meta_refresh(&document)?;
+                        Self::from_metarefresh(challenge, base_prefix, difficulty, wait, target)
+                    }
                     _ => Err(BOUND_UNSUPPORTED_SCHEME),
                 }
             }
-            (None, Some(preact)) => Self::from_preact_info(preact),
+            (None, Some(preact)) => Self::from_preact_info(preact, base_prefix),
             (None, None) => Err(BOUND_MALFORMED),
         }
     }
 
-    fn from_preact_info(value: Value) -> Result<Self, &'static str> {
+    fn from_preact_info(value: Value, base_prefix: String) -> Result<Self, &'static str> {
         let object = value.as_object().ok_or(BOUND_MALFORMED)?;
+        refuse_spent(object)?;
         Ok(Self {
             method: AnubisMethod::Preact,
             difficulty: numeric_difficulty(object.get("difficulty"))?,
@@ -133,6 +164,37 @@ impl AnubisChallenge {
             random_data: String::new(),
             challenge: required_str(object, "challenge")?,
             redir: optional_str(object, "redir"),
+            base_prefix,
+            wait: None,
+            target: None,
+        })
+    }
+
+    fn from_metarefresh(
+        object: &Map<String, Value>,
+        base_prefix: String,
+        difficulty: u8,
+        wait: Duration,
+        target: Option<String>,
+    ) -> Result<Self, &'static str> {
+        refuse_spent(object)?;
+        if let Some(value) = object.get("wait") {
+            let seconds = value.as_f64().ok_or(BOUND_MALFORMED)?;
+            let published = Duration::try_from_secs_f64(seconds).map_err(|_| BOUND_MALFORMED)?;
+            if published != wait {
+                return Err(BOUND_MALFORMED);
+            }
+        }
+        Ok(Self {
+            method: AnubisMethod::Metarefresh,
+            difficulty,
+            id: optional_str(object, "id").unwrap_or_default(),
+            random_data: String::new(),
+            challenge: required_str(object, "challenge")?,
+            redir: optional_str(object, "redir"),
+            base_prefix,
+            wait: Some(wait),
+            target,
         })
     }
 
@@ -148,17 +210,68 @@ impl AnubisChallenge {
         self.difficulty
     }
 
-    /// Redirect target for this attempt.
+    /// Redirect target for this attempt, validated before it reaches a query string.
     ///
     /// A live Anubis `fast` challenge publishes no `redir` at all, so the
     /// original request URL is the only correct fallback; an absent value is
-    /// not a malformed challenge.
-    fn resolved_redir(&self, request_url: &str) -> String {
-        self.redir
+    /// not a malformed challenge. A published value is accepted only when it is
+    /// same-origin absolute or a root-relative path.
+    fn resolved_redir(&self, base_url: &str, request_url: &str) -> String {
+        let Some(candidate) = self.redir.as_deref().filter(|value| !value.is_empty()) else {
+            return request_url.to_string();
+        };
+        if candidate
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+        {
+            return request_url.to_string();
+        }
+        if let Ok(base) = Url::parse(base_url) {
+            if let Ok(absolute) = Url::parse(candidate) {
+                return if same_origin(&absolute, &base) {
+                    candidate.to_string()
+                } else {
+                    request_url.to_string()
+                };
+            }
+        }
+        if candidate.starts_with('/')
+            && !candidate.starts_with("//")
+            && !candidate.contains('\\')
+            && !candidate.split('/').any(|segment| segment == "..")
+        {
+            return candidate.to_string();
+        }
+        request_url.to_string()
+    }
+
+    /// Resolve the published submission target against the challenge origin.
+    fn resolved_target(&self, base_url: &str) -> Result<String, &'static str> {
+        let target = self
+            .target
             .as_deref()
-            .filter(|value| !value.is_empty())
-            .unwrap_or(request_url)
-            .to_string()
+            .or(self.redir.as_deref())
+            .ok_or(BOUND_MALFORMED)?;
+        let base = Url::parse(base_url).map_err(|_| BOUND_MALFORMED)?;
+        let resolved = base.join(target).map_err(|_| BOUND_MALFORMED)?;
+        if !same_origin(&resolved, &base) {
+            return Err(BOUND_MALFORMED);
+        }
+        Ok(resolved.to_string())
+    }
+
+    /// Echo only the published token, identifier, and target.
+    fn metarefresh_url(&self, target: &str) -> String {
+        let mut url = target.to_string();
+        if !self.id.is_empty() && !target.contains("id=") {
+            url.push(if url.contains('?') { '&' } else { '?' });
+            url.push_str("id=");
+            url.push_str(&urlencoding::encode(&self.id));
+        }
+        url.push(if url.contains('?') { '&' } else { '?' });
+        url.push_str("result=");
+        url.push_str(&urlencoding::encode(&self.challenge));
+        url
     }
 
     /// Compare the published difficulty with the configured ceiling.
@@ -172,12 +285,40 @@ impl AnubisChallenge {
         }
     }
 
+    /// Refuse a cost the configured budget cannot pay before any hashing starts.
+    pub fn check_projection(&self, budget: &SolveBudget) -> Result<(), String> {
+        let expected = expected_candidates(self.difficulty);
+        if expected > u128::from(budget.max_attempts()) {
+            return Err(format!(
+                "anubis difficulty {} projects {} candidates, beyond the configured attempt ceiling {}",
+                self.difficulty,
+                compact_count(expected),
+                budget.max_attempts()
+            ));
+        }
+        let projected_nanos = expected.saturating_mul(u128::from(CANDIDATE_NANOS));
+        if projected_nanos > budget.remaining_time().as_nanos() {
+            return Err(format!(
+                "anubis difficulty {} projects {} candidates (~{} ms), beyond the configured wall-clock budget {} ms",
+                self.difficulty,
+                compact_count(expected),
+                projected_nanos / 1_000_000,
+                budget.timeout().as_millis()
+            ));
+        }
+        Ok(())
+    }
+
     /// Solve the challenge under `budget`.
     pub fn solve(&self, budget: &mut SolveBudget) -> Result<AnubisSolution, &'static str> {
         match self.method {
             AnubisMethod::Fast => self.solve_fast(budget),
             AnubisMethod::Preact => Ok(AnubisSolution {
                 response: sha256_hex(self.challenge.as_bytes()),
+                nonce: 0,
+            }),
+            AnubisMethod::Metarefresh => Ok(AnubisSolution {
+                response: self.challenge.clone(),
                 nonce: 0,
             }),
         }
@@ -208,6 +349,40 @@ impl AnubisChallenge {
 #[must_use]
 pub fn ceiling_refusal(difficulty: u8, ceiling: u8) -> String {
     format!("anubis difficulty {difficulty} exceeds configured ceiling {ceiling}")
+}
+
+/// Expected SHA-256 candidates for a difficulty, as `16^difficulty`.
+#[must_use]
+pub fn expected_candidates(difficulty: u8) -> u128 {
+    16u128.pow(u32::from(difficulty))
+}
+
+/// Render a candidate count with the largest unit that keeps a mantissa below 1000.
+#[must_use]
+pub fn compact_count(count: u128) -> String {
+    const UNITS: [(u128, &str); 4] = [
+        (1_000, "K"),
+        (1_000_000, "M"),
+        (1_000_000_000, "G"),
+        (1_000_000_000_000, "T"),
+    ];
+    if count < 1_000 {
+        return count.to_string();
+    }
+    let index = UNITS
+        .iter()
+        .rposition(|(unit, _)| count >= *unit)
+        .unwrap_or(0);
+    let (mut unit, mut suffix) = UNITS[index];
+    let mut mantissa = (count + unit / 2) / unit;
+    if mantissa >= 1_000 {
+        if let Some((next_unit, next_suffix)) = UNITS.get(index + 1) {
+            unit = *next_unit;
+            suffix = next_suffix;
+            mantissa = (count + unit / 2) / unit;
+        }
+    }
+    format!("{mantissa}{suffix}")
 }
 
 /// Collect every `Set-Cookie` name/value pair into one `Cookie` header value.
@@ -252,13 +427,37 @@ pub async fn solve_and_verify(
     if let Err(reason) = challenge.check_ceiling(budget) {
         return Err(EngineError::Blocked { engine, reason });
     }
+    if challenge.method == AnubisMethod::Fast {
+        if let Err(reason) = challenge.check_projection(budget) {
+            return Err(EngineError::Blocked { engine, reason });
+        }
+    }
 
     let deadline = Instant::now() + timeout;
-    if challenge.method == AnubisMethod::Preact {
-        match preact_wait(challenge.difficulty, deadline) {
+    let target = match challenge.method {
+        AnubisMethod::Metarefresh => match challenge.resolved_target(base_url) {
+            Ok(target) => Some(target),
+            Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        },
+        AnubisMethod::Fast | AnubisMethod::Preact => None,
+    };
+    match challenge.method {
+        AnubisMethod::Preact => match preact_wait(challenge.difficulty, deadline) {
             Ok(wait) => tokio::time::sleep(wait).await,
             Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        },
+        AnubisMethod::Metarefresh => {
+            let Some(requirement) = challenge.wait else {
+                return Ok(SolveOutcome::Refused {
+                    bound: BOUND_MALFORMED,
+                });
+            };
+            match metarefresh_wait(requirement, deadline) {
+                Ok(wait) => tokio::time::sleep(wait).await,
+                Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+            }
         }
+        AnubisMethod::Fast => {}
     }
 
     let solution = match challenge.solve(budget) {
@@ -273,7 +472,8 @@ pub async fn solve_and_verify(
         request_url,
         &solution,
         challenge_cookies,
-        timeout,
+        deadline,
+        target.as_deref(),
     )
     .await
 }
@@ -287,18 +487,33 @@ async fn verify(
     request_url: &str,
     solution: &AnubisSolution,
     challenge_cookies: &str,
-    timeout: Duration,
+    deadline: Instant,
+    target: Option<&str>,
 ) -> Result<SolveOutcome, EngineError> {
-    let redir = challenge.resolved_redir(request_url);
+    let redir = challenge.resolved_redir(base_url, request_url);
     let url = match challenge.method {
-        AnubisMethod::Fast => endpoint(base_url, PASS_CHALLENGE_PATH),
+        AnubisMethod::Fast => pass_challenge_url(base_url, &challenge.base_prefix),
         AnubisMethod::Preact => preact_url(base_url, &redir, &solution.response),
+        AnubisMethod::Metarefresh => {
+            let Some(target) = target else {
+                return Ok(SolveOutcome::Refused {
+                    bound: BOUND_MALFORMED,
+                });
+            };
+            challenge.metarefresh_url(target)
+        }
     };
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return Ok(SolveOutcome::Refused {
+            bound: BOUND_WALL_CLOCK,
+        });
+    }
     let mut request = client
         .get(&url)
         .map_err(|source| EngineError::Http { engine, source })?
         .redirect_policy(RedirectPolicy::new(false, 0))
-        .timeout(engine_timeout(timeout));
+        .timeout(engine_timeout(remaining));
     if challenge.method == AnubisMethod::Fast {
         let nonce = solution.nonce.to_string();
         let elapsed = ELAPSED_TIME.to_string();
@@ -332,6 +547,42 @@ async fn verify(
     Ok(SolveOutcome::Refused { bound })
 }
 
+fn metarefresh_wait(requirement: Duration, deadline: Instant) -> Result<Duration, &'static str> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() || requirement > remaining {
+        return Err(BOUND_WALL_CLOCK);
+    }
+    Ok(requirement)
+}
+
+fn published_meta_refresh(document: &Html) -> Result<(Duration, Option<String>), &'static str> {
+    let selector = scraper::Selector::parse("meta[http-equiv]").map_err(|_| BOUND_MALFORMED)?;
+    let content = document
+        .select(&selector)
+        .find(|element| {
+            element
+                .value()
+                .attr("http-equiv")
+                .is_some_and(|value| value.eq_ignore_ascii_case("refresh"))
+        })
+        .and_then(|element| element.value().attr("content"))
+        .ok_or(BOUND_MALFORMED)?;
+    let (seconds, tail) = content
+        .split_once(';')
+        .map_or((content, None), |(first, rest)| (first, Some(rest)));
+    let seconds = seconds.trim().parse::<f64>().map_err(|_| BOUND_MALFORMED)?;
+    let wait = Duration::try_from_secs_f64(seconds).map_err(|_| BOUND_MALFORMED)?;
+    let target = tail.and_then(|rest| {
+        let lower = rest.to_ascii_lowercase();
+        let index = lower.find("url=")?;
+        let value = rest[index + 4..]
+            .trim()
+            .trim_matches(|character| character == '"' || character == '\'');
+        (!value.is_empty()).then(|| value.to_string())
+    });
+    Ok((wait, target))
+}
+
 fn preact_wait(difficulty: u8, deadline: Instant) -> Result<Duration, &'static str> {
     let published =
         Duration::from_secs_f64(PREACT_MIN_ELAPSED_PER_DIFFICULTY * f64::from(difficulty));
@@ -342,8 +593,53 @@ fn preact_wait(difficulty: u8, deadline: Instant) -> Result<Duration, &'static s
     Ok(published)
 }
 
-fn endpoint(base_url: &str, path: &str) -> String {
-    format!("{}{path}", base_url.trim_end_matches('/'))
+fn pass_challenge_url(base_url: &str, base_prefix: &str) -> String {
+    format!(
+        "{}{base_prefix}{PASS_CHALLENGE_PATH}",
+        base_url.trim_end_matches('/')
+    )
+}
+
+fn same_origin(candidate: &Url, base: &Url) -> bool {
+    candidate.scheme() == base.scheme()
+        && candidate.host_str() == base.host_str()
+        && candidate.port_or_known_default() == base.port_or_known_default()
+}
+
+fn parse_base_prefix(document: &Html) -> Result<String, &'static str> {
+    let Some(value) = script_payload(document, BASE_PREFIX_SCRIPT_ID)? else {
+        return Ok(String::new());
+    };
+    let raw = value.as_str().ok_or(BOUND_MALFORMED)?;
+    validate_base_prefix(raw)
+}
+
+fn validate_base_prefix(raw: &str) -> Result<String, &'static str> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if trimmed.len() > 256
+        || !trimmed.starts_with('/')
+        || trimmed.starts_with("//")
+        || trimmed.contains("//")
+        || trimmed.contains([':', '?', '#', '\\'])
+        || trimmed
+            .chars()
+            .any(|character| character.is_ascii_control() || character.is_whitespace())
+        || trimmed.split('/').any(|segment| segment == "..")
+    {
+        return Err(BOUND_BASE_PREFIX);
+    }
+    Ok(trimmed.strip_suffix('/').unwrap_or(trimmed).to_string())
+}
+
+fn refuse_spent(object: &Map<String, Value>) -> Result<(), &'static str> {
+    match object.get("spent") {
+        None | Some(Value::Bool(false)) => Ok(()),
+        Some(Value::Bool(true)) => Err(BOUND_SPENT),
+        Some(_) => Err(BOUND_MALFORMED),
+    }
 }
 
 fn preact_url(base_url: &str, redir: &str, result: &str) -> String {
@@ -462,486 +758,5 @@ fn encode_hex(bytes: &[u8]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const FAST_DIGEST: &str = "002786c8b408cf14bf6ddc2aeb6b6f1fcdf6b453986796fbec919a88de759708";
-    const PREACT_DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-
-    fn fast_page(random_data: &str, difficulty: u8, method: &str) -> String {
-        let payload = serde_json::json!({
-            "rules": {"algorithm": "fast", "difficulty": difficulty},
-            "challenge": {
-                "issuedAt": "2026-11-11T00:00:00Z",
-                "metadata": {"User-Agent": "eggsearch"},
-                "id": "01a1cc17-0000-7000-8000-000000000000",
-                "method": method,
-                "randomData": random_data,
-                "redir": "/search?q=rust",
-                "policyRuleHash": "00",
-                "difficulty": difficulty,
-                "spent": false
-            }
-        });
-        format!(
-            r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
-        )
-    }
-
-    fn preact_page(challenge: &str, difficulty: u8, redir: &str) -> String {
-        let payload = serde_json::json!({
-            "challenge": challenge,
-            "difficulty": difficulty,
-            "redir": redir
-        });
-        format!(
-            r#"<html><head><script id="preact_info" type="application/json">{payload}</script></head><body></body></html>"#
-        )
-    }
-
-    fn budget(max_attempts: u64, timeout_ms: u64, max_difficulty: u8) -> SolveBudget {
-        SolveBudget::new(
-            max_attempts,
-            Duration::from_millis(timeout_ms),
-            max_difficulty,
-        )
-    }
-
-    fn test_client() -> Client {
-        crate::meta::engines::build_http_client(None).expect("test client")
-    }
-
-    #[test]
-    fn fast_vector_solves_with_the_lowest_nonce() {
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 2, "fast")).expect("vector parses");
-        assert_eq!(challenge.method(), AnubisMethod::Fast);
-        assert_eq!(challenge.difficulty(), 2);
-
-        let mut budget = budget(1000, 5000, 5);
-        let solution = challenge.solve(&mut budget).expect("vector solves");
-        assert_eq!(solution.nonce, 185);
-        assert_eq!(solution.response, FAST_DIGEST);
-        assert_eq!(budget.attempts_used(), 186);
-        assert!(budget.attempts_used() <= budget.max_attempts());
-    }
-
-    #[test]
-    fn fast_negative_control_rejects_an_unsatisfied_digest() {
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 2, "fast")).expect("vector parses");
-        let mut hasher = Sha256::new();
-        hasher.update(b"abc123def456");
-        hasher.update(b"0");
-        let zero_nonce = hasher.finalize();
-        assert_eq!(
-            encode_hex(&zero_nonce),
-            "6416fa1aa73b88d0e2908967bc4dfc949186e2bd80a3f9a5d5a72bb927e41a72"
-        );
-        assert!(!has_leading_zero_hex(&zero_nonce, 2));
-
-        let mut budget = budget(185, 5000, 5);
-        assert_eq!(challenge.solve(&mut budget), Err(BOUND_ATTEMPTS));
-        assert_eq!(budget.attempts_used(), 185);
-    }
-
-    #[test]
-    fn ceiling_allows_below_and_at_then_names_the_breach() {
-        for (difficulty, ceiling, allowed) in [
-            (1u8, 5u8, true),
-            (4, 5, true),
-            (5, 5, true),
-            (6, 5, false),
-            (6, 6, true),
-        ] {
-            let challenge = AnubisChallenge::parse(&fast_page("abc123def456", difficulty, "fast"))
-                .expect("vector parses");
-            let budget = budget(10, 1000, ceiling);
-            assert_eq!(
-                challenge.check_ceiling(&budget).is_ok(),
-                allowed,
-                "difficulty {difficulty} against ceiling {ceiling}"
-            );
-        }
-
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 6, "fast")).expect("vector parses");
-        let budget = budget(10, 1000, 5);
-        assert_eq!(
-            challenge.check_ceiling(&budget),
-            Err("anubis difficulty 6 exceeds configured ceiling 5".to_string())
-        );
-        assert_eq!(
-            ceiling_refusal(6, 5),
-            "anubis difficulty 6 exceeds configured ceiling 5"
-        );
-    }
-
-    #[tokio::test]
-    async fn ceiling_breach_is_blocked_before_any_hashing() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        let any = server.mock(|when, then| {
-            when.method(GET);
-            then.status(200)
-                .header("set-cookie", "spchal-auth=leaked-value");
-        });
-
-        let mut budget = budget(2_000_000, 5000, 5);
-        let err = solve_and_verify(
-            &test_client(),
-            "startpage",
-            &server.url(""),
-            &fast_page("abc123def456", 6, "fast"),
-            "/search?q=rust",
-            "sp_pow=leaked-value",
-            Duration::from_secs(5),
-            &mut budget,
-        )
-        .await
-        .expect_err("ceiling breach is blocked");
-
-        match &err {
-            EngineError::Blocked { engine, reason } => {
-                assert_eq!(*engine, "startpage");
-                assert_eq!(reason, "anubis difficulty 6 exceeds configured ceiling 5");
-            }
-            other => panic!("unexpected error: {other:?}"),
-        }
-        assert!(!err.to_string().contains("leaked-value"), "got: {err}");
-        assert_eq!(budget.attempts_used(), 0);
-        assert_eq!(any.hits(), 0);
-    }
-
-    #[test]
-    fn unknown_method_fails_closed() {
-        assert_eq!(
-            AnubisChallenge::parse(&fast_page("abc123def456", 2, "slow")).err(),
-            Some(BOUND_UNSUPPORTED_SCHEME)
-        );
-    }
-
-    #[tokio::test]
-    async fn unknown_method_is_refused_without_a_request() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        let any = server.mock(|when, then| {
-            when.method(GET);
-            then.status(200).header("set-cookie", "spchal-auth=never");
-        });
-
-        let mut budget = budget(1000, 5000, 5);
-        let outcome = solve_and_verify(
-            &test_client(),
-            "startpage",
-            &server.url(""),
-            &fast_page("abc123def456", 2, "slow"),
-            "/search?q=rust",
-            "",
-            Duration::from_secs(5),
-            &mut budget,
-        )
-        .await
-        .expect("refusal is not an engine error");
-        assert_eq!(
-            outcome,
-            SolveOutcome::Refused {
-                bound: BOUND_UNSUPPORTED_SCHEME
-            }
-        );
-        assert_eq!(budget.attempts_used(), 0);
-        assert_eq!(any.hits(), 0);
-    }
-
-    #[test]
-    fn malformed_payloads_fail_closed() {
-        let mut missing_difficulty = serde_json::json!({
-            "rules": {"algorithm": "fast"},
-            "challenge": {
-                "id": "01a1cc17",
-                "method": "fast",
-                "randomData": "abc123def456",
-                "redir": "/search?q=rust"
-            }
-        });
-        let non_numeric = serde_json::json!({
-            "rules": {"algorithm": "fast", "difficulty": "six"},
-            "challenge": {
-                "id": "01a1cc17",
-                "method": "fast",
-                "randomData": "abc123def456",
-                "redir": "/search?q=rust"
-            }
-        });
-        let missing_random_data = serde_json::json!({
-            "rules": {"algorithm": "fast", "difficulty": 2},
-            "challenge": {"id": "01a1cc17", "method": "fast", "redir": "/search?q=rust"}
-        });
-        missing_difficulty["rules"]
-            .as_object_mut()
-            .expect("rules")
-            .remove("difficulty");
-
-        let cases = [
-            String::new(),
-            "<html><body><p>no script</p></body></html>".to_string(),
-            r#"<script id="anubis_challenge" type="application/json">not json</script>"#
-                .to_string(),
-            r#"<script id="anubis_challenge" type="application/json">{}</script>"#.to_string(),
-            format!(
-                r#"<script id="anubis_challenge" type="application/json">{missing_difficulty}</script>"#
-            ),
-            format!(
-                r#"<script id="anubis_challenge" type="application/json">{non_numeric}</script>"#
-            ),
-            format!(
-                r#"<script id="anubis_challenge" type="application/json">{missing_random_data}</script>"#
-            ),
-            r#"<script id="preact_info" type="application/json">{"difficulty":1,"redir":"/search"}</script>"#
-                .to_string(),
-            r#"<script id="preact_info" type="application/json">{"challenge":"abc","redir":"/search"}</script>"#
-                .to_string(),
-        ];
-        for raw in cases {
-            assert_eq!(
-                AnubisChallenge::parse(&raw).err(),
-                Some(BOUND_MALFORMED),
-                "expected malformed for {raw}"
-            );
-        }
-    }
-
-    #[test]
-    fn live_fast_challenge_without_redir_parses_and_falls_back_to_the_request_url() {
-        let page = r#"<script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"fast","difficulty":6},"challenge":{"issuedAt":"2026-11-11T19:30:51Z","id":"01a1cc17-757b-7711-aca3-71c6109b9665","method":"fast","randomData":"570d0182","policyRuleHash":"ac980f49c4d35fab","difficulty":6,"spent":false}}</script>"#;
-        let challenge = AnubisChallenge::parse(page).expect("live shape must parse");
-        assert_eq!(challenge.difficulty(), 6);
-        assert_eq!(
-            challenge.resolved_redir("https://www.startpage.com/search?q=rust"),
-            "https://www.startpage.com/search?q=rust"
-        );
-    }
-
-    #[test]
-    fn published_redir_wins_over_the_request_url() {
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 2, "fast")).expect("vector parses");
-        assert_eq!(
-            challenge.resolved_redir("https://www.startpage.com/search?q=rust"),
-            "/search?q=rust"
-        );
-    }
-
-    #[test]
-    fn attempts_ceiling_refuses_and_never_loops() {
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 2, "fast")).expect("vector parses");
-        let mut budget = budget(100, 5000, 5);
-        assert_eq!(challenge.solve(&mut budget), Err(BOUND_ATTEMPTS));
-        assert_eq!(budget.attempts_used(), 100);
-        assert!(budget.attempts_used() <= budget.max_attempts());
-    }
-
-    #[test]
-    fn wall_clock_ceiling_refuses_and_never_loops() {
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 6, "fast")).expect("parses");
-        let mut budget = budget(u64::MAX, 1, 6);
-        let started = Instant::now();
-        assert_eq!(challenge.solve(&mut budget), Err(BOUND_WALL_CLOCK));
-        assert!(
-            started.elapsed() < Duration::from_secs(2),
-            "wall-clock refusal took {:?}",
-            started.elapsed()
-        );
-        assert!(budget.attempts_used() >= 1);
-        assert!(budget.attempts_used() <= budget.max_attempts());
-    }
-
-    #[test]
-    fn preact_computes_the_published_digest() {
-        let challenge = AnubisChallenge::parse(&preact_page("abc", 1, "/search?q=rust"))
-            .expect("preact page parses");
-        assert_eq!(challenge.method(), AnubisMethod::Preact);
-        assert_eq!(challenge.difficulty(), 1);
-
-        let mut budget = budget(10, 1000, 5);
-        let solution = challenge.solve(&mut budget).expect("preact solves");
-        assert_eq!(solution.response, PREACT_DIGEST);
-        assert_eq!(solution.nonce, 0);
-        assert_eq!(budget.attempts_used(), 0);
-    }
-
-    #[test]
-    fn preact_wait_is_bounded_by_the_remaining_budget() {
-        let tight = Instant::now() + Duration::from_millis(100);
-        assert_eq!(preact_wait(10, tight), Err(BOUND_WALL_CLOCK));
-
-        let expired = Instant::now() - Duration::from_millis(1);
-        assert_eq!(preact_wait(0, expired), Err(BOUND_WALL_CLOCK));
-
-        let roomy = Instant::now() + Duration::from_secs(2);
-        let wait = preact_wait(1, roomy).expect("difficulty 1 fits");
-        assert!(wait >= Duration::from_millis(79), "wait: {wait:?}");
-        assert!(wait <= Duration::from_millis(81), "wait: {wait:?}");
-
-        let capped = preact_wait(4, Instant::now() + Duration::from_millis(100));
-        assert_eq!(capped, Err(BOUND_WALL_CLOCK));
-    }
-
-    #[tokio::test]
-    async fn preact_waits_then_submits_the_digest() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        let submit = server.mock(|when, then| {
-            when.method(GET)
-                .path("/search")
-                .query_param("q", "rust")
-                .query_param("result", PREACT_DIGEST);
-            then.status(302)
-                .header("set-cookie", "spchal-auth=preact-pass");
-        });
-
-        let mut budget = budget(10, 2000, 5);
-        let started = Instant::now();
-        let outcome = solve_and_verify(
-            &test_client(),
-            "startpage",
-            &server.url(""),
-            &preact_page("abc", 1, "/search?q=rust"),
-            "/search?q=rust",
-            "sp_pow=pow-1",
-            Duration::from_secs(2),
-            &mut budget,
-        )
-        .await
-        .expect("preact verifies");
-        assert_eq!(
-            outcome,
-            SolveOutcome::Solved {
-                cookie: "preact-pass".to_string()
-            }
-        );
-        assert!(
-            started.elapsed() >= Duration::from_millis(70),
-            "minimum elapsed time was not honoured: {:?}",
-            started.elapsed()
-        );
-        assert_eq!(submit.hits(), 1);
-    }
-
-    #[tokio::test]
-    async fn preact_wait_never_exceeds_the_timeout() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        let submit = server.mock(|when, then| {
-            when.method(GET);
-            then.status(200).header("set-cookie", "spchal-auth=never");
-        });
-
-        let mut budget = budget(10, 100, 10);
-        let started = Instant::now();
-        let outcome = solve_and_verify(
-            &test_client(),
-            "startpage",
-            &server.url(""),
-            &preact_page("abc", 10, "/search?q=rust"),
-            "/search?q=rust",
-            "",
-            Duration::from_millis(100),
-            &mut budget,
-        )
-        .await
-        .expect("refusal is not an engine error");
-        assert_eq!(
-            outcome,
-            SolveOutcome::Refused {
-                bound: BOUND_WALL_CLOCK
-            }
-        );
-        assert!(
-            started.elapsed() < Duration::from_millis(400),
-            "wait exceeded the budget: {:?}",
-            started.elapsed()
-        );
-        assert_eq!(submit.hits(), 0);
-    }
-
-    #[test]
-    fn solution_and_challenge_debug_redact_secrets() {
-        let challenge =
-            AnubisChallenge::parse(&fast_page("abc123def456", 2, "fast")).expect("vector parses");
-        let mut budget = budget(1000, 5000, 5);
-        let solution = challenge.solve(&mut budget).expect("vector solves");
-
-        let challenge_debug = format!("{challenge:?}");
-        assert!(!challenge_debug.contains("abc123def456"));
-        assert!(!challenge_debug.contains("01a1cc17"));
-        assert!(challenge_debug.contains("redacted"));
-
-        let solution_debug = format!("{solution:?}");
-        assert!(!solution_debug.contains(FAST_DIGEST));
-        assert!(!solution_debug.contains("185"));
-        assert!(solution_debug.contains("redacted"));
-
-        let outcome_debug = format!(
-            "{:?}",
-            SolveOutcome::Solved {
-                cookie: "spchal-auth=secret-value".to_string()
-            }
-        );
-        assert!(!outcome_debug.contains("secret-value"));
-    }
-
-    #[test]
-    fn challenge_cookies_join_every_set_cookie_pair() {
-        let mut headers = http::HeaderMap::new();
-        headers.append(
-            "set-cookie",
-            http::HeaderValue::from_static(
-                "spchal-cookie-verification=verif-1; Path=/; Domain=startpage.com; Secure; SameSite=None",
-            ),
-        );
-        headers.append(
-            "set-cookie",
-            http::HeaderValue::from_static("sp_pow=pow-1; Expires=Wed, 11 Nov 2026 00:00:00 GMT; Max-Age=300; HttpOnly; Path=/"),
-        );
-        assert_eq!(
-            challenge_cookies(&headers),
-            "spchal-cookie-verification=verif-1; sp_pow=pow-1"
-        );
-        assert_eq!(challenge_cookies(&http::HeaderMap::new()), "");
-        assert_eq!(
-            extract_cookie(&headers, PASS_COOKIE_NAME),
-            None,
-            "the challenge response does not carry the pass cookie"
-        );
-    }
-
-    #[test]
-    fn decimal_digits_match_the_submitted_nonce() {
-        let mut buf = [0u8; 20];
-        assert_eq!(decimal_digits(0, &mut buf), b"0");
-        assert_eq!(decimal_digits(185, &mut buf), b"185");
-        assert_eq!(decimal_digits(u64::MAX, &mut buf), b"18446744073709551615");
-    }
-
-    #[test]
-    fn leading_zero_hex_matches_byte_prefixes() {
-        let digest = [
-            0x00u8, 0x0f, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00,
-        ];
-        assert!(has_leading_zero_hex(&digest, 0));
-        assert!(has_leading_zero_hex(&digest, 1));
-        assert!(has_leading_zero_hex(&digest, 2));
-        assert!(has_leading_zero_hex(&digest, 3));
-        assert!(!has_leading_zero_hex(&digest, 4));
-        assert!(!has_leading_zero_hex(&digest, 65));
-    }
-}
+#[path = "anubis_tests.rs"]
+mod tests;

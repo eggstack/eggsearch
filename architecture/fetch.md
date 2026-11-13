@@ -532,6 +532,19 @@ IPv4-compatible IPv6 via the shared `limits::classify_ip`), and a 3 s DNS
 resolution check rejecting private resolutions. It does not take
 `allow_localhost` / `allow_private_network` overrides.
 
+### Challenge pages on the HTTP path
+
+Plain HTTP responses are classified before they are returned. `src/fetch/challenge.rs` recognises
+Anubis (`anubis_challenge`, `anubis_version`, `anubis_base_prefix`, or the "could not load its
+JavaScript" message), ALTCHA (`captcha-wrap` and the challenge phrase), generic interactive walls
+(Turnstile, reCAPTCHA, hCaptcha markers), and verification interstitials. A detected page keeps its
+bounded body, `status`, and `fetched: true` — it is not a transport failure — but the response sets
+`manual_interaction_required: true` and carries one `fetch_challenge_page` structured warning naming
+the family. Detection adds no request, retry, or delay, and ordinary pages, markdown bodies, and
+PDFs are never marked. Under `render: "auto"` the same classification is an escalation trigger, so
+a detected Anubis or ALTCHA wall is rendered by the browser when one is available instead of being
+returned as a stub; `render: "http_only"` keeps the marked body.
+
 ### Profiles: opaque IDs, origin-scoped logins
 
 `ProfileManager` owns persistent logins under a 0700 root with per-profile

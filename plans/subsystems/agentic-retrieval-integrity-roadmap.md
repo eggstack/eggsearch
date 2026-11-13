@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013–M018 ready; M019 closed; M020 closed; M021 closed)
+Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013 closed; M014–M015 ready; M016 closed; M017–M018 ready; M019 closed; M020 closed; M021 closed; M022 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -72,6 +72,7 @@ M014 pass-cookie lifetime and egress binding    (independent)
 M015 challenge solvability observability        (independent)
 M017 routing shipped-set evidence               (discharges M006's named condition)
 M018 pagination consistency across pages        (corrective to M009)
+M022 fetch-side challenge classification        (corrective to the fetch path; independent)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -99,6 +100,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009 | Pages carry comparable content, `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
 | M019 — fetch document budget and truncation semantics | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md` | none (ADR-0011 accepted) | The extracted document exceeds one caller's window, and truncation is reported as two distinct facts so a caller is never told "not truncated" while holding less than the document contains |
 | M020 — offset addressing and cursor retirement | capability (interface) | `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md` | hard M019 (closed) | A caller reads any window of a fetched document in one call by re-specifying the request with `offset`/`limit`; no opaque token remains in any advertised schema |
+| M022 — fetch-side challenge classification | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/022-fetch-side-challenge-classification.md` | none (ADR-0009/ADR-0010 scope unchanged) | A plain HTTP fetch of an Anubis or ALTCHA wall reports `manual_interaction_required: true` with a `fetch_challenge_page` warning instead of a short ordinary document; `render: "auto"` escalates it when a browser is available |
 | M021 — non-HTML document-scoped addressable text | invariant (corrective; discharges M020's named condition) | `plans/implementation/agentic-retrieval-integrity/021-non-html-document-scoped-addressable-text.md` | hard M020 (closed) | For every representation, `text_total` is the extracted document rather than the caller's window, so an addressed read never reports a document as complete while text remains unreachable |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
@@ -130,7 +132,7 @@ Deferred without a plan: answer synthesis, embeddings, semantic local code searc
 
 ## 9. Closure and status
 
-Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-status.md` recording implementation SHA, tests and outputs, measured deltas, unchanged safety evidence, failures, and residual risk. All five records exist and name implementation candidate `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; the closure commit carries the records, roadmap status, and registry rows together. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 is corrective: it references the scraper behaviour observed at baseline and must record why the existing verification did not catch it. M006–M012 are implemented and carry closure records. Each closes only through its own record,
+Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-status.md` recording implementation SHA, tests and outputs, measured deltas, unchanged safety evidence, failures, and residual risk. All five records exist and name implementation candidate `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; the closure commit carries the records, roadmap status, and registry rows together. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 is corrective: it references the scraper behaviour observed at baseline and must record why the existing verification did not catch it. M006–M012, M013, and M016 are implemented and carry closure records; M022 is a fetch-path corrective with its own record. Each closes only through its own record,
 and M012's fixture came from a solved session rather than a guessed page shape — which is what
 exposed M011's mandatory-`redir` defect.
 
@@ -139,6 +141,12 @@ exposed M011's mandatory-`redir` defect.
   The condition is a shipped-set measurement, not an implementation gap.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
+- M013 and M016 are `closed`: the solver now follows ADR-0010's published method registry
+  (`slow` as the `fast` alias, `metarefresh`, base prefix, spent refusal, pre-flight cost
+  projection, and origin-validated `redir`).
+- M022 is `closed`: the plain HTTP fetch path classifies Anubis, ALTCHA, interactive, and
+  verification challenge pages, marks them with `manual_interaction_required` and one
+  `fetch_challenge_page` warning, and lets `render: "auto"` escalate a detected wall.
 - M019–M020 restructure fetch addressing under ADR-0011. They supersede the opaque replay cursor
   from M009 in part and the page-budget mechanism from M018 in part: the cursor was unreleased, so
   this is a replacement rather than a deprecation, and M018's `focus_scope`/`aggregate_scope`
@@ -161,10 +169,11 @@ exposed M011's mandatory-`redir` defect.
   That record also carries the PDF findings this work exposed — flag conflation, the hardcoded
   `chunk_0`, the silent `max_pages` cut, and the whole-chunk-per-window payload — which belong to
   the PDF ingestion subsystem, whose ready M005 must be reconciled with it.
-- M013–M018 are registered corrective and extension work from the 2026-11-12 live review. ADR-0010
-  is accepted and authorizes no behaviour change by itself: it widens method coverage to the
-  published Anubis registry and records that the nonce search stays single-threaded, but every
-  method still lands through its own plan with fixtures and budget tests.
+- M013–M018 were registered corrective and extension work from the 2026-11-12 live review.
+  ADR-0010 is accepted; M013 (published-registry coverage, fail-fast projection, and the
+  prefix/spent/`redir` conformance corrections) and M016 (`metarefresh`) are now closed, while
+  M014, M015, M017, and M018 remain `ready`. Every method still lands through its own plan with
+  fixtures and budget tests; coverage does not inherit permission from the registry.
 - Two plan targets were found unreachable during implementation and are recorded rather than
   restated: M008's compact `minimal` preset is 66% of compact `full` rather than under half (the
   remainder is mandatory schema envelope), and M011's difficulty-6 opt-in requires raising

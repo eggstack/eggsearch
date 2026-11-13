@@ -1,6 +1,6 @@
 # M012 — Startpage Payload Extraction
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M012
 Primary class: capability
 Baseline: `d751bd7471a647e651ee41b8e51199c66d04d01a` (re-read `git status` before starting)

@@ -152,3 +152,19 @@ of magnitude slower, so the solve reports `blocked` with
 performance baseline for this capability; measure with `--release`. The
 classification is correct in both builds, and the disabled path is unchanged.
 
+
+## Challenge solver conformance (2026-11-13 UTC)
+
+Re-run through the shipped release binary after the M013/M016 solver corrections
+(`eggsearch --config … search --providers startpage --max-results 3`):
+
+| Provider | Configuration | Observation |
+|---|---|---|
+| `startpage` | `enabled = true`, `max_difficulty = 6`, `max_attempts = 50000000`, `timeout_ms = 15000` | 3/3 parsed rows, no provider failures; the wall still publishes `fast` at difficulty 6, and the baseline pass-challenge path and query are unchanged |
+| `startpage` | `enabled = true`, `max_difficulty = 2`, difficulty 6 published | blocked in 0.27 s with `anubis difficulty 6 exceeds configured ceiling 2`; zero pass-challenge requests |
+| `startpage` | `enabled = true`, `max_attempts = 100` | blocked in 0.28 s with `challenge not solved: attempts exhausted` |
+| `startpage` | `enabled = true`, `timeout_ms = 100` | blocked in 0.32 s with `challenge not solved: wall clock exhausted` |
+
+No deployment publishing `anubis_base_prefix` with a non-empty value, `method = "slow"`,
+`method = "preact"`, or `method = "metarefresh"` was reachable on 2026-11-13. Those paths are
+synthetic-fixture verified only and are not described here as live observations.
