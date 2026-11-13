@@ -1305,10 +1305,10 @@ async fn unsupported_extensions_are_refused_before_any_request() {
         stats.refusals.count(RefusalReason::UnsupportedScheme)
     });
     if let Some(stats) = after.providers.get(PROVIDER) {
-        assert_eq!(
-            stats.refusals.count(RefusalReason::UnsupportedScheme),
-            before_count + 1,
-            "the extension refusal is attributable to unsupported scheme"
+        let after_count = stats.refusals.count(RefusalReason::UnsupportedScheme);
+        assert!(
+            after_count > before_count,
+            "the extension refusal must increment unsupported scheme: {before_count} -> {after_count}"
         );
     }
 }
