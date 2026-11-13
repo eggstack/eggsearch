@@ -73,7 +73,7 @@ defaulted, but `[search]` still requires `mode`, `default_max_results`,
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `intent_mode` | `IntentMode` | `off` | `off` derives and reports intent plus the routing decision but adds no provider; `apply` admits the intent's preferred providers. Unknown values are a parse error |
+| `intent_mode` | `IntentMode` | `apply` | `off` derives and reports intent plus the routing decision but adds no provider; `apply` admits the intent's preferred providers. Unknown values are a parse error |
 | `max_extra_providers` | `usize` | `2` | Cap on providers added by one routing decision, bounded to 0–4. `0` reports without adding |
 
 Routing only adds. The precedence chain is explicit `providers`, then `profile`,

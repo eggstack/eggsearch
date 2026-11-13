@@ -231,3 +231,21 @@ pub fn intent_additions(
 pub fn capable_providers(intent: SearchIntent, built: &[String]) -> Vec<String> {
     crate::meta::routing::capable_built_providers(intent, built)
 }
+
+/// Every intent the preference table discloses, with its ordered provider
+/// list. Empty lists are reported as empty, never omitted.
+pub fn intent_preferences() -> Vec<(SearchIntent, Vec<String>)> {
+    crate::meta::routing::INTENT_PROVIDER_PREFERENCES
+        .iter()
+        .map(|preference| {
+            (
+                preference.intent,
+                preference
+                    .providers
+                    .iter()
+                    .map(|id| (*id).to_string())
+                    .collect(),
+            )
+        })
+        .collect()
+}

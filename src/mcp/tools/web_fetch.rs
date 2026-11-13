@@ -639,31 +639,20 @@ pub async fn run_web_fetch_with_progress(
                 None
             };
 
-            let fetched = if let Some(controller) = state.origin_controller.as_ref() {
-                client
-                    .fetch_with_origin_controller(
-                        trimmed_url,
-                        args.max_chars,
-                        extract_mode,
-                        include_links,
-                        args.pdf.as_ref(),
-                        controller,
-                    )
-                    .await
-            } else {
-                client
-                    .fetch(
-                        trimmed_url,
-                        args.max_chars,
-                        extract_mode,
-                        include_links,
-                        args.pdf.as_ref(),
-                    )
-                    .await
-            };
+            let fetched = client
+                .fetch_capturing(
+                    trimmed_url,
+                    args.max_chars,
+                    extract_mode,
+                    include_links,
+                    args.pdf.as_ref(),
+                    state.origin_controller.as_deref(),
+                    None,
+                )
+                .await;
 
             match fetched {
-                Ok(resp) => {
+                Ok((resp, challenge_cookies)) => {
                     if let Some(ref ctrl) = state.origin_controller {
                         ctrl.record_success(&origin_key).await;
                     }
@@ -757,7 +746,21 @@ pub async fn run_web_fetch_with_progress(
                     }
 
                     if !escalated {
-                        response = Some(resp);
+                        response = Some(
+                            replay_anubis_challenge(
+                                state.as_ref(),
+                                client.as_ref(),
+                                state.origin_controller.as_deref(),
+                                &args,
+                                extract_mode,
+                                include_links,
+                                &resp,
+                                challenge_cookies,
+                                deadline,
+                            )
+                            .await
+                            .unwrap_or(resp),
+                        );
                     }
                     break;
                 }
@@ -1101,6 +1104,85 @@ pub async fn run_web_fetch_with_progress(
         detail,
         state.config.mcp.brief_max_chars,
     ))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn replay_anubis_challenge(
+    state: &ServerState,
+    client: &FetchClient,
+    origin_controller: Option<&crate::fetch::origin::OriginController>,
+    args: &WebFetchArgs,
+    extract_mode: crate::core::fetch::ExtractMode,
+    include_links: bool,
+    response: &crate::core::fetch::WebFetchResponse,
+    challenge_cookies: Option<String>,
+    deadline: std::time::Instant,
+) -> Option<crate::core::fetch::WebFetchResponse> {
+    use crate::core::fetch::FetchRepresentation;
+    use crate::fetch::challenge::{detect_html, ChallengeKind};
+    use crate::meta::challenge::anubis::{solve_and_verify, PASS_COOKIE_NAME};
+    use crate::meta::challenge::{SolveBudget, SolveOutcome};
+
+    let settings = &state.config.search.challenge;
+    if !settings.enabled {
+        return None;
+    }
+    let is_html = response.representation == Some(FetchRepresentation::Html);
+    let challenge_page = response.raw_body.as_deref().unwrap_or_default();
+    if detect_html(is_html, response.title.as_deref(), challenge_page)
+        != Some(ChallengeKind::Anubis)
+    {
+        return None;
+    }
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    let parsed = url::Url::parse(&response.final_url).ok()?;
+    let base_url = format!("{}://{}", parsed.scheme(), parsed.authority());
+    let timeout = std::time::Duration::from_millis(settings.timeout_ms).min(remaining);
+    let solver_client =
+        crate::meta::engines::build_http_client(Some(&state.config.fetch.user_agent)).ok()?;
+    let mut budget = SolveBudget::new(settings.max_attempts, timeout, settings.max_difficulty);
+    let outcome = solve_and_verify(
+        &solver_client,
+        "web_fetch",
+        &base_url,
+        &String::from_utf8_lossy(challenge_page),
+        &response.final_url,
+        challenge_cookies.as_deref().unwrap_or_default(),
+        timeout,
+        &mut budget,
+    )
+    .await
+    .ok()?;
+    let SolveOutcome::Solved { cookie, .. } = outcome else {
+        return None;
+    };
+    let header = format!("{PASS_COOKIE_NAME}={cookie}");
+    let replayed = client
+        .fetch_with_cookie(
+            args.url.trim(),
+            args.max_chars,
+            extract_mode,
+            include_links,
+            args.pdf.as_ref(),
+            origin_controller,
+            Some(&header),
+        )
+        .await
+        .ok()?;
+    let replay_page = replayed.raw_body.as_deref().unwrap_or_default();
+    if detect_html(
+        replayed.representation == Some(FetchRepresentation::Html),
+        replayed.title.as_deref(),
+        replay_page,
+    )
+    .is_some()
+    {
+        return None;
+    }
+    Some(replayed)
 }
 
 struct WindowedFetch {

@@ -99,10 +99,11 @@ impl FetchClient {
             &crate::core::fetch::PdfFetchOptions,
         >,
         origin_controller: Option<&super::origin::OriginController>,
-    ) -> Result<WebFetchResponse, FetchError> {
+        cookie: Option<&str>,
+    ) -> Result<(WebFetchResponse, Option<String>), FetchError> {
         let accept_policy = accept::select_accept_policy(url_str, extract_mode);
         if accept_policy == AcceptPolicy::Html {
-            let response = self
+            let (response, cookies) = self
                 .fetch_once(
                     url_str,
                     max_chars,
@@ -111,9 +112,10 @@ impl FetchClient {
                     pdf_options,
                     origin_controller,
                     AcceptPolicy::Html,
+                    cookie,
                 )
                 .await?;
-            return Ok(finish_fetch(response, AcceptPolicy::Html, 1));
+            return Ok((finish_fetch(response, AcceptPolicy::Html, 1), cookies));
         }
 
         match self
@@ -125,13 +127,14 @@ impl FetchClient {
                 pdf_options,
                 origin_controller,
                 AcceptPolicy::Markdown,
+                cookie,
             )
             .await
         {
-            Ok(response) => {
+            Ok((response, cookies)) => {
                 let response = finish_fetch(response, AcceptPolicy::Markdown, 1);
                 if !needs_html_fallback(&response) {
-                    return Ok(response);
+                    return Ok((response, cookies));
                 }
                 match self
                     .fetch_once(
@@ -142,21 +145,25 @@ impl FetchClient {
                         pdf_options,
                         origin_controller,
                         AcceptPolicy::Html,
+                        cookie,
                     )
                     .await
                 {
-                    Ok(fallback) => Ok(finish_fetch(fallback, AcceptPolicy::Html, 2)),
+                    Ok((fallback, fallback_cookies)) => Ok((
+                        finish_fetch(fallback, AcceptPolicy::Html, 2),
+                        fallback_cookies,
+                    )),
                     Err(error) => {
                         let mut response = finish_fetch(response, AcceptPolicy::Markdown, 2);
                         response
                             .warnings
                             .push(format!("markdown_fallback_failed: {error}"));
-                        Ok(response)
+                        Ok((response, cookies))
                     }
                 }
             }
             Err(error) if falls_back_to_html(&error) => {
-                let fallback = self
+                let (fallback, cookies) = self
                     .fetch_once(
                         url_str,
                         max_chars,
@@ -165,9 +172,10 @@ impl FetchClient {
                         pdf_options,
                         origin_controller,
                         AcceptPolicy::Html,
+                        cookie,
                     )
                     .await?;
-                Ok(finish_fetch(fallback, AcceptPolicy::Html, 2))
+                Ok((finish_fetch(fallback, AcceptPolicy::Html, 2), cookies))
             }
             Err(error) => Err(error),
         }

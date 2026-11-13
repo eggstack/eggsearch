@@ -38,7 +38,8 @@ pub struct IntentRoutingAttempt {
     /// The provider id under consideration.
     pub provider_id: String,
     /// Stable disposition code: `added`, `already_selected`, `not_enabled`,
-    /// `not_built`, `cooling_down`, `capability_missing`, or `cap_exceeded`.
+    /// `not_built`, `cooling_down`, `keyword_unsupported`,
+    /// `capability_missing`, or `cap_exceeded`.
     pub disposition: String,
 }
 

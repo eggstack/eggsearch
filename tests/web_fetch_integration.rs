@@ -5584,3 +5584,190 @@ async fn web_fetch_marks_anubis_and_altcha_challenge_pages() {
         .iter()
         .any(|warning| warning["code"] == "fetch_challenge_page"));
 }
+
+const ANUBIS_PASS_COOKIE: &str = "pass-cookie-123";
+
+fn anubis_fast_challenge_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "fast", "difficulty": 2},
+        "challenge": {
+            "issuedAt": "2026-11-11T00:00:00Z",
+            "metadata": {"User-Agent": "eggsearch"},
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "fast",
+            "randomData": "abc123def456",
+            "redir": "/search?q=rust",
+            "policyRuleHash": "00",
+            "difficulty": 2,
+            "spent": false
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn anubis_wall<'a>(
+    server: &'a httpmock::MockServer,
+    replay_body: &str,
+) -> (httpmock::Mock<'a>, httpmock::Mock<'a>, httpmock::Mock<'a>) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("spchal-auth={ANUBIS_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("set-cookie", "sp_pow=pow-1; Path=/")
+            .header("set-cookie", "spchal-cookie-verification=verif-1; Path=/")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge")
+            .header("cookie", "sp_pow=pow-1; spchal-cookie-verification=verif-1");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("spchal-auth={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly"),
+            )
+            .body("");
+    });
+    (replay, wall, pass)
+}
+
+fn anubis_state(enabled: bool) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = enabled;
+    Arc::new(ServerState::build(cfg).expect("state builds"))
+}
+
+fn challenge_warning_count(value: &serde_json::Value) -> usize {
+    value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|warning| warning["code"] == "fetch_challenge_page")
+        .count()
+}
+
+#[tokio::test]
+async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust is fast and reliable"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&value),
+        0,
+        "a solved fetch carries no challenge warning"
+    );
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(pass.hits(), 1, "the published challenge is answered once");
+    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+}
+
+#[tokio::test]
+async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
+
+    let value = run_web_fetch(anubis_state(false), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1, "one request is made");
+    assert_eq!(pass.hits(), 0, "solving is not attempted");
+    assert_eq!(replay.hits(), 0, "no replay is issued");
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    cfg.search.challenge.max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let value = run_web_fetch(state, fetch_args_for(server.url("/")))
+        .await
+        .expect("refused solve keeps the marked response");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(pass.hits(), 0, "a refusal stops before the pass request");
+    assert_eq!(replay.hits(), 0, "a refusal issues no replay");
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(&server, &anubis_fast_challenge_page());
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("a challenged replay keeps the marked response");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(pass.hits(), 1, "the call solves exactly once");
+    assert_eq!(replay.hits(), 1, "the call replays exactly once");
+}
+
+#[tokio::test]
+async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (_, _, _) = anubis_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+    let serialized = serde_json::to_string(&value).expect("payload is serializable");
+
+    for canary in [ANUBIS_PASS_COOKIE, "pow-1", "spchal-auth", "sp_pow"] {
+        assert!(
+            !serialized.contains(canary),
+            "cookie material {canary} must not reach the payload: {serialized}"
+        );
+    }
+}

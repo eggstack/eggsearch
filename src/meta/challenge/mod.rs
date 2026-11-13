@@ -2,10 +2,16 @@
 
 pub mod altcha;
 pub mod anubis;
+pub mod cookie;
+pub mod ledger;
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+
+use crate::meta::engines::error::EngineError;
+
+pub use ledger::solve_ledger;
 
 /// Bound name reported when the attempt ceiling is reached.
 pub const BOUND_ATTEMPTS: &str = "attempts exhausted";
@@ -120,6 +126,8 @@ pub enum SolveOutcome {
     Solved {
         /// Pass cookie value. Never write this into an error or a log.
         cookie: String,
+        /// Lifetime the upstream published for this cookie.
+        lifetime: cookie::PublishedLifetime,
     },
     /// The solve stopped at a named ceiling.
     Refused {
@@ -131,9 +139,98 @@ pub enum SolveOutcome {
 impl std::fmt::Debug for SolveOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Solved { .. } => f.write_str("Solved { cookie: <redacted> }"),
+            Self::Solved { lifetime, .. } => f
+                .debug_struct("Solved")
+                .field("cookie", &"<redacted>")
+                .field("lifetime", &lifetime.kind())
+                .finish(),
             Self::Refused { bound } => f.debug_struct("Refused").field("bound", bound).finish(),
         }
+    }
+}
+
+/// Terminal state of one solve, before it becomes a public [`SolveOutcome`].
+pub(crate) enum TerminalOutcome {
+    /// The challenge was answered and produced a pass cookie.
+    Solved {
+        cookie: String,
+        lifetime: cookie::PublishedLifetime,
+    },
+    /// The solve stopped at a named bound.
+    Refused {
+        /// One of the `BOUND_*` names.
+        bound: &'static str,
+    },
+    /// The solve stopped at a sentence that still needs an attributable key.
+    Blocked {
+        reason: String,
+        key: ledger::RefusalReason,
+    },
+}
+
+/// One inner solve step: a terminal decision or a transport error.
+pub(crate) enum SolveStep {
+    Terminal {
+        terminal: TerminalOutcome,
+        elapsed: Duration,
+    },
+    Error(EngineError),
+}
+
+pub(crate) fn refused_step(bound: &'static str) -> SolveStep {
+    SolveStep::Terminal {
+        terminal: TerminalOutcome::Refused { bound },
+        elapsed: Duration::ZERO,
+    }
+}
+
+pub(crate) fn blocked_step(reason: String, key: ledger::RefusalReason) -> SolveStep {
+    SolveStep::Terminal {
+        terminal: TerminalOutcome::Blocked { reason, key },
+        elapsed: Duration::ZERO,
+    }
+}
+
+pub(crate) fn decided_step(terminal: TerminalOutcome, started: Instant) -> SolveStep {
+    SolveStep::Terminal {
+        terminal,
+        elapsed: started.elapsed(),
+    }
+}
+
+/// Record one terminal solve step and map it to the public outcome.
+pub(crate) fn finish_solve(
+    engine: &'static str,
+    step: SolveStep,
+    candidates: u64,
+) -> Result<SolveOutcome, EngineError> {
+    let (terminal, elapsed) = match step {
+        SolveStep::Terminal { terminal, elapsed } => (terminal, elapsed),
+        SolveStep::Error(error) => {
+            ledger::solve_ledger().record_outcome(
+                engine,
+                ledger::RecordedOutcome::Errored,
+                candidates,
+                Duration::ZERO,
+            );
+            return Err(error);
+        }
+    };
+    let recorded = match &terminal {
+        TerminalOutcome::Solved { .. } => ledger::RecordedOutcome::Solved,
+        TerminalOutcome::Refused { bound } => match ledger::RefusalReason::from_bound(bound) {
+            Some(reason) => ledger::RecordedOutcome::Refused(reason),
+            None => ledger::RecordedOutcome::Errored,
+        },
+        TerminalOutcome::Blocked { key, .. } => ledger::RecordedOutcome::Refused(*key),
+    };
+    ledger::solve_ledger().record_outcome(engine, recorded, candidates, elapsed);
+    match terminal {
+        TerminalOutcome::Solved { cookie, lifetime } => {
+            Ok(SolveOutcome::Solved { cookie, lifetime })
+        }
+        TerminalOutcome::Refused { bound } => Ok(SolveOutcome::Refused { bound }),
+        TerminalOutcome::Blocked { reason, .. } => Err(EngineError::Blocked { engine, reason }),
     }
 }
 
@@ -236,6 +333,12 @@ impl PassCookieCache {
         self.len() == 0
     }
 
+    /// Drop the entry for one provider, leaving every other provider intact.
+    pub fn remove(&self, provider: &str) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.entries.remove(provider);
+    }
+
     /// Drop every entry.
     pub fn clear(&self) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -258,6 +361,14 @@ static PASS_COOKIE_CACHE: OnceLock<PassCookieCache> = OnceLock::new();
 #[must_use]
 pub fn pass_cookie_cache() -> &'static PassCookieCache {
     PASS_COOKIE_CACHE.get_or_init(|| PassCookieCache::new(PassCookieCache::DEFAULT_CAPACITY))
+}
+
+/// Cached pass cookie for `provider`, recording one hit or one miss.
+#[must_use]
+pub fn lookup_pass_cookie(provider: &str) -> Option<String> {
+    let cookie = pass_cookie_cache().get(provider);
+    ledger::solve_ledger().record_cookie_lookup(provider, cookie.is_some());
+    cookie
 }
 
 #[cfg(test)]
@@ -333,13 +444,39 @@ mod tests {
     }
 
     #[test]
+    fn remove_drops_one_provider_and_keeps_the_rest() {
+        let cache = PassCookieCache::new(4);
+        cache.put("mojeek", "mojeek-cookie", Duration::from_secs(60));
+        cache.put("startpage", "startpage-cookie", Duration::from_secs(60));
+        cache.remove("mojeek");
+        assert_eq!(cache.get("mojeek"), None);
+        assert_eq!(cache.get("startpage").as_deref(), Some("startpage-cookie"));
+        cache.remove("absent");
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn mixed_ttls_drop_only_the_expired_provider() {
+        let cache = PassCookieCache::new(4);
+        cache.put("mojeek", "short-lived", Duration::from_millis(10));
+        cache.put("startpage", "long-lived", Duration::from_secs(60));
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(cache.get("mojeek"), None);
+        assert_eq!(cache.get("startpage").as_deref(), Some("long-lived"));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
     fn outcome_debug_redacts_cookie_values() {
         let outcome = SolveOutcome::Solved {
             cookie: "chllg=super-secret".to_string(),
+            lifetime: cookie::PublishedLifetime::MaxAge(45),
         };
         let rendered = format!("{outcome:?}");
         assert!(!rendered.contains("super-secret"), "got: {rendered}");
+        assert!(!rendered.contains("45"), "got: {rendered}");
         assert!(rendered.contains("redacted"));
+        assert!(rendered.contains("max-age"));
     }
 
     #[test]

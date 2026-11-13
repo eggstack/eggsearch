@@ -561,6 +561,309 @@
         "intent_mode": "apply",
         "max_extra_providers": 2
       }
+    },
+    {
+      "id": "web-no-routing-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "shared rate limit implementation notes",
+      "language": "en",
+      "region": "US",
+      "intent": "web",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "rate-limit-implementation", "urls": ["https://guides.example.test/rate-limit-implementation"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Implementing a shared rate limiter", "url": "https://guides.example.test/rate-limit-implementation"},
+          {"rank": 2, "title": "Rate limiting across service boundaries", "url": "https://notes.example.test/rate-limit-notes"},
+          {"rank": 3, "title": "Thread 211: related discussion", "url": "https://threads1.example.test/thread-211"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "Implementing a shared rate limiter", "url": "https://guides.example.test/rate-limit-implementation"},
+          {"rank": 2, "title": "Token bucket versus sliding window", "url": "https://blog.example.test/rate-limit-overview"},
+          {"rank": 3, "title": "Thread 212: related discussion", "url": "https://threads2.example.test/thread-212"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Implementing a shared rate limiter", "url": "https://guides.example.test/rate-limit-implementation"},
+          {"rank": 2, "title": "Rate limiter operational checklist", "url": "https://digest.example.test/rate-limit-digest"},
+          {"rank": 3, "title": "Thread 213: related discussion", "url": "https://threads3.example.test/thread-213"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
+    },
+    {
+      "id": "docs-no-routing-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "tower-http trace layer documentation",
+      "language": "en",
+      "region": "US",
+      "intent": "docs",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "trace-layer-reference", "urls": ["https://docs.rs/tower-http/latest/tower_http/trace/index.html"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "tower-http trace layer reference", "url": "https://docs.rs/tower-http/latest/tower_http/trace/index.html"},
+          {"rank": 2, "title": "Tracing middleware behind a proxy", "url": "https://notes.example.test/trace-layer-notes"},
+          {"rank": 3, "title": "Thread 221: related discussion", "url": "https://threads1.example.test/thread-221"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "tower-http trace layer reference", "url": "https://docs.rs/tower-http/latest/tower_http/trace/index.html"},
+          {"rank": 2, "title": "Composing trace layers in a service", "url": "https://blog.example.test/trace-layer-overview"},
+          {"rank": 3, "title": "Thread 222: related discussion", "url": "https://threads2.example.test/thread-222"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "tower-http trace layer reference", "url": "https://docs.rs/tower-http/latest/tower_http/trace/index.html"},
+          {"rank": 2, "title": "Trace layer configuration patterns", "url": "https://digest.example.test/trace-layer-digest"},
+          {"rank": 3, "title": "Thread 223: related discussion", "url": "https://threads3.example.test/thread-223"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
+    },
+    {
+      "id": "code-github-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "Router::layer middleware ordering",
+      "language": "en",
+      "region": "US",
+      "intent": "code",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "router-layer-source", "urls": ["https://github.com/example/router/blob/main/src/layer.rs"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 230: middleware ordering questions", "url": "https://forum.example.test/thread-230"},
+          {"rank": 2, "title": "Layer ordering rules of thumb", "url": "https://notes.example.test/middleware-ordering-notes"},
+          {"rank": 3, "title": "Thread 231: related discussion", "url": "https://forum.example.test/thread-231"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "Thread 230: middleware ordering questions", "url": "https://forum.example.test/thread-230"},
+          {"rank": 2, "title": "Middleware ordering walkthrough", "url": "https://blog.example.test/middleware-ordering-overview"},
+          {"rank": 3, "title": "Thread 232: related discussion", "url": "https://forum.example.test/thread-232"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Thread 230: middleware ordering questions", "url": "https://forum.example.test/thread-230"},
+          {"rank": 2, "title": "Ordering layers in practice", "url": "https://digest.example.test/middleware-ordering-digest"},
+          {"rank": 3, "title": "Thread 233: related discussion", "url": "https://forum.example.test/thread-233"}
+        ]},
+        {"provider_id": "github_code", "results": [
+          {"rank": 1, "title": "router: layer ordering", "url": "https://github.com/example/router/blob/main/src/layer.rs"},
+          {"rank": 2, "title": "Thread 234: layer composition discussion", "url": "https://discuss.example.test/thread-234"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo", "github_code"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
+    },
+    {
+      "id": "issues-github-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "auth token refresh bug report",
+      "language": "en",
+      "region": "US",
+      "intent": "issues",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "auth-refresh-issue", "urls": ["https://github.com/example/auth/issues/42"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 240: token refresh failures", "url": "https://forum.example.test/thread-240"},
+          {"rank": 2, "title": "Refresh tokens around the clock", "url": "https://notes.example.test/token-refresh-notes"},
+          {"rank": 3, "title": "Thread 241: related discussion", "url": "https://forum.example.test/thread-241"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "Thread 240: token refresh failures", "url": "https://forum.example.test/thread-240"},
+          {"rank": 2, "title": "Token refresh sequences explained", "url": "https://blog.example.test/token-refresh-overview"},
+          {"rank": 3, "title": "Thread 242: related discussion", "url": "https://forum.example.test/thread-242"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Thread 240: token refresh failures", "url": "https://forum.example.test/thread-240"},
+          {"rank": 2, "title": "Refresh token rotation digest", "url": "https://digest.example.test/token-refresh-digest"},
+          {"rank": 3, "title": "Thread 243: related discussion", "url": "https://forum.example.test/thread-243"}
+        ]},
+        {"provider_id": "github_issues", "results": [
+          {"rank": 1, "title": "auth: token refresh returns stale credentials", "url": "https://github.com/example/auth/issues/42"},
+          {"rank": 2, "title": "Thread 244: refresh retry discussion", "url": "https://discuss.example.test/thread-244"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo", "github_issues"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
+    },
+    {
+      "id": "releases-github-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "axum release notes changelog",
+      "language": "en",
+      "region": "US",
+      "intent": "releases",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "axum-release-notes", "urls": ["https://github.com/tokio-rs/axum/releases/tag/axum-v0.8.0"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 250: axum upgrade chatter", "url": "https://forum.example.test/thread-250"},
+          {"rank": 2, "title": "Axum release highlights", "url": "https://notes.example.test/axum-notes-notes"},
+          {"rank": 3, "title": "Thread 251: related discussion", "url": "https://forum.example.test/thread-251"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "Thread 250: axum upgrade chatter", "url": "https://forum.example.test/thread-250"},
+          {"rank": 2, "title": "Axum changelog walkthrough", "url": "https://blog.example.test/axum-notes-overview"},
+          {"rank": 3, "title": "Thread 252: related discussion", "url": "https://forum.example.test/thread-252"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Thread 250: axum upgrade chatter", "url": "https://forum.example.test/thread-250"},
+          {"rank": 2, "title": "Axum version digest", "url": "https://digest.example.test/axum-notes-digest"},
+          {"rank": 3, "title": "Thread 253: related discussion", "url": "https://forum.example.test/thread-253"}
+        ]},
+        {"provider_id": "github_releases", "results": [
+          {"rank": 1, "title": "axum v0.8.0", "url": "https://github.com/tokio-rs/axum/releases/tag/axum-v0.8.0"},
+          {"rank": 2, "title": "Thread 254: release upgrade questions", "url": "https://discuss.example.test/thread-254"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo", "github_releases"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
+    },
+    {
+      "id": "security-osv-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "CVE-2024-1234 openssl advisory",
+      "language": "en",
+      "region": "US",
+      "intent": "security",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "openssl-advisory", "urls": ["https://osv.dev/vulnerability/CVE-2024-1234"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 260: advisory triage", "url": "https://forum.example.test/thread-260"},
+          {"rank": 2, "title": "Advisory roundup notes", "url": "https://notes.example.test/advisory-triage-notes"},
+          {"rank": 3, "title": "Thread 261: related discussion", "url": "https://forum.example.test/thread-261"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "Thread 260: advisory triage", "url": "https://forum.example.test/thread-260"},
+          {"rank": 2, "title": "Vulnerability patching walkthrough", "url": "https://blog.example.test/advisory-triage-overview"},
+          {"rank": 3, "title": "Thread 262: related discussion", "url": "https://forum.example.test/thread-262"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Thread 260: advisory triage", "url": "https://forum.example.test/thread-260"},
+          {"rank": 2, "title": "Advisory review digest", "url": "https://digest.example.test/advisory-triage-digest"},
+          {"rank": 3, "title": "Thread 263: related discussion", "url": "https://forum.example.test/thread-263"}
+        ]},
+        {"provider_id": "osv", "results": [
+          {"rank": 1, "title": "CVE-2024-1234: heap overflow in X.509 name parsing", "url": "https://osv.dev/vulnerability/CVE-2024-1234"},
+          {"rank": 2, "title": "OSV mirror: CVE-2024-9999", "url": "https://mirror.example.test/advisories/OSV-2024-9999"}
+        ]},
+        {"provider_id": "nvd", "results": [
+          {"rank": 1, "title": "CVE-2024-7777 detail", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-7777"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo", "osv", "nvd"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
+    },
+    {
+      "id": "news-tavily-shipped-001",
+      "category": "intent_routing",
+      "partition": "train",
+      "query": "breaking news semiconductor supply chain",
+      "language": "en",
+      "region": "US",
+      "intent": "news",
+      "freshness": "any",
+      "retrieval_scope": "web",
+      "max_results": 5,
+      "judgments_complete": true,
+      "expected_state": "results",
+      "relevant_documents": [
+        {"id": "semiconductor-supply-chain", "urls": ["https://news.example.test/semiconductor-supply-chain"], "grade": 3, "passages": []}
+      ],
+      "provider_lists": [
+        {"provider_id": "duckduckgo", "results": [
+          {"rank": 1, "title": "Thread 270: chip supply chatter", "url": "https://forum.example.test/thread-270"},
+          {"rank": 2, "title": "Semiconductor supply notes", "url": "https://notes.example.test/supply-chain-notes"},
+          {"rank": 3, "title": "Thread 271: related discussion", "url": "https://forum.example.test/thread-271"}
+        ]},
+        {"provider_id": "brave", "results": [
+          {"rank": 1, "title": "Thread 270: chip supply chatter", "url": "https://forum.example.test/thread-270"},
+          {"rank": 2, "title": "Chip supply chain walkthrough", "url": "https://blog.example.test/supply-chain-overview"},
+          {"rank": 3, "title": "Thread 272: related discussion", "url": "https://forum.example.test/thread-272"}
+        ]},
+        {"provider_id": "yahoo", "results": [
+          {"rank": 1, "title": "Thread 270: chip supply chatter", "url": "https://forum.example.test/thread-270"},
+          {"rank": 2, "title": "Supply chain news digest", "url": "https://digest.example.test/supply-chain-digest"},
+          {"rank": 3, "title": "Thread 273: related discussion", "url": "https://forum.example.test/thread-273"}
+        ]},
+        {"provider_id": "tavily", "results": [
+          {"rank": 1, "title": "Semiconductor supply chain disruption spreads", "url": "https://news.example.test/semiconductor-supply-chain"},
+          {"rank": 2, "title": "Thread 274: fab capacity discussion", "url": "https://discuss.example.test/thread-274"}
+        ]}
+      ],
+      "routing": {
+        "enabled_providers": ["duckduckgo", "brave", "yahoo", "tavily"],
+        "default_providers": ["duckduckgo", "brave", "yahoo"],
+        "intent_mode": "apply",
+        "max_extra_providers": 1
+      }
     }
   ]
 }

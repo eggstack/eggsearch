@@ -151,6 +151,7 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
                 "providers": {"type": "array"},
                 "mode": {"type": "string"},
                 "server_capabilities": {"type": "object"},
+                "challenge_solver": {"type": "object"},
                 "probe": {"type": "object"},
             }),
             &["providers"],

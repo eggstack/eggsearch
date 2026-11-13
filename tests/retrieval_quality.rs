@@ -1837,13 +1837,66 @@ fn derived_intent_rollout_gate_matches_the_recorded_decision() {
 }
 
 #[cfg(feature = "mock")]
-const SECURITY_PREFERENCE_ORDER: [&str; 4] = ["osv", "github_advisory", "rustsec", "nvd"];
+const SECURITY_PREFERENCE_ORDER: [&str; 3] = ["osv", "github_advisory", "nvd"];
 
 #[cfg(feature = "mock")]
-const SECURITY_DISTRACTOR_ORDER: [&str; 4] = ["nvd", "osv", "github_advisory", "rustsec"];
+const SECURITY_DISTRACTOR_ORDER: [&str; 3] = ["nvd", "osv", "github_advisory"];
 
 #[cfg(feature = "mock")]
-const INTENT_ROUTING_RECORDED_DECISION: &str = "observe_only";
+const INTENT_ROUTING_RECORDED_DECISION: &str = "applied";
+
+#[cfg(feature = "mock")]
+const INTENT_ROUTING_NO_CHANGE_DECISION: Option<&str> = None;
+
+#[cfg(feature = "mock")]
+const SHIPPED_SECURITY_CASE: &str = "security-osv-shipped-001";
+
+#[cfg(feature = "mock")]
+fn shipped_default_providers() -> Vec<String> {
+    eggsearch::core::config::AppConfig::default()
+        .search
+        .default_providers
+}
+
+#[cfg(feature = "mock")]
+fn is_shipped_default_path(case: &Case) -> bool {
+    case.routing
+        .as_ref()
+        .is_some_and(|routing| routing.default_providers == shipped_default_providers())
+}
+
+#[cfg(feature = "mock")]
+fn shipped_intent_coverage(corpus: &Corpus) -> serde_json::Value {
+    let routing_cases: Vec<&Case> = corpus
+        .cases
+        .iter()
+        .filter(|case| case.routing.is_some())
+        .collect();
+    let mut per_intent = Vec::new();
+    let mut missing = Vec::new();
+    for (intent, providers) in eggsearch::selection_test::intent_preferences() {
+        let cases: Vec<String> = routing_cases
+            .iter()
+            .filter(|case| live_intent(&case.intent) == intent)
+            .filter(|case| is_shipped_default_path(case))
+            .map(|case| case.id.clone())
+            .collect();
+        if cases.is_empty() {
+            missing.push(intent.as_str().to_string());
+        }
+        per_intent.push(serde_json::json!({
+            "intent": intent.as_str(),
+            "preference": providers,
+            "cases": cases
+        }));
+    }
+    serde_json::json!({
+        "complete": missing.is_empty(),
+        "missing_intents": missing,
+        "shipped_default_providers": shipped_default_providers(),
+        "per_intent": per_intent
+    })
+}
 
 #[cfg(feature = "mock")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2030,6 +2083,7 @@ fn candidate_snapshot_routing_cases_route_only_native_specialists() {
             "derived_intent": derived.intent.as_str(),
             "intent_mode": routing.intent_mode,
             "max_extra_providers": routing.max_extra_providers,
+            "shipped_default_path": is_shipped_default_path(case),
             "base_providers": base,
             "routed_providers": routed_ids,
             "added_providers": additions,
@@ -2041,16 +2095,27 @@ fn candidate_snapshot_routing_cases_route_only_native_specialists() {
             "deltas": deltas
         }));
     }
+    let coverage = shipped_intent_coverage(&corpus);
+    let shipped_case_count = rows
+        .iter()
+        .filter(|row| row["shipped_default_path"] == serde_json::json!(true))
+        .count();
     assert!(
-        rows.len() >= 4,
-        "the routing lane needs at least four cases, got {}",
-        rows.len()
+        shipped_case_count >= 7,
+        "the routing lane needs a shipped-default case for every intent, got {shipped_case_count}"
+    );
+    assert_eq!(
+        coverage["complete"],
+        serde_json::json!(true),
+        "every intent disclosed by the preference table needs a shipped-default case: {coverage}"
     );
     println!(
         "retrieval-quality-routing-report {}",
         serde_json::to_string(&serde_json::json!({
             "corpus_fingerprint": fingerprint(CANDIDATE_SNAPSHOTS.as_bytes()),
             "intent_mode": eggsearch::core::config::AppConfig::default().search.routing.intent_mode.as_str(),
+            "shipped_case_count": shipped_case_count,
+            "shipped_intent_coverage": coverage,
             "cases": rows
         }))
         .unwrap()
@@ -2065,6 +2130,10 @@ fn seeded_wrong_routing_order_is_detected_on_candidate_snapshots() {
         &corpus,
         RoutingReplay::Ordered(&SECURITY_PREFERENCE_ORDER, 1),
     );
+    let repeated_correct = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_PREFERENCE_ORDER, 1),
+    );
     let distractor = replay_corpus_with_routing(
         &corpus,
         RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
@@ -2073,23 +2142,29 @@ fn seeded_wrong_routing_order_is_detected_on_candidate_snapshots() {
         &corpus,
         RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
     );
+    for (left, right) in correct.cases.iter().zip(&repeated_correct.cases) {
+        assert_eq!(
+            left.results, right.results,
+            "correct-order replay must be reproducible"
+        );
+    }
     for (left, right) in distractor.cases.iter().zip(&repeated.cases) {
         assert_eq!(
             left.results, right.results,
             "distractor replay must be reproducible"
         );
     }
-    let correct_metrics = case_metrics(&correct, "security-osv-routing-001");
-    let distractor_metrics = case_metrics(&distractor, "security-osv-routing-001");
+    let correct_metrics = case_metrics(&correct, SHIPPED_SECURITY_CASE);
+    let distractor_metrics = case_metrics(&distractor, SHIPPED_SECURITY_CASE);
     let drop = metric(&correct_metrics, "recall_at_5") - metric(&distractor_metrics, "recall_at_5");
     assert!(
         drop >= 0.25,
-        "the nvd-before-osv distractor must cost at least 0.25 recall_at_5 on the security routing case: correct={correct_metrics} distractor={distractor_metrics}"
+        "the nvd-before-osv distractor must cost at least 0.25 recall_at_5 on the shipped security case: correct={correct_metrics} distractor={distractor_metrics}"
     );
     println!(
         "retrieval-quality-routing-negative-control {}",
         serde_json::to_string(&serde_json::json!({
-            "case": "security-osv-routing-001",
+            "case": SHIPPED_SECURITY_CASE,
             "control": "security-nvd-first",
             "correct_order": SECURITY_PREFERENCE_ORDER,
             "distractor_order": SECURITY_DISTRACTOR_ORDER,
@@ -2137,14 +2212,42 @@ fn intent_routing_rollout_gate_matches_the_recorded_decision() {
         }
     }
 
-    let routing_cases: Vec<&Case> = corpus
+    let shipped_cases: Vec<&Case> = corpus
         .cases
         .iter()
-        .filter(|case| case.routing.is_some())
+        .filter(|case| is_shipped_default_path(case))
         .collect();
+    let coverage = shipped_intent_coverage(&corpus);
+    let coverage_complete = coverage["complete"] == serde_json::json!(true);
+    assert!(
+        coverage_complete,
+        "every intent disclosed by the preference table needs a shipped-default case: {coverage}"
+    );
+    let shipped_defaults = shipped_default_providers();
+    for case in &shipped_cases {
+        let routing = case.routing.as_ref().expect("shipped case routing");
+        for id in &shipped_defaults {
+            assert!(
+                routing.enabled_providers.contains(id),
+                "shipped case {} does not enable the shipped default provider {id}",
+                case.id
+            );
+        }
+        let routed_ids = routed_provider_ids(case, routing, None, routing.max_extra_providers);
+        for id in &routed_ids {
+            assert!(
+                case.provider_lists
+                    .iter()
+                    .any(|list| &list.provider_id == id),
+                "shipped case {} routes {id} but records no candidate list for it",
+                case.id
+            );
+        }
+    }
+
     let mut improved: Vec<String> = Vec::new();
     let mut worsened: Vec<String> = Vec::new();
-    for case in &routing_cases {
+    for case in &shipped_cases {
         let base_metrics = case_metrics(&baseline, &case.id);
         let routed_metrics = case_metrics(&routed, &case.id);
         for spec in &ROLLOUT_METRICS {
@@ -2167,28 +2270,38 @@ fn intent_routing_rollout_gate_matches_the_recorded_decision() {
         &corpus,
         RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
     );
+    let security_distractor_repeated = replay_corpus_with_routing(
+        &corpus,
+        RoutingReplay::Ordered(&SECURITY_DISTRACTOR_ORDER, 1),
+    );
+    for (left, right) in security_distractor
+        .cases
+        .iter()
+        .zip(&security_distractor_repeated.cases)
+    {
+        assert_eq!(
+            left.results, right.results,
+            "the negative-control replay must reproduce"
+        );
+    }
     let negative_control_recall_drop = metric(
-        &case_metrics(&security_control, "security-osv-routing-001"),
+        &case_metrics(&security_control, SHIPPED_SECURITY_CASE),
         "recall_at_5",
     ) - metric(
-        &case_metrics(&security_distractor, "security-osv-routing-001"),
+        &case_metrics(&security_distractor, SHIPPED_SECURITY_CASE),
         "recall_at_5",
     );
     let negative_control_detected = negative_control_recall_drop >= 0.25;
 
-    let shipped_defaults = AppConfig::default().search.default_providers;
-    let lane_measures_shipped_default_path = !routing_cases.is_empty()
-        && routing_cases.iter().all(|case| {
-            case.routing
-                .as_ref()
-                .is_some_and(|routing| routing.default_providers == shipped_defaults)
-        });
-
+    assert!(
+        improved.is_empty() || INTENT_ROUTING_NO_CHANGE_DECISION.is_none(),
+        "a measured improvement and a recorded no-change decision are mutually exclusive"
+    );
     let should_apply = pre_existing_changed.is_empty()
         && worsened.is_empty()
-        && !improved.is_empty()
         && negative_control_detected
-        && lane_measures_shipped_default_path;
+        && coverage_complete
+        && (!improved.is_empty() || INTENT_ROUTING_NO_CHANGE_DECISION.is_some());
     let decision = if should_apply {
         "applied"
     } else {
@@ -2199,7 +2312,7 @@ fn intent_routing_rollout_gate_matches_the_recorded_decision() {
         "the recorded routing decision must follow the snapshot evidence: \
          pre_existing_changed={pre_existing_changed:?} worsened={worsened:?} \
          improved={improved:?} negative_control_recall_drop={negative_control_recall_drop} \
-         lane_measures_shipped_default_path={lane_measures_shipped_default_path}"
+         coverage_complete={coverage_complete}"
     );
     assert_eq!(
         AppConfig::default().search.routing.intent_mode == IntentRoutingMode::Apply,
@@ -2207,7 +2320,7 @@ fn intent_routing_rollout_gate_matches_the_recorded_decision() {
         "the shipped [search.routing].intent_mode must equal the recorded decision: \
          pre_existing_changed={pre_existing_changed:?} worsened={worsened:?} \
          improved={improved:?} negative_control_recall_drop={negative_control_recall_drop} \
-         lane_measures_shipped_default_path={lane_measures_shipped_default_path}"
+         coverage_complete={coverage_complete}"
     );
     println!(
         "retrieval-quality-routing-rollout {}",
@@ -2218,13 +2331,15 @@ fn intent_routing_rollout_gate_matches_the_recorded_decision() {
             "pre_existing_cases_changed": pre_existing_changed,
             "worsened_metrics": worsened,
             "improved_metrics": improved,
+            "no_change_decision": INTENT_ROUTING_NO_CHANGE_DECISION,
             "negative_control": {
-                "case": "security-osv-routing-001",
+                "case": SHIPPED_SECURITY_CASE,
                 "distractor": "security-nvd-first",
                 "recall_drop": negative_control_recall_drop,
                 "detected": negative_control_detected
             },
-            "lane_measures_shipped_default_path": lane_measures_shipped_default_path,
+            "shipped_intent_coverage": coverage,
+            "shipped_case_count": shipped_cases.len(),
             "shipped_default_providers": shipped_defaults
         }))
         .unwrap()

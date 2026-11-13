@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pass-cookie reuse now follows the lifetime each upstream publishes. `Max-Age` (which wins over
+  `Expires`) and `Expires` are parsed once by `src/meta/challenge/cookie.rs` and clamped by
+  `cookie_ttl_seconds`, so a short-lived cookie is no longer replayed after it died and a
+  long-lived one is still capped by the operator ceiling. A malformed attribute, `Max-Age=0`, or a
+  past expiry stores nothing, `cookie_ttl_seconds = 0` still disables reuse, and a cookie the
+  upstream rejects on replay is evicted so the next search re-solves. `eggsearch doctor` warns when
+  `[egress]` is routed and reuse is enabled, because a token bound to the client's egress address
+  is re-challenged when the exit address changes.
+- `provider_status` reports a `challenge_solver` block on every call: process-lifetime
+  per-provider solve and refusal counters (a fixed ten-key vocabulary including `already spent`
+  and `unsafe base prefix`), pass-cookie cache hits and misses, and the last attempt's candidate
+  count and bounded-computation milliseconds. The block is emitted when the solver is disabled
+  too, `enabled` reflects configuration, no cookie value or challenge parameter enters it, and the
+  counters reset on restart.
+- Intent-aware provider routing now ships `[search.routing].intent_mode = "apply"` on measured
+  tier-1 evidence: the snapshot lane covers the shipped default provider set for every intent with
+  a preference row, specialists enter the candidate set, and the security negative control detects
+  a forced distractor. Routing stays add-only and bounded by `max_extra_providers`; Mode Off is
+  unchanged. `rustsec` is never routed for a keyword query and is reported as
+  `keyword_unsupported` instead of as a capability gap.
 - Keyless HTML scrapers (`brave`, `duckduckgo`, `mojeek`, `startpage`, `yahoo`)
   now distinguish parsed results, an explicit empty state, a structural break
   (`parse_error`), and a block or challenge page (`error_class: blocked`)
@@ -88,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `web_fetch` solves a published Anubis challenge when `[search.challenge]` is enabled and
+  replays the request once with the pass cookie, returning the real document instead of the wall.
+  Disabled, refused, or still-challenged pages keep the `fetch_challenge_page` marking.
 - The Anubis solver now follows the published method registry (ADR-0010):
   `slow` is solved as the `fast` alias, `metarefresh` echoes the published
   token after the published wait, a non-empty `anubis_base_prefix` is honoured,

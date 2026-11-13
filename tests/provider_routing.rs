@@ -1316,6 +1316,156 @@ fn provider_status_recipe_next_action_rules_are_valid() {
 // =========================================================================
 
 #[test]
+fn challenge_solver_block_reports_the_shared_ledger() {
+    use eggsearch::meta::challenge::ledger::{RecordedOutcome, RefusalReason};
+    use eggsearch::meta::challenge::{pass_cookie_cache, solve_ledger};
+
+    let empty = run_provider_status(
+        state_with_default(),
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    let block = empty["challenge_solver"]
+        .as_object()
+        .expect("challenge_solver is always present");
+    assert_eq!(block["enabled"], serde_json::json!(false));
+    assert_eq!(block["untracked_providers"], serde_json::json!(0));
+    assert_eq!(
+        block["providers"],
+        serde_json::json!({}),
+        "the block exists before the first solve"
+    );
+
+    pass_cookie_cache().put(
+        "mojeek",
+        "challenge-solver-canary-cookie",
+        Duration::from_secs(60),
+    );
+    solve_ledger().record_outcome(
+        "mojeek",
+        RecordedOutcome::Solved,
+        291,
+        Duration::from_millis(420),
+    );
+    solve_ledger().record_outcome(
+        "mojeek",
+        RecordedOutcome::Refused(RefusalReason::AlreadySpent),
+        0,
+        Duration::ZERO,
+    );
+    solve_ledger().record_cookie_lookup("mojeek", true);
+    solve_ledger().record_cookie_lookup("mojeek", false);
+
+    let mut cfg = AppConfig::default();
+    cfg.search.challenge.enabled = true;
+    let exercised = run_provider_status(
+        Arc::new(ServerState::build(cfg).expect("state builds")),
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("ok");
+    pass_cookie_cache().remove("mojeek");
+
+    assert_eq!(
+        exercised["challenge_solver"]["enabled"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        exercised["challenge_solver"]["untracked_providers"],
+        serde_json::json!(0)
+    );
+    let entry = exercised["challenge_solver"]["providers"]["mojeek"]
+        .as_object()
+        .expect("provider entry is an object");
+    let keys: std::collections::BTreeSet<&str> = entry.keys().map(String::as_str).collect();
+    let expected: std::collections::BTreeSet<&str> = [
+        "solves_attempted",
+        "solves_succeeded",
+        "solves_errored",
+        "refusals",
+        "cookie_hits",
+        "cookie_misses",
+        "last_candidates",
+        "last_wall_clock_ms",
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(keys, expected);
+    assert_eq!(entry["solves_attempted"], serde_json::json!(2));
+    assert_eq!(entry["solves_succeeded"], serde_json::json!(1));
+    assert_eq!(entry["solves_errored"], serde_json::json!(0));
+    assert_eq!(entry["cookie_hits"], serde_json::json!(1));
+    assert_eq!(entry["cookie_misses"], serde_json::json!(1));
+    assert_eq!(entry["last_candidates"], serde_json::json!(0));
+    assert_eq!(entry["last_wall_clock_ms"], serde_json::json!(0));
+    assert_eq!(
+        entry["solves_attempted"],
+        serde_json::json!(
+            entry["solves_succeeded"].as_u64().unwrap_or_default()
+                + entry["solves_errored"].as_u64().unwrap_or_default()
+                + entry["refusals"]["already spent"]
+                    .as_u64()
+                    .unwrap_or_default()
+        )
+    );
+
+    let refused = REFUSAL_KEYS;
+    let refusals = entry["refusals"]
+        .as_object()
+        .expect("refusals is an object");
+    assert_eq!(refusals.len(), 10);
+    for key in refused {
+        assert!(
+            refusals[key].is_u64(),
+            "refusal key '{key}' must be a number"
+        );
+    }
+    assert_eq!(refusals["already spent"], serde_json::json!(1));
+    assert_eq!(refusals["challenge expired"], serde_json::json!(0));
+    assert_eq!(refusals["unsafe base prefix"], serde_json::json!(0));
+
+    let rendered = serde_json::to_string(&exercised).expect("payload serializes");
+    assert!(
+        !rendered.contains("challenge-solver-canary-cookie"),
+        "the block must never carry a cookie value"
+    );
+    assert!(
+        serde_json::to_string(&exercised["challenge_solver"])
+            .expect("block serializes")
+            .len()
+            <= 4096
+    );
+
+    let providers = exercised["providers"]
+        .as_array()
+        .expect("providers is array");
+    assert!(
+        providers
+            .iter()
+            .all(|p| p["id"].is_string() && p["enabled"].is_boolean()),
+        "existing per-provider keys stay unchanged"
+    );
+}
+
+const REFUSAL_KEYS: [&str; 10] = [
+    "difficulty above ceiling",
+    "attempts exhausted",
+    "wall clock exhausted",
+    "unsupported scheme",
+    "malformed parameters",
+    "pass cookie absent",
+    "pass cookie rejected",
+    "challenge expired",
+    "already spent",
+    "unsafe base prefix",
+];
+
+#[test]
 fn provider_status_includes_skip_code_field() {
     let state = state_with_default();
     let v = run_provider_status(
@@ -3328,6 +3478,7 @@ fn apply_config() -> AppConfig {
 #[test]
 fn intent_routing_off_is_identical_to_no_intent_on_the_default_path() {
     let mut cfg = AppConfig::default();
+    cfg.search.routing.intent_mode = IntentRoutingMode::Off;
     cfg.search
         .providers
         .insert("firecrawl_developer".to_string(), true);
@@ -3653,6 +3804,51 @@ fn intent_routing_is_deterministic_across_calls() {
 }
 
 #[test]
+fn intent_routing_never_routes_a_keyword_rejecting_provider() {
+    let mut cfg = AppConfig::default();
+    cfg.search.routing.intent_mode = IntentRoutingMode::Apply;
+    for id in ["osv", "rustsec"] {
+        cfg.search.providers.insert(id.to_string(), true);
+    }
+    let health = ProviderHealthRegistry::new();
+    let adapter = adapter_ids(&["duckduckgo", "brave", "yahoo", "osv", "rustsec"]);
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        &adapter,
+        &cfg,
+        &health,
+        true,
+        Some(SearchIntent::Security),
+    )
+    .expect("routing resolves");
+    assert_eq!(
+        decision.selected_providers,
+        vec!["duckduckgo", "brave", "yahoo", "osv"]
+    );
+    let report = decision.intent_routing.expect("apply reports the decision");
+    assert_eq!(report.intent_mode, "apply");
+    assert_eq!(report.additions, vec!["osv"]);
+    assert!(report
+        .considered
+        .iter()
+        .all(|attempt| attempt.provider_id != "rustsec"));
+
+    let outcomes = eggsearch::selection_test::route_with_order(
+        SearchIntent::Security,
+        &["rustsec", "osv"],
+        &[],
+        &adapter,
+        &adapter,
+        &[],
+        2,
+    );
+    assert_eq!(outcomes[0].provider_id, "rustsec");
+    assert_eq!(outcomes[0].disposition, "keyword_unsupported");
+    assert_eq!(outcomes[1].disposition, "added");
+}
+
+#[test]
 fn provider_status_discloses_the_routing_table_and_mode() {
     let state = state_with_default();
     let payload = run_provider_status(
@@ -3665,7 +3861,7 @@ fn provider_status_discloses_the_routing_table_and_mode() {
     .expect("ok");
 
     let routing = &payload["routing"];
-    assert_eq!(routing["intent_mode"], serde_json::json!("off"));
+    assert_eq!(routing["intent_mode"], serde_json::json!("apply"));
     assert_eq!(routing["max_extra_providers"], serde_json::json!(2));
     assert_eq!(
         routing["preferences"]["web"],

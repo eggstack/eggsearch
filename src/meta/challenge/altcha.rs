@@ -1,6 +1,6 @@
 //! ALTCHA PBKDF2 proof-of-work solver.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use eggfetch_core::Client;
@@ -9,8 +9,9 @@ use serde_json::{Map, Value};
 use sha2::Sha256;
 
 use super::{
-    SolveBudget, SolveOutcome, BOUND_ATTEMPTS, BOUND_COOKIE_REJECTED, BOUND_MALFORMED,
-    BOUND_MISSING_COOKIE, BOUND_UNSUPPORTED_SCHEME,
+    cookie, decided_step, finish_solve, refused_step, SolveBudget, SolveOutcome, SolveStep,
+    TerminalOutcome, BOUND_ATTEMPTS, BOUND_COOKIE_REJECTED, BOUND_MALFORMED, BOUND_MISSING_COOKIE,
+    BOUND_UNSUPPORTED_SCHEME,
 };
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::{engine_timeout, map_request_error, read_bounded_body};
@@ -218,91 +219,112 @@ pub async fn solve_and_verify(
     timeout: Duration,
     budget: &mut SolveBudget,
 ) -> Result<SolveOutcome, EngineError> {
-    let resp = client
+    let step =
+        solve_and_verify_inner(client, engine, challenge_url, verify_url, timeout, budget).await;
+    finish_solve(engine, step, budget.attempts_used())
+}
+
+async fn solve_and_verify_inner(
+    client: &Client,
+    engine: &'static str,
+    challenge_url: &str,
+    verify_url: &str,
+    timeout: Duration,
+    budget: &mut SolveBudget,
+) -> SolveStep {
+    let request = match client
         .get(challenge_url)
-        .map_err(|source| EngineError::Http { engine, source })?
+        .map_err(|source| EngineError::Http { engine, source })
+    {
+        Ok(request) => request,
+        Err(error) => return SolveStep::Error(error),
+    };
+    let resp = match request
         .header("Accept", "application/json")
         .timeout(engine_timeout(timeout))
         .send()
         .await
-        .map_err(|error| map_request_error(engine, error))?;
+    {
+        Ok(resp) => resp,
+        Err(error) => return SolveStep::Error(map_request_error(engine, error)),
+    };
     if !resp.status().is_success() {
-        return Err(EngineError::BadStatus {
+        return SolveStep::Error(EngineError::BadStatus {
             engine,
             status: resp.status().as_u16(),
         });
     }
-    let bytes = read_bounded_body(resp, engine, MAX_CHALLENGE_BYTES).await?;
-    let raw = String::from_utf8(bytes).map_err(|_| EngineError::ParseFailed {
-        engine,
-        reason: "challenge response is not valid UTF-8".to_string(),
-    })?;
+    let bytes = match read_bounded_body(resp, engine, MAX_CHALLENGE_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(error) => return SolveStep::Error(error),
+    };
+    let raw = match String::from_utf8(bytes) {
+        Ok(raw) => raw,
+        Err(_) => {
+            return SolveStep::Error(EngineError::ParseFailed {
+                engine,
+                reason: "challenge response is not valid UTF-8".to_string(),
+            })
+        }
+    };
 
     let challenge = match AltchaChallenge::parse(&raw) {
         Ok(challenge) => challenge,
-        Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        Err(bound) => return refused_step(bound),
     };
+    let started = Instant::now();
     let solution = match challenge.solve(budget) {
         Ok(solution) => solution,
-        Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        Err(bound) => return decided_step(TerminalOutcome::Refused { bound }, started),
     };
     let encoded = match challenge.submission(&solution) {
         Ok(encoded) => encoded,
-        Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        Err(bound) => return decided_step(TerminalOutcome::Refused { bound }, started),
     };
 
     let content_type = format!("multipart/form-data; boundary={MULTIPART_BOUNDARY}");
     let body = format!(
         "--{MULTIPART_BOUNDARY}\r\nContent-Disposition: form-data; name=\"altcha\"\r\n\r\n{encoded}\r\n--{MULTIPART_BOUNDARY}--\r\n"
     );
-    let resp = client
+    let elapsed = started.elapsed();
+    let request = match client
         .post(verify_url)
-        .map_err(|source| EngineError::Http { engine, source })?
+        .map_err(|source| EngineError::Http { engine, source })
+    {
+        Ok(request) => request,
+        Err(error) => return SolveStep::Error(error),
+    };
+    let resp = match request
         .header("Accept", "application/json")
         .header("Content-Type", &content_type)
         .timeout(engine_timeout(timeout))
         .body(body)
         .send()
         .await
-        .map_err(|error| map_request_error(engine, error))?;
+    {
+        Ok(resp) => resp,
+        Err(error) => return SolveStep::Error(map_request_error(engine, error)),
+    };
 
     let status = resp.status();
-    let cookie = extract_cookie(resp.headers(), COOKIE_NAME);
-    read_bounded_body(resp, engine, MAX_VERIFY_BYTES).await?;
+    let issued = cookie::parse_issued(resp.headers(), COOKIE_NAME);
+    if let Err(error) = read_bounded_body(resp, engine, MAX_VERIFY_BYTES).await {
+        return SolveStep::Error(error);
+    }
 
-    if !status.is_success() {
-        return Ok(SolveOutcome::Refused {
+    let terminal = if !status.is_success() {
+        TerminalOutcome::Refused {
             bound: BOUND_COOKIE_REJECTED,
-        });
-    }
-    match cookie {
-        Some(cookie) => Ok(SolveOutcome::Solved { cookie }),
-        None => Ok(SolveOutcome::Refused {
-            bound: BOUND_MISSING_COOKIE,
-        }),
-    }
-}
-
-fn extract_cookie(headers: &http::HeaderMap, name: &str) -> Option<String> {
-    for value in headers.get_all("set-cookie") {
-        let Ok(raw) = value.to_str() else {
-            continue;
-        };
-        for part in raw.split(';') {
-            let part = part.trim();
-            let Some(rest) = part.strip_prefix(name) else {
-                continue;
-            };
-            let Some(cookie) = rest.strip_prefix('=') else {
-                continue;
-            };
-            let cookie = cookie.trim();
-            if !cookie.is_empty() {
-                return Some(cookie.to_string());
-            }
         }
-    }
-    None
+    } else {
+        match issued {
+            Some((cookie, lifetime)) => TerminalOutcome::Solved { cookie, lifetime },
+            None => TerminalOutcome::Refused {
+                bound: BOUND_MISSING_COOKIE,
+            },
+        }
+    };
+    SolveStep::Terminal { terminal, elapsed }
 }
 
 fn decode_hex(value: &str) -> Option<Vec<u8>> {
@@ -461,9 +483,12 @@ mod tests {
         );
         headers.append(
             "set-cookie",
-            http::HeaderValue::from_static("chllg=abc123; Path=/; HttpOnly"),
+            http::HeaderValue::from_static("chllg=abc123; Path=/; HttpOnly; Max-Age=120"),
         );
-        assert_eq!(extract_cookie(&headers, "chllg").as_deref(), Some("abc123"));
-        assert_eq!(extract_cookie(&headers, "missing"), None);
+        assert_eq!(
+            cookie::parse_issued(&headers, "chllg"),
+            Some(("abc123".to_string(), cookie::PublishedLifetime::MaxAge(120)))
+        );
+        assert_eq!(cookie::parse_issued(&headers, "missing"), None);
     }
 }

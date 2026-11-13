@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M005 closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab`; M006 conditionally closed; M007–M012 closed; M013 closed; M014–M015 ready; M016 closed; M017–M018 ready; M019 closed; M020 closed; M021 closed; M022 closed)
+Status: closed (M001–M023 closed; M006's named condition discharged by M017)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -73,6 +73,7 @@ M015 challenge solvability observability        (independent)
 M017 routing shipped-set evidence               (discharges M006's named condition)
 M018 pagination consistency across pages        (corrective to M009)
 M022 fetch-side challenge classification        (corrective to the fetch path; independent)
+M022 detection ──> M023 fetch-side Anubis solve and replay
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -97,9 +98,10 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M015 — challenge solvability observability | capability | `plans/implementation/agentic-retrieval-integrity/015-challenge-solvability-observability.md` | none | An operator can see solve attempts, outcomes by bound, and cookie cache hits without reading logs, and no secret material appears |
 | M016 — Anubis `metarefresh` solver | capability | `plans/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md` | ADR-0010 | A deployment offering only the no-JavaScript method is reachable with zero hashing, and the echoed payload contains only published values |
 | M017 — routing shipped-set evidence and keyword predicate | invariant (corrective to M006) | `plans/implementation/agentic-retrieval-integrity/017-routing-shipped-set-evidence-and-keyword-predicate.md` | hard M004, M005, M006 | The shipped default provider set is measured, so `intent_mode` is decided by evidence; and no routing entry can be one that rejects a keyword query |
-| M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009 | Pages carry comparable content, `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
+| M018 — pagination consistency across pages | invariant (corrective to M009) | `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md` | hard M009; discharged by M020 | Pages carry comparable content (offset windows), `focus` and aggregates state their scope consistently, and no two pages can contradict each other |
 | M019 — fetch document budget and truncation semantics | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md` | none (ADR-0011 accepted) | The extracted document exceeds one caller's window, and truncation is reported as two distinct facts so a caller is never told "not truncated" while holding less than the document contains |
 | M020 — offset addressing and cursor retirement | capability (interface) | `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md` | hard M019 (closed) | A caller reads any window of a fetched document in one call by re-specifying the request with `offset`/`limit`; no opaque token remains in any advertised schema |
+| M023 — fetch-side Anubis solve and replay | capability | `plans/implementation/agentic-retrieval-integrity/023-fetch-side-anubis-solve-and-replay.md` | hard M022; interface M014 | With `[search.challenge]` enabled, a fetched Anubis wall is solved once and replayed so the caller receives the document; otherwise the page stays marked |
 | M022 — fetch-side challenge classification | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/022-fetch-side-challenge-classification.md` | none (ADR-0009/ADR-0010 scope unchanged) | A plain HTTP fetch of an Anubis or ALTCHA wall reports `manual_interaction_required: true` with a `fetch_challenge_page` warning instead of a short ordinary document; `render: "auto"` escalates it when a browser is available |
 | M021 — non-HTML document-scoped addressable text | invariant (corrective; discharges M020's named condition) | `plans/implementation/agentic-retrieval-integrity/021-non-html-document-scoped-addressable-text.md` | hard M020 (closed) | For every representation, `text_total` is the extracted document rather than the caller's window, so an addressed read never reports a document as complete while text remains unreachable |
 
@@ -136,17 +138,35 @@ Each milestone needs its own `plans/closure/agentic-retrieval-integrity/NNN-stat
 and M012's fixture came from a solved session rather than a guessed page shape — which is what
 exposed M011's mandatory-`redir` defect.
 
-- M006 is `conditionally closed`: routing is implemented, tested, and evidence-backed, but
-  `intent_mode` ships `off` because the tier-1 lane does not model the shipped default provider set.
-  The condition is a shipped-set measurement, not an implementation gap.
+- M006 is `closed` via M017: the tier-1 lane measures the shipped default provider set for all
+  seven disclosed intents, no case regresses, the `security-nvd-first` control is detected, and
+  `intent_mode` therefore ships `apply`. Evidence: `plans/closure/agentic-retrieval-integrity/006-status.md`.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
+- M014 is `closed`: the reuse window is the upstream-published `Max-Age`/`Expires` clamped by
+  `cookie_ttl_seconds`, a rejected cookie is evicted, and `doctor` warns when a routed egress meets
+  reuse. A live 21-minute run re-solved after the published expiry instead of replaying a dead
+  token. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.
+- M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
+  ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
+  Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.
+- M023 is `closed`: with `[search.challenge]` enabled, `web_fetch` solves a detected Anubis
+  challenge once and replays with `spchal-auth`, returning the real document; the Startpage SERP
+  was fetched live in 2.32 s with no challenge warning. Evidence:
+  `plans/closure/agentic-retrieval-integrity/023-status.md`.
 - M013 and M016 are `closed`: the solver now follows ADR-0010's published method registry
   (`slow` as the `fast` alias, `metarefresh`, base prefix, spent refusal, pre-flight cost
   projection, and origin-validated `redir`).
 - M022 is `closed`: the plain HTTP fetch path classifies Anubis, ALTCHA, interactive, and
   verification challenge pages, marks them with `manual_interaction_required` and one
   `fetch_challenge_page` warning, and lets `render: "auto"` escalate a detected wall.
+- M017 is `closed`: the shipped default provider set is measured in the tier-1 lane, no case
+  regresses, the negative control is detected, `intent_mode` ships `apply`, and M006's named
+  condition is discharged. The keyword-query allowlist excludes `rustsec` and reports
+  `keyword_unsupported`. Evidence: `plans/closure/agentic-retrieval-integrity/017-status.md`.
+- M018 is `closed` by discharge: M020 under ADR-0011 replaced its page-packing mechanism and
+  emitted the two labelling contracts (`focus_scope`, `aggregate_scope`/`total_groups`/
+  `returned_groups`). Evidence: `plans/closure/agentic-retrieval-integrity/018-status.md`.
 - M019–M020 restructure fetch addressing under ADR-0011. They supersede the opaque replay cursor
   from M009 in part and the page-budget mechanism from M018 in part: the cursor was unreleased, so
   this is a replacement rather than a deprecation, and M018's `focus_scope`/`aggregate_scope`

@@ -1,6 +1,6 @@
 # M015 — Challenge Solvability Observability
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M015
 Primary class: capability
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0` (the worktree also carries the uncommitted ADR-0010 addition and the roadmap/ADR-0009 edits from the prior turn; re-read `git status` before starting)

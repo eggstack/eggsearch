@@ -8,8 +8,10 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use url::Url;
 
+use super::ledger::RefusalReason;
 use super::{
-    SolveBudget, SolveOutcome, BOUND_ATTEMPTS, BOUND_BASE_PREFIX, BOUND_COOKIE_REJECTED,
+    blocked_step, cookie, decided_step, finish_solve, refused_step, SolveBudget, SolveOutcome,
+    SolveStep, TerminalOutcome, BOUND_ATTEMPTS, BOUND_BASE_PREFIX, BOUND_COOKIE_REJECTED,
     BOUND_MALFORMED, BOUND_MISSING_COOKIE, BOUND_SPENT, BOUND_UNSUPPORTED_SCHEME, BOUND_WALL_CLOCK,
 };
 use crate::meta::engines::error::EngineError;
@@ -420,41 +422,70 @@ pub async fn solve_and_verify(
     timeout: Duration,
     budget: &mut SolveBudget,
 ) -> Result<SolveOutcome, EngineError> {
+    let step = solve_and_verify_inner(
+        client,
+        engine,
+        base_url,
+        challenge_page,
+        request_url,
+        challenge_cookies,
+        timeout,
+        budget,
+    )
+    .await;
+    finish_solve(engine, step, budget.attempts_used())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn solve_and_verify_inner(
+    client: &Client,
+    engine: &'static str,
+    base_url: &str,
+    challenge_page: &str,
+    request_url: &str,
+    challenge_cookies: &str,
+    timeout: Duration,
+    budget: &mut SolveBudget,
+) -> SolveStep {
     let challenge = match AnubisChallenge::parse(challenge_page) {
         Ok(challenge) => challenge,
-        Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        Err(bound) => return refused_step(bound),
     };
     if let Err(reason) = challenge.check_ceiling(budget) {
-        return Err(EngineError::Blocked { engine, reason });
+        return blocked_step(reason, RefusalReason::DifficultyAboveCeiling);
     }
     if challenge.method == AnubisMethod::Fast {
         if let Err(reason) = challenge.check_projection(budget) {
-            return Err(EngineError::Blocked { engine, reason });
+            return blocked_step(reason, RefusalReason::UnsafeBasePrefix);
         }
     }
 
-    let deadline = Instant::now() + timeout;
+    let started = Instant::now();
+    let deadline = started + timeout;
     let target = match challenge.method {
         AnubisMethod::Metarefresh => match challenge.resolved_target(base_url) {
             Ok(target) => Some(target),
-            Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+            Err(bound) => return decided_step(TerminalOutcome::Refused { bound }, started),
         },
         AnubisMethod::Fast | AnubisMethod::Preact => None,
     };
     match challenge.method {
         AnubisMethod::Preact => match preact_wait(challenge.difficulty, deadline) {
             Ok(wait) => tokio::time::sleep(wait).await,
-            Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+            Err(bound) => return decided_step(TerminalOutcome::Refused { bound }, started),
         },
         AnubisMethod::Metarefresh => {
             let Some(requirement) = challenge.wait else {
-                return Ok(SolveOutcome::Refused {
-                    bound: BOUND_MALFORMED,
-                });
+                return decided_step(
+                    TerminalOutcome::Refused {
+                        bound: BOUND_MALFORMED,
+                    },
+                    started,
+                );
             };
             match metarefresh_wait(requirement, deadline) {
                 Ok(wait) => tokio::time::sleep(wait).await,
-                Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+                Err(bound) => return decided_step(TerminalOutcome::Refused { bound }, started),
             }
         }
         AnubisMethod::Fast => {}
@@ -462,9 +493,10 @@ pub async fn solve_and_verify(
 
     let solution = match challenge.solve(budget) {
         Ok(solution) => solution,
-        Err(bound) => return Ok(SolveOutcome::Refused { bound }),
+        Err(bound) => return decided_step(TerminalOutcome::Refused { bound }, started),
     };
-    verify(
+    let elapsed = started.elapsed();
+    match verify(
         client,
         engine,
         base_url,
@@ -476,6 +508,10 @@ pub async fn solve_and_verify(
         target.as_deref(),
     )
     .await
+    {
+        Ok(terminal) => SolveStep::Terminal { terminal, elapsed },
+        Err(error) => SolveStep::Error(error),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -489,14 +525,14 @@ async fn verify(
     challenge_cookies: &str,
     deadline: Instant,
     target: Option<&str>,
-) -> Result<SolveOutcome, EngineError> {
+) -> Result<TerminalOutcome, EngineError> {
     let redir = challenge.resolved_redir(base_url, request_url);
     let url = match challenge.method {
         AnubisMethod::Fast => pass_challenge_url(base_url, &challenge.base_prefix),
         AnubisMethod::Preact => preact_url(base_url, &redir, &solution.response),
         AnubisMethod::Metarefresh => {
             let Some(target) = target else {
-                return Ok(SolveOutcome::Refused {
+                return Ok(TerminalOutcome::Refused {
                     bound: BOUND_MALFORMED,
                 });
             };
@@ -505,7 +541,7 @@ async fn verify(
     };
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
-        return Ok(SolveOutcome::Refused {
+        return Ok(TerminalOutcome::Refused {
             bound: BOUND_WALL_CLOCK,
         });
     }
@@ -533,18 +569,18 @@ async fn verify(
         .await
         .map_err(|error| map_request_error(engine, error))?;
     let status = resp.status();
-    let cookie = extract_cookie(resp.headers(), PASS_COOKIE_NAME);
+    let issued = cookie::parse_issued(resp.headers(), PASS_COOKIE_NAME);
     read_bounded_body(resp, engine, MAX_PASS_BYTES).await?;
 
-    if let Some(cookie) = cookie {
-        return Ok(SolveOutcome::Solved { cookie });
+    if let Some((cookie, lifetime)) = issued {
+        return Ok(TerminalOutcome::Solved { cookie, lifetime });
     }
     let bound = if status.is_success() {
         BOUND_MISSING_COOKIE
     } else {
         BOUND_COOKIE_REJECTED
     };
-    Ok(SolveOutcome::Refused { bound })
+    Ok(TerminalOutcome::Refused { bound })
 }
 
 fn metarefresh_wait(requirement: Duration, deadline: Instant) -> Result<Duration, &'static str> {
@@ -688,28 +724,6 @@ fn optional_str(object: &Map<String, Value>, key: &str) -> Option<String> {
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
-}
-
-fn extract_cookie(headers: &http::HeaderMap, name: &str) -> Option<String> {
-    for value in headers.get_all("set-cookie") {
-        let Ok(raw) = value.to_str() else {
-            continue;
-        };
-        for part in raw.split(';') {
-            let part = part.trim();
-            let Some(rest) = part.strip_prefix(name) else {
-                continue;
-            };
-            let Some(cookie) = rest.strip_prefix('=') else {
-                continue;
-            };
-            let cookie = cookie.trim();
-            if !cookie.is_empty() {
-                return Some(cookie.to_string());
-            }
-        }
-    }
-    None
 }
 
 fn decimal_digits(mut nonce: u64, buf: &mut [u8; 20]) -> &[u8] {

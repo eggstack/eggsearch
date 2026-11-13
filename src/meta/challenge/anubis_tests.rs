@@ -42,6 +42,8 @@ fn budget(max_attempts: u64, timeout_ms: u64, max_difficulty: u8) -> SolveBudget
     )
 }
 
+const PROVIDER: &str = "anubis-test";
+
 fn test_client() -> Client {
     crate::meta::engines::build_http_client(None).expect("test client")
 }
@@ -164,7 +166,7 @@ async fn ceiling_breach_is_blocked_before_any_hashing() {
     let mut budget = budget(2_000_000, 5000, 5);
     let err = solve_and_verify(
         &test_client(),
-        "startpage",
+        PROVIDER,
         &server.url(""),
         &fast_page("abc123def456", 6, "fast"),
         "/search?q=rust",
@@ -177,7 +179,7 @@ async fn ceiling_breach_is_blocked_before_any_hashing() {
 
     match &err {
         EngineError::Blocked { engine, reason } => {
-            assert_eq!(*engine, "startpage");
+            assert_eq!(*engine, PROVIDER);
             assert_eq!(reason, "anubis difficulty 6 exceeds configured ceiling 5");
         }
         other => panic!("unexpected error: {other:?}"),
@@ -208,7 +210,7 @@ async fn unknown_method_is_refused_without_a_request() {
     let mut budget = budget(1000, 5000, 5);
     let outcome = solve_and_verify(
         &test_client(),
-        "startpage",
+        PROVIDER,
         &server.url(""),
         &fast_page("abc123def456", 2, "quantum"),
         "/search?q=rust",
@@ -452,7 +454,7 @@ async fn projection_breach_blocks_with_zero_requests() {
     let mut budget = budget(2_000_000, 5000, 10);
     let err = solve_and_verify(
         &test_client(),
-        "startpage",
+        PROVIDER,
         &server.url(""),
         &fast_page("abc123def456", 7, "fast"),
         "/search?q=rust",
@@ -465,7 +467,7 @@ async fn projection_breach_blocks_with_zero_requests() {
 
     match &err {
         EngineError::Blocked { engine, reason } => {
-            assert_eq!(*engine, "startpage");
+            assert_eq!(*engine, PROVIDER);
             assert_eq!(
                     reason,
                     "anubis difficulty 7 projects 268M candidates, beyond the configured attempt ceiling 2000000"
@@ -621,7 +623,7 @@ async fn metarefresh_above_ceiling_is_blocked_without_a_request() {
     let mut budget = budget(2_000_000, 5000, 5);
     let err = solve_and_verify(
         &test_client(),
-        "startpage",
+        PROVIDER,
         &server.url(""),
         &metarefresh_page("token", 6, "0", "/metarefresh-check"),
         "/search?q=rust",
@@ -660,7 +662,7 @@ async fn metarefresh_submits_the_published_echo_once() {
     let mut budget = budget(1000, 5000, 5);
     let outcome = solve_and_verify(
         &test_client(),
-        "startpage",
+        PROVIDER,
         &server.url(""),
         &page,
         "/search?q=rust",
@@ -674,7 +676,8 @@ async fn metarefresh_submits_the_published_echo_once() {
     assert_eq!(
         outcome,
         SolveOutcome::Solved {
-            cookie: "pass-123".to_string()
+            cookie: "pass-123".to_string(),
+            lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
     assert_eq!(submit_mock.hits(), 1);
@@ -751,11 +754,12 @@ async fn preact_waits_then_submits_the_digest() {
             .header("set-cookie", "spchal-auth=preact-pass");
     });
 
+    const PREACT_PROVIDER: &str = "anubis-preact-test";
     let mut budget = budget(10, 2000, 5);
     let started = Instant::now();
     let outcome = solve_and_verify(
         &test_client(),
-        "startpage",
+        PREACT_PROVIDER,
         &server.url(""),
         &preact_page("abc", 1, "/search?q=rust"),
         "/search?q=rust",
@@ -768,7 +772,8 @@ async fn preact_waits_then_submits_the_digest() {
     assert_eq!(
         outcome,
         SolveOutcome::Solved {
-            cookie: "preact-pass".to_string()
+            cookie: "preact-pass".to_string(),
+            lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
     assert!(
@@ -777,6 +782,21 @@ async fn preact_waits_then_submits_the_digest() {
         started.elapsed()
     );
     assert_eq!(submit.hits(), 1);
+
+    let stats = crate::meta::challenge::solve_ledger()
+        .snapshot()
+        .providers
+        .get(PREACT_PROVIDER)
+        .cloned()
+        .expect("the preact attempt is recorded");
+    assert_eq!(stats.solves_attempted, 1);
+    assert_eq!(stats.solves_succeeded, 1);
+    assert_eq!(stats.last_candidates, 0);
+    assert!(
+        stats.last_wall_clock_ms >= 70,
+        "the published wait must be measured: {} ms",
+        stats.last_wall_clock_ms
+    );
 }
 
 #[tokio::test]
@@ -793,7 +813,7 @@ async fn preact_wait_never_exceeds_the_timeout() {
     let started = Instant::now();
     let outcome = solve_and_verify(
         &test_client(),
-        "startpage",
+        PROVIDER,
         &server.url(""),
         &preact_page("abc", 10, "/search?q=rust"),
         "/search?q=rust",
@@ -837,7 +857,8 @@ fn solution_and_challenge_debug_redact_secrets() {
     let outcome_debug = format!(
         "{:?}",
         SolveOutcome::Solved {
-            cookie: "spchal-auth=secret-value".to_string()
+            cookie: "spchal-auth=secret-value".to_string(),
+            lifetime: cookie::PublishedLifetime::MaxAge(45),
         }
     );
     assert!(!outcome_debug.contains("secret-value"));
@@ -864,7 +885,7 @@ fn challenge_cookies_join_every_set_cookie_pair() {
     );
     assert_eq!(challenge_cookies(&http::HeaderMap::new()), "");
     assert_eq!(
-        extract_cookie(&headers, PASS_COOKIE_NAME),
+        cookie::parse_issued(&headers, PASS_COOKIE_NAME),
         None,
         "the challenge response does not carry the pass cookie"
     );

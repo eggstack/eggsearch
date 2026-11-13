@@ -12,10 +12,10 @@ pub const INTENT_ROUTING_MAX_EXTRA_PROVIDERS: usize = 4;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IntentRoutingMode {
-    /// Report the intent but never change the routed provider set. Default.
-    #[default]
+    /// Report the intent but never change the routed provider set.
     Off,
-    /// Append capability-valid providers for the effective intent.
+    /// Append capability-valid providers for the effective intent. Default.
+    #[default]
     Apply,
 }
 
@@ -51,7 +51,7 @@ impl IntentRoutingMode {
 /// The `[search.routing]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RoutingSection {
-    /// Intent routing mode: `off` or `apply`. Default: `off`.
+    /// Intent routing mode: `off` or `apply`. Default: `apply`.
     #[serde(default = "default_intent_routing_mode")]
     pub intent_mode: IntentRoutingMode,
     /// Maximum extra providers intent routing may append. Default: 2,
@@ -83,7 +83,7 @@ impl RoutingSection {
 }
 
 pub(super) fn default_intent_routing_mode() -> IntentRoutingMode {
-    IntentRoutingMode::Off
+    IntentRoutingMode::Apply
 }
 
 pub(super) fn default_max_extra_providers() -> usize {

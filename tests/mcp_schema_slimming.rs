@@ -130,8 +130,8 @@ fn search_four_schema_bytes_stay_slim() {
         })
         .sum();
     assert!(
-        total <= 74_450,
-        "all tool definitions total {total} bytes exceeds 74450 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search)"
+        total <= 74_487,
+        "all tool definitions total {total} bytes exceeds 74487 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver)"
     );
 }
 

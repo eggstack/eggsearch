@@ -1,6 +1,6 @@
 # M006 Intent-Aware Provider Routing — Closure Status
 
-Status: conditionally closed
+Status: closed
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/006-intent-aware-provider-routing.md`
 
@@ -12,16 +12,24 @@ Implementation candidate: uncommitted worktree changes on top of the baseline ab
 `conditionally closed` until the single closure commit carries this record, the roadmap status, and
 the registry row together **and** the named condition below is discharged.
 
-## Named condition
+## Named condition — discharged
 
-`[search.routing].intent_mode` ships **`off`**. The roadmap's exit boundary for this milestone is
-that default routing includes intent-appropriate providers, which requires `apply`. That flip is
-withheld because the tier-1 snapshot lane does not measure the shipped default provider set, so the
-default change is unmeasured. The gate test records `observe_only` with
-`lane_measures_shipped_default_path = false`.
+`[search.routing].intent_mode` now ships **`apply`**. M017 (`plans/closure/agentic-retrieval-integrity/017-status.md`)
+discharged the condition by measuring the shipped default provider set in the tier-1 lane:
 
-This is a recorded evidence condition, not an implementation gap: the routing machinery, its
-evidence, and its fail-closed behaviour are all in place and tested.
+- seven shipped-set cases, one per intent disclosed by the preference table (including the empty
+  `web` and `docs` rows), each with `default_providers = ["duckduckgo", "brave", "yahoo"]`;
+- routing improves `recall_at_5`, `MRR@5`, `nDCG@5`, authoritative survival, and
+  `distinct_domains_topk` on the five specialist intents, with no case regression and no
+  pre-existing case changed;
+- the `security-nvd-first` negative control is detected with a 1.0 `recall_at_5` drop, reproduced
+  across two replays and two identical `make eval-retrieval-quality` runs (corpus fingerprint
+  `fnv1a64:158b5adb6486aa8d`);
+- the rollout gate derives `applied` and asserts the shipped default agrees with it.
+
+The routing row for `security` is `osv`, `github_advisory`, `nvd`; `rustsec` stays excluded because
+it cannot answer a keyword query, and a built `rustsec` no longer suppresses the true
+`native_advisory_search_unavailable` warning under `apply`.
 
 ## Result
 

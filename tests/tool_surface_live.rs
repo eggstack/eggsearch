@@ -16,8 +16,8 @@ use eggsearch::mcp::state::ServerState;
 // are refused: +158 definition bytes, +39 estimated tokens. Re-measured after
 // `web_fetch`, `batch_fetch` and `research_search` replaced the `cursor`
 // argument with `offset`/`limit`: +1005 definition bytes, +251 estimated tokens.
-const BASELINE_TOTAL_BYTES: i64 = 74411;
-const BASELINE_EST_TOKENS: i64 = 18603;
+const BASELINE_TOTAL_BYTES: i64 = 74448;
+const BASELINE_EST_TOKENS: i64 = 18612;
 const BASELINE_MAX_DESC: i64 = 186;
 const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 

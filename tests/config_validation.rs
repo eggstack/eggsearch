@@ -1190,16 +1190,16 @@ fn search_cache_fields_round_trip() {
 }
 
 #[test]
-fn intent_routing_defaults_ship_off_with_two_extra_providers() {
+fn intent_routing_defaults_ship_apply_with_two_extra_providers() {
     use eggsearch::core::config::{IntentRoutingMode, RoutingSection};
 
     let defaults = RoutingSection::default();
-    assert_eq!(defaults.intent_mode, IntentRoutingMode::Off);
-    assert_eq!(defaults.intent_mode.as_str(), "off");
+    assert_eq!(defaults.intent_mode, IntentRoutingMode::Apply);
+    assert_eq!(defaults.intent_mode.as_str(), "apply");
     assert_eq!(defaults.max_extra_providers, 2);
 
     let config = AppConfig::default();
-    assert_eq!(config.search.routing.intent_mode, IntentRoutingMode::Off);
+    assert_eq!(config.search.routing.intent_mode, IntentRoutingMode::Apply);
     assert_eq!(config.search.routing.max_extra_providers, 2);
     assert!(config.validate().is_ok());
 }
@@ -1257,7 +1257,7 @@ fn intent_routing_max_extra_providers_bound_is_enforced() {
 }
 
 #[test]
-fn config_without_routing_table_keeps_today_behaviour() {
+fn config_without_routing_table_inherits_the_shipped_default() {
     let toml = r#"
 [search]
 mode = "live"
@@ -1271,7 +1271,7 @@ default_providers = ["duckduckgo"]
 duckduckgo = true
 "#;
     let cfg: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(cfg.search.routing.intent_mode.as_str(), "off");
+    assert_eq!(cfg.search.routing.intent_mode.as_str(), "apply");
     assert_eq!(cfg.search.routing.max_extra_providers, 2);
     assert!(cfg.validate().is_ok());
 }

@@ -93,9 +93,33 @@ pub(crate) fn preference_for(intent: SearchIntent) -> &'static IntentProviderPre
         .expect("intent preference table is total over SearchIntent")
 }
 
+pub(crate) const KEYWORD_QUERY_PROVIDERS: &[&str] = &[
+    "github_code",
+    "gitlab_code",
+    "gitea_code",
+    "sourcegraph",
+    "github_issues",
+    "gitlab_issues",
+    "gitea_issues",
+    "firecrawl_developer",
+    "github_releases",
+    "gitlab_releases",
+    "gitea_releases",
+    "osv",
+    "github_advisory",
+    "nvd",
+    "tavily",
+    "brave_api",
+];
+
+pub(crate) fn serves_keyword_query(id: &str) -> bool {
+    KEYWORD_QUERY_PROVIDERS.contains(&id)
+}
+
 pub(crate) fn provider_supports(id: &str, capability: IntentCapability) -> bool {
-    built_in_provider_descriptor(id, true, false, true, true, None, None)
-        .is_some_and(|descriptor| capability.holds(&descriptor.capabilities))
+    serves_keyword_query(id)
+        && built_in_provider_descriptor(id, true, false, true, true, None, None)
+            .is_some_and(|descriptor| capability.holds(&descriptor.capabilities))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,6 +129,7 @@ pub(crate) enum RoutingDisposition {
     NotEnabled,
     NotBuilt,
     CoolingDown,
+    KeywordUnsupported,
     CapabilityMissing,
     CapExceeded,
 }
@@ -117,6 +142,7 @@ impl RoutingDisposition {
             Self::NotEnabled => "not_enabled",
             Self::NotBuilt => "not_built",
             Self::CoolingDown => "cooling_down",
+            Self::KeywordUnsupported => "keyword_unsupported",
             Self::CapabilityMissing => "capability_missing",
             Self::CapExceeded => "cap_exceeded",
         }
@@ -174,6 +200,8 @@ fn select_additions(
             RoutingDisposition::NotBuilt
         } else if contains(cooling, id) {
             RoutingDisposition::CoolingDown
+        } else if !serves_keyword_query(id) {
+            RoutingDisposition::KeywordUnsupported
         } else if !provider_supports(id, preference.capability) {
             RoutingDisposition::CapabilityMissing
         } else if added >= max_extra {
@@ -581,17 +609,42 @@ mod tests {
     fn capability_missing_is_reported_instead_of_adding_a_wrong_provider() {
         let preference = IntentProviderPreference {
             intent: SearchIntent::Security,
-            providers: &["duckduckgo", "osv"],
+            providers: &["github_code", "osv"],
             capability: IntentCapability::Security,
         };
-        let enabled = strings(&["duckduckgo", "osv"]);
+        let enabled = strings(&["github_code", "osv"]);
         let built = enabled.clone();
         let attempts = select_additions(&preference, &[], &enabled, &built, &[], 2);
-        assert_eq!(attempts[0].provider_id, "duckduckgo");
+        assert_eq!(attempts[0].provider_id, "github_code");
         assert_eq!(
             attempts[0].disposition,
             RoutingDisposition::CapabilityMissing
         );
+        assert_eq!(added_ids(&attempts), strings(&["osv"]));
+    }
+
+    #[test]
+    fn keyword_exclusion_is_not_reported_as_a_capability_gap() {
+        let preference = IntentProviderPreference {
+            intent: SearchIntent::Security,
+            providers: &["duckduckgo", "rustsec", "osv"],
+            capability: IntentCapability::Security,
+        };
+        let enabled = strings(&["duckduckgo", "rustsec", "osv"]);
+        let built = enabled.clone();
+        let attempts = select_additions(&preference, &[], &enabled, &built, &[], 2);
+        assert_eq!(
+            attempts[0].disposition,
+            RoutingDisposition::KeywordUnsupported
+        );
+        assert_eq!(
+            attempts[1].disposition,
+            RoutingDisposition::KeywordUnsupported
+        );
+        assert_eq!(attempts[2].disposition, RoutingDisposition::Added);
+        assert!(!attempts
+            .iter()
+            .any(|attempt| attempt.disposition == RoutingDisposition::CapabilityMissing));
         assert_eq!(added_ids(&attempts), strings(&["osv"]));
     }
 
@@ -630,13 +683,61 @@ mod tests {
     }
 
     #[test]
+    fn every_preference_entry_serves_keyword_queries() {
+        for preference in &INTENT_PROVIDER_PREFERENCES {
+            for id in preference.providers {
+                assert!(
+                    serves_keyword_query(id),
+                    "{id} is listed for {} but cannot answer a keyword query",
+                    preference.intent.as_str()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn keyword_allowlist_has_no_unknown_or_duplicate_ids() {
+        let mut seen: Vec<&str> = Vec::new();
+        for id in KEYWORD_QUERY_PROVIDERS {
+            assert!(
+                KNOWN_PROVIDER_IDS.contains(id),
+                "{id} is not in KNOWN_PROVIDER_IDS"
+            );
+            assert!(!seen.contains(id), "{id} is listed twice");
+            seen.push(id);
+        }
+    }
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn rustsec_is_never_routed_even_if_listed() {
+        let enabled = strings(&["duckduckgo", "rustsec", "osv"]);
+        let built = enabled.clone();
+        let attempts = select_intent_additions_with_order(
+            SearchIntent::Security,
+            &["rustsec", "osv"],
+            &[],
+            &enabled,
+            &built,
+            &[],
+            2,
+        );
+        assert_eq!(attempts[0].provider_id, "rustsec");
+        assert_eq!(
+            attempts[0].disposition,
+            RoutingDisposition::KeywordUnsupported
+        );
+        assert_eq!(added_ids(&attempts), strings(&["osv"]));
+    }
+
+    #[test]
     fn exclusion_warning_uses_the_declared_template() {
         let message =
-            capability_exclusion_warning(SearchIntent::Security, &strings(&["osv", "rustsec"]))
+            capability_exclusion_warning(SearchIntent::Security, &strings(&["osv", "nvd"]))
                 .expect("a capable-but-unrouted provider produces a warning");
         assert_eq!(
             message,
-            "intent_routing_capability_excluded: intent=security requested; enabled native security advisory search provider(s) osv, rustsec were not routed, so results are from generic/contextual search"
+            "intent_routing_capability_excluded: intent=security requested; enabled native security advisory search provider(s) osv, nvd were not routed, so results are from generic/contextual search"
         );
         assert!(
             capability_exclusion_warning(SearchIntent::Web, &strings(&["osv"])).is_none(),
@@ -648,7 +749,7 @@ mod tests {
     fn disclosure_matches_the_constant_table() {
         let defaults = crate::core::config::RoutingSection::default();
         let disclosure = disclosure(defaults.intent_mode, defaults.max_extra_providers);
-        assert_eq!(disclosure["intent_mode"], serde_json::json!("off"));
+        assert_eq!(disclosure["intent_mode"], serde_json::json!("apply"));
         assert_eq!(
             disclosure["max_extra_providers"],
             serde_json::json!(defaults.max_extra_providers)

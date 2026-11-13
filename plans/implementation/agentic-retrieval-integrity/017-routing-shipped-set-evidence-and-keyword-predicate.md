@@ -1,6 +1,6 @@
 # M017 — Routing Shipped-Set Evidence and Keyword Predicate
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M017
 Primary class: invariant (corrective to M006)
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0`

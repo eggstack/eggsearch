@@ -671,12 +671,38 @@ Routing only adds providers; it never removes, reorders, or displaces one.
 `max_extra_providers` (default `2`, range `0`–`4`) caps how many one decision
 may add. Every candidate is reported in `provider_status` with one of `added`,
 `already_selected`, `not_enabled`, `not_built`, `cooling_down`,
-`capability_missing`, or `cap_exceeded`, and a capability exclusion emits the
-`intent_routing_capability_excluded` warning instead of vanishing silently.
+`keyword_unsupported`, `capability_missing`, or `cap_exceeded`, and a
+capability exclusion emits the `intent_routing_capability_excluded` warning
+instead of vanishing silently. `keyword_unsupported` names a provider that
+knows the subject but cannot answer a keyword query, such as `rustsec`.
 
-The default is `intent_mode = "off"`: intent is derived and reported, but no
-provider is added. Enabling `apply` is an operator decision until the tier-1
-snapshot lane measures the shipped default provider set.
+The default is `intent_mode = "apply"`: the intent's preferred provider is
+added when it is enabled, built, keyword-answering, and capability-valid. Set
+`off` to derive and report the intent without adding a provider. Under `apply`,
+a built provider that cannot answer a keyword query (`rustsec`) does not count
+as native coverage, so a real `native_*_unavailable` warning is still reported.
+
+
+### Challenge solver in `provider_status`
+
+`provider_status` always carries a top-level `challenge_solver` object, whether or not
+`[search.challenge] enabled = true`:
+
+- `enabled` — the configured `[search.challenge].enabled` value.
+- `untracked_providers` — records dropped because the four-entry provider cap was already full.
+- `providers.<id>` — `solves_attempted`, `solves_succeeded`, `solves_errored`, `cookie_hits`,
+  `cookie_misses`, `last_candidates`, `last_wall_clock_ms`, and a fixed ten-key `refusals` object
+  (`difficulty above ceiling`, `attempts exhausted`, `wall clock exhausted`, `unsupported scheme`,
+  `malformed parameters`, `pass cookie absent`, `pass cookie rejected`, `challenge expired`,
+  `already spent`, `unsafe base prefix`).
+
+`providers` is `{}` until the first solve, so a stable key set is visible before anything runs.
+`solves_attempted` always equals `solves_succeeded + refusals_total + solves_errored`.
+`last_candidates` and `last_wall_clock_ms` describe only the most recent attempt and are `0` when it
+ended before any computation. All values are process-lifetime totals that reset when the process
+restarts; they are not rates and are not persisted. `challenge expired` and the other
+forward-declared keys may legitimately stay at zero; a zero is evidence the bound never fired, not
+missing data. No cookie, nonce, salt, derived key, or challenge body is ever included.
 
 ### Misconfigured Defaults
 

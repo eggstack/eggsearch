@@ -545,6 +545,19 @@ PDFs are never marked. Under `render: "auto"` the same classification is an esca
 a detected Anubis or ALTCHA wall is rendered by the browser when one is available instead of being
 returned as a stub; `render: "http_only"` keeps the marked body.
 
+When `[search.challenge].enabled` is true, a detected Anubis page is not merely marked.
+`src/mcp/tools/web_fetch.rs` — the one module allowed to depend on both trees — solves the
+published challenge once through the shared solver in `src/meta/challenge/anubis.rs` under
+`max_difficulty`, `max_attempts`, `timeout_ms`, and the remaining call deadline, then replays the
+same request once with the issued `spchal-auth` cookie. That cookie is sent on the first hop only,
+so a redirect cannot forward it to another origin, and it is never stored: the response returned
+and cached is the replay's document, with `transport: "http"`, `manual_interaction_required: false`,
+and no `fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a
+refusal at any ceiling, an error, an exhausted deadline, or a replay that is itself a challenge all
+leave today's marking exactly as it was, at most one solve and one replay per call. The browser
+path keeps priority: a successful `render: "auto"` render replaces the payload before the solver
+runs. `batch_fetch` does not solve (residual).
+
 ### Profiles: opaque IDs, origin-scoped logins
 
 `ProfileManager` owns persistent logins under a 0700 root with per-profile

@@ -126,8 +126,14 @@ fn build_payload_without_probe(
         }
     };
 
+    let solve_snapshot = crate::meta::challenge::solve_ledger().snapshot();
     let mut payload = serde_json::json!({
         "providers": descriptors,
+        "challenge_solver": {
+            "enabled": state.config.search.challenge.enabled,
+            "untracked_providers": solve_snapshot.untracked_providers,
+            "providers": solve_snapshot.providers,
+        },
         "code_hosts": code_hosts,
         "health": health_snapshots,
         "health_views": health_views,

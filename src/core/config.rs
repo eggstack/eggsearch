@@ -261,7 +261,7 @@ pub struct SearchSection {
     /// upstreams. Disabled by default. See ADR-0009.
     #[serde(default)]
     pub challenge: ChallengeSection,
-    /// Intent-aware provider routing. Off by default; see
+    /// Intent-aware provider routing. On by default; see
     /// `plans/implementation/agentic-retrieval-integrity/006-intent-aware-provider-routing.md`.
     #[serde(default)]
     pub routing: RoutingSection,

@@ -653,15 +653,195 @@ fn native_capability_warning(
     if requested != intent {
         return None;
     }
-    if any_engine_supports(engines, |capabilities| capability.holds(capabilities)) {
-        return None;
-    }
     if apply_intent_routing {
+        if engines
+            .iter()
+            .any(|engine| crate::meta::routing::provider_supports(engine.name(), capability))
+        {
+            return None;
+        }
         let excluded = crate::meta::routing::capable_built_providers(intent, built_provider_ids);
         if let Some(message) = crate::meta::routing::capability_exclusion_warning(intent, &excluded)
         {
             return Some(SearchWarning::new("_system", message));
         }
+        return Some(SearchWarning::new("_system", legacy_message));
+    }
+    if any_engine_supports(engines, |capabilities| capability.holds(capabilities)) {
+        return None;
     }
     Some(SearchWarning::new("_system", legacy_message))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::query::SearchIntent;
+    use crate::meta::routing::IntentCapability;
+    use std::sync::Arc;
+
+    const ADVISORY_GAP: &str = "native_advisory_search_unavailable: intent=security requested but no provider has native security advisory search; results are from generic/contextual search";
+    const CODE_GAP: &str = "native_code_search_unavailable: intent=code requested but no provider has native code/repository search; results are from generic text search";
+    const ADVISORY_EXCLUDED: &str = "intent_routing_capability_excluded: intent=security requested; enabled native security advisory search provider(s) osv were not routed, so results are from generic/contextual search";
+
+    struct StubEngine(&'static str);
+
+    impl crate::meta::engines::SearchEngine for StubEngine {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn search<'a>(
+            &'a self,
+            _request: &'a EngineSearchRequest,
+        ) -> crate::meta::engines::BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+    }
+
+    fn engine_list(names: &[&'static str]) -> EngineList {
+        names
+            .iter()
+            .map(|name| Arc::new(StubEngine(name)) as Arc<dyn crate::meta::engines::SearchEngine>)
+            .collect()
+    }
+
+    fn warning(
+        requested: SearchIntent,
+        intent: SearchIntent,
+        selected: &[&'static str],
+        built: &[&'static str],
+        apply: bool,
+        capability: IntentCapability,
+        legacy: &str,
+    ) -> Option<String> {
+        let engines = engine_list(selected);
+        let built: Vec<String> = built.iter().map(|id| (*id).to_string()).collect();
+        native_capability_warning(
+            requested, intent, &engines, &built, apply, capability, legacy,
+        )
+        .map(|warning| warning.message)
+    }
+
+    #[test]
+    fn unrequested_intent_emits_nothing() {
+        assert!(warning(
+            SearchIntent::Web,
+            SearchIntent::Security,
+            &["duckduckgo"],
+            &["duckduckgo", "rustsec"],
+            true,
+            IntentCapability::Security,
+            ADVISORY_GAP
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn routed_native_provider_suppresses_the_gap_warning_under_apply() {
+        assert!(warning(
+            SearchIntent::Security,
+            SearchIntent::Security,
+            &["duckduckgo", "osv"],
+            &["duckduckgo", "osv"],
+            true,
+            IntentCapability::Security,
+            ADVISORY_GAP
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn keyword_rejecting_provider_never_suppresses_the_gap_under_apply() {
+        assert_eq!(
+            warning(
+                SearchIntent::Security,
+                SearchIntent::Security,
+                &["duckduckgo", "rustsec"],
+                &["duckduckgo", "rustsec"],
+                true,
+                IntentCapability::Security,
+                ADVISORY_GAP
+            )
+            .as_deref(),
+            Some(ADVISORY_GAP),
+            "a built keyword-rejecting provider is not a native provider"
+        );
+    }
+
+    #[test]
+    fn keyword_rejecting_provider_keeps_the_baseline_warning_under_off() {
+        assert!(warning(
+            SearchIntent::Security,
+            SearchIntent::Security,
+            &["duckduckgo", "rustsec"],
+            &["duckduckgo", "rustsec"],
+            false,
+            IntentCapability::Security,
+            ADVISORY_GAP
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn routing_scoped_provider_neither_suppresses_nor_is_excluded_under_apply() {
+        assert_eq!(
+            warning(
+                SearchIntent::Code,
+                SearchIntent::Code,
+                &["duckduckgo", "local_workspace"],
+                &["duckduckgo", "local_workspace"],
+                true,
+                IntentCapability::Code,
+                CODE_GAP
+            )
+            .as_deref(),
+            Some(CODE_GAP),
+            "a provider routing never uses under the keyword predicate is not native coverage"
+        );
+        assert!(warning(
+            SearchIntent::Code,
+            SearchIntent::Code,
+            &["duckduckgo", "local_workspace"],
+            &["duckduckgo", "local_workspace"],
+            false,
+            IntentCapability::Code,
+            CODE_GAP
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn present_but_unrouted_native_provider_reports_the_exclusion_warning() {
+        assert_eq!(
+            warning(
+                SearchIntent::Security,
+                SearchIntent::Security,
+                &["duckduckgo"],
+                &["duckduckgo", "osv"],
+                true,
+                IntentCapability::Security,
+                ADVISORY_GAP
+            )
+            .as_deref(),
+            Some(ADVISORY_EXCLUDED)
+        );
+    }
+
+    #[test]
+    fn true_capability_gap_still_reports_the_legacy_warning_under_apply() {
+        assert_eq!(
+            warning(
+                SearchIntent::Security,
+                SearchIntent::Security,
+                &["duckduckgo"],
+                &["duckduckgo", "brave", "yahoo"],
+                true,
+                IntentCapability::Security,
+                ADVISORY_GAP
+            )
+            .as_deref(),
+            Some(ADVISORY_GAP)
+        );
+    }
 }

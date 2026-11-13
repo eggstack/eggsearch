@@ -124,10 +124,11 @@ randomness, or inference.
 
 Ownership boundary: **the planner never consumes derived intent.** `build_search_plan()` keeps
 receiving `req.intent` verbatim, so `generic_query` and `provider_queries` are byte-identical to a
-call that omitted intent before derivation existed. Derived intent is consumed only by
-`apply_intent_reranking` (and reported in the response), and only when the caller omitted `intent`.
-An explicit `intent` is authoritative and suppresses `derived_intent`/`derived_intent_reasons`
-entirely.
+call that omitted intent before derivation existed. Derived intent feeds `apply_intent_reranking` when the caller omitted `intent`, and the effective
+intent (caller-supplied or derived) feeds `select_intent_additions` when
+`[search.routing].intent_mode = "apply"` (see `src/meta/routing.rs`); the derived intent is also
+reported on the response. An explicit `intent` is authoritative and suppresses
+`derived_intent`/`derived_intent_reasons` entirely.
 
 `APPLY_DERIVED_INTENT_TO_RERANKING` in `src/meta/intent.rs` is the recorded rollout decision. It is
 `true`: the tier-1 candidate-snapshot lane showed +0.136 recall@5, +0.076 MRR@5, +0.176 nDCG@5, and

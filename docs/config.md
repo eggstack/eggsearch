@@ -190,20 +190,19 @@ Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`
 
 `web_search` already derives a retrieval intent from the query. Routing can use
 that intent to add specialist providers to the default candidate set — for
-example asking `osv` and `rustsec` on a security query, or `github_code` on a
-code query. Routing only **adds**: it never removes, reorders, or displaces an
+example asking `osv` on a security query, or `github_code` on a code query. Routing only **adds**: it never removes, reorders, or displaces an
 explicitly requested provider, a profile's providers, or the shipped default
 list.
 
 ```toml
 [search.routing]
-intent_mode = "off"       # "off" | "apply"
+intent_mode = "apply"     # "off" | "apply"
 max_extra_providers = 2   # 0..=4
 ```
 
 | Setting | Default | Bounds | Meaning |
 |---------|---------|--------|---------|
-| `intent_mode` | `off` | `off`, `apply` | `off` derives and reports the intent plus the routing decision but adds nothing. `apply` admits the intent's preferred providers. |
+| `intent_mode` | `apply` | `off`, `apply` | `off` derives and reports the intent plus the routing decision but adds nothing. `apply` admits the intent's preferred providers. |
 | `max_extra_providers` | `2` | `0`–`4` | Cap on providers added by one routing decision. `0` reports without adding. |
 
 Precedence is fixed: an explicit `providers` argument wins, then a supplied
@@ -222,16 +221,26 @@ cooldown and health filter.
 `rustsec` is deliberately absent from the `security` row: it serves advisory-ID lookup only, so a routed keyword query would always fail as an unsupported operation rather than return evidence.
 
 A candidate is admitted only when it is enabled in `[search.providers]`, was
-actually built into the engine set, is not cooling down, and satisfies the
-capability predicate for its table row. Each disposition is reported in
-`provider_status` as `added`, `already_selected`, `not_enabled`, `not_built`,
-`cooling_down`, `capability_missing`, or `cap_exceeded`. A candidate excluded
-for capability reasons emits the `intent_routing_capability_excluded` warning
-rather than being silently dropped.
+actually built into the engine set, is not cooling down, is admitted by the
+keyword-query allowlist, and satisfies the capability predicate for its table
+row. Each disposition is reported in `provider_status` as `added`,
+`already_selected`, `not_enabled`, `not_built`, `cooling_down`,
+`keyword_unsupported`, `capability_missing`, or `cap_exceeded`. A candidate
+excluded for capability reasons emits the `intent_routing_capability_excluded`
+warning rather than being silently dropped; `keyword_unsupported` names a
+provider that knows the subject but cannot answer a keyword query, such as
+`rustsec`.
 
-`intent_mode` ships `off`. The `apply` default requires tier-1 snapshot
-non-regression measured against the shipped default provider set; that
-measurement does not yet exist, so enabling it is an explicit operator choice.
+`intent_mode` ships `apply`. The default follows the tier-1 candidate-snapshot
+gate, which measures seven shipped-default-set cases (one per disclosed intent)
+against the `security-nvd-first` negative control: routing adds the specialist
+for every non-empty preference row, `recall_at_5`, `MRR@5`, `nDCG@5`,
+authoritative survival, and `distinct_domains_topk` all improve on those five
+cases, no case regresses, and the control is detected with a 1.0 `recall_at_5`
+drop across two identical runs.
+`tests/retrieval_quality.rs::intent_routing_rollout_gate_matches_the_recorded_decision`
+recomputes that comparison and fails if the default and the recorded decision
+disagree.
 
 ## Offset Windows, Progress, and Tasks
 
@@ -352,6 +361,45 @@ beyond the configured wall-clock budget 50 ms`. The projection admits a
 challenge; it never replaces the per-attempt or wall-clock ceiling. An already
 spent challenge reports `already spent`, and an unusable published base prefix
 reports `unsafe base prefix`, both before any request or hashing.
+
+The reuse window is derived from the lifetime the upstream published on the pass
+cookie and clamped by `cookie_ttl_seconds`:
+
+| Response attribute | Stored window |
+|---|---|
+| neither `Max-Age` nor `Expires` | `cookie_ttl_seconds` (unchanged) |
+| `Max-Age=N` | `min(N, cookie_ttl_seconds)`; `Max-Age=0` stores nothing |
+| `Expires=<IMF-fixdate>` | `min(expiry - now, cookie_ttl_seconds)`; an expiry at or before now stores nothing |
+| both `Max-Age` and `Expires` | `Max-Age` wins (RFC 6265 §5.3) |
+| an attribute present but unusable | nothing is stored (fail closed) |
+
+A stored window never exceeds `cookie_ttl_seconds`, so the setting stays the
+operator ceiling, and `cookie_ttl_seconds = 0` disables reuse regardless of what
+an upstream published. A pass cookie the upstream rejects on replay is evicted
+immediately, so the next request starts from a challenge page instead of sending
+a token the server has already refused.
+
+When `[egress]` is routed (`enabled = true` with at least one hop) and challenge
+solving reuses pass cookies, `eggsearch doctor` warns that a pass token bound to
+the client's egress address is re-challenged or rejected when the exit address
+changes, and suggests `cookie_ttl_seconds = 0` when the route does not keep one
+exit address per process. eggsearch does not detect egress addresses, never
+shortens the window because a route exists, and never rotates exits; the warning
+is the whole mitigation and rejection eviction is the recovery.
+
+`web_fetch` uses the same opt-in. With `enabled = true`, a fetched page classified as an Anubis
+challenge is solved once and the request replayed once with the issued `spchal-auth` cookie, so the
+caller receives the protected document instead of the wall. `max_difficulty`, `max_attempts`, and
+`timeout_ms` apply unchanged, further bounded by the remaining `web_fetch` call deadline;
+`cookie_ttl_seconds` does not apply, because a fetch-side cookie is used for that one replay and
+never stored. When solving is off, refused, unsupported, or the replay is still challenged,
+`web_fetch` keeps returning the marked page (`manual_interaction_required: true` plus one
+`fetch_challenge_page` warning). `batch_fetch` does not solve yet.
+
+Every `provider_status` call reports a `challenge_solver` block with
+process-lifetime per-provider solve and refusal counters plus the last attempt's
+candidate count and bounded-computation milliseconds; the field set is described
+in `architecture/engines.md` § Challenge solving.
 
 The solve is probabilistic: the nonce is uniform, so an attempt can legitimately
 reach `max_attempts` without a hit and report `blocked` with

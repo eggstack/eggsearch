@@ -1,6 +1,6 @@
 # M018 — Pagination Consistency Across Pages
 
-Status: ready
+Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M018
 Primary class: invariant (corrective to M009)
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0` (the worktree also carries uncommitted planning changes — the ADR-0009 amendment, ADR-0010, the roadmap status line, `plans/registry.md` rows, and plans 013/014/016; re-read `git status` before starting and do not revert them)

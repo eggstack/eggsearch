@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6225 | 28 |
-| `--features mock` | 5869 | 4 |
+| `--all-features` | 6291 | 28 |
+| `--features mock` | 5935 | 4 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -18,7 +18,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
 | `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection, derived-intent reporting and applied reranking, search-result cache hit/miss/coalesce equivalence and partial-fan-out bypass, blocked-provider classification |
 | `engine_parse_conformance` | `mock` | Captured-fixture conformance for the five HTML scrapers: parsed rows, explicit empty state, block classification, and a seeded-drift negative control that requires `parse_error` |
-| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`) |
+| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`), and Anubis solve-and-replay under `[search.challenge]` |
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
@@ -32,7 +32,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `local_workspace_integration` | `mock` | Local workspace search backend |
 | `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
 | `retrieval_attempt_ledger` | None | Attempt ledger validation |
-| `retrieval_quality` | `mock` (live observation and recorder ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, candidate-snapshot replay through the production selection path (tier-1 synthetic, tier-2 recorded, tier-3 recorded into `target/snapshots/`), duplicate-slot/domain/authoritative-survival metrics, three seeded negative controls, derived-intent rollout gate, opt-in bounded provider observations |
+| `retrieval_quality` | `mock` (live observation and recorder ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, candidate-snapshot replay through the production selection path (tier-1 synthetic, tier-2 recorded, tier-3 recorded into `target/snapshots/`), duplicate-slot/domain/authoritative-survival metrics, three seeded negative controls, derived-intent rollout gate, shipped-default-set routing gate (one case per disclosed intent, keyword-query admission predicate, re-pointed `security-nvd-first` negative control), opt-in bounded provider observations |
 | `conflict_source_attribution` | None | Conflict source attribution |
 | `bounded_command` | `mock` | Bounded git command execution (caps, timeout, termination) |
 | `firecrawl_developer` | None | Developer-index adapter behavior |

@@ -168,3 +168,23 @@ Re-run through the shipped release binary after the M013/M016 solver corrections
 No deployment publishing `anubis_base_prefix` with a non-empty value, `method = "slow"`,
 `method = "preact"`, or `method = "metarefresh"` was reachable on 2026-11-13. Those paths are
 synthetic-fixture verified only and are not described here as live observations.
+
+## Fetch-side Anubis and solver observability (2026-11-13 UTC)
+
+Recorded through the shipped release binary after M014/M015/M023.
+
+| Probe | Configuration | Observation |
+|---|---|---|
+| `mojeek` solve ledger, one MCP process | `[search.challenge] enabled = true`, `cookie_ttl_seconds = 0` | before: `{"enabled":true,"providers":{}}`; after: `solves_attempted=1`, `solves_succeeded=1`, `cookie_misses=1`, `last_candidates=244`, `last_wall_clock_ms=476`, every refusal `0` |
+| `web_fetch` through the Startpage Anubis wall | `enabled = true`, `max_difficulty = 6`, `max_attempts = 50000000`, `timeout_ms = 15000`, honest fetch UA | 2.32 s, `status=200`, `manual_interaction_required=false`, no `fetch_challenge_page` warning, real SERP text returned |
+| `web_fetch` with solving disabled | `enabled = false` | 200 with the marked stub: `manual_interaction_required=true` and one `fetch_challenge_page` warning naming `anubis` |
+
+The pass-cookie attribute capture for M014 is recorded separately below.
+
+### Pass-cookie lifetime (M014, live capture 2026-11-13 UTC)
+
+- `spchal-auth` from the pass-challenge `302`: `Path=/; Domain=startpage.com; Expires=<+20 min>; Secure; SameSite=None`; no `Max-Age`.
+- `sp_pow` on the challenge response: `Max-Age=300` plus an `Expires` about 20 minutes out; `Max-Age` wins for that cookie.
+- Mojeek published no lifetime on the captured response, so it falls back to `cookie_ttl_seconds`.
+- Measurement, one process, `cookie_ttl_seconds = 1800`, `startpage`: t0 3 rows / 1 solve (1,949,962 candidates, 698 ms); t=1261 s 3 rows, 0 failed, 6.6 s, second solve (16,831,309 candidates, 5,908 ms), `cookie_misses=2`, `cookie_hits=0`. The published expiry was respected; no dead token was replayed.
+- At the shipped 240 s ceiling the clamp binds and the derivation is a no-op for Startpage.

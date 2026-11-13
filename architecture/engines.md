@@ -273,9 +273,30 @@ Implementation:
   cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
   ```
 
+- The fetch path shares this solver rather than carrying a copy. With `[search.challenge].enabled`,
+  `web_fetch` classifies its bounded body with `src/fetch/challenge.rs`, solves a detected Anubis
+  challenge once via `anubis::solve_and_verify`, and replays once with `spchal-auth` on the first
+  hop. `src/fetch/**` remains independent of `src/meta/**`; only `src/mcp/tools/web_fetch.rs`
+  orchestrates the solve. A fetch-side pass cookie is never cached for reuse, so
+  `cookie_ttl_seconds` still governs search upstreams only.
 - Pass cookies (`spchal-auth`, `chllg`) are secrets-like: replay them through the transport's
   cookie jar or an explicit `Cookie` header, never log them, never serialize them into
   `provider_status`, diagnostics, or fixtures.
+- Lifetime derivation: `src/meta/challenge/cookie.rs` owns pass-cookie lifetime parsing for both
+  schemes. The reuse window is the lifetime the upstream published — `Max-Age` (which wins over
+  `Expires`, RFC 6265 §5.3) or `Expires` as IMF-fixdate — clamped by `cookie_ttl_seconds`. Neither
+  attribute falls back to the previous fixed window; a malformed attribute or an expiry at or
+  before `now` stores nothing; an empty ceiling stores nothing. `SolveOutcome::Solved` carries the
+  parsed `PublishedLifetime` beside the value so an engine never re-parses headers, and its `Debug`
+  prints the attribute kind with the value redacted. The window can never exceed
+  `cookie_ttl_seconds`, and a cookie the upstream rejects on replay is evicted per provider
+  (`PassCookieCache::remove`), so the next request starts cold instead of replaying a dead token.
+- Egress binding: a pass token may be bound to the client's egress address, and the client observes
+  only the effect. eggsearch keeps using the cached cookie, never detects an address, never shortens
+  the window because a route exists, and never rotates exits; when the exit changes the upstream
+  re-challenges or rejects, the failing search still reports `blocked` with `pass cookie rejected`,
+  and the next search re-solves. `eggsearch doctor` warns when `[egress]` is routed and cookie reuse
+  is enabled.
 - Solving is attempted at most once per search request per provider. A solved request proceeds
   through the normal parser and `finalize_scrape()`; a solved but unparseable page is still
   `ParseFailed`, not `Blocked` and not empty.
@@ -286,6 +307,55 @@ Implementation:
   transport that issues a challenge and then serves a result page, and a negative control proving
   a disabled solver still reports `blocked`. Live verification per provider is recorded in
   `tests/fixtures/engines/README.md`.
+
+- Observability: `src/meta/challenge/ledger.rs` keeps a bounded, process-local `SolveLedger`
+  (four provider ids, `u64` saturating counters) and `provider_status` reports it on every call as a
+  top-level `challenge_solver` object, sibling of `providers`, `health`, and `search_cache`:
+
+  ```json
+  "challenge_solver": {
+    "enabled": true,
+    "untracked_providers": 0,
+    "providers": {
+      "mojeek": {
+        "solves_attempted": 3,
+        "solves_succeeded": 1,
+        "solves_errored": 0,
+        "refusals": {
+          "difficulty above ceiling": 0,
+          "attempts exhausted": 1,
+          "wall clock exhausted": 0,
+          "unsupported scheme": 0,
+          "malformed parameters": 0,
+          "pass cookie absent": 0,
+          "pass cookie rejected": 1,
+          "challenge expired": 0,
+          "already spent": 0,
+          "unsafe base prefix": 0
+        },
+        "cookie_hits": 4,
+        "cookie_misses": 3,
+        "last_candidates": 291,
+        "last_wall_clock_ms": 420
+      }
+    }
+  }
+  ```
+
+  `solves_attempted == solves_succeeded + refusals_total + solves_errored` holds by construction
+  because one recording call increments the attempt and exactly one outcome under one lock.
+  `last_candidates` is the budget attempts the most recent attempt consumed; `last_wall_clock_ms` is
+  its parse-to-decision time, excluding every HTTP request. Both are `0` when the attempt ended
+  before any computation. The refusal key set is fixed and always emitted in full, so a zero is
+  evidence that the bound never fired; `challenge expired` has no producer today, and
+  `unsafe base prefix` also carries the fail-closed cost-projection refusal, which keeps its dynamic
+  sentence while recording an attributable key. The block is emitted whether or not
+  `[search.challenge].enabled` is set — "the solver is disabled" is the most common answer to "why
+  is this provider blocked" — with `enabled` reflecting configuration and `providers` empty until the
+  first solve. Counters are process-lifetime totals that reset on restart, are not rates, and are
+  never persisted, exported, or projected; a provider id beyond the four-entry cap is not tracked and
+  increments `untracked_providers` once per dropped record. Nothing in the ledger stores a cookie,
+  nonce, salt, derived key, challenge id, or redirect target: every reported value is a number.
 
 Anubis difficulty is risk-scored per client rather than fixed: on 2026-11-11 the honest `eggsearch`
 user agent received difficulty 6 while a Chrome user agent received 4. Budget for the honest agent.

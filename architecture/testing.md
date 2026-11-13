@@ -21,7 +21,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
-| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate; ignored live observation and recorder |
+| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate, shipped-default-set routing gate and keyword-query admission predicate; ignored live observation and recorder |
 | `tests/pdf_fidelity.rs` + `tests/fixtures/pdf/` | Committed synthetic PDF extraction-fidelity corpus, per-class annotations, deterministic metrics, and the join-lines-and-strip-spaces negative control |
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
