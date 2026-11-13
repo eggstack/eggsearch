@@ -112,7 +112,7 @@ All 44 built-in providers:
 |----------|------|----------|-------|
 | `duckduckgo` | html_scrape | — | Default generic provider |
 | `brave` | html_scrape | — | Default generic provider |
-| `startpage` | html_scrape | — | Selectable; upstream Anubis proof-of-work wall currently refuses every request |
+| `startpage` | html_scrape | — | Selectable; the upstream Anubis proof-of-work wall is solved when `[search.challenge].enabled = true` |
 | `yahoo` | html_scrape | — | Default generic provider |
 | `mojeek` | html_scrape | — | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
@@ -328,10 +328,10 @@ cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
 | Setting | Default | Bounds | Meaning |
 |---------|---------|--------|---------|
 | `enabled` | `false` | — | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
-| `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. |
+| `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
 | `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
 | `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
-| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long a pass cookie is reused for that provider. `0` disables reuse, so every request re-solves. |
+| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider. `0` disables reuse, so every request re-solves. |
 
 Two upstreams use this gate. `mojeek` publishes an ALTCHA challenge
 (`PBKDF2/SHA-256`, cost 8000); a captured live challenge resolved at counter
@@ -347,14 +347,34 @@ orders of magnitude slower and are not a valid baseline. Raising
 `[search].timeout_ms` of at least 8000.
 
 Anubis method coverage follows the published registry: `fast`, `slow` (the
-deprecated alias of `fast`), `preact`, and `metarefresh`, which echoes the
-published token after the published meta-refresh wait and performs no hashing.
-A `metarefresh` wait longer than `timeout_ms` is refused with
-`challenge not solved: wall clock exhausted` rather than sleeping past the
+deprecated alias of `fast`), `preact`, `metarefresh`, and the WASM `sha256`
+method (ADR-0013). `metarefresh` echoes `challenge.randomData` after the wait
+the page or `Refresh:` header published, a bounded JSON `wait` when neither
+exists, or `difficulty + 1` seconds otherwise, and performs no hashing.
+`sha256` publishes leading zero bits; because `max_difficulty` stays measured in
+fast-equivalent nibbles, such a challenge is admitted when `ceil(bits / 4)` is
+at or below the ceiling (4 admits 16 bits and rejects 17; 6 admits 24), and the
+cost projection uses `2^bits`. `argon2id` and `hashx` remain
+`unsupported scheme`. A `metarefresh` wait longer than `timeout_ms` is refused
+with `challenge not solved: wall clock exhausted` rather than sleeping past the
 budget.
 
-Before hashing, the solver projects `16^difficulty` candidates against the
-configured ceilings and refuses with the projection in the reason, for example
+`challenge.extensions` is parsed and bounded: absent, `null`, and `[]` are
+solvable, and a present list holds at most 8 names of 1–64 bytes each from
+ASCII alphanumerics, `-`, `_`, and `.`. A non-empty list containing any name
+other than `css-load` is refused before the ceiling, any wait, any hash, and
+any request, with `anubis challenge declares unsupported extensions [<names>]`
+recorded under `unsupported scheme`. With `enabled = true`, `css-load` — the
+one extension ADR-0012 permits — costs exactly one same-origin `GET` to
+`{origin}{base_prefix}/.within.website/x/cmd/anubis/ext/css-load/{uuid}` with
+no cookie, no authorization header, redirects disabled, and a discarded 4 KiB
+body; a non-2xx status or transport failure refuses with `blocked` under
+`unsupported scheme` and zero pass requests. `headless` and unknown names are
+refused with zero requests.
+
+Before hashing, the solver projects the published work (`16^difficulty`
+candidates for the nibble methods, `2^bits` for `sha256`) against the configured
+ceilings and refuses with the projection in the reason, for example
 `anubis difficulty 7 projects 268M candidates, beyond the configured attempt
 ceiling 2000000` or `anubis difficulty 5 projects 1M candidates (~136 ms),
 beyond the configured wall-clock budget 50 ms`. The projection admits a
@@ -362,8 +382,14 @@ challenge; it never replaces the per-attempt or wall-clock ceiling. An already
 spent challenge reports `already spent`, and an unusable published base prefix
 reports `unsafe base prefix`, both before any request or hashing.
 
-The reuse window is derived from the lifetime the upstream published on the pass
-cookie and clamped by `cookie_ttl_seconds`:
+Pass-cookie identity is opaque: the solver never looks for a fixed cookie name.
+It takes every non-deletion pair the pass-challenge response set — empty values
+and deletion cookies dropped, duplicate names resolved by the last non-deletion
+value — replays them joined with `; `, and derives the reuse window from the
+longest usable published lifetime among them, clamped by `cookie_ttl_seconds`.
+`spchal-auth`, `techaro.lol-anubis-auth`, and dynamic-suffix names work
+unchanged, ALTCHA keeps its published `chllg` name, and there is no cookie-name
+knob. The table applies to each replayed pair; the longest usable value wins:
 
 | Response attribute | Stored window |
 |---|---|
@@ -375,9 +401,9 @@ cookie and clamped by `cookie_ttl_seconds`:
 
 A stored window never exceeds `cookie_ttl_seconds`, so the setting stays the
 operator ceiling, and `cookie_ttl_seconds = 0` disables reuse regardless of what
-an upstream published. A pass cookie the upstream rejects on replay is evicted
+an upstream published. A pair set the upstream rejects on replay is evicted
 immediately, so the next request starts from a challenge page instead of sending
-a token the server has already refused.
+tokens the server has already refused.
 
 When `[egress]` is routed (`enabled = true` with at least one hop) and challenge
 solving reuses pass cookies, `eggsearch doctor` warns that a pass token bound to
@@ -388,12 +414,12 @@ shortens the window because a route exists, and never rotates exits; the warning
 is the whole mitigation and rejection eviction is the recovery.
 
 `web_fetch` uses the same opt-in. With `enabled = true`, a fetched page classified as an Anubis
-challenge is solved once and the request replayed once with the issued `spchal-auth` cookie, so the
-caller receives the protected document instead of the wall. `max_difficulty`, `max_attempts`, and
-`timeout_ms` apply unchanged, further bounded by the remaining `web_fetch` call deadline;
-`cookie_ttl_seconds` does not apply, because a fetch-side cookie is used for that one replay and
-never stored. When solving is off, refused, unsupported, or the replay is still challenged,
-`web_fetch` keeps returning the marked page (`manual_interaction_required: true` plus one
+challenge is solved once and the request replayed once with the cookie pairs the pass response
+issued, so the caller receives the protected document instead of the wall. `max_difficulty`,
+`max_attempts`, and `timeout_ms` apply unchanged, further bounded by the remaining `web_fetch` call
+deadline; `cookie_ttl_seconds` does not apply, because a fetch-side pair set is used for that one
+replay and never stored. When solving is off, refused, unsupported, or the replay is still
+challenged, `web_fetch` keeps returning the marked page (`manual_interaction_required: true` plus one
 `fetch_challenge_page` warning). `batch_fetch` does not solve yet.
 
 Every `provider_status` call reports a `challenge_solver` block with
@@ -408,12 +434,12 @@ about one attempt in seven does; a later call usually succeeds. Treat it as a
 retryable provider condition, not a defect.
 
 Solving is attempted at most once per provider per search request and reused
-for `cookie_ttl_seconds`. Pass cookies (`chllg`, `spchal-auth`) are held in
-process memory only, are never written to disk, and never appear in logs,
-`provider_status`, diagnostics, or fixtures. A challenged provider that is
-disabled, above the ceiling, unsupported, or out of budget still reports
-`error_class: blocked` with a reason naming the bound — never an empty result.
-A solved page that fails to parse is `parse_error`, not `blocked`.
+for `cookie_ttl_seconds`. Pass cookies (the opaque Anubis pair set and ALTCHA's
+`chllg`) are held in process memory only, are never written to disk, and never
+appear in logs, `provider_status`, diagnostics, or fixtures. A challenged
+provider that is disabled, above the ceiling, unsupported, or out of budget
+still reports `error_class: blocked` with a reason naming the bound — never an
+empty result. A solved page that fails to parse is `parse_error`, not `blocked`.
 
 Raising `max_difficulty` does not by itself make `startpage` return rows: its
 result extraction needs the payload parser described in

@@ -124,7 +124,8 @@ impl SolveBudget {
 pub enum SolveOutcome {
     /// The challenge was answered and produced a pass cookie.
     Solved {
-        /// Pass cookie value. Never write this into an error or a log.
+        /// Replayable `Cookie` header value: `name=value` pairs joined with `; `.
+        /// Never write this into an error or a log.
         cookie: String,
         /// Lifetime the upstream published for this cookie.
         lifetime: cookie::PublishedLifetime,
@@ -246,6 +247,9 @@ struct CacheState {
 }
 
 /// Process-local, per-provider pass-cookie cache.
+///
+/// Entries hold the replayable `Cookie` header value the solver produced, so a
+/// replay site never formats a deployment-specific cookie name.
 pub struct PassCookieCache {
     capacity: usize,
     state: Mutex<CacheState>,

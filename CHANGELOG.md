@@ -74,6 +74,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via a self-describing 512-byte `next_cursor` with no server-side state.
   Token-gated bounded progress reporting, and an opt-in `[mcp.tasks]` path for
   the MCP Tasks extension.
+- **Anubis pass-cookie identity is opaque.** The solver no longer looks for `spchal-auth`: it takes
+  every non-deletion pair the pass-challenge response set, drops empty values and deletion cookies,
+  resolves duplicate names by the last value, replays the pairs joined with `; `, and derives the
+  reuse window from the longest usable published lifetime, clamped by `cookie_ttl_seconds`.
+  `spchal-auth` and `techaro.lol-anubis-auth` were observed live on 2026-11-13; both, and dynamic
+  suffixes such as `techaro.lol-anubis-auth-347ddb4a`, now work without a source change, ALTCHA
+  keeps its published `chllg` name in pair form (including the one-replay, no-cache `Max-Age=0`
+  case), and there is no cookie-name configuration knob.
+- **Anubis `metarefresh` no longer requires a `<meta>` element or a `challenge` field.** The echo
+  token is `challenge.randomData` (a legacy `challenge` field is accepted only when `randomData` is
+  absent), and the wait is the published meta-refresh or `Refresh:` header value, or
+  `difficulty + 1` seconds when neither exists. The submission synthesizes
+  `{origin}{base_prefix}/.within.website/x/cmd/anubis/api/pass-challenge?redir=<request URL>&challenge=<randomData>&id=<id>`,
+  uses a published target only when it resolves same-origin, and never appends `result=`. Both
+  presentations were observed on `anubis.techaro.lol` v1.28.3 on 2026-11-13: a `Refresh:` header
+  only on one capture and a `<meta http-equiv="refresh">` element on another.
+- **Anubis challenge extensions fail closed before any work.** `challenge.extensions` is parsed and
+  bounded: absent, `null`, and `[]` are solvable, and a present list holds at most 8 names of 1–64
+  bytes from ASCII alphanumerics, `-`, `_`, and `.`. A non-empty list naming anything this build
+  does not support is refused before the difficulty ceiling, any wait, any hash, and any request,
+  with `anubis challenge declares unsupported extensions [<names>]` recorded under the existing
+  `unsupported scheme` key. No ledger key, `provider_status` field, configuration key, or tool
+  changed, and `headless` or an unknown name performs zero requests.
+- **Anubis `css-load` extension support (ADR-0012).** With `[search.challenge].enabled = true`, a
+  challenge declaring `css-load` performs exactly one same-origin `GET` to
+  `{origin}{base_prefix}/.within.website/x/cmd/anubis/ext/css-load/{uuid}` before the pass request:
+  no cookie, no authorization header, redirects disabled, the remaining solve deadline, and a
+  discarded 4 KiB body. A 2xx continues to the proof, while a non-2xx status, transport error,
+  timeout, unsafe id, or cross-origin target refuses with `blocked` under `unsupported scheme` and
+  zero pass requests. No deployment publishing `css-load` was observed on 2026-11-13, so the
+  capability is synthetic-fixture verified only.
+- **Anubis WASM `sha256` method support (ADR-0013).** A `u32` nonce is searched from zero and
+  hashed as `SHA-256(data || nonce_bytes)` over the hex-decoded `randomData`, with the four nonce
+  bytes little-endian when the last data byte is at least 128 and big-endian otherwise. Difficulty
+  is leading zero **bits**, while `max_difficulty` stays measured in fast-equivalent nibbles: a
+  challenge is admitted when `ceil(bits / 4) <= max_difficulty` (4 admits 16 bits and rejects 17; 6
+  admits 24), projection uses `2^bits`, and 128 bits or more is refused before hashing. `argon2id`
+  and `hashx` remain `unsupported scheme`, no dependency or WASM runtime was added, and no live
+  `sha256` deployment was observed on 2026-11-13, so the method is synthetic-fixture verified only.
 
 ### Changed
 

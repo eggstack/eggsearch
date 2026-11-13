@@ -318,7 +318,10 @@ async fn solve_and_verify_inner(
         }
     } else {
         match issued {
-            Some((cookie, lifetime)) => TerminalOutcome::Solved { cookie, lifetime },
+            Some((cookie, lifetime)) => TerminalOutcome::Solved {
+                cookie: format!("{COOKIE_NAME}={cookie}"),
+                lifetime,
+            },
             None => TerminalOutcome::Refused {
                 bound: BOUND_MISSING_COOKIE,
             },

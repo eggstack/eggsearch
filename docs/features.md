@@ -93,7 +93,7 @@ enabled = true
 
 ### Capabilities
 
-- Solves the methods the engine set actually encounters: Anubis `fast`, `slow` (an alias of `fast`), `preact`, and `metarefresh` (Startpage), plus ALTCHA `PBKDF2/SHA-256` (Mojeek)
+- Solves the methods the engine set actually encounters: Anubis `fast`, `slow` (an alias of `fast`), `preact`, `metarefresh`, and WASM `sha256`, plus ALTCHA `PBKDF2/SHA-256` (Mojeek); `argon2id` and `hashx` stay unsupported
 - One shared solver module under `src/meta/challenge/`; engines call it rather than carrying per-engine copies
 - At most one solve per provider per search request, and one per `cookie_ttl_seconds`
 - A solved request runs through the normal parser and the normal four-outcome classification

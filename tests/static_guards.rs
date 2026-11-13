@@ -1382,6 +1382,8 @@ fn orchestration_module_size_ratchet() {
         ("src/meta/package_resolver.rs", 1700, 60_000),
         ("src/meta/research_workflow.rs", 1900, 81_920),
         ("src/meta/adapter/tests.rs", 2700, 100_000),
+        ("src/meta/engines/startpage_tests.rs", 1800, 81_920),
+        ("src/meta/challenge/anubis_tests.rs", 1750, 81_920),
         // Over the ordinary 1600-line / 80 KB ceiling. Frozen here so the debt
         // is explicit and cannot grow; split when touched.
         ("src/core/security.rs", 3000, 115_000),
@@ -1457,6 +1459,8 @@ fn ordinary_module_size_ceiling_enforced() {
         "src/meta/provider_diagnostics.rs",
         "src/meta/research_workflow.rs",
         "src/meta/adapter/tests.rs",
+        "src/meta/engines/startpage_tests.rs",
+        "src/meta/challenge/anubis_tests.rs",
         "src/core/security.rs",
         "src/core/config.rs",
         "src/core/provider.rs",

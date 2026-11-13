@@ -70,6 +70,53 @@ fn with_redir(page: &str, redir: &str) -> String {
 }
 
 fn metarefresh_page(token: &str, difficulty: u8, seconds: &str, target: &str) -> String {
+    let payload = metarefresh_payload(token, difficulty);
+    format!(
+        r#"<html><head><meta http-equiv="refresh" content="{seconds}; url={target}"><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn metarefresh_payload(token: &str, difficulty: u8) -> String {
+    serde_json::json!({
+        "rules": {"algorithm": "metarefresh", "difficulty": difficulty},
+        "challenge": {
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "metarefresh",
+            "randomData": token,
+            "redir": "/search?q=rust",
+            "difficulty": difficulty,
+            "spent": false
+        }
+    })
+    .to_string()
+}
+
+fn metarefresh_page_without_meta(token: &str, difficulty: u8) -> String {
+    let payload = metarefresh_payload(token, difficulty);
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn metarefresh_page_with_legacy_token(random_data: &str, legacy: &str, difficulty: u8) -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "metarefresh", "difficulty": difficulty},
+        "challenge": {
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "metarefresh",
+            "randomData": random_data,
+            "challenge": legacy,
+            "redir": "/search?q=rust",
+            "difficulty": difficulty,
+            "spent": false
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn metarefresh_page_legacy_only(token: &str, difficulty: u8) -> String {
     let payload = serde_json::json!({
         "rules": {"algorithm": "metarefresh", "difficulty": difficulty},
         "challenge": {
@@ -82,7 +129,34 @@ fn metarefresh_page(token: &str, difficulty: u8, seconds: &str, target: &str) ->
         }
     });
     format!(
-        r#"<html><head><meta http-equiv="refresh" content="{seconds}; url={target}"><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn sha256_page(random_data: &str, difficulty: u8) -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "sha256", "difficulty": difficulty},
+        "challenge": {
+            "issuedAt": "2026-11-13T00:00:00Z",
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "sha256",
+            "randomData": random_data,
+            "redir": "/search?q=rust",
+            "policyRuleHash": "00",
+            "difficulty": difficulty,
+            "spent": false,
+            "extensions": null
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn with_extensions(page: &str, extensions: &str) -> String {
+    page.replace(
+        "\"spent\":false",
+        &format!("\"spent\":false,\"extensions\":{extensions}"),
     )
 }
 
@@ -535,22 +609,54 @@ fn metarefresh_dispatches_and_echoes_only_published_values() {
     assert_eq!(solution.nonce, 0);
     assert_eq!(budget.attempts_used(), 0);
 
-    let target = challenge
-        .resolved_target("https://www.startpage.com")
-        .expect("published target resolves");
     assert_eq!(
-            challenge.metarefresh_url(&target),
-            "https://www.startpage.com/metarefresh-check?id=01a1cc17-0000-7000-8000-000000000000&result=published-token-123"
-        );
+        challenge.metarefresh_submission("https://www.startpage.com", "/search?q=rust"),
+        Ok("https://www.startpage.com/metarefresh-check?redir=%2Fsearch%3Fq%3Drust&challenge=published-token-123&id=01a1cc17-0000-7000-8000-000000000000".to_string())
+    );
+}
+
+#[test]
+fn metarefresh_live_header_only_page_synthesizes_the_pass_url() {
+    let page =
+        metarefresh_page_without_meta("3f2a", 1).replace("\"redir\":\"/search?q=rust\",", "");
+    let challenge = AnubisChallenge::parse(&page).expect("a header-only page parses");
+    assert_eq!(challenge.method(), AnubisMethod::Metarefresh);
+    assert_eq!(challenge.wait, Some(Duration::from_secs(2)));
+    assert_eq!(challenge.target, None);
+    assert_eq!(
+        challenge.metarefresh_submission(
+            "https://anubis.techaro.lol",
+            "/docs/design/how-anubis-works/"
+        ),
+        Ok("https://anubis.techaro.lol/.within.website/x/cmd/anubis/api/pass-challenge?redir=%2Fdocs%2Fdesign%2Fhow-anubis-works%2F&challenge=3f2a&id=01a1cc17-0000-7000-8000-000000000000".to_string())
+    );
+}
+
+#[test]
+fn metarefresh_prefers_random_data_over_a_legacy_challenge_field() {
+    let page = metarefresh_page_with_legacy_token("random-token", "legacy-token", 1);
+    let challenge = AnubisChallenge::parse(&page).expect("parses");
+    let mut budget = budget(10, 1000, 5);
+    assert_eq!(
+        challenge.solve(&mut budget).expect("solves").response,
+        "random-token"
+    );
+}
+
+#[test]
+fn metarefresh_accepts_a_legacy_token_when_random_data_is_absent() {
+    let page = metarefresh_page_legacy_only("legacy-token", 1);
+    let challenge = AnubisChallenge::parse(&page).expect("legacy payload parses");
+    let mut budget = budget(10, 1000, 5);
+    assert_eq!(
+        challenge.solve(&mut budget).expect("solves").response,
+        "legacy-token"
+    );
 }
 
 #[test]
 fn metarefresh_malformed_pages_fail_closed() {
     let base = metarefresh_page("token", 2, "0", "/metarefresh-check");
-    let no_meta = base.replace(
-        "<meta http-equiv=\"refresh\" content=\"0; url=/metarefresh-check\">",
-        "",
-    );
     let mismatch = base.replace(
         "\"method\":\"metarefresh\"",
         "\"method\":\"metarefresh\",\"wait\":5",
@@ -559,15 +665,17 @@ fn metarefresh_malformed_pages_fail_closed() {
         "\"method\":\"metarefresh\"",
         "\"method\":\"metarefresh\",\"wait\":\"5\"",
     );
-    let empty_token = base.replace("\"challenge\":\"token\"", "\"challenge\":\"\"");
+    let empty_token = base.replace("\"randomData\":\"token\"", "\"randomData\":\"\"");
+    let no_token =
+        metarefresh_page_without_meta("token", 2).replace("\"randomData\":\"token\",", "");
     for page in [
-        no_meta,
         metarefresh_page("token", 2, "abc", "/metarefresh-check"),
         metarefresh_page("token", 2, "-1", "/metarefresh-check"),
         metarefresh_page("token", 2, "NaN", "/metarefresh-check"),
         mismatch,
         non_numeric_wait,
         empty_token,
+        no_token,
     ] {
         assert_eq!(
             AnubisChallenge::parse(&page).err(),
@@ -579,8 +687,8 @@ fn metarefresh_malformed_pages_fail_closed() {
     let challenge =
         AnubisChallenge::parse(&metarefresh_page("token", 2, "0", "/ok")).expect("parses");
     assert_eq!(
-        challenge.resolved_target("https://www.startpage.com"),
-        Ok("https://www.startpage.com/ok".to_string())
+        challenge.metarefresh_submission("https://www.startpage.com", "/search?q=rust"),
+        Ok("https://www.startpage.com/ok?redir=%2Fsearch%3Fq%3Drust&challenge=token&id=01a1cc17-0000-7000-8000-000000000000".to_string())
     );
 
     let cross_origin = AnubisChallenge::parse(&metarefresh_page(
@@ -591,7 +699,7 @@ fn metarefresh_malformed_pages_fail_closed() {
     ))
     .expect("parses");
     assert_eq!(
-        cross_origin.resolved_target("https://www.startpage.com"),
+        cross_origin.metarefresh_submission("https://www.startpage.com", "/search?q=rust"),
         Err(BOUND_MALFORMED)
     );
 }
@@ -600,13 +708,18 @@ fn metarefresh_malformed_pages_fail_closed() {
 fn metarefresh_wait_never_exceeds_the_budget() {
     let deadline = Instant::now() + Duration::from_secs(1);
     assert_eq!(
-        metarefresh_wait(Duration::from_secs(5), deadline),
+        metarefresh_wait(Duration::from_secs(5), 2, deadline),
         Err(BOUND_WALL_CLOCK)
     );
     let deadline = Instant::now() + Duration::from_secs(5);
     assert_eq!(
-        metarefresh_wait(Duration::from_secs(1), deadline),
+        metarefresh_wait(Duration::from_secs(1), 1, deadline),
         Ok(Duration::from_secs(1))
+    );
+    assert_eq!(
+        metarefresh_wait(Duration::ZERO, 2, deadline),
+        Ok(Duration::from_millis(1_600)),
+        "the wait never drops below difficulty * 800 ms"
     );
 }
 
@@ -653,7 +766,7 @@ async fn metarefresh_submits_the_published_echo_once() {
     let submit_mock = server.mock(|when, then| {
         when.method(GET)
             .path("/metarefresh-check")
-            .query_param("result", "published-token-123")
+            .query_param("challenge", "published-token-123")
             .query_param("id", "01a1cc17-0000-7000-8000-000000000000");
         then.status(200)
             .header("set-cookie", "spchal-auth=pass-123; Path=/");
@@ -676,7 +789,7 @@ async fn metarefresh_submits_the_published_echo_once() {
     assert_eq!(
         outcome,
         SolveOutcome::Solved {
-            cookie: "pass-123".to_string(),
+            cookie: "spchal-auth=pass-123".to_string(),
             lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
@@ -772,7 +885,7 @@ async fn preact_waits_then_submits_the_digest() {
     assert_eq!(
         outcome,
         SolveOutcome::Solved {
-            cookie: "preact-pass".to_string(),
+            cookie: "spchal-auth=preact-pass".to_string(),
             lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
@@ -885,9 +998,13 @@ fn challenge_cookies_join_every_set_cookie_pair() {
     );
     assert_eq!(challenge_cookies(&http::HeaderMap::new()), "");
     assert_eq!(
-        cookie::parse_issued(&headers, PASS_COOKIE_NAME),
+        cookie::parse_issued(&headers, "spchal-auth"),
         None,
         "the challenge response does not carry the pass cookie"
+    );
+    assert_eq!(
+        cookie::parse_issued_pairs(&headers).header(),
+        "spchal-cookie-verification=verif-1; sp_pow=pow-1"
     );
 }
 
@@ -912,4 +1029,619 @@ fn leading_zero_hex_matches_byte_prefixes() {
     assert!(has_leading_zero_hex(&digest, 3));
     assert!(!has_leading_zero_hex(&digest, 4));
     assert!(!has_leading_zero_hex(&digest, 65));
+}
+
+const SHA_LE_DATA: &str = "abcd";
+const SHA_LE_DIGEST_NONCE_42: &str =
+    "00ebbd2e622cc5a6c39c48707ddfd0bd679515e63fd28cbb0426e68448af0714";
+const SHA_BE_DATA: &str = "ab01";
+const SHA_BE_DIGEST_NONCE_0: &str =
+    "31c3eb71bf40a0e389a4fcd0e4a87d37623e48c76ea40b07965ae53d4bd2f019";
+
+#[tokio::test]
+async fn pass_response_with_a_default_anubis_name_solves_without_configuration() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(302)
+            .header(
+                "set-cookie",
+                "techaro.lol-anubis-cookie-verification=verif-1; Path=/; HttpOnly",
+            )
+            .header(
+                "set-cookie",
+                "techaro.lol-anubis-auth=jwt-value-123; Path=/; HttpOnly; Max-Age=300",
+            )
+            .header("location", "/");
+    });
+
+    let mut budget = budget(1_000_000, 5000, 5);
+    let outcome = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &fast_page("abc123def456", 1, "fast"),
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("verification is not an engine error");
+
+    assert_eq!(
+        outcome,
+        SolveOutcome::Solved {
+            cookie: "techaro.lol-anubis-cookie-verification=verif-1; techaro.lol-anubis-auth=jwt-value-123"
+                .to_string(),
+            lifetime: cookie::PublishedLifetime::MaxAge(300),
+        }
+    );
+    assert_eq!(pass.hits(), 1);
+}
+
+#[tokio::test]
+async fn pass_response_with_a_dynamic_suffix_name_solves() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200).header(
+            "set-cookie",
+            "techaro.lol-anubis-auth-347ddb4a=jwt-value-123; Path=/; Max-Age=90",
+        );
+    });
+
+    let mut budget = budget(1_000_000, 5000, 5);
+    let outcome = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &fast_page("abc123def456", 1, "fast"),
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("verification is not an engine error");
+
+    assert_eq!(
+        outcome,
+        SolveOutcome::Solved {
+            cookie: "techaro.lol-anubis-auth-347ddb4a=jwt-value-123".to_string(),
+            lifetime: cookie::PublishedLifetime::MaxAge(90),
+        }
+    );
+    assert_eq!(pass.hits(), 1);
+}
+
+#[tokio::test]
+async fn pass_response_with_only_a_deletion_cookie_is_refused() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let missing = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=pass-123; Max-Age=0; Path=/");
+    });
+
+    let mut budget = budget(1_000_000, 5000, 5);
+    let absent = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &fast_page("abc123def456", 1, "fast"),
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("verification is not an engine error");
+
+    assert_eq!(
+        absent,
+        SolveOutcome::Refused {
+            bound: BOUND_MISSING_COOKIE
+        }
+    );
+    assert_eq!(missing.hits(), 1);
+}
+
+#[tokio::test]
+async fn pass_response_with_only_a_past_expiry_is_rejected() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let rejected = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(302)
+            .header(
+                "set-cookie",
+                "spchal-auth=pass-123; Expires=Wed, 11 Nov 2020 00:00:00 GMT",
+            )
+            .header("location", "/");
+    });
+
+    let mut budget = budget(1_000_000, 5000, 5);
+    let dropped = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &fast_page("abc123def456", 1, "fast"),
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("verification is not an engine error");
+
+    assert_eq!(
+        dropped,
+        SolveOutcome::Refused {
+            bound: BOUND_COOKIE_REJECTED
+        }
+    );
+    assert_eq!(rejected.hits(), 1);
+}
+
+#[tokio::test]
+async fn metarefresh_header_only_page_submits_once_and_solves() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let page = metarefresh_page_without_meta("random-token", 0).replace(
+        "\"method\":\"metarefresh\"",
+        "\"method\":\"metarefresh\",\"wait\":0",
+    );
+    let submit = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge")
+            .query_param("challenge", "random-token")
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000000");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=meta-pass; Path=/");
+    });
+
+    let mut budget = budget(10, 2000, 5);
+    let outcome = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &page,
+        "/search?q=rust",
+        "",
+        Duration::from_secs(2),
+        &mut budget,
+    )
+    .await
+    .expect("the synthesized submission is not an engine error");
+
+    assert_eq!(
+        outcome,
+        SolveOutcome::Solved {
+            cookie: "spchal-auth=meta-pass".to_string(),
+            lifetime: cookie::PublishedLifetime::Unstated,
+        }
+    );
+    assert_eq!(submit.hits(), 1);
+    assert_eq!(budget.attempts_used(), 0);
+}
+
+#[test]
+fn extensions_absent_null_and_empty_all_solve() {
+    let absent = AnubisChallenge::parse(&fast_page("abc123def456", 1, "fast"))
+        .expect("an absent list parses");
+    assert!(absent.extensions.is_empty());
+
+    let null = with_extensions(&fast_page("abc123def456", 1, "fast"), "null");
+    assert!(AnubisChallenge::parse(&null)
+        .expect("a null list parses")
+        .extensions
+        .is_empty());
+
+    let empty = with_extensions(&fast_page("abc123def456", 1, "fast"), "[]");
+    assert!(AnubisChallenge::parse(&empty)
+        .expect("an empty list parses")
+        .extensions
+        .is_empty());
+}
+
+#[tokio::test]
+async fn unsupported_extensions_are_refused_before_any_request() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let any = server.mock(|when, then| {
+        when.method(GET);
+        then.status(200).header("set-cookie", "spchal-auth=never");
+    });
+
+    let page = with_extensions(
+        &fast_page("abc123def456", 1, "fast"),
+        r#"["css-load","headless"]"#,
+    );
+    let before = crate::meta::challenge::solve_ledger().snapshot();
+    let mut budget = budget(1_000_000, 5000, 5);
+    let err = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &page,
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect_err("an unsupported extension is blocked");
+
+    let after = crate::meta::challenge::solve_ledger().snapshot();
+    match &err {
+        EngineError::Blocked { reason, .. } => {
+            assert_eq!(
+                reason,
+                "anubis challenge declares unsupported extensions [css-load, headless]"
+            );
+            assert!(!reason.contains("01a1cc17"));
+            assert!(!reason.contains("abc123def456"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert_eq!(budget.attempts_used(), 0);
+    assert_eq!(any.hits(), 0);
+
+    let before_count = before.providers.get(PROVIDER).map_or(0, |stats| {
+        stats.refusals.count(RefusalReason::UnsupportedScheme)
+    });
+    if let Some(stats) = after.providers.get(PROVIDER) {
+        assert_eq!(
+            stats.refusals.count(RefusalReason::UnsupportedScheme),
+            before_count + 1,
+            "the extension refusal is attributable to unsupported scheme"
+        );
+    }
+}
+
+#[test]
+fn malformed_extension_lists_fail_closed() {
+    let nine = serde_json::json!(["a", "b", "c", "d", "e", "f", "g", "h", "i"]).to_string();
+    let long_name = serde_json::json!(["x".repeat(65)]).to_string();
+    for value in [
+        r#""css-load""#.to_string(),
+        "[1]".to_string(),
+        r#"[""]"#.to_string(),
+        r#"["has space"]"#.to_string(),
+        r#"["line\nbreak"]"#.to_string(),
+        nine,
+        long_name,
+    ] {
+        let page = with_extensions(&fast_page("abc123def456", 1, "fast"), &value);
+        assert_eq!(
+            AnubisChallenge::parse(&page).err(),
+            Some(BOUND_MALFORMED),
+            "expected malformed for {value}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn css_load_extension_is_fetched_once_before_the_pass_request() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let extension = server.mock(|when, then| {
+        when.method(GET).path(
+            "/.within.website/x/cmd/anubis/ext/css-load/01a1cc17-0000-7000-8000-000000000000",
+        );
+        then.status(200)
+            .header("content-type", "text/css")
+            .body("a".repeat(5 * 1024));
+    });
+    let leak = server.mock(|when, then| {
+        when.method(GET).header_exists("Cookie");
+        then.status(500);
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=css-pass; Path=/");
+    });
+
+    let page = with_extensions(&fast_page("abc123def456", 1, "fast"), r#"["css-load"]"#);
+    let mut budget = budget(1_000_000, 5000, 5);
+    let outcome = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &page,
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("a satisfied extension is not an engine error");
+
+    assert_eq!(
+        outcome,
+        SolveOutcome::Solved {
+            cookie: "spchal-auth=css-pass".to_string(),
+            lifetime: cookie::PublishedLifetime::Unstated,
+        }
+    );
+    assert_eq!(extension.hits(), 1);
+    assert_eq!(pass.hits(), 1);
+    assert_eq!(leak.hits(), 0, "no cookie reaches the extension request");
+}
+
+#[tokio::test]
+async fn an_unsatisfied_css_load_extension_blocks_before_the_pass_request() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let extension = server.mock(|when, then| {
+        when.method(GET).path(
+            "/.within.website/x/cmd/anubis/ext/css-load/01a1cc17-0000-7000-8000-000000000000",
+        );
+        then.status(404);
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=never; Path=/");
+    });
+
+    let page = with_extensions(&fast_page("abc123def456", 1, "fast"), r#"["css-load"]"#);
+    let mut budget = budget(1_000_000, 5000, 5);
+    let err = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &page,
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect_err("an unsatisfied extension is blocked");
+
+    match &err {
+        EngineError::Blocked { reason, .. } => {
+            assert_eq!(
+                reason,
+                "anubis css-load extension was not satisfied (status 404)"
+            );
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+    assert_eq!(extension.hits(), 1);
+    assert_eq!(pass.hits(), 0);
+    assert_eq!(budget.attempts_used(), 0);
+}
+
+#[tokio::test]
+async fn an_unsafe_challenge_id_blocks_before_the_extension_request() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let any = server.mock(|when, then| {
+        when.method(GET);
+        then.status(200)
+            .header("set-cookie", "spchal-auth=never; Path=/");
+    });
+
+    let page = with_extensions(&fast_page("abc123def456", 1, "fast"), r#"["css-load"]"#)
+        .replace("01a1cc17-0000-7000-8000-000000000000", "../../etc/passwd");
+    let mut budget = budget(1_000_000, 5000, 5);
+    let outcome = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &page,
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("an unsafe id is a refusal, not an engine error");
+
+    assert_eq!(
+        outcome,
+        SolveOutcome::Refused {
+            bound: BOUND_MALFORMED
+        }
+    );
+    assert_eq!(any.hits(), 0);
+    assert_eq!(budget.attempts_used(), 0);
+}
+
+#[test]
+fn css_load_url_requires_a_parseable_origin() {
+    assert_eq!(
+        css_load_url("not a url", "", "01a1cc17-0000-7000-8000-000000000000"),
+        Err(BOUND_MALFORMED)
+    );
+    assert_eq!(
+        css_load_url(
+            "https://example.com",
+            "/prefix",
+            "01a1cc17-0000-7000-8000-000000000000"
+        ),
+        Ok(
+            "https://example.com/prefix/.within.website/x/cmd/anubis/ext/css-load/01a1cc17-0000-7000-8000-000000000000"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn sha256_known_answer_vectors_cover_both_endianness_branches() {
+    let little = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 8)).expect("le vector parses");
+    assert_eq!(little.method(), AnubisMethod::WasmSha256);
+    let mut le_budget = budget(1000, 5000, 5);
+    let solution = little.solve(&mut le_budget).expect("le vector solves");
+    assert_eq!(solution.nonce, 42);
+    assert_eq!(solution.response, SHA_LE_DIGEST_NONCE_42);
+    assert_eq!(le_budget.attempts_used(), 43);
+
+    let big = AnubisChallenge::parse(&sha256_page(SHA_BE_DATA, 2)).expect("be vector parses");
+    let mut big_budget = budget(10, 5000, 5);
+    let solution = big.solve(&mut big_budget).expect("be vector solves");
+    assert_eq!(solution.nonce, 0);
+    assert_eq!(solution.response, SHA_BE_DIGEST_NONCE_0);
+}
+
+#[test]
+fn leading_zero_bits_counts_across_byte_boundaries() {
+    let digest = [
+        0x00u8, 0x0f, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    assert!(leading_zero_bits(&digest, 0));
+    assert!(leading_zero_bits(&digest, 4));
+    assert!(leading_zero_bits(&digest, 8));
+    assert!(leading_zero_bits(&digest, 12));
+    assert!(!leading_zero_bits(&digest, 13));
+    assert!(!leading_zero_bits(&digest, 16));
+    assert!(!leading_zero_bits(&digest, 255));
+}
+
+#[test]
+fn sha256_ceiling_maps_bits_to_fast_equivalents() {
+    let sixteen = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 16)).expect("parses");
+    assert!(sixteen.check_ceiling(&budget(2_000_000, 5000, 4)).is_ok());
+
+    let seventeen = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 17)).expect("parses");
+    assert_eq!(
+        seventeen.check_ceiling(&budget(2_000_000, 5000, 4)),
+        Err(
+            "anubis difficulty 17 bits (5 fast-equivalent) exceeds configured ceiling 4"
+                .to_string()
+        )
+    );
+
+    let twenty_four = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 24)).expect("parses");
+    assert!(twenty_four
+        .check_ceiling(&budget(2_000_000, 5000, 6))
+        .is_ok());
+}
+
+#[test]
+fn sha256_projection_refuses_an_unaffordable_bit_count() {
+    let expensive = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 40)).expect("parses");
+    let err = expensive
+        .check_projection(&budget(1_000_000, 5000, 16))
+        .expect_err("2^40 candidates exceed the attempt ceiling");
+    assert!(
+        err.contains("beyond the configured attempt ceiling"),
+        "{err}"
+    );
+
+    let unprojectable = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 128)).expect("parses");
+    assert_eq!(
+        unprojectable.check_projection(&budget(u64::MAX, 5000, 32)),
+        Err("anubis difficulty 128 bits cannot be projected".to_string())
+    );
+
+    assert_eq!(expected_bit_candidates(0), Some(1));
+    assert_eq!(expected_bit_candidates(16), Some(65_536));
+    assert_eq!(expected_bit_candidates(127), Some(1u128 << 127));
+    assert_eq!(expected_bit_candidates(128), None);
+}
+
+#[test]
+fn sha256_invalid_random_data_fails_closed() {
+    for data in ["abc", "zz", ""] {
+        assert_eq!(
+            AnubisChallenge::parse(&sha256_page(data, 4)).err(),
+            Some(BOUND_MALFORMED),
+            "expected malformed for {data:?}"
+        );
+    }
+    let oversized = "aa".repeat(4097);
+    assert_eq!(
+        AnubisChallenge::parse(&sha256_page(&oversized, 4)).err(),
+        Some(BOUND_MALFORMED)
+    );
+    let bounded = "aa".repeat(4096);
+    assert!(AnubisChallenge::parse(&sha256_page(&bounded, 4)).is_ok());
+}
+
+#[test]
+fn argon2id_and_hashx_remain_unsupported_schemes() {
+    for method in ["argon2id", "hashx"] {
+        assert_eq!(
+            AnubisChallenge::parse(&fast_page("abc123def456", 1, method)).err(),
+            Some(BOUND_UNSUPPORTED_SCHEME)
+        );
+    }
+}
+
+#[test]
+fn sha256_attempt_exhaustion_is_a_named_refusal() {
+    let challenge = AnubisChallenge::parse(&sha256_page(SHA_LE_DATA, 24)).expect("parses");
+    let mut budget = budget(100, 5000, 6);
+    assert_eq!(challenge.solve(&mut budget), Err(BOUND_ATTEMPTS));
+    assert_eq!(budget.attempts_used(), 100);
+}
+
+#[tokio::test]
+async fn sha256_submits_the_nonce_and_hex_digest_once() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let submit = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge")
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000000")
+            .query_param("nonce", "42")
+            .query_param("response", SHA_LE_DIGEST_NONCE_42);
+        then.status(200)
+            .header("set-cookie", "spchal-auth=sha-pass; Path=/; Max-Age=60");
+    });
+    let leak = server.mock(|when, then| {
+        when.method(GET).header_exists("Cookie");
+        then.status(500);
+    });
+
+    let mut budget = budget(1000, 5000, 5);
+    let outcome = solve_and_verify(
+        &test_client(),
+        PROVIDER,
+        &server.url(""),
+        &sha256_page(SHA_LE_DATA, 8),
+        "/search?q=rust",
+        "",
+        Duration::from_secs(5),
+        &mut budget,
+    )
+    .await
+    .expect("the sha256 submission is not an engine error");
+
+    assert_eq!(
+        outcome,
+        SolveOutcome::Solved {
+            cookie: "spchal-auth=sha-pass".to_string(),
+            lifetime: cookie::PublishedLifetime::MaxAge(60),
+        }
+    );
+    assert_eq!(submit.hits(), 1);
+    assert_eq!(budget.attempts_used(), 43);
+    assert_eq!(leak.hits(), 0, "the submission carries no challenge cookie");
 }

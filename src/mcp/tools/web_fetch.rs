@@ -1120,7 +1120,7 @@ async fn replay_anubis_challenge(
 ) -> Option<crate::core::fetch::WebFetchResponse> {
     use crate::core::fetch::FetchRepresentation;
     use crate::fetch::challenge::{detect_html, ChallengeKind};
-    use crate::meta::challenge::anubis::{solve_and_verify, PASS_COOKIE_NAME};
+    use crate::meta::challenge::anubis::solve_and_verify;
     use crate::meta::challenge::{SolveBudget, SolveOutcome};
 
     let settings = &state.config.search.challenge;
@@ -1159,7 +1159,7 @@ async fn replay_anubis_challenge(
     let SolveOutcome::Solved { cookie, .. } = outcome else {
         return None;
     };
-    let header = format!("{PASS_COOKIE_NAME}={cookie}");
+    let header = cookie;
     let replayed = client
         .fetch_with_cookie(
             args.url.trim(),

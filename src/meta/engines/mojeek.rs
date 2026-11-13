@@ -17,7 +17,6 @@ const MOJEEK_BASE_URL: &str = "https://www.mojeek.com";
 const SEARCH_PATH: &str = "/search";
 const CHALLENGE_PATH: &str = "/captcha/challenge";
 const VERIFY_PATH: &str = "/captcha/verify";
-const COOKIE_NAME: &str = "chllg";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 const SHAPE: ScrapeShape = ScrapeShape {
@@ -111,7 +110,7 @@ async fn send_search(
         .header("Accept-Language", "en-US,en;q=0.9")
         .timeout(super::engine_timeout(timeout));
     if let Some(cookie) = cookie {
-        request = request.header("Cookie", &format!("{COOKIE_NAME}={cookie}"));
+        request = request.header("Cookie", cookie);
     }
     let resp = request
         .send()
@@ -540,7 +539,7 @@ mod tests {
         assert_eq!(replay_mock.hits(), 1);
         assert_eq!(
             pass_cookie_cache().get("mojeek").as_deref(),
-            Some("pass-cookie-123")
+            Some("chllg=pass-cookie-123")
         );
 
         let after = ledger_stats();
@@ -561,7 +560,7 @@ mod tests {
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
         pass_cookie_cache().clear();
         let before = ledger_stats();
-        pass_cookie_cache().put("mojeek", "cached-cookie-456", Duration::from_secs(60));
+        pass_cookie_cache().put("mojeek", "chllg=cached-cookie-456", Duration::from_secs(60));
 
         let server = MockServer::start();
         let search_mock = server.mock(|when, then| {

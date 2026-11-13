@@ -549,14 +549,16 @@ When `[search.challenge].enabled` is true, a detected Anubis page is not merely 
 `src/mcp/tools/web_fetch.rs` — the one module allowed to depend on both trees — solves the
 published challenge once through the shared solver in `src/meta/challenge/anubis.rs` under
 `max_difficulty`, `max_attempts`, `timeout_ms`, and the remaining call deadline, then replays the
-same request once with the issued `spchal-auth` cookie. That cookie is sent on the first hop only,
-so a redirect cannot forward it to another origin, and it is never stored: the response returned
-and cached is the replay's document, with `transport: "http"`, `manual_interaction_required: false`,
-and no `fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a
-refusal at any ceiling, an error, an exhausted deadline, or a replay that is itself a challenge all
-leave today's marking exactly as it was, at most one solve and one replay per call. The browser
-path keeps priority: a successful `render: "auto"` render replaces the payload before the solver
-runs. `batch_fetch` does not solve (residual).
+same request once with the cookie pairs the pass response issued, joined with `; `. The pair set is
+opaque — its names are whatever the deployment publishes (`spchal-auth`,
+`techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and it is sent on
+the first hop only, so a redirect cannot forward it to another origin. It is never stored: the
+response returned and cached is the replay's document, with `transport: "http"`,
+`manual_interaction_required: false`, and no `fetch_challenge_page` warning. Solving disabled, no
+parseable published challenge, a refusal at any ceiling, an error, an exhausted deadline, or a
+replay that is itself a challenge all leave today's marking exactly as it was, at most one solve and
+one replay per call. The browser path keeps priority: a successful `render: "auto"` render replaces
+the payload before the solver runs. `batch_fetch` does not solve (residual).
 
 ### Profiles: opaque IDs, origin-scoped logins
 

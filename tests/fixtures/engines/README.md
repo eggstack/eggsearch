@@ -165,9 +165,10 @@ Re-run through the shipped release binary after the M013/M016 solver corrections
 | `startpage` | `enabled = true`, `max_attempts = 100` | blocked in 0.28 s with `challenge not solved: attempts exhausted` |
 | `startpage` | `enabled = true`, `timeout_ms = 100` | blocked in 0.32 s with `challenge not solved: wall clock exhausted` |
 
-No deployment publishing `anubis_base_prefix` with a non-empty value, `method = "slow"`,
-`method = "preact"`, or `method = "metarefresh"` was reachable on 2026-11-13. Those paths are
-synthetic-fixture verified only and are not described here as live observations.
+No deployment publishing `anubis_base_prefix` with a non-empty value, `method = "slow"`, or
+`method = "preact"` was reachable on 2026-11-13. Those paths are synthetic-fixture verified only and
+are not described here as live observations. A `metarefresh` deployment was observed the same day;
+its shape is recorded in § Anubis deployment shapes.
 
 ## Fetch-side Anubis and solver observability (2026-11-13 UTC)
 
@@ -188,3 +189,22 @@ The pass-cookie attribute capture for M014 is recorded separately below.
 - Mojeek published no lifetime on the captured response, so it falls back to `cookie_ttl_seconds`.
 - Measurement, one process, `cookie_ttl_seconds = 1800`, `startpage`: t0 3 rows / 1 solve (1,949,962 candidates, 698 ms); t=1261 s 3 rows, 0 failed, 6.6 s, second solve (16,831,309 candidates, 5,908 ms), `cookie_misses=2`, `cookie_hits=0`. The published expiry was respected; no dead token was replayed.
 - At the shipped 240 s ceiling the clamp binds and the derivation is a no-op for Startpage.
+
+## Anubis deployment shapes (2026-11-13 UTC)
+
+Observed on 2026-11-13 while correcting the pass-cookie, `metarefresh`, and
+extension assumptions in M024–M028. Cookie names below are observations, not
+expected values: the solver now treats every non-deletion pair from the
+pass-challenge response as opaque.
+
+| Deployment | Version | Observation |
+|---|---|---|
+| `startpage.com` | v1.26.4 (rebranded) | `fast` wall; clearance cookie `spchal-auth`, verification cookie `spchal-cookie-verification` |
+| `lore.kernel.org` | v1.26.2 | `fast` wall; clearance cookie `techaro.lol-anubis-auth` (the default `techaro.lol-anubis` prefix), so a fixed `spchal-auth` lookup could not see the valid pass |
+| `https://anubis.techaro.lol/docs/design/how-anubis-works/` | v1.28.3 | `metarefresh` with no `<meta http-equiv="refresh">`; a `Refresh:` response header carries the wait and target; the challenge object publishes `randomData` and no `challenge` key; verification cookie observed as `…-347ddb4a`; `extensions` is `null` |
+
+The v1.28.3 page is the header-only `metarefresh` shape: `Refresh: 2; url=/.within.website/x/cmd/anubis/api/pass-challenge?challenge=<redacted>&id=<redacted>&redir=%2Fdocs%2F` at `difficulty` 1, with `randomData` (128 hex characters) as the echo token. The three deployments used three different cookie names: the rebranded `spchal-*`, the default `techaro.lol-anubis-*`, and a dynamic suffix `…-347ddb4a`.
+
+No deployment publishing `challenge.extensions = ["css-load"]` or
+`challenge.method = "sha256"` was observed on 2026-11-13. Those two capabilities
+are synthetic-fixture verified only; this file claims no live pass for either.

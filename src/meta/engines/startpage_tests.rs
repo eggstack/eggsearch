@@ -110,13 +110,16 @@ const UNKNOWN_METHOD_PAGE: &str = r#"<html><head><script id="anubis_challenge" t
 
 const DIFFICULTY_SEVEN_PAGE: &str = r#"<html><head><script id="anubis_version" type="application/json">"v1.26.4"</script><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"fast","difficulty":7},"challenge":{"id":"01a1cc17","method":"fast","randomData":"570d0182c0ffee","redir":"/search?q=rust","difficulty":7,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
 
-const METAREFRESH_CHALLENGE_PAGE: &str = r#"<html><head><meta http-equiv="refresh" content="0; url=/metarefresh-check"><script id="anubis_version" type="application/json">"v1.26.4"</script><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"metarefresh","difficulty":1},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"metarefresh","challenge":"published-token-123","redir":"/search?q=rust","difficulty":1,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
+const METAREFRESH_CHALLENGE_PAGE: &str = r#"<html><head><meta http-equiv="refresh" content="0; url=/metarefresh-check"><script id="anubis_version" type="application/json">"v1.26.4"</script><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"metarefresh","difficulty":1},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"metarefresh","randomData":"published-token-123","redir":"/search?q=rust","difficulty":1,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
 
 const RESULT_PAGE: &str = r#"<html><body><div class="result css-o7i03b"><a class="result-title result-link" href="https://example.com"><h2 class="wgl-title">Example Site</h2></a><p class="description">An example website.</p></div></body></html>"#;
 
 const UNPARSEABLE_PAGE: &str = "<html><body><p>Loading</p></body></html>";
 
 const PASS_CHALLENGE_PATH: &str = "/.within.website/x/cmd/anubis/api/pass-challenge";
+
+const CSS_LOAD_CHALLENGE_PATH: &str =
+    "/.within.website/x/cmd/anubis/ext/css-load/01a1cc17-0000-7000-8000-000000000000";
 
 fn cookie_header(request: &httpmock::prelude::HttpMockRequest) -> Option<String> {
     request.headers.as_ref().and_then(|headers| {
@@ -305,7 +308,7 @@ async fn enabled_challenge_solves_and_replays_once() {
     assert_eq!(replay_mock.hits(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE).as_deref(),
-        Some("pass-cookie-123")
+        Some("spchal-auth=pass-cookie-123")
     );
 
     let after = ledger_stats();
@@ -559,7 +562,7 @@ async fn metarefresh_challenge_solves_and_replays_once() {
         when.method(GET)
             .path("/metarefresh-check")
             .query_param("id", "01a1cc17-0000-7000-8000-000000000000")
-            .query_param("result", "published-token-123");
+            .query_param("challenge", "published-token-123");
         then.status(200)
             .header("set-cookie", "spchal-auth=metarefresh-pass; Path=/");
     });
@@ -689,7 +692,11 @@ async fn cached_pass_cookie_is_sent_proactively() {
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
     pass_cookie_cache().clear();
     let before = ledger_stats();
-    pass_cookie_cache().put(ENGINE, "cached-cookie-456", Duration::from_secs(60));
+    pass_cookie_cache().put(
+        ENGINE,
+        "spchal-auth=cached-cookie-456",
+        Duration::from_secs(60),
+    );
 
     let server = MockServer::start();
     let search_mock = server.mock(|when, then| {
@@ -1335,7 +1342,7 @@ async fn pass_cookie_max_age_zero_leaves_no_entry() {
             .body(RESULT_PAGE);
     });
 
-    let results = search_at(
+    let err = search_at(
         &test_client(),
         &server.url(""),
         "rust",
@@ -1344,12 +1351,16 @@ async fn pass_cookie_max_age_zero_leaves_no_entry() {
         &enabled_section(),
     )
     .await
-    .expect("a zero-lifetime cookie still answers this search");
+    .expect_err("a deletion cookie is never replayed");
 
-    assert_eq!(results.len(), 1);
+    assert!(
+        err.to_string()
+            .contains("challenge not solved: pass cookie rejected"),
+        "got: {err}"
+    );
     assert_eq!(challenge_page_mock.hits(), 1);
     assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(replay_mock.hits(), 0);
     assert_eq!(
         pass_cookie_cache().get(ENGINE),
         None,
@@ -1408,7 +1419,7 @@ async fn pass_cookie_max_age_beyond_the_ceiling_is_stored() {
     assert_eq!(replay_mock.hits(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE).as_deref(),
-        Some("pass-cookie-123"),
+        Some("spchal-auth=pass-cookie-123"),
         "the clamp must cap the published lifetime, not drop it"
     );
 }
@@ -1476,4 +1487,247 @@ async fn zero_cookie_ttl_solves_on_every_search() {
     assert_eq!(solves_delta(&before, &after), (2, 2, 0));
     assert_eq!(after.cookie_misses.saturating_sub(before.cookie_misses), 2);
     assert_eq!(after.cookie_hits, before.cookie_hits);
+}
+
+#[tokio::test]
+async fn disabled_solver_never_requests_a_css_load_extension() {
+    use httpmock::prelude::*;
+
+    let _guard = CHALLENGE_TEST_LOCK.lock().await;
+    pass_cookie_cache().clear();
+
+    let server = MockServer::start();
+    let page = CHALLENGE_PAGE.replace(
+        "\"spent\":false",
+        "\"spent\":false,\"extensions\":[\"css-load\"]",
+    );
+    let search_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .matches(no_cookie_header);
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(page);
+    });
+    let extension_mock = server.mock(|when, then| {
+        when.method(GET).path(CSS_LOAD_CHALLENGE_PATH);
+        then.status(200).header("content-type", "text/css");
+    });
+    let pass_mock = server.mock(|when, then| {
+        when.method(GET).path(PASS_CHALLENGE_PATH);
+        then.status(302)
+            .header("set-cookie", "spchal-auth=unexpected");
+    });
+
+    let challenge = ChallengeSection {
+        enabled: false,
+        ..ChallengeSection::default()
+    };
+    let err = search_at(
+        &test_client(),
+        &server.url(""),
+        "rust",
+        10,
+        Duration::from_secs(5),
+        &challenge,
+    )
+    .await
+    .expect_err("challenge page blocks");
+
+    assert!(matches!(
+        err,
+        EngineError::Blocked {
+            engine: "startpage",
+            ..
+        }
+    ));
+    assert_eq!(search_mock.hits(), 1);
+    assert_eq!(extension_mock.hits(), 0);
+    assert_eq!(pass_mock.hits(), 0);
+}
+
+#[tokio::test]
+async fn css_load_challenge_fetches_the_extension_then_replays() {
+    use httpmock::prelude::*;
+
+    let _guard = CHALLENGE_TEST_LOCK.lock().await;
+    pass_cookie_cache().clear();
+
+    let server = MockServer::start();
+    let page = CHALLENGE_PAGE.replace(
+        "\"spent\":false",
+        "\"spent\":false,\"extensions\":[\"css-load\"]",
+    );
+    let challenge_page_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .matches(no_cookie_header);
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(page);
+    });
+    let extension_mock = server.mock(|when, then| {
+        when.method(GET).path(CSS_LOAD_CHALLENGE_PATH);
+        then.status(200)
+            .header("content-type", "text/css")
+            .body("@import url(\"./css-load\");");
+    });
+    let pass_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path(PASS_CHALLENGE_PATH)
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000000")
+            .query_param("nonce", "185")
+            .query_param(
+                "response",
+                "002786c8b408cf14bf6ddc2aeb6b6f1fcdf6b453986796fbec919a88de759708",
+            );
+        then.status(302)
+            .header("set-cookie", "spchal-auth=css-pass; Path=/");
+    });
+    let replay_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .header("Cookie", "spchal-auth=css-pass");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(RESULT_PAGE);
+    });
+
+    let results = search_at(
+        &test_client(),
+        &server.url(""),
+        "rust",
+        10,
+        Duration::from_secs(5),
+        &enabled_section(),
+    )
+    .await
+    .expect("css-load challenge solves");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(challenge_page_mock.hits(), 1);
+    assert_eq!(extension_mock.hits(), 1);
+    assert_eq!(pass_mock.hits(), 1);
+    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(
+        pass_cookie_cache().get(ENGINE).as_deref(),
+        Some("spchal-auth=css-pass")
+    );
+}
+
+#[tokio::test]
+async fn metarefresh_challenge_without_a_meta_tag_solves() {
+    use httpmock::prelude::*;
+
+    let _guard = CHALLENGE_TEST_LOCK.lock().await;
+    pass_cookie_cache().clear();
+
+    let page = r#"<html><head><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"metarefresh","difficulty":0},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"metarefresh","randomData":"header-token","redir":"/search?q=rust","difficulty":0,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
+
+    let server = MockServer::start();
+    let challenge_page_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .matches(no_cookie_header);
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(page);
+    });
+    let submit_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path(PASS_CHALLENGE_PATH)
+            .query_param("challenge", "header-token")
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000000");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=meta-pass; Path=/");
+    });
+    let replay_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .header("Cookie", "spchal-auth=meta-pass");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(RESULT_PAGE);
+    });
+
+    let results = search_at(
+        &test_client(),
+        &server.url(""),
+        "rust",
+        10,
+        Duration::from_secs(5),
+        &enabled_section(),
+    )
+    .await
+    .expect("a header-only metarefresh challenge solves");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(challenge_page_mock.hits(), 1);
+    assert_eq!(submit_mock.hits(), 1);
+    assert_eq!(replay_mock.hits(), 1);
+}
+
+#[tokio::test]
+async fn sha256_challenge_solves_and_replays_once() {
+    use httpmock::prelude::*;
+
+    let _guard = CHALLENGE_TEST_LOCK.lock().await;
+    pass_cookie_cache().clear();
+
+    let page = r#"<html><head><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"sha256","difficulty":8},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"sha256","randomData":"abcd","redir":"/search?q=rust","difficulty":8,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
+
+    let server = MockServer::start();
+    let challenge_page_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .matches(no_cookie_header);
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(page);
+    });
+    let pass_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path(PASS_CHALLENGE_PATH)
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000000")
+            .query_param("nonce", "42")
+            .query_param(
+                "response",
+                "00ebbd2e622cc5a6c39c48707ddfd0bd679515e63fd28cbb0426e68448af0714",
+            )
+            .query_param("redir", "/search?q=rust");
+        then.status(302)
+            .header("set-cookie", "spchal-auth=sha-pass; Path=/");
+    });
+    let replay_mock = server.mock(|when, then| {
+        when.method(GET)
+            .path("/search")
+            .query_param("q", "rust")
+            .header("Cookie", "spchal-auth=sha-pass");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(RESULT_PAGE);
+    });
+
+    let results = search_at(
+        &test_client(),
+        &server.url(""),
+        "rust",
+        10,
+        Duration::from_secs(5),
+        &enabled_section(),
+    )
+    .await
+    .expect("sha256 challenge solves");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(challenge_page_mock.hits(), 1);
+    assert_eq!(pass_mock.hits(), 1);
+    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(ledger_stats().last_candidates, 43);
 }

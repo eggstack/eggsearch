@@ -213,22 +213,42 @@ Two upstreams in the engine set use this gate. Measured parameters on 2026-11-11
 | `startpage` | Anubis `fast` (`script#anubis_challenge`) | `rules.difficulty`, `challenge.id`, `challenge.randomData`, `redir` | expected `16^difficulty` SHA-256 candidates; measured difficulty 6 at 23.07M candidates / 3.05 s single-core in a release build (debug builds are ~100× slower) |
 | `mojeek` | ALTCHA (`GET /captcha/challenge`) | `algorithm` (`PBKDF2/SHA-256`), `cost`, `keyLength`, `keyPrefix`, `salt`, `nonce` | up to `maxCounter` PBKDF2 derivations; measured `cost = 8000` solved at counter 291 in 0.42 s, worst case 1000 counters ≈ 1.4 s on one core |
 
-Anubis registers four challenge methods; ADR-0010 makes the published registry the permitted set
-rather than a hardcoded pair. Coverage is:
+Anubis publishes the method in `challenge.method`, falling back to `rules.algorithm`. Five methods
+are covered; ADR-0010's registry, extended by ADR-0013's evaluation, is the permitted set rather
+than a hardcoded pair:
 
-| Method | Trigger | Answer |
-|---|---|---|
-| `fast` | `challenge.method == "fast"` | ascending nonce search over `randomData` until the digest carries `difficulty` leading hex zeros |
-| `slow` | `challenge.method == "slow"` | deprecated alias of `fast`; identical scheme, submission, and cost |
-| `preact` | `challenge.method == "preact"` (`script#preact_info`) | `sha256(challenge)` submitted as `GET {base}{redir}&result=<hex>` after the minimum elapsed time |
-| `metarefresh` | `challenge.method == "metarefresh"` | echo the published token at the published target after the `<meta http-equiv="refresh">` wait; no hashing and no attempt consumed |
+| Method | Trigger | Answer | Difficulty unit |
+|---|---|---|---|
+| `fast` | `challenge.method == "fast"` | ascending nonce search over `randomData` until the digest carries `difficulty` leading hex zeros | hex nibbles: `16^difficulty` expected candidates |
+| `slow` | `challenge.method == "slow"` | deprecated alias of `fast`; identical scheme, submission, and cost | hex nibbles, as `fast` |
+| `preact` | `challenge.method == "preact"` (`script#preact_info`) | `sha256(challenge)` submitted as `GET {base}{redir}&result=<hex>` after the minimum elapsed time | hex nibbles, as the elapsed-time floor |
+| `metarefresh` | `challenge.method == "metarefresh"` | echo `challenge.randomData` at the pass-challenge target after the published wait; no hashing and no attempt consumed | none: the wait is time, not difficulty |
+| `sha256` | `challenge.method == "sha256"` (WASM family) | ascending `u32` nonce search over the hex-decoded `randomData` until the digest carries `difficulty` leading zero bits | bits: `2^bits` expected candidates, admitted when `ceil(bits / 4) <= max_difficulty` |
 
 A method string outside that evaluated set still fails closed as `unsupported scheme`; it never
-inherits permission from the list. `metarefresh` is a time challenge, not a proof-of-work: it
-submits only values the challenge itself published, and the wait is read from the served document
-rather than derived from difficulty.
+inherits permission from the list. `sha256` is the cheapest member of the v1.28 WASM family
+(ADR-0013): the data is the hex-decoded `randomData`, bounded before decoding, with invalid hex
+reported as `malformed parameters`, and the nonce is a `u32` searched from zero whose four bytes are
+little-endian when the last data byte is at least 128 and big-endian otherwise. The hash is
+`SHA-256(data || nonce_bytes)`, and the submission carries
+`id`, `response` (hex digest), `nonce`, `redir`, and `elapsedTime`. Difficulty is leading zero bits
+on the raw 32-byte digest, while `max_difficulty` stays measured in fast-equivalent nibbles: 4
+admits 16 bits and rejects 17, and 6 admits 24. Projection uses `2^bits`, and 128 bits or more is
+refused as unprojectable before hashing. `argon2id` and `hashx` are the memory-hard and
+ASIC-resistant siblings; both remain `unsupported scheme`, with no WASM runtime and no new
+dependency.
 
-Four parse-time rules apply to every Anubis method, all before any hashing or request:
+`metarefresh` is a time challenge, not a proof-of-work: it submits only values the challenge itself
+published. The echo token is `challenge.randomData`; a legacy `challenge` field is accepted only when
+`randomData` is absent, and a page carrying both uses `randomData`. The presentation is optional: a
+`<meta http-equiv="refresh">` element or a `Refresh:` response header supplies the wait and target
+when present, a bounded JSON `wait` is accepted when neither exists, and otherwise the wait is
+`difficulty + 1` seconds. The target is
+`{origin}{base_prefix}/.within.website/x/cmd/anubis/api/pass-challenge?redir=<request URL>&challenge=<randomData>&id=<id>`,
+and a published target is used only when it resolves same-origin. The submission never appends
+`result=`.
+
+Five parse-time rules apply to every Anubis method, all before any hashing or request:
 
 - `script#anubis_base_prefix` is honoured. The payload is a JSON string (Anubis publishes `""`),
   validated as a bounded path prefix: at most 256 bytes, leading `/`, no `//`, no scheme, query,
@@ -236,14 +256,32 @@ Four parse-time rules apply to every Anubis method, all before any hashing or re
   `unsafe base prefix`, never silently ignored.
 - `challenge.spent == true` is refused as `already spent`; an absent field means unspent, and a
   present non-boolean is malformed.
-- The cost is projected before hashing. Expected candidates are `16^difficulty`; with the recorded
-  release cost of 130 ns per candidate, a challenge that exceeds `max_attempts` or the remaining
-  wall clock is refused with the projection and the operative ceiling in the sentence. The
-  projection is an admission check: an admitted challenge still stops on the per-attempt ceiling.
+- The cost is projected before hashing. Expected candidates are `16^difficulty` for the nibble
+  methods (`fast`, `slow`, `preact`) and `2^bits` for `sha256`; with the recorded release cost of
+  130 ns per candidate, a challenge that exceeds `max_attempts` or the remaining wall clock is
+  refused with the projection and the operative ceiling in the sentence. The projection is an
+  admission check: an admitted challenge still stops on the per-attempt ceiling.
 - A published `redir` is accepted only as a same-origin absolute URL or a single-slash root-relative
   path with no `..` segment and no control characters. Anything else falls back to the request URL,
   so no non-`http(s)` scheme reaches the query string and a `preact` submission can never carry the
   challenge cookies to a foreign origin.
+- `challenge.extensions` is parsed and bounded. Absent, `null`, and `[]` are solvable; a present list
+  holds at most 8 names of 1–64 bytes each, drawn from ASCII alphanumerics, `-`, `_`, and `.`, and
+  anything else is `malformed parameters`. A non-empty list containing a name other than `css-load`
+  is refused before the difficulty ceiling, any wait, any hash, and any request, with the sentence
+  `anubis challenge declares unsupported extensions [<names>]` recorded under `unsupported scheme`.
+
+Anubis `css-load` is the one extension this build performs (ADR-0012), and only while
+`[search.challenge].enabled` is true. After parsing and before the difficulty ceiling it performs
+exactly one same-origin `GET` to
+`{origin}{base_prefix}/.within.website/x/cmd/anubis/ext/css-load/{uuid}`, built from the validated
+base prefix and challenge id, with no cookie, no authorization header, redirects disabled, the
+remaining solve deadline, and a 4 KiB body that is discarded. A 2xx continues to the method proof
+and the pass request; a non-2xx status, a transport error, a timeout, an unsafe id, or a cross-origin
+target refuses with `blocked` under `unsupported scheme` and a sentence such as
+`anubis css-load extension was not satisfied (status 404)`, with zero pass requests. `headless` and
+every unknown name keep the zero-request refusal above: the extension list is never an instruction
+channel, and no JavaScript, image, CSS-parsing, or rendering step is added.
 
 Implementation:
 
@@ -275,22 +313,31 @@ Implementation:
 
 - The fetch path shares this solver rather than carrying a copy. With `[search.challenge].enabled`,
   `web_fetch` classifies its bounded body with `src/fetch/challenge.rs`, solves a detected Anubis
-  challenge once via `anubis::solve_and_verify`, and replays once with `spchal-auth` on the first
-  hop. `src/fetch/**` remains independent of `src/meta/**`; only `src/mcp/tools/web_fetch.rs`
-  orchestrates the solve. A fetch-side pass cookie is never cached for reuse, so
-  `cookie_ttl_seconds` still governs search upstreams only.
-- Pass cookies (`spchal-auth`, `chllg`) are secrets-like: replay them through the transport's
-  cookie jar or an explicit `Cookie` header, never log them, never serialize them into
-  `provider_status`, diagnostics, or fixtures.
+  challenge once via `anubis::solve_and_verify`, and replays once with the cookie pairs the pass
+  response issued, joined with `; `, on the first hop. `src/fetch/**` remains independent of
+  `src/meta/**`; only `src/mcp/tools/web_fetch.rs` orchestrates the solve. A fetch-side pass pair set
+  is never cached for reuse, so `cookie_ttl_seconds` still governs search upstreams only.
+- Pass-cookie identity is opaque, like the challenge id. The Anubis solver never looks for a fixed
+  name: it takes every non-deletion pair the pass-challenge response set (empty values and deletion
+  cookies dropped, duplicate names resolved by the last non-deletion value at the first position),
+  replays them joined with `; `, and derives the reuse window from the longest usable published
+  lifetime among them. `spchal-auth`, `techaro.lol-anubis-auth`, and dynamic-suffix names such as
+  `techaro.lol-anubis-auth-347ddb4a` all work without a source or configuration change. ALTCHA keeps
+  its published `chllg` name and emits `chllg=<value>` as the replayable pair; its `Max-Age=0` case
+  still performs one replay and stores nothing. No runtime replay path formats a fixed cookie name,
+  and there is no cookie-name knob. The pairs are secret-like: never log them, never serialize them
+  into `provider_status`, diagnostics, or fixtures.
 - Lifetime derivation: `src/meta/challenge/cookie.rs` owns pass-cookie lifetime parsing for both
-  schemes. The reuse window is the lifetime the upstream published — `Max-Age` (which wins over
-  `Expires`, RFC 6265 §5.3) or `Expires` as IMF-fixdate — clamped by `cookie_ttl_seconds`. Neither
-  attribute falls back to the previous fixed window; a malformed attribute or an expiry at or
-  before `now` stores nothing; an empty ceiling stores nothing. `SolveOutcome::Solved` carries the
-  parsed `PublishedLifetime` beside the value so an engine never re-parses headers, and its `Debug`
-  prints the attribute kind with the value redacted. The window can never exceed
-  `cookie_ttl_seconds`, and a cookie the upstream rejects on replay is evicted per provider
-  (`PassCookieCache::remove`), so the next request starts cold instead of replaying a dead token.
+  schemes. The reuse window is the longest usable lifetime the upstream published across the
+  replayed pairs — `Max-Age` (which wins over `Expires`, RFC 6265 §5.3) or `Expires` as IMF-fixdate
+  — clamped by `cookie_ttl_seconds`. Neither attribute falls back to the previous fixed window; a
+  malformed attribute or an expiry at or before `now` stores nothing; an empty ceiling stores
+  nothing; an empty value or a deletion cookie never enters the pair set and never extends the
+  window. `SolveOutcome::Solved` carries the replayable `Cookie` header value and the reuse-relevant
+  published lifetime so an engine never re-parses headers, and its `Debug` prints the attribute kind
+  with every value redacted. The window can never exceed `cookie_ttl_seconds`, and a pair set the
+  upstream rejects on replay is evicted per provider (`PassCookieCache::remove`), so the next
+  request starts cold instead of replaying a dead token.
 - Egress binding: a pass token may be bound to the client's egress address, and the client observes
   only the effect. eggsearch keeps using the cached cookie, never detects an address, never shortens
   the window because a route exists, and never rotates exits; when the exit changes the upstream
@@ -381,7 +428,7 @@ IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilit
 |-------------|--------|------------------------|
 | `duckduckgo` | `DuckDuckGoEngine` | HTML scrape, keyless |
 | `brave` | `BraveEngine` | HTML scrape, keyless (distinct from `brave_api`) |
-| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). With `[search.challenge]` disabled or `max_difficulty` below the published difficulty the engine reports `blocked`; a permitted solve replays `spchal-auth`. Not in `default_providers` |
+| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). With `[search.challenge]` disabled or `max_difficulty` below the published difficulty the engine reports `blocked`; a permitted solve replays the pairs the pass response issued. Not in `default_providers` |
 | `yahoo` | `YahooEngine` | HTML scrape, keyless |
 | `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. With `[search.challenge]` disabled the engine reports `blocked`; with it enabled the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs |
 | `searxng` | `SearxngEngine` | JSON API, self-hosted `base_url` required; skipped as `missing_searxng_config` otherwise; no native capability flags claimed |

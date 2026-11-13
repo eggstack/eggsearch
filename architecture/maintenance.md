@@ -132,6 +132,8 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/package_resolver.rs` | 1,700 | 60,000 | One resolver per ecosystem; next slice is moving the ten `resolve_*` implementations under a `package_resolver/` submodule |
 | `src/meta/research_workflow.rs` | 1,900 | 81,920 | Research multi-source orchestration; typed workflow preserved, do not flatten into generic workflow |
 | `src/meta/adapter/tests.rs` | 2,700 | 100,000 | Adapter behavioral fixtures only; production modules stay under ordinary ceilings |
+| `src/meta/engines/startpage_tests.rs` | 1,800 | 81,920 | Startpage behavioral fixtures; the css-load, header-only metarefresh, and sha256 flows are the next slice to move into a sibling fixture module |
+| `src/meta/challenge/anubis_tests.rs` | 1,750 | 81,920 | Solver fixtures and behavioral tests; the extension and sha256 fixtures are the next slice to move into a sibling fixture module |
 | `src/core/security.rs` | 3,000 | 115,000 | Identifier parsing/normalization plus the large inline test block; next slice is moving identifier + query-classification helpers into a `security/` submodule |
 | `src/core/config.rs` | 1,900 | 76,000 | Serde surface for every section; the inline test block now lives in `src/core/config/tests.rs`. Next slice is splitting the `[fetch]` section types out of the root `AppConfig` |
 | `src/core/provider.rs` | 2,800 | 115,000 | Capability/provider model; next slice is moving the capability matrix out of the provider type module |

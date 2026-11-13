@@ -5660,6 +5660,68 @@ fn challenge_warning_count(value: &serde_json::Value) -> usize {
         .count()
 }
 
+const ANUBIS_DEFAULT_PASS_COOKIE_NAME: &str = "techaro.lol-anubis-auth";
+const ANUBIS_DEFAULT_VERIFY_COOKIE_NAME: &str = "techaro.lol-anubis-cookie-verification";
+
+fn anubis_default_name_wall<'a>(
+    server: &'a httpmock::MockServer,
+    replay_body: &str,
+) -> (httpmock::Mock<'a>, httpmock::Mock<'a>, httpmock::Mock<'a>) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET).path("/").header(
+            "cookie",
+            format!(
+                "{ANUBIS_DEFAULT_VERIFY_COOKIE_NAME}=verif-1; {ANUBIS_DEFAULT_PASS_COOKIE_NAME}={ANUBIS_PASS_COOKIE}"
+            ),
+        );
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("{ANUBIS_DEFAULT_VERIFY_COOKIE_NAME}=verif-1; Path=/; HttpOnly"),
+            )
+            .header(
+                "set-cookie",
+                format!(
+                    "{ANUBIS_DEFAULT_PASS_COOKIE_NAME}={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"
+                ),
+            )
+            .body("");
+    });
+    (replay, wall, pass)
+}
+
+fn anubis_header_only_metarefresh_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "metarefresh", "difficulty": 0},
+        "challenge": {
+            "id": "01a1cc17-0000-7000-8000-000000000002",
+            "method": "metarefresh",
+            "randomData": "meta-token-123",
+            "redir": "/",
+            "difficulty": 0,
+            "spent": false,
+            "wait": 0
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div><span id="anubis_version">v1.28.3</span><noscript>Anubis could not load its JavaScript. The server may be overloaded.</noscript></body></html>"#
+    )
+}
+
 #[tokio::test]
 async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document() {
     use httpmock::prelude::*;
@@ -5770,4 +5832,126 @@ async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
             "cookie material {canary} must not reach the payload: {serialized}"
         );
     }
+}
+
+#[tokio::test]
+async fn web_fetch_replays_a_default_anubis_pass_cookie() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_default_name_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust is fast and reliable"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&value),
+        0,
+        "a solved fetch carries no challenge warning"
+    );
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(pass.hits(), 1, "the pass-challenge is answered once");
+    assert_eq!(
+        replay.hits(),
+        1,
+        "the joined default-name pairs are replayed once"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, _, pass) = anubis_default_name_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+    let serialized = serde_json::to_string(&value).expect("payload is serializable");
+
+    for canary in [
+        ANUBIS_PASS_COOKIE,
+        "verif-1",
+        ANUBIS_DEFAULT_PASS_COOKIE_NAME,
+        ANUBIS_DEFAULT_VERIFY_COOKIE_NAME,
+    ] {
+        assert!(
+            !serialized.contains(canary),
+            "cookie material {canary} must not reach the payload: {serialized}"
+        );
+    }
+    assert_eq!(pass.hits(), 1, "the pass-challenge is answered once");
+    assert_eq!(
+        replay.hits(),
+        1,
+        "the joined default-name pairs are replayed once"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "spchal-auth=meta-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                "<html><head><title>Anubis docs</title></head><body><h1>How Anubis works</h1><p>A meta refresh challenge waits.</p></body></html>",
+            );
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(anubis_header_only_metarefresh_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge")
+            .query_param("challenge", "meta-token-123")
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000002");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=meta-pass; Path=/; HttpOnly")
+            .body("");
+    });
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("a header-only metarefresh fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("A meta refresh challenge waits"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(challenge_warning_count(&value), 0);
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(
+        pass.hits(),
+        1,
+        "the synthesized pass-challenge URL is submitted once"
+    );
+    assert_eq!(replay.hits(), 1, "one cookie-bearing replay");
 }

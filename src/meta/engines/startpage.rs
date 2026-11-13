@@ -123,7 +123,7 @@ async fn send_search(
         .query("q", query)
         .timeout(super::engine_timeout(timeout));
     if let Some(cookie) = pass_cookie {
-        request = request.header("Cookie", &format!("{}={cookie}", anubis::PASS_COOKIE_NAME));
+        request = request.header("Cookie", cookie);
     }
     let resp = request
         .send()

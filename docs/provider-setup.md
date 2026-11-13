@@ -64,7 +64,9 @@ These providers require no API key and work via HTML scraping.
   The solve is probabilistic, not deterministic: the nonce is uniform, so an attempt that reaches `max_attempts` without a hit is expected rather than abnormal. At `32000000` (roughly twice the expected work) about one attempt in seven exhausts the ceiling and reports `blocked` with `challenge not solved: attempts exhausted`; a later call usually succeeds. Raise `max_attempts` toward the validated maximum of `100000000` and the deadline with it if you need higher reliability, accepting the extra wall clock on the unlucky fraction.
 
   With `max_difficulty = 5` (the default) a difficulty-6 wall is refused with a reason naming both values, and the provider stays `blocked`.
-- Anubis method coverage follows the published registry: `fast`, `slow` (solved as the `fast` alias), `preact`, and `metarefresh` (a published-wait echo with no hashing). The shipped Startpage wall publishes `fast`; `slow`, `preact`, and `metarefresh` are synthetic-fixture verified only, because no deployment publishing them was observed.
+- Anubis method coverage follows the published registry: `fast`, `slow` (solved as the `fast` alias), `preact`, `metarefresh`, and the WASM `sha256` method. `metarefresh` echoes `challenge.randomData` after the wait the page or `Refresh:` header published, or `difficulty + 1` seconds when neither is present; `sha256` publishes leading zero bits and is admitted when `ceil(bits / 4)` is at or below `max_difficulty`. `argon2id` and `hashx` remain `unsupported scheme`. The shipped Startpage wall publishes `fast`; `metarefresh` was observed on `anubis.techaro.lol` v1.28.3 on 2026-11-13; `slow`, `preact`, and `sha256` are synthetic-fixture verified only, because no deployment publishing them was observed.
+- The pass-cookie identity is opaque. The solver replays every non-deletion pair the pass-challenge response set, whatever the names (`spchal-auth` on Startpage, `techaro.lol-anubis-auth`, or a dynamic suffix), joined with `; `, and derives the reuse window from the longest usable published lifetime among them, clamped by `cookie_ttl_seconds`. There is no cookie-name configuration knob.
+- Anubis `challenge.extensions` is bounded and fail-closed. A non-empty list containing anything other than `css-load` is refused before any request and attributed to `unsupported scheme`, with the extension names in the sentence. `css-load` (ADR-0012) performs one same-origin extension `GET` before the pass request, only while `[search.challenge].enabled = true`; `headless` is never attempted.
 - A solved search returns rows: the engine reads the inline React payload
   (`React.createElement(UIStartpage.AppSerp…, {…})` → `render.presenter.regions.mainline[]`)
   first and keeps the older `div.result` selectors as a fallback. Live verification on
@@ -699,10 +701,12 @@ as native coverage, so a real `native_*_unavailable` warning is still reported.
 `providers` is `{}` until the first solve, so a stable key set is visible before anything runs.
 `solves_attempted` always equals `solves_succeeded + refusals_total + solves_errored`.
 `last_candidates` and `last_wall_clock_ms` describe only the most recent attempt and are `0` when it
-ended before any computation. All values are process-lifetime totals that reset when the process
-restarts; they are not rates and are not persisted. `challenge expired` and the other
-forward-declared keys may legitimately stay at zero; a zero is evidence the bound never fired, not
-missing data. No cookie, nonce, salt, derived key, or challenge body is ever included.
+ended before any computation. An extension refusal is one of the `unsupported scheme` entries: the
+key is unchanged and the sentence names the extension list. All values are process-lifetime totals
+that reset when the process restarts; they are not rates and are not persisted. `challenge expired`
+and the other forward-declared keys may legitimately stay at zero; a zero is evidence the bound
+never fired, not missing data. No cookie, nonce, salt, derived key, or challenge body is ever
+included.
 
 ### Misconfigured Defaults
 

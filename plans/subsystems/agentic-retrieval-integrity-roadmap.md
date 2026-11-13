@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M014 conditionally closed; every other milestone M001–M023 closed)
+Status: active (M014 conditionally closed; M001–M028 otherwise closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -33,10 +33,28 @@ Measured or code-evidenced gaps:
 - `intent` rewrites the query and biases reranking but does not influence provider selection; `native_*_unavailable` warnings are the observable symptom.
 - Compact advertisement is 18.5–19.4 KB for ten tools (roughly 4.8k tokens); the full profile still defaults `response_detail` to `diagnostic`.
 - Excerpt budgets are per card, with no cross-result budget and no redundancy suppression.
+- The Anubis clearance cookie is selected by the fixed name `spchal-auth`, but the name is the
+  deployment's `--cookie-prefix` plus `-auth`, optionally suffixed by a hash of the cookie
+  settings. Three live deployments observed on 2026-11-13 use `spchal-auth`,
+  `techaro.lol-anubis-auth`, and a dynamically suffixed name, so a valid solve on a default
+  deployment is reported as `pass cookie rejected` (a 302 with an unrecognised name) even though
+  the proof was accepted.
+- `metarefresh` is implemented against an invented synthetic shape: a
+  `<meta http-equiv="refresh">` element and a `challenge` JSON field. A live Anubis v1.28.3 page
+  published the refresh only in the `Refresh:` header and the echo token in `randomData`, so both
+  assumptions fail.
+- `challenge.extensions` is ignored. A page declaring `css-load` is solved, submitted, and rejected
+  by the extension validator, and the operator sees `pass cookie rejected` instead of the
+  unperformed extension.
+- Anubis v1.28's WASM methods (`sha256`, `argon2id`, `hashx`) are outside ADR-0010's evaluated set
+  and are refused as `unsupported scheme`; `sha256` is the same primitive and per-candidate cost as
+  `fast`.
 
 ## 3. Invariants and non-goals
 
 - HTML scrape engines remain first-class retrieval paths per ADR-0006. Do not replace them with API dependencies, hide them, or label them legacy. Bounded computational challenge solving is allowed under ADR-0009 (proof-of-work only, opt-in, ceilinged); interactive CAPTCHA solving, OCR, solving services, proxy rotation, user-agent spoofing, and unbounded retries remain prohibited.
+- Pass-cookie identity is opaque. The solver replays the cookie pair(s) the pass-challenge response published and never selects a cookie by a hardcoded name; a deployment's prefix and dynamic suffix are data, not protocol constants.
+- A challenge extension is refused unless an accepted ADR names it. ADR-0012 proposes `css-load` only; `headless`/BotStopper and every interactive, visual, or code-executing extension stay prohibited.
 - No Eggsearch-side inference: no embeddings, vector index, LLM reranker, generated answer, or hosted classification in any execution path. Existing opt-in semantic **providers** are unchanged upstream sources.
 - No new MCP tools, no removal or rename of existing tools, no schema-breaking change. Advertisement profiles may hide tools; hidden tools still execute.
 - Preserve stable FNV-1a IDs, RRF tie ordering unless an accepted measured change says otherwise, sanitization tiers, trust markers, per-provider attempt ledger, capability-skip semantics, deadlines, and Mode-Off remote denial.
@@ -74,6 +92,11 @@ M017 routing shipped-set evidence               (discharges M006's named conditi
 M018 pagination consistency across pages        (corrective to M009)
 M022 fetch-side challenge classification        (corrective to the fetch path; independent)
 M022 detection ──> M023 fetch-side Anubis solve and replay
+M023 ──> M024 deployment-independent pass-cookie replay
+M016 ──> M025 metarefresh presentation corrective
+M026 unsupported-extension refusal  (independent)
+M026 + ADR-0012 ──> M027 css-load extension
+ADR-0013 ──> M028 wasm sha256 method
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -104,6 +127,11 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M023 — fetch-side Anubis solve and replay | capability | `plans/implementation/agentic-retrieval-integrity/023-fetch-side-anubis-solve-and-replay.md` | hard M022; interface M014 | With `[search.challenge]` enabled, a fetched Anubis wall is solved once and replayed so the caller receives the document; otherwise the page stays marked |
 | M022 — fetch-side challenge classification | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/022-fetch-side-challenge-classification.md` | none (ADR-0009/ADR-0010 scope unchanged) | A plain HTTP fetch of an Anubis or ALTCHA wall reports `manual_interaction_required: true` with a `fetch_challenge_page` warning instead of a short ordinary document; `render: "auto"` escalates it when a browser is available |
 | M021 — non-HTML document-scoped addressable text | invariant (corrective; discharges M020's named condition) | `plans/implementation/agentic-retrieval-integrity/021-non-html-document-scoped-addressable-text.md` | hard M020 (closed) | For every representation, `text_total` is the extracted document rather than the caller's window, so an addressed read never reports a document as complete while text remains unreachable |
+| M024 — deployment-independent Anubis pass-cookie | invariant (corrective to M011/M023) | `plans/implementation/agentic-retrieval-integrity/024-deployment-independent-anubis-pass-cookie.md` | none; M011/M013/M023 closed, M014 conditional (cache interface only) | A pass response with any configured prefix or dynamic suffix is replayed and cached; no runtime code selects the cookie by a fixed name |
+| M025 — `metarefresh` presentation corrective | invariant (corrective to M016) | `plans/implementation/agentic-retrieval-integrity/025-metarefresh-presentation-corrective.md` | ADR-0010; M016 closed | A header-only or presentation-less `metarefresh` page solves from the published `randomData` and a derived wait |
+| M026 — unsupported extension refusal | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md` | none | A non-empty `extensions` list fails closed before submission with an attributable reason; no extension is authorized |
+| M027 — `css-load` extension | capability | `plans/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md` | hard ADR-0012 acceptance; hard M026 | A `css-load` challenge is satisfied with one bounded same-origin GET; unknown and `headless` stay refused |
+| M028 — WASM `sha256` method | capability | `plans/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md` | hard ADR-0013 acceptance; M026 | A `sha256` challenge solves under the fast-equivalent ceiling; `argon2id`/`hashx` stay refused |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -130,7 +158,7 @@ with a self-describing cursor that needs no negotiation.
 
 Upstream HTML drift is continuous; the fidelity contract reduces the blast radius but does not remove maintenance. Captured fixtures go stale by design and need a refresh path. Markdown negotiation depends on origin cooperation and may reduce table fidelity for some pages. Search caching risks serving stale results to a freshness-sensitive caller if the TTL is unbounded. Intent routing can regress exact queries if precedence is wrong. Advertisement presets can strand a model that needs a hidden tool if `next_actions` are not filtered. The Tasks extension may not be available through the current rmcp version.
 
-Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation, and any default-feature change.
+Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation, and any default-feature change. Also deferred: Anubis `argon2id` and `hashx` (each needs a separate ADR and cost evidence), the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays).
 
 ## 9. Closure and status
 
@@ -154,6 +182,18 @@ exposed M011's mandatory-`redir` defect.
   challenge once and replays with `spchal-auth`, returning the real document; the Startpage SERP
   was fetched live in 2.32 s with no challenge warning. Evidence:
   `plans/closure/agentic-retrieval-integrity/023-status.md`.
+- M024–M028 are `closed`. M024 makes pass-cookie identity opaque: the solver replays every
+  non-deletion pair the pass response set and derives the reuse window from the longest published
+  lifetime, so `spchal-auth`, `techaro.lol-anubis-auth`, and dynamic-suffix names work without a
+  source or configuration change. M025 makes the `metarefresh` presentation optional and echoes
+  `randomData`. M026 parses and bounds `challenge.extensions` and refuses any list it cannot perform,
+  with no extension authorized. M027 implements `css-load` under the accepted ADR-0012 as one
+  bounded same-origin GET. M028 implements WASM `sha256` under the accepted ADR-0013 with bit
+  difficulty mapped by `ceil(bits / 4)`. Evidence:
+  `plans/closure/agentic-retrieval-integrity/024-status.md`–`028-status.md`. The v1.28.3
+  `anubis.techaro.lol` observation confirmed `randomData`, the optional presentation, `extensions:
+  null`, and a dynamic-suffix clearance cookie; `css-load` and `sha256` have no observed deployment
+  and are recorded as synthetic-only.
 - M013 and M016 are `closed`: the solver now follows ADR-0010's published method registry
   (`slow` as the `fast` alias, `metarefresh`, base prefix, spent refusal, pre-flight cost
   projection, and origin-validated `redir`).
@@ -227,3 +267,10 @@ These shapes are decided for this workstream. Changing one requires a new milest
    content-addressed by an FNV-1a hash that is already part of the cache key. `chunk_id` remains the
    citation address; offsets are the reading address. `text_total` must be truthful, so the document
    is extracted at the internal budget rather than the caller's window.
+
+9. **Pass-cookie identity is opaque; extensions and methods are named, not inherited.** A clearance
+   cookie is replayed and cached as the pair(s) the pass-challenge response published, never by a
+   hardcoded name. A non-empty extension list fails closed unless an accepted ADR names the
+   extension; ADR-0012 proposes `css-load` only, and ADR-0013 proposes WASM `sha256` only.
+   `headless`/BotStopper, `argon2id`, and `hashx` remain outside the permitted set until their own
+   evaluation.
