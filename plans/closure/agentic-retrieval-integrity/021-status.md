@@ -75,8 +75,11 @@ M020's condition is discharged at this candidate. `plans/closure/agentic-retriev
 now reads `Status: closed`, carries a "Named condition — discharged" section with both measurements,
 corrects deviation 5 and residual risk 1, and re-records its live two-window numbers;
 `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`
-reads `closed`. M020's plan header previously read `ready` while the registry read `closed` and was
-corrected in the M020 closure commit; no other M019/M020 header is stale.
+reads `closed`. Two header corrections are already in history rather than repeated here: M019's
+plan header read `ready` while the registry read `closed` until the M020 closure commit corrected
+it, and M020's header moved from `blocked` to `conditionally closed` at its own closure. Every
+`closed` row in `plans/registry.md` for this workstream now matches its plan header and its closure
+record.
 
 ## What changed
 
@@ -126,7 +129,7 @@ Results:
   above.
 - `python3 packaging/check-planning-consistency.py`: `planning-consistency: ok`.
 - `./packaging/check-repo-hygiene.sh`: `repo-hygiene: ok`.
-- Hosted CI: not yet dispatched at the time this record was written; the run that covers this commit is recorded in the follow-up commit.
+- Hosted CI: run `43331485842` on `027f483`. The Ubuntu `ci` job (`make ci`, which is `make check`) passed and so did the Windows `x86_64-pc-windows-msvc` all-features check; the macOS job's canonical-verification step passed, and its filesystem-portability steps were still running when this note was written. That run also settles the excerpt-economy hazard below in the favourable direction for this commit: a fresh seed did not draw the counterexample.
 
 `make check` cannot complete on this workstation because `packaging/check-contract.sh` stops at
 `mavis-trash: unsupported OS: Plan9` after passing the workflow-pin, planning-consistency, eggpack
