@@ -1,6 +1,18 @@
 use eggsearch::fetch::limits::{validate_url, FetchLimits};
 use proptest::prelude::*;
 
+const PRIVATE_TLDS: &[&str] = &[
+    "internal",
+    "private",
+    "local",
+    "corp",
+    "lan",
+    "home",
+    "invalid",
+    "test",
+    "localhost",
+];
+
 proptest! {
     #[test]
     fn validate_url_rejects_private_tld_internal(
@@ -170,10 +182,11 @@ proptest! {
     fn validate_url_www_subdomain_accepted(
         name in "[a-z]{2,10}"
     ) {
+        prop_assume!(!PRIVATE_TLDS.contains(&name.as_str()), "skip private-TLD collision");
         let limits = FetchLimits::default();
         let url = format!("https://www.{name}/");
         let result = validate_url(&url, &limits);
-        prop_assert!(result.is_ok(), "www subdomain should be accepted");
+        prop_assert!(result.is_ok(), "www subdomain should be accepted: {url}");
     }
 
     #[test]
@@ -183,19 +196,7 @@ proptest! {
         name in "[a-z]{2,8}"
     ) {
         prop_assume!(
-            !([
-                "internal",
-                "private",
-                "local",
-                "corp",
-                "lan",
-                "home",
-                "invalid",
-                "test",
-                "localhost"
-            ]
-            .contains(&name.as_str())
-                || sub2 == "home" && name == "arpa"),
+            !(PRIVATE_TLDS.contains(&name.as_str()) || sub2 == "home" && name == "arpa"),
             "skip private-TLD collision"
         );
         let limits = FetchLimits::default();
@@ -208,10 +209,11 @@ proptest! {
     fn validate_url_numeric_subdomain_accepted(
         name in "[a-z]{2,8}"
     ) {
+        prop_assume!(!PRIVATE_TLDS.contains(&name.as_str()), "skip private-TLD collision");
         let limits = FetchLimits::default();
         let url = format!("https://123.{name}/");
         let result = validate_url(&url, &limits);
-        prop_assert!(result.is_ok(), "numeric subdomain should be accepted");
+        prop_assert!(result.is_ok(), "numeric subdomain should be accepted: {url}");
     }
 
     #[test]

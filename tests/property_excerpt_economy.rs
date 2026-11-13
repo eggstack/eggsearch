@@ -256,7 +256,12 @@ proptest! {
         let smaller_redundant = report_counter(&smaller, "redundant_count");
         let larger_redundant = report_counter(&larger, "redundant_count");
         prop_assert!(smaller_redundant <= larger_redundant, "suppression must not grow as the budget shrinks: {smaller_redundant} > {larger_redundant}");
-        prop_assert!(report_counter(&smaller, "admitted_count") <= report_counter(&larger, "admitted_count"));
+        let smaller_chars = report_counter(&smaller, "chars_after");
+        let larger_chars = report_counter(&larger, "chars_after");
+        prop_assert!(
+            smaller_chars <= larger_chars,
+            "a larger budget must not admit fewer characters: {smaller_chars} > {larger_chars}"
+        );
         assert_counter_identity(&smaller, low);
         assert_counter_identity(&larger, high);
     }
