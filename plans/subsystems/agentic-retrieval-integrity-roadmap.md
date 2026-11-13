@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: closed (M001–M023 closed; M006's named condition discharged by M017)
+Status: active (M014 conditionally closed; every other milestone M001–M023 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
@@ -143,7 +143,7 @@ exposed M011's mandatory-`redir` defect.
   `intent_mode` therefore ships `apply`. Evidence: `plans/closure/agentic-retrieval-integrity/006-status.md`.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
-- M014 is `closed`: the reuse window is the upstream-published `Max-Age`/`Expires` clamped by
+- M014 is `conditionally closed`: the reuse window is the upstream-published `Max-Age`/`Expires` clamped by
   `cookie_ttl_seconds`, a rejected cookie is evicted, and `doctor` warns when a routed egress meets
   reuse. A live 21-minute run re-solved after the published expiry instead of replaying a dead
   token. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.

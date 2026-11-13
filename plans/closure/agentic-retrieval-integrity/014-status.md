@@ -1,6 +1,6 @@
 # M014 Pass-Cookie Lifetime and Egress Binding — Closure Status
 
-Status: closed
+Status: conditionally closed
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md`
 
@@ -29,6 +29,22 @@ Implementation candidate and closure commit: the commit that carries this record
 `extract_cookie` helpers and parse once. `PassCookieCache::remove(provider)` evicts a rejected
 cookie, and both engines call it when a replay is still challenged. `eggsearch doctor` warns when
 `[egress]` is routed and cookie reuse is enabled.
+
+## Named condition
+
+The plan's live acceptance requires both measurement arms (derived active versus the fixed-window
+reference) and at least one provider whose solve count fell, or an explicit statement that no
+provider publishes a lifetime. Startpage publishes a lifetime (~20 min `Expires`), but it is longer
+than the shipped 240 s ceiling, so at the default the clamp binds and the derivation cannot reduce
+the solve count; at a raised ceiling both the old and new rules re-solve once the challenge is
+served, so a solve-count reduction is not expected for this upstream. The observed benefit is the
+avoided dead-token request: the derived arm's entry expired on the published schedule and the
+second search took a miss and re-solved directly (`cookie_misses=2`, `cookie_hits=0`, 3 rows),
+where the fixed 30-minute rule would have presented the expired token first.
+
+The two-arm solve-count comparison was therefore not run. Closing as `closed` would claim an
+acceptance the plan does not authorize; the milestone is complete in implementation and verified in
+behaviour, and this condition records the missing comparative measurement.
 
 ## Published attributes (live capture, 2026-11-13, value redacted)
 

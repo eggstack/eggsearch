@@ -1,6 +1,6 @@
 # M014 — Pass-Cookie Lifetime and Egress Binding
 
-Status: closed
+Status: conditionally closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M014
 Primary class: capability
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0` (the worktree also carries a modified ADR-0009 and an untracked ADR-0010; M013 and M016 edit `src/meta/challenge/` in parallel, so re-read `git status` and the directory before editing)
