@@ -129,7 +129,10 @@ Results:
   above.
 - `python3 packaging/check-planning-consistency.py`: `planning-consistency: ok`.
 - `./packaging/check-repo-hygiene.sh`: `repo-hygiene: ok`.
-- Hosted CI: run `43331485842` on `027f483`. The Ubuntu `ci` job (`make ci`, which is `make check`) passed and so did the Windows `x86_64-pc-windows-msvc` all-features check; the macOS job's canonical-verification step passed, and its filesystem-portability steps were still running when this note was written. That run also settles the excerpt-economy hazard below in the favourable direction for this commit: a fresh seed did not draw the counterexample.
+- Hosted CI: run `43331485842` on `027f483` **passed in full** — the Ubuntu `ci` job (`make ci`, which
+  is `make check`), the Windows `x86_64-pc-windows-msvc` all-features check, and the macOS canonical
+  verification and local-filesystem portability job. That run also settles the excerpt-economy hazard
+  below in the favourable direction for this commit: a fresh seed did not draw the counterexample.
 
 `make check` cannot complete on this workstation because `packaging/check-contract.sh` stops at
 `mavis-trash: unsupported OS: Plan9` after passing the workflow-pin, planning-consistency, eggpack
