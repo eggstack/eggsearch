@@ -84,6 +84,10 @@ answer token, publishes a cross-origin target, uses a different token field name
 method without `#anubis_challenge` is a stop-and-decide condition, not something this record claims
 to have handled.
 
+
+Hosted CI: run `43452679850` on `dc352ae` passed all three jobs — Ubuntu `ci`, the Windows
+all-features check, and the macOS canonical verification plus filesystem-portability tests.
+
 ## Residual risk
 
 - Field drift in the served `metarefresh` shape (wait unit, token field, target) is untested.

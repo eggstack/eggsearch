@@ -67,6 +67,10 @@ without edits to its expectations, including the five pass-challenge query param
 - A `slow` deployment solves instead of reporting a false `unsupported scheme`.
 - An unprojectable challenge is refused before hashing, naming the projection and the ceiling.
 
+
+Hosted CI: run `43452679850` on `dc352ae` passed all three jobs — Ubuntu `ci`, the Windows
+all-features check, and the macOS canonical verification plus filesystem-portability tests.
+
 ## Residual risk
 
 - No prefixed, `slow`, or `preact` deployment was reachable on 2026-11-13; those paths are

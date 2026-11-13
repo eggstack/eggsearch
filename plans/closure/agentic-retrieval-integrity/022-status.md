@@ -80,6 +80,10 @@ Unit coverage: `detects_each_family`, `leaves_ordinary_pages_alone`, `family_nam
 The negative cases include an ordinary "Loading..." page and a body containing "please wait",
 which the detector deliberately does not treat as a challenge.
 
+
+Hosted CI: run `43452679850` on `dc352ae` passed all three jobs — Ubuntu `ci`, the Windows
+all-features check, and the macOS canonical verification plus filesystem-portability tests.
+
 ## Residual risk
 
 - Detection is heuristic. A page that obfuscates its challenge ids or uses a new family is not
