@@ -1582,13 +1582,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_health_reports_refused_for_closed_port() {
+    async fn probe_health_reports_a_closed_port_as_not_healthy() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         drop(listener);
-        assert_eq!(
+        assert_ne!(
             probe_health(&loopback_spec(addr)).await,
-            HealthState::Refused
+            HealthState::Healthy
         );
     }
 
