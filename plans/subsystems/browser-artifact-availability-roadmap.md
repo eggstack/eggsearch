@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: ready
+Status: closing (M001/M002 closed; M003 conditionally closed)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
@@ -114,7 +114,9 @@ PDF roadmap M006 (independent; owns the pdf half)
 
 ## 6. Milestones
 
-### M001 — Render lifecycle bounds (infrastructure)
+### M001 — Render lifecycle bounds (infrastructure) — closed
+
+Closure: `plans/closure/browser-artifact-availability/001-status.md`.
 
 Introduce `[fetch.browser].idle_timeout_ms` and make the render lifecycle
 self-limiting: teardown after an idle interval with no in-flight render, enforced
@@ -126,7 +128,9 @@ and the process tree returns to the HTTP-only footprint; a concurrent render is
 never killed by teardown; reaching `max_requests` closes the session and the next
 render relaunches.
 
-### M002 — Default artifact availability (capability)
+### M002 — Default artifact availability (capability) — closed
+
+Closure: `plans/closure/browser-artifact-availability/002-status.md`.
 
 Add `browser` to the default feature set, change `[fetch.browser]` defaults to
 `enabled = true` and `policy = "auto"`, construct the two dead error kinds with
@@ -140,7 +144,9 @@ configuration, a source build without the feature returns `browser_not_compiled_
 for an explicit request, `enabled = false` returns `browser_disabled`, and the
 dependency guard still rejects any other reqwest root in either graph.
 
-### M003 — Distribution and live qualification (infrastructure/evidence)
+### M003 — Distribution and live qualification (infrastructure/evidence) — conditionally closed
+
+Closure: `plans/closure/browser-artifact-availability/003-status.md`. Outstanding: macOS x86_64/aarch64 evidence, Windows arm64 validation, installer smoke beyond x86_64 Linux, and the realistic-mix matrix.
 
 Measure and record the exact candidate: per-target size delta, realistic-mix
 qualification with idle teardown, installer smoke, wheel decoupling and matrix,

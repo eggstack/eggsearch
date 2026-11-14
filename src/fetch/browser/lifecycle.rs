@@ -573,6 +573,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn teardown_gate_waits_for_an_in_flight_render() {
+        let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+        let render = lifecycle.begin_render().await;
+        let waiter = {
+            let lifecycle = Arc::clone(&lifecycle);
+            tokio::spawn(async move {
+                let _write = lifecycle.render_gate.write().await;
+                true
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !waiter.is_finished(),
+            "teardown must wait for the in-flight render"
+        );
+        drop(render);
+        assert!(waiter.await.expect("waiter task"));
+    }
+
+    #[tokio::test]
     async fn idle_watchdog_closes_a_resident_session() {
         let lifecycle = Arc::new(
             BrowserLifecycle::new(None, BrowserConfig::default())
