@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M001/M002/M007/M008/M009/M010/M011 closed, M006 blocked
+Status: active; M001/M002/M007/M008/M009/M010/M011 closed, M006 superseded by ADR-0014
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -231,7 +231,7 @@ transport-feature change, and process refactor remain independently reviewable.
 
 ## 8. Milestones
 
-Current milestone state: M001/M007 are closed by M010 after reconciling the first scheduled dependency-security run `38290328560`. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 remains closed through M007. M005 remains closed. M006 remains blocked on upstream chromiumoxide. M011 is closed at `99316f31caf37ad2165cd5e822316942faf20c6f`; closure is recorded in `plans/closure/repository-hardening/011-status.md`. Original closure records remain historical evidence; M007 is the corrective control point.
+Current milestone state: M001/M007 are closed by M010 after reconciling the first scheduled dependency-security run `38290328560`. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 remains closed through M007. M005 remains closed. M006 is superseded by ADR-0014: the chromiumoxide `reqwest` edge is accepted by decision and bounded by the dependency-shape guard, so the zero-reqwest objective is deferred rather than achieved. M011 is closed at `99316f31caf37ad2165cd5e822316942faf20c6f`; closure is recorded in `plans/closure/repository-hardening/011-status.md`. Original closure records remain historical evidence; M007 is the corrective control point.
 
 | Milestone | Current status | Control point |
 |---|---|---|
@@ -240,7 +240,7 @@ Current milestone state: M001/M007 are closed by M010 after reconciling the firs
 | M003 rmcp HTTP verification on eggfetch | closed | `plans/closure/repository-hardening/003-status.md` |
 | M004 process/unsafe boundary | closed through M007 once repository-wide guards pass | `plans/closure/repository-hardening/004-status.md` + M007 |
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
-| M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
+| M006 full zero-reqwest closure | superseded by ADR-0014 | `plans/closure/repository-hardening/006-status.md` + `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md` |
 | M007 closure evidence + process ratchet corrective | closed by M010 | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
 | M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
 | M009 first tagged-release provenance reconciliation | closed | `plans/closure/repository-hardening/009-status.md` |
@@ -313,6 +313,14 @@ DevTools discovery dependency is optional (or an equivalently clean upstream
 client-injection seam exists). Adopt that release with HTTP discovery disabled
 for eggsearch's launch-only browser use, then prove `reqwest` is absent from
 the all-features graph.
+
+**Superseded 2026-11-14 by ADR-0014.** The default artifact decision accepts the
+chromiumoxide `reqwest` edge in both the default and all-features graphs, with
+`src/` still reqwest-free, no direct dependency, and the reverse-dependency set
+restricted to chromiumoxide by `packaging/check-http-dependency-shape.py`. Do not
+start this milestone; if an upstream release later makes HTTP discovery optional,
+removing the edge is an optimization under ADR-0014, not a reopening of this
+objective. The blocked closure record remains historical evidence.
 
 Implementation plan:
 `plans/implementation/repository-hardening/006-chromiumoxide-zero-reqwest-closure.md`.
@@ -424,7 +432,8 @@ The workstream is complete when:
 - production process capture/probes use bounded execution, and unsafe process
   session setup has exactly one documented owner;
 - forge safety policy is decomposed without behavioral drift;
-- chromiumoxide upstream support is adopted and `cargo tree --all-features -i
-  reqwest` shows no reqwest package (M006 remains externally blocked);
+- the chromiumoxide `reqwest` edge is accepted by ADR-0014 and bounded by
+  `packaging/check-http-dependency-shape.py`, with production source reqwest-free
+  (M006 superseded, not closed);
 - all milestones have SHA-specific closure records and no unresolved High/Medium
   finding is hidden by a waiver.

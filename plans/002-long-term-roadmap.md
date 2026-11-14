@@ -101,7 +101,7 @@ Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 - eggfetch 0.2.0 adoption depends on performance closure.
 - Optional outbound routing depends on eggfetch 0.2.0 adoption.
 - Tool-surface consolidation is independent of the egress workstream and is closed.
-- Repository hardening proceeds against the post-tool-surface mainline. Its M005 depends on process-boundary M004; M006 additionally depends on an upstream chromiumoxide release with a no-reqwest launch-only feature graph.
+- Repository hardening proceeds against the post-tool-surface mainline. Its M005 depends on process-boundary M004; M006 additionally depended on an upstream chromiumoxide release with a no-reqwest launch-only feature graph, and ADR-0014 supersedes that objective: the edge is accepted and guard-bounded in both the default and all-features graphs.
 
 ## Deferred by design
 

@@ -44,7 +44,7 @@ def main():
         ("M003", "closed"),
         ("M004", "closed"),
         ("M005", "closed"),
-        ("M006", "blocked"),
+        ("M006", "superseded"),
         ("M007", "closed"),
     ]
     for mid, want in expectations:
@@ -67,8 +67,15 @@ def main():
         errors.append("roadmap M004 must reference M007 corrective ratchet")
     hardening_lines = [l for l in registry.splitlines() if "hardening" in l.lower()]
     hardening_blob = "\n".join(hardening_lines).lower()
-    if "m007" not in hardening_blob or "closed" not in hardening_blob or "blocked" not in hardening_blob:
-        errors.append("registry hardening entries must mention closed M007 and blocked M006")
+    if (
+        "m007" not in hardening_blob
+        or "closed" not in hardening_blob
+        or "superseded" not in hardening_blob
+        or "adr-0014" not in hardening_blob
+    ):
+        errors.append(
+            "registry hardening entries must mention closed M007 and M006 superseded by ADR-0014"
+        )
     m007_impl = None
     for line in registry.splitlines():
         if "007-corrective-closure-evidence-and-process-ratchet" in line:

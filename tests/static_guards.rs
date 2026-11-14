@@ -2213,7 +2213,7 @@ fn planning_status_consistency_no_closed_range_shorthand() {
         for (mid, want) in [
             ("M001", "closed"),
             ("M002", "closed"),
-            ("M006", "blocked"),
+            ("M006", "superseded"),
             ("M007", "closed"),
         ] {
             let row = text

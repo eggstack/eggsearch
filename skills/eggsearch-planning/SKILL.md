@@ -91,7 +91,7 @@ is the usual first casualty. When you close or open a milestone:
 
 `tests/static_guards.rs` enforces the planning-status consistency guard
 (`planning_status_consistency_no_closed_range_shorthand`): repository-hardening
-planning documents must state `M001`/`M002` conditionally, `M006` blocked, and
+planning documents must state `M001`/`M002` conditionally, `M006` superseded by ADR-0014, and
 `M007` conditionally closed, and must never summarize them with a
 `M001-M005 closed` range shorthand. Match that precision when you summarize
 milestone ranges anywhere in planning docs.

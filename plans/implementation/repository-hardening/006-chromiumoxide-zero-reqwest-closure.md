@@ -1,12 +1,18 @@
 # Plan 006 — Chromiumoxide Upstream and Full Zero-Reqwest Closure
 
-Status: blocked
+Status: superseded by ADR-0014 (2026-11-14)
 
 Latest review: 2026-09-28. M003 is now closed and removes rmcp's HTTP-client
 reqwest edge. Upstream chromiumoxide remains at 0.9.1 with reqwest declared as
 a non-optional dependency; no upstream release satisfies the optional
 HTTP-discovery dependency gate. See the latest closure status for source and
 registry evidence. This milestone remains blocked and no fork is introduced.
+
+Superseding decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
+§ Decision 6 accepts the chromiumoxide `reqwest` edge in both the default and
+all-features graphs, keeps production source reqwest-free, and restricts the
+reverse-dependency set to chromiumoxide by guard. Do not hand off this plan.
+Removing the edge is deferred as an optimization under ADR-0014.
 
 Closure record: `plans/closure/repository-hardening/006-status.md`.
 
