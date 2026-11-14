@@ -56,6 +56,7 @@ struct RestartState {
 }
 
 const MAX_RESTARTS: u32 = 1;
+const BROWSER_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl BrowserLifecycle {
     pub fn new(discovery: Option<BrowserDiscovery>, config: BrowserConfig) -> Self {
@@ -393,7 +394,12 @@ impl BrowserLifecycle {
         };
         if let Some(browser) = taken {
             if let Ok(mut inner) = Arc::try_unwrap(browser) {
-                let _ = inner.close().await;
+                if tokio::time::timeout(BROWSER_CLOSE_TIMEOUT, inner.close())
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("browser close timed out; releasing the lifecycle anyway");
+                }
             }
         }
         self.resident.store(false, Ordering::Relaxed);
