@@ -2,7 +2,7 @@
 
 Status: closed (applied reranking)
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/005-deterministic-intent-derivation.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/005-deterministic-intent-derivation.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

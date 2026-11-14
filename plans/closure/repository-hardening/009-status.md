@@ -4,7 +4,7 @@ Status: closed
 Recommendation: closed
 Implementation commit: `cf1e26afda19c4086ebd30add46bd78649e92323`
 Reconciled milestone: M002 CI and release supply-chain provenance
-Plan: `plans/implementation/repository-hardening/009-first-tagged-release-provenance-reconciliation.md`
+Plan: `plans/archive/implementation/repository-hardening/009-first-tagged-release-provenance-reconciliation.md`
 
 ## Decision
 

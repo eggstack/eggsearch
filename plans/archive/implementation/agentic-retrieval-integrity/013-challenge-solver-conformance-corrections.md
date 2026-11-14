@@ -4,7 +4,7 @@ Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M013
 Primary class: invariant (corrective)
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0`
-References: ADR-0010; ADR-0009; `plans/implementation/agentic-retrieval-integrity/010-challenge-solving-framework-and-altcha.md`; `011-anubis-solver-and-difficulty-ceiling.md`; `012-startpage-payload-extraction.md`; `plans/closure/agentic-retrieval-integrity/011-status.md`; `architecture/engines.md` § Challenge solving; `src/meta/challenge/mod.rs`; `src/meta/challenge/anubis.rs`; `src/meta/engines/startpage.rs`; `src/meta/engines/mojeek.rs`; `src/core/config/challenge.rs`; `tests/fixtures/engines/README.md`.
+References: ADR-0010; ADR-0009; `plans/archive/implementation/agentic-retrieval-integrity/010-challenge-solving-framework-and-altcha.md`; `011-anubis-solver-and-difficulty-ceiling.md`; `012-startpage-payload-extraction.md`; `plans/closure/agentic-retrieval-integrity/011-status.md`; `architecture/engines.md` § Challenge solving; `src/meta/challenge/mod.rs`; `src/meta/challenge/anubis.rs`; `src/meta/engines/startpage.rs`; `src/meta/engines/mojeek.rs`; `src/core/config/challenge.rs`; `tests/fixtures/engines/README.md`.
 Dependencies: none hard. ADR-0010 is accepted and authorizes the coverage implemented here; ADR-0010 and the roadmap M013 row are uncommitted in the handoff worktree and must land with this milestone. M010–M012 are closed at the baseline. Independent of M014 (pass-cookie lifetime), M015 (solvability observability), and M016 (`metarefresh`).
 
 ## Objective

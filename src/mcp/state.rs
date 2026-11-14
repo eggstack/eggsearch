@@ -422,7 +422,6 @@ impl ServerState {
             None
         };
 
-        // Build local workspace backend
         let local_backend = match LocalWorkspaceBackend::new(config.local.clone()) {
             Ok(backend) if backend.is_enabled() => {
                 tracing::info!(

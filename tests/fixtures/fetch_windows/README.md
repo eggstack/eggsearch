@@ -1,6 +1,6 @@
 # Fetch window corpus
 
-Measurement fixture for `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`
+Measurement fixture for `plans/archive/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`
 § Verification, subsection "First-slice precision, recorded rather than asserted".
 It answers one question about the addressed `web_fetch` read: how often does the
 first default window contain the sentence that actually answers the query?

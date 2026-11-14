@@ -4,7 +4,7 @@ Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M018
 Primary class: invariant (corrective to M009)
 Baseline: `dace41c3a75307ea35b745d695a11630ec6495c0` (the worktree also carries uncommitted planning changes — the ADR-0009 amendment, ADR-0010, the roadmap status line, `plans/registry.md` rows, and plans 013/014/016; re-read `git status` before starting and do not revert them)
-References: `plans/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md`; `plans/closure/agentic-retrieval-integrity/009-status.md` § Known limitations; `architecture/mcp.md` § Pagination, progress, and tasks; `src/mcp/cursor.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch.rs`; `src/mcp/tools/research_search.rs`; `src/meta/adapter/research.rs`; `src/meta/research_grouping.rs`; `src/core/focus.rs`; `src/mcp/projection.rs`
+References: `plans/archive/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md`; `plans/closure/agentic-retrieval-integrity/009-status.md` § Known limitations; `architecture/mcp.md` § Pagination, progress, and tasks; `src/mcp/cursor.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch.rs`; `src/mcp/tools/research_search.rs`; `src/meta/adapter/research.rs`; `src/meta/research_grouping.rs`; `src/core/focus.rs`; `src/mcp/projection.rs`
 Dependencies: hard M009 (closed). The closure record's three recorded limitations are this milestone's specification.
 
 ## Superseded in part

@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/021-non-html-document-scoped-addressable-text.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/021-non-html-document-scoped-addressable-text.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 
@@ -74,7 +74,7 @@ had been committed as fact. Both halves are now resolved:
 M020's condition is discharged at this candidate. `plans/closure/agentic-retrieval-integrity/020-status.md`
 now reads `Status: closed`, carries a "Named condition — discharged" section with both measurements,
 corrects deviation 5 and residual risk 1, and re-records its live two-window numbers;
-`plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`
+`plans/archive/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`
 reads `closed`. Two header corrections are already in history rather than repeated here: M019's
 plan header read `ready` while the registry read `closed` until the M020 closure commit corrected
 it, and M020's header moved from `blocked` to `conditionally closed` at its own closure. Every

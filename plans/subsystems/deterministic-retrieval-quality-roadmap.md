@@ -62,7 +62,7 @@ M002 and M003 are soft dependencies for M004's experimental code; no ranking/dis
 
 | Milestone | Class | Handoff | Dependencies | User-visible exit |
 |---|---|---|---|---|
-| M001 — evaluation contract and reference corpus | infrastructure | `plans/implementation/deterministic-retrieval-quality/001-benchmark-contract-and-reference-corpus.md` | ready; closed historical tool-surface baseline | Reproducible offline gold metrics and opt-in live runner with exact provenance |
+| M001 — evaluation contract and reference corpus | infrastructure | `plans/archive/implementation/deterministic-retrieval-quality/001-benchmark-contract-and-reference-corpus.md` | ready; closed historical tool-surface baseline | Reproducible offline gold metrics and opt-in live runner with exact provenance |
 | M002 — PDF/browser feature comparison | infrastructure/capability evaluation | `002-pdf-browser-extraction-matrix.md` | hard M001 | Four independently qualified builds, page/passage fidelity, cost/footprint comparison, no degradation of feature security |
 | M003 — provider resilience/contribution evaluation | infrastructure/capability if justified | `003-keyless-provider-contribution-and-resilience.md` | hard M001 | Controlled failover/overlap and first-class keyless evidence, bounded optional routing changes only if justified |
 | M004 — deterministic relevance/reranking experiment | capability if justified | `004-deterministic-relevance-and-selection.md` | hard M001; soft M002/M003 | Measured gain on held-out labels, or explicit no-change conclusion if gain cannot be established |

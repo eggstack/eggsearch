@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

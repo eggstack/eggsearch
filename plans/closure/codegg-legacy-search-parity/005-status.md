@@ -8,7 +8,7 @@ is unblocked at `>=0.4.1`.
 
 Source implementation plan:
 
-- `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`
 
 Source subsystem roadmap:
 

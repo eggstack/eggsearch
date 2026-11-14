@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/deterministic-retrieval-quality/003-keyless-provider-contribution-and-resilience.md`
+Source plan: `plans/archive/implementation/deterministic-retrieval-quality/003-keyless-provider-contribution-and-resilience.md`
 
 Roadmap: `plans/subsystems/deterministic-retrieval-quality-roadmap.md`
 

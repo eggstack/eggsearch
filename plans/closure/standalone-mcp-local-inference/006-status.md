@@ -3,7 +3,7 @@
 Status: closed
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md`
+`plans/archive/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

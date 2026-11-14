@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/022-fetch-side-challenge-classification.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/022-fetch-side-challenge-classification.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

@@ -84,7 +84,7 @@ Eggpack Ecosystem M003a has now completed the compatibility preflight and found 
 The paired implementation plans are:
 
 - Eggpack: `plans/implementation/ecosystem-adoption/003b-eggsearch-seven-target-eggpack-producer-cutover.md`;
-- Eggsearch: `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`.
+- Eggsearch: `plans/archive/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`.
 
 ## 5. Release-contract transition
 
@@ -135,7 +135,7 @@ Class: capability / cross-repository adoption
 
 Implementation plan:
 
-`plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`
+`plans/archive/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`
 
 Status: closed. Closure record: `plans/closure/eggpack-release-adoption/001-status.md`.
 
@@ -177,4 +177,4 @@ This subsystem closes when Eggsearch has one Eggpack-owned producer release auth
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 seven-target Eggpack producer cutover | closed | `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | `plans/closure/eggpack-release-adoption/001-status.md` | Implementation `eabbf80`; hosted run `37531104901` staged `v0.4.2` as draft `405157598`, 19 assets, all seven targets green; provenance `37561960304` attested the staged bytes; published 2026-10-07, discharging the named condition. Open Medium: release build is not byte-reproducible across attempts, so a rerun refuses instead of reusing |
+| M001 seven-target Eggpack producer cutover | closed | `plans/archive/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` | `plans/closure/eggpack-release-adoption/001-status.md` | Implementation `eabbf80`; hosted run `37531104901` staged `v0.4.2` as draft `405157598`, 19 assets, all seven targets green; provenance `37561960304` attested the staged bytes; published 2026-10-07, discharging the named condition. Open Medium: release build is not byte-reproducible across attempts, so a rerun refuses instead of reusing |

@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/deterministic-retrieval-quality/006-comparative-qualification-and-closure.md`
+Source plan: `plans/archive/implementation/deterministic-retrieval-quality/006-comparative-qualification-and-closure.md`
 
 Roadmap: `plans/subsystems/deterministic-retrieval-quality-roadmap.md`
 

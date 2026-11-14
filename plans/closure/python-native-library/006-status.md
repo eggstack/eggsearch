@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `faa1da2e5d5a8c38045001fec1ae1a230bc36bde`
-Implementation plan: `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md`
+Implementation plan: `plans/archive/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md`
 Roadmap: `plans/subsystems/python-native-library-roadmap.md` M006
 
 ## Reconciliation

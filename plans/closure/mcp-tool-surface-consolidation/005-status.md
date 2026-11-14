@@ -4,7 +4,7 @@ Status: closed (eggsearch-side contract; CodeGG downstream tracked as handoff)
 
 Source implementation plan:
 
-- `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md`
+- `plans/archive/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md`
 
 Source subsystem roadmap:
 

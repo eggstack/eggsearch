@@ -60,38 +60,22 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
 
 ## 4. Current state
 
-- `default = []`; release assets are built with `cargo build --release --locked`
-  and no feature flags, so published binaries have neither PDF nor browser
-  (`docs/release.md` § Release binaries, `architecture/build.md` § Feature flags
-  matrix).
-- `[fetch.browser]` defaults to `enabled = false`, `policy = "http_only"`,
-  `max_requests = 100`. The lifecycle is constructed only when `enabled` is true
-  and is reused across calls.
-- `RenderPolicy::Auto` already performs HTTP first and escalates only on a
-  JavaScript shell, a non-interactive verification page, or a detected challenge.
-  The browser arm of the extraction qualification used exactly this routing:
-  `render: "http_only"` for static HTML and both PDF fixtures, `render: "browser"`
-  only for the JavaScript-only fixture.
-- The shared lifecycle has **no idle teardown**. `close()` runs on explicit
-  shutdown and for profile-scoped request lifecycles only. `Drop` aborts the
-  handler but cannot await a graceful close.
-- `max_requests` is passed into `BrowserConfig` but never read during navigation.
-  It is documented as a session bound and enforces nothing today.
-- `FetchError::BrowserNotCompiledIn` and `FetchError::BrowserDisabled` have no
-  construction site. Without the feature, an explicit `render: "browser"` returns
-  ordinary HTTP content; with the feature and `enabled = false`, the call reports
-  a missing Chrome executable instead of a disabled capability.
-- `provider_status` already reports `browser_capabilities { compiled,
-  configured, discovered, usable, reason }` and a `browser_rendering` server bit.
-  There are no lifecycle counters.
-- `chromiumoxide 0.9.1` requires `reqwest` unconditionally, so the default graph
-  cannot carry it without a guard change. `packaging/check-http-dependency-shape.py`
-  currently fails any default graph containing `reqwest`. Repository-hardening
-  M006 is `blocked` on this, with an explicit instruction not to fork.
-- Measured arms: HTTP 19,310,288 B; PDF 20,659,408 B; browser 23,871,336 B;
-  combined 25,216,504 B. Peak process-tree RSS during browser use 1,202,784 –
-  1,216,844 KiB against 23,768 KiB HTTP-only. JS-only cold latency ~2.5 s against
-  ~0.45 s HTTP; warm cached responses are unaffected.
+- Release binaries compile `pdf` and `browser` by default. Browser defaults to
+  `enabled = true` and `policy = "auto"`; the Python wheel remains PDF-only.
+- HTTP is the hot path. `auto` escalates only for JavaScript shells,
+  non-interactive verification pages, or detected challenges.
+- The shared lifecycle enforces `max_requests`, tears down after 90 seconds idle,
+  and reports residency and teardown counters through `provider_status`. The live
+  probe observed zero Chrome descendants after teardown.
+- Explicit render requests return actionable errors when browser support is
+  unavailable or disabled. Unserved automatic escalation is reported as a
+  structured warning.
+- M001 and M002 are closed. Their closure records capture implementation and
+  live-tool evidence.
+- M003 is conditionally closed. Six of seven targets have build and size
+  evidence; the macOS arm64 job was cancelled by the hosted runner. Remaining
+  evidence: macOS arm64 size/native qualification, installer smoke beyond Linux
+  x86_64, realistic-mix qualification, and the wheel matrix.
 
 ## 5. Dependency graph
 

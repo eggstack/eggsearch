@@ -111,9 +111,6 @@ Register active work in `registry.md` before handing implementation plans to age
 
 ## Historical note
 
-The `phase-*.md` plans and the four pre-migration roadmaps
-(`roadmap.md`, `deployment-roadmap.md`,
-`maintenance-codegg-quality-roadmap.md`,
-`performance-optimization-roadmap.md`) are retained under `archive/` for
-traceability. They are superseded by the canonical documents and subsystem
-roadmaps above and MUST NOT be extended.
+Closed and superseded implementation plans retain their subsystem paths under
+`archive/implementation/`. The `phase-*.md` plans and four pre-migration
+roadmaps remain under `archive/` for traceability and MUST NOT be extended.

@@ -2,7 +2,7 @@
 
 Status: closed (Eggsearch contract and handoff; consumer implementation separately owned)
 
-Source plan: `plans/implementation/deterministic-retrieval-quality/005-agent-context-efficiency-and-codegg-handoff.md`
+Source plan: `plans/archive/implementation/deterministic-retrieval-quality/005-agent-context-efficiency-and-codegg-handoff.md`
 
 Roadmap: `plans/subsystems/deterministic-retrieval-quality-roadmap.md`
 

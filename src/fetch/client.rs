@@ -916,13 +916,11 @@ impl FetchClient {
                     truncated: false,
                 }
             };
-            // Render text based on mode
             let txt = match extract_mode {
                 ExtractMode::Markdown => render::markdown::render_blocks_markdown(&rendered.blocks),
                 _ => render::text::render_blocks_text(&rendered.blocks),
             };
             let document_truncated = rendered.text_truncated;
-            // Truncate text to max_chars
             let (bounded_txt, text_truncated) = bound_text(&txt, window_chars);
             // Cache rendered blocks for document construction (avoids
             // a second render_blocks call below).
@@ -1034,7 +1032,6 @@ impl FetchClient {
 
         warnings.push(WebFetchResponse::untrusted_warning());
 
-        // Build the structured document from extraction output.
         let document = if extract_mode != ExtractMode::MetadataOnly {
             // Use the detection classifier to determine document kind,
             // language, and rendering strategy.

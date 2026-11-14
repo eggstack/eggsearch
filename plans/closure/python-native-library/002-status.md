@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `2392e72178aa249445a64bd629caac8219353499`
-Implementation plan: `plans/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md`
+Implementation plan: `plans/archive/implementation/python-native-library/002-pyo3-async-execution-and-lifecycle.md`
 Predecessor: `plans/closure/python-native-library/001-status.md`
 
 ## Delivered

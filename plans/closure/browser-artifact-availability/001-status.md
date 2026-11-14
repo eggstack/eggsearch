@@ -3,7 +3,7 @@
 Status: closed
 Recommendation: closed
 Implementation candidate: `5605cc240349c65b6442fa73569516cad8e2ad95`
-Plan: `plans/implementation/browser-artifact-availability/001-render-lifecycle-bounds.md`
+Plan: `plans/archive/implementation/browser-artifact-availability/001-render-lifecycle-bounds.md`
 Roadmap: `plans/subsystems/browser-artifact-availability-roadmap.md` M001
 
 ## Implementation

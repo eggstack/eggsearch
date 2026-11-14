@@ -3,7 +3,7 @@
 Status: closed
 Recommendation: closed
 Implementation candidate: `5605cc240349c65b6442fa73569516cad8e2ad95`
-Plan: `plans/implementation/browser-artifact-availability/002-default-artifact-availability.md`
+Plan: `plans/archive/implementation/browser-artifact-availability/002-default-artifact-availability.md`
 Roadmap: `plans/subsystems/browser-artifact-availability-roadmap.md` M002
 ADR: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
 

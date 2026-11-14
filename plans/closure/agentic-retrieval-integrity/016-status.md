@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

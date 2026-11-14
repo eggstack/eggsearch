@@ -2,7 +2,7 @@
 
 Status: closed (discharged by M020; no separate implementation)
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/018-pagination-consistency-across-pages.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

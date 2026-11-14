@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md`
+- `plans/archive/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md`
 
 Source subsystem roadmap:
 

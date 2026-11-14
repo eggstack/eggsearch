@@ -9,9 +9,9 @@ Closure candidate: `15ae6e57693c5ca8b15a684298730ba70de09bb9` (code-qualified ca
 
 Original milestones and closure records under correction:
 
-- M001: `plans/implementation/repository-hardening/001-dependency-security-and-policy-gate.md`
+- M001: `plans/archive/implementation/repository-hardening/001-dependency-security-and-policy-gate.md`
 - M001 closure: `plans/closure/repository-hardening/001-status.md`
-- M004: `plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`
+- M004: `plans/archive/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`
 - M004 closure: `plans/closure/repository-hardening/004-status.md`
 
 M001/M004 historical records remain unchanged. This record is the corrective control point.

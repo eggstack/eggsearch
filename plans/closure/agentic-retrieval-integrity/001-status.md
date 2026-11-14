@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/001-scraper-fidelity-contract.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/001-scraper-fidelity-contract.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

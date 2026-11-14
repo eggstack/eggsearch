@@ -5,6 +5,8 @@ traceability. Archive moves preserve original filenames.
 
 Contents:
 
+- `implementation/<subsystem>/` — completed or superseded milestone plans and
+  handoff indexes, retaining their subsystem paths and filenames.
 - `phase-*.md` — historical bounded implementation plans for phases 1-28,
   superseded by the canonical documents (`plans/000-*.md`), subsystem
   roadmaps (`plans/subsystems/`), and closure records (`plans/closure/`).

@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

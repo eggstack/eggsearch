@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/deterministic-retrieval-quality/002-pdf-browser-extraction-matrix.md`
+Source plan: `plans/archive/implementation/deterministic-retrieval-quality/002-pdf-browser-extraction-matrix.md`
 
 Roadmap: `plans/subsystems/deterministic-retrieval-quality-roadmap.md`
 

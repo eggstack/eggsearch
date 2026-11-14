@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md`
+- `plans/archive/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md`
 
 Source subsystem roadmap:
 

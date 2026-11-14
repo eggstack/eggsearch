@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md`
+- `plans/archive/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md`
 
 Source subsystem roadmap:
 

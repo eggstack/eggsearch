@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md`
+- `plans/archive/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md`
 
 Source subsystem roadmap:
 

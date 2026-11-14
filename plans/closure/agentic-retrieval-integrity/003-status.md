@@ -2,7 +2,7 @@
 
 Status: closed (default-on)
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/003-markdown-first-fetch-negotiation.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/003-markdown-first-fetch-negotiation.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

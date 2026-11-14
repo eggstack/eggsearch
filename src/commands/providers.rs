@@ -14,7 +14,6 @@ pub fn run(cfg: &AppConfig, as_json: bool) -> Result<()> {
         desc.configured = backend_enabled;
     }
 
-    // Build per-provider health views
     let health_registry = state.adapter.health();
     let health_views: Vec<_> = descriptors
         .iter()

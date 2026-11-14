@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-11-13
 Decision owners: project maintainers
 Affected subsystems: search capability; keyless HTML engines; hardening and cost policy; provider diagnostics.
-Related: `plans/adrs/ADR-0009-bounded-challenge-solving.md`; `plans/adrs/ADR-0010-challenge-solver-coverage-and-cost-policy.md`; `plans/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md`; Anubis `wasm/pow/sha256/src/lib.rs`.
+Related: `plans/adrs/ADR-0009-bounded-challenge-solving.md`; `plans/adrs/ADR-0010-challenge-solver-coverage-and-cost-policy.md`; `plans/archive/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md`; Anubis `wasm/pow/sha256/src/lib.rs`.
 
 ## Context and forces
 

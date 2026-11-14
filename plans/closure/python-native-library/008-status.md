@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `067468a26c21716dd1063d67679768c6d794a2b9`
-Implementation plan: `plans/implementation/python-native-library/008-rustls-and-symlink-containment-requalification.md`
+Implementation plan: `plans/archive/implementation/python-native-library/008-rustls-and-symlink-containment-requalification.md`
 Roadmap: `plans/subsystems/python-native-library-roadmap.md` M008
 
 ## Candidate lineage

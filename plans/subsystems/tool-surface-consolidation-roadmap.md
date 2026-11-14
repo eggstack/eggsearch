@@ -91,7 +91,7 @@ M001 contract + disclosure model (hard first)
 Class: invariant + infrastructure. Objective: canonical registry, disclosure
 hints, and usage guidance without breaking compatibility.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md`.
 Exit: registry lists exactly ten tools; parity tests pass; instruction bytes
 reduced; CodeGG compatibility unchanged.
 
@@ -100,47 +100,47 @@ reduced; CodeGG compatibility unchanged.
 Class: infrastructure + polish. Objective: smaller advertised schemas with
 legacy compatibility.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md`.
 
 ### M003 — MCP 2026 protocol and error contract
 
 Class: infrastructure. Objective: correct JSON Schema 2020-12 use, structured
 output semantics, recoverable errors as tool errors, version compatibility.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md`.
 
 ### M004 — Agent result projection and context budget
 
 Class: capability. Objective: bounded/projected responses with full data
 available to hosts.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md`.
 
 ### M005 — CodeGG progressive-disclosure integration
 
 Class: capability. Objective: CodeGG exposes only justified capabilities;
 raw eggsearch tools stay hidden.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md`.
 
 ### M006 — Agentic tool-surface evaluation
 
 Class: polish. Objective: empirical validation across model families, not
 schema aesthetics.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md`.
 
 ### M007 — Maintenance decomposition and overlap ratchet
 
 Class: infrastructure + polish. Objective: decomposed ownership with guards
 against reconcentration.
 Implementation plan:
-`plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md`.
 
 Sequencing and preconditions:
-`plans/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/000-overview-and-sequencing.md`.
 Handoff checklist:
-`plans/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
+`plans/archive/implementation/mcp-tool-surface-consolidation/008-implementation-handoff-checklist.md`.
 
 ## 8. Cross-cutting requirements
 
@@ -171,10 +171,10 @@ backward compatibility, and passing routine gates.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 | closed | `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | `plans/closure/mcp-tool-surface-consolidation/001-status.md` | None |
-| M002 | closed | `plans/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | `plans/closure/mcp-tool-surface-consolidation/002-status.md` | None |
-| M003 | closed | `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | `plans/closure/mcp-tool-surface-consolidation/003-status.md` | None |
-| M004 | closed | `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | `plans/closure/mcp-tool-surface-consolidation/004-status.md` | None |
-| M005 | closed | `plans/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | `plans/closure/mcp-tool-surface-consolidation/005-status.md` | None (eggsearch-side contract; CodeGG downstream tracked as handoff) |
-| M006 | closed | `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | `plans/closure/mcp-tool-surface-consolidation/006-status.md` | None |
-| M007 | closed | `plans/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | `plans/closure/mcp-tool-surface-consolidation/007-status.md` | None |
+| M001 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md` | `plans/closure/mcp-tool-surface-consolidation/001-status.md` | None |
+| M002 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/002-agent-facing-schema-slimming.md` | `plans/closure/mcp-tool-surface-consolidation/002-status.md` | None |
+| M003 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md` | `plans/closure/mcp-tool-surface-consolidation/003-status.md` | None |
+| M004 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md` | `plans/closure/mcp-tool-surface-consolidation/004-status.md` | None |
+| M005 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/005-codegg-progressive-disclosure-integration.md` | `plans/closure/mcp-tool-surface-consolidation/005-status.md` | None (eggsearch-side contract; CodeGG downstream tracked as handoff) |
+| M006 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md` | `plans/closure/mcp-tool-surface-consolidation/006-status.md` | None |
+| M007 | closed | `plans/archive/implementation/mcp-tool-surface-consolidation/007-maintenance-decomposition-and-overlap-ratchet.md` | `plans/closure/mcp-tool-surface-consolidation/007-status.md` | None |

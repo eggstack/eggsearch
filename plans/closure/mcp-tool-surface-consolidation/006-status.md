@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md`
+- `plans/archive/implementation/mcp-tool-surface-consolidation/006-agentic-tool-surface-evaluation.md`
 
 Source subsystem roadmap:
 

@@ -150,8 +150,8 @@ Keep the registry compact; historical detail belongs in closure records.
 
 Update:
 
-- `plans/implementation/dependency-evidence-hardening/000-overview-and-sequencing.md`;
-- `plans/implementation/dependency-evidence-hardening/008-implementation-handoff-checklist.md`.
+- `plans/archive/implementation/dependency-evidence-hardening/000-overview-and-sequencing.md`;
+- `plans/archive/implementation/dependency-evidence-hardening/008-implementation-handoff-checklist.md`.
 
 Preserve the original M001-M007 sequence, but add/resolve the post-M007
 corrective closure addendum so future agents do not stop at Gate C and miss

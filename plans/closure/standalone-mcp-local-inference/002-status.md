@@ -3,7 +3,7 @@
 Status: closed
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/002-brief-evidence-and-output-budgets.md`
+`plans/archive/implementation/standalone-mcp-local-inference/002-brief-evidence-and-output-budgets.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

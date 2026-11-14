@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/025-metarefresh-presentation-corrective.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/025-metarefresh-presentation-corrective.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

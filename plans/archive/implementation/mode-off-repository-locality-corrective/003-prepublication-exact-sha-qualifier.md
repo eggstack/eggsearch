@@ -6,7 +6,7 @@ Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`
 Normative: `plans/000-long-term-specification.md`, `plans/002-long-term-roadmap.md`, `plans/003-planning-process.md`.
 Producer authority: `release/eggpack/`; `.github/workflows/release-eggpack.yml` remains generated and must only change through the producer.
-Blocked consumer milestone: M002, `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md`.
+Blocked consumer milestone: M002, `plans/archive/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md`.
 
 ## 1. Objective
 

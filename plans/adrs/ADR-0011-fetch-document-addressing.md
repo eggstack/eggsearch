@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-11-12
 Decision owners: project maintainers
 Affected subsystems: MCP tool surface (`web_fetch`, `batch_fetch`, `research_search`); fetch extraction and cache; evidence and citation identity.
-Related: ADR-0001 (ten-tool surface); `plans/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md` (superseded in part); `018-pagination-consistency-across-pages.md` (superseded in part: its page-budget mechanism, not its defect statements or its scope labels); `019-fetch-document-budget-and-truncation-semantics.md`; `020-offset-addressing-and-cursor-retirement.md`.
+Related: ADR-0001 (ten-tool surface); `plans/archive/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md` (superseded in part); `018-pagination-consistency-across-pages.md` (superseded in part: its page-budget mechanism, not its defect statements or its scope labels); `019-fetch-document-budget-and-truncation-semantics.md`; `020-offset-addressing-and-cursor-retirement.md`.
 
 ## Context and forces
 

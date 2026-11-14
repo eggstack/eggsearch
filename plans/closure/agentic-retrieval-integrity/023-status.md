@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/023-fetch-side-anubis-solve-and-replay.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/023-fetch-side-anubis-solve-and-replay.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

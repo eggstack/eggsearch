@@ -26,7 +26,7 @@ invoked `aggregate_rrf`, `convert_aggregated`, domain filtering, or
 not distinguish two rankers, so "no reliable lift established" was a
 measurement limitation, not a negative result about the ranker.
 
-The corrective is `plans/implementation/agentic-retrieval-integrity/004-candidate-snapshot-ranking-benchmark.md`,
+The corrective is `plans/archive/implementation/agentic-retrieval-integrity/004-candidate-snapshot-ranking-benchmark.md`,
 now landed:
 
 - `tests/fixtures/retrieval_quality/candidate_snapshots.json` stores

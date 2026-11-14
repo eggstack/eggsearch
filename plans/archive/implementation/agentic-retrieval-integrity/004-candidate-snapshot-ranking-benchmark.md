@@ -4,7 +4,7 @@ Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M004
 Primary class: infrastructure (corrective to deterministic-retrieval-quality M004)
 Baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71`
-References: `plans/implementation/deterministic-retrieval-quality/004-deterministic-relevance-and-selection.md`; `plans/closure/deterministic-retrieval-quality/004-status.md`; `docs/retrieval-quality-ranking-ablation.md`; `tests/retrieval_quality.rs`; `tests/fixtures/retrieval_quality/`; `src/meta/adapter/normalization.rs`; `src/core/identity.rs`.
+References: `plans/archive/implementation/deterministic-retrieval-quality/004-deterministic-relevance-and-selection.md`; `plans/closure/deterministic-retrieval-quality/004-status.md`; `docs/retrieval-quality-ranking-ablation.md`; `tests/retrieval_quality.rs`; `tests/fixtures/retrieval_quality/`; `src/meta/adapter/normalization.rs`; `src/core/identity.rs`.
 Dependencies: none hard.
 
 ## Objective

@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `1135608af5d625cd72db6704adf3bcabd1a58ab1`
-Implementation plan: `plans/implementation/python-pypi-distribution/002-hosted-armv7-and-linux-wheel-expansion.md`
+Implementation plan: `plans/archive/implementation/python-pypi-distribution/002-hosted-armv7-and-linux-wheel-expansion.md`
 Roadmap: `plans/subsystems/python-pypi-distribution-roadmap.md` M002
 Qualification run: `40729011504`
 

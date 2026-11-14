@@ -2,7 +2,7 @@
 
 Status: closed (closure `plans/closure/python-native-library/006-status.md` at candidate `faa1da2`, run `38617598636`; M004 and M007 close in the same commit)
 Primary class: infrastructure (release qualification and evidence control)
-Source: `plans/subsystems/python-native-library-roadmap.md` M006; closes remaining exit conditions of active M004 (`plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`).
+Source: `plans/subsystems/python-native-library-roadmap.md` M006; closes remaining exit conditions of active M004 (`plans/archive/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`).
 Planning baseline: `main` `1434c1e55ddd92947042cff9918ffc0fe130ed01`, 2026-10-14.
 Dependencies: M001–M003 closed (`plans/closure/python-native-library/001-status.md` through `003-status.md`); M005 must close first. Operational: hosted exact-SHA CI, wheel artifact and native consumer evidence; publisher authorization is deliberately outside this plan.
 ADR: `plans/adrs/ADR-0005-python-native-library-boundary.md`; normative `plans/003-planning-process.md` sections 2.4, 2.5, 7–10; `plans/000-long-term-specification.md` sections 6, 7, 9.

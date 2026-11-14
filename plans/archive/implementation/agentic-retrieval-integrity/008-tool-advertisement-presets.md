@@ -4,7 +4,7 @@ Status: ready
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M008 (decision 4: tools may be hidden, never removed)
 Primary class: capability
 Baseline: `d751bd7471a647e651ee41b8e51199c66d04d01a` (the worktree also carries uncommitted retrieval-defaults, scraper, and doc changes from the prior turn; re-read `git status` before starting and preserve them)
-References: ADR-0001; `plans/subsystems/standalone-mcp-local-inference-roadmap.md`; `plans/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md` and `plans/closure/standalone-mcp-local-inference/001-status.md`; `architecture/mcp.md`; `architecture/config.md`; `docs/tool-matrix.md`; `src/mcp/server.rs`; `src/mcp/tool_contract.rs`; `src/mcp/projection.rs`; `src/mcp/tools/common.rs`; `src/core/config.rs`; `src/core/workflow.rs`.
+References: ADR-0001; `plans/subsystems/standalone-mcp-local-inference-roadmap.md`; `plans/archive/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md` and `plans/closure/standalone-mcp-local-inference/001-status.md`; `architecture/mcp.md`; `architecture/config.md`; `docs/tool-matrix.md`; `src/mcp/server.rs`; `src/mcp/tool_contract.rs`; `src/mcp/projection.rs`; `src/mcp/tools/common.rs`; `src/core/config.rs`; `src/core/workflow.rs`.
 Dependencies: interface ADR-0001 (ten-tool contract). Soft: M001's opt-in compact profile, which this milestone composes with rather than replaces.
 
 ## Objective

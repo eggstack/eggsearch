@@ -4,7 +4,7 @@ Status: closed
 Recommendation: closed
 Implementation commit: `31175e2f2ebb466b501721ce865948ede1670e58`
 Reconciled milestones: M001 dependency security/policy; M007 corrective closure evidence and process ratchet
-Plan: `plans/implementation/repository-hardening/010-scheduled-security-evidence-reconciliation.md`
+Plan: `plans/archive/implementation/repository-hardening/010-scheduled-security-evidence-reconciliation.md`
 
 ## Decision
 

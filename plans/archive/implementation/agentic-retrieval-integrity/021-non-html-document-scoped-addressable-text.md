@@ -8,7 +8,7 @@ Primary class: invariant (corrective to M020's named condition)
 
 Baseline: `3259166`
 
-References: ADR-0011; `plans/closure/agentic-retrieval-integrity/020-status.md`; `plans/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`; `plans/closure/agentic-retrieval-integrity/019-status.md`; `src/fetch/client.rs`; `src/fetch/pdf.rs`; `src/mcp/tools/web_fetch.rs`; `src/fetch/projection.rs`; `docs/config.md` § Offset Windows, Progress, and Tasks.
+References: ADR-0011; `plans/closure/agentic-retrieval-integrity/020-status.md`; `plans/archive/implementation/agentic-retrieval-integrity/020-offset-addressing-and-cursor-retirement.md`; `plans/closure/agentic-retrieval-integrity/019-status.md`; `src/fetch/client.rs`; `src/fetch/pdf.rs`; `src/mcp/tools/web_fetch.rs`; `src/fetch/projection.rs`; `docs/config.md` § Offset Windows, Progress, and Tasks.
 
 Dependencies: hard M020, which is `conditionally closed`; its single named condition is what this milestone discharges. M020's condition as recorded is that `text_total` is document-scoped only for HTML and browser-rendered documents. Measurement at this baseline splits that condition in two: the PDF half is already document-scoped and was recorded wrongly, and the non-HTML half is a real defect whose reporting layer silently claims completeness. This plan corrects the record and fixes the real half.
 

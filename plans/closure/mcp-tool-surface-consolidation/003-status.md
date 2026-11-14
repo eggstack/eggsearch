@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md`
+- `plans/archive/implementation/mcp-tool-surface-consolidation/003-mcp-2026-protocol-and-error-contract.md`
 
 Source subsystem roadmap:
 

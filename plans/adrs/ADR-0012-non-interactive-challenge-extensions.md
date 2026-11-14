@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-11-13
 Decision owners: project maintainers
 Affected subsystems: search capability; keyless HTML engines; hardening and resource bounds; provider diagnostics.
-Related: `plans/adrs/ADR-0009-bounded-challenge-solving.md`; `plans/adrs/ADR-0010-challenge-solver-coverage-and-cost-policy.md`; `architecture/engines.md` § Challenge solving; `plans/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md`; `plans/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md`.
+Related: `plans/adrs/ADR-0009-bounded-challenge-solving.md`; `plans/adrs/ADR-0010-challenge-solver-coverage-and-cost-policy.md`; `architecture/engines.md` § Challenge solving; `plans/archive/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md`; `plans/archive/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md`.
 
 ## Context and forces
 

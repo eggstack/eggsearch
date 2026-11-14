@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/009-long-running-progress-and-pagination.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

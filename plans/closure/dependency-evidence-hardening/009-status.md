@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`
+- `plans/archive/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`
 
 Source subsystem roadmap:
 

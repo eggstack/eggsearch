@@ -4,7 +4,7 @@ Status: closed (candidate `772a073fd40e9f044017b26bae18a6efd0724b1d`; hosted CI 
 Primary class: corrective
 Source roadmap: `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
 Corrects: M001 compact `web_fetch` schema, discovered during M003 small-model task qualification
-Related plans: `plans/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md`; `plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
+Related plans: `plans/archive/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md`; `plans/archive/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
 Related closures: `plans/closure/standalone-mcp-local-inference/001-status.md`; current M003 results in `plans/closure/standalone-mcp-local-inference/003-status.md`
 
 ## Objective

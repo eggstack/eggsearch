@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/015-challenge-solvability-observability.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/015-challenge-solvability-observability.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

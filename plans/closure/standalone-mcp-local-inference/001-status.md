@@ -3,7 +3,7 @@
 Status: closed
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md`
+`plans/archive/implementation/standalone-mcp-local-inference/001-opt-in-compact-tool-advertisement.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

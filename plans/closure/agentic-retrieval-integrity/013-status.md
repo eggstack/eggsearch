@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/013-challenge-solver-conformance-corrections.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/013-challenge-solver-conformance-corrections.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/019-fetch-document-budget-and-truncation-semantics.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

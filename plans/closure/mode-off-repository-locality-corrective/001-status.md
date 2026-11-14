@@ -4,7 +4,7 @@ Status: closed
 Primary class: invariant / security and runtime correctness
 Implementation candidate: `cc0c9c7b27e0706a3bab5f5d7cb137e64e9eaa3d`
 Branch: `agent/mode-off-local-repo-zero-dispatch-20261013` (pushed)
-Plan: `plans/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md`
+Plan: `plans/archive/implementation/mode-off-repository-locality-corrective/001-explicit-zero-remote-dispatch-boundary.md`
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`
 
 ## Decision

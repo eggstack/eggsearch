@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md`
+- `plans/archive/implementation/mcp-tool-surface-consolidation/001-contract-and-disclosure-model.md`
 
 Source subsystem roadmap:
 

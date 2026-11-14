@@ -2,9 +2,9 @@
 
 Status: closed
 Candidate: `faa1da2e5d5a8c38045001fec1ae1a230bc36bde`
-Implementation plan: `plans/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`
-Qualification plan: `plans/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md`
-Corrective: `plans/implementation/python-native-library/007-windows-safe-read-corrective.md`, closed in `plans/closure/python-native-library/007-status.md`
+Implementation plan: `plans/archive/implementation/python-native-library/004-wheel-sdist-and-release-qualification.md`
+Qualification plan: `plans/archive/implementation/python-native-library/006-m004-exact-sha-distribution-closure.md`
+Corrective: `plans/archive/implementation/python-native-library/007-windows-safe-read-corrective.md`, closed in `plans/closure/python-native-library/007-status.md`
 Predecessors: `001-status.md` (M001), `002-status.md` (M002), `003-status.md` (M003), `005-status.md` (M005)
 Roadmap: `plans/subsystems/python-native-library-roadmap.md` M004
 

@@ -2,9 +2,9 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/004-candidate-snapshot-ranking-benchmark.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/004-candidate-snapshot-ranking-benchmark.md`
 
-Corrects: `plans/implementation/deterministic-retrieval-quality/004-deterministic-relevance-and-selection.md`
+Corrects: `plans/archive/implementation/deterministic-retrieval-quality/004-deterministic-relevance-and-selection.md`
 and `plans/closure/deterministic-retrieval-quality/004-status.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`

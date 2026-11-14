@@ -6,7 +6,7 @@ Qualification candidate: `8e5ec755dae2198a06bc881ecd740597b4da5440`
 
 Source implementation plan:
 
-- `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md`
 
 Source subsystem roadmap:
 

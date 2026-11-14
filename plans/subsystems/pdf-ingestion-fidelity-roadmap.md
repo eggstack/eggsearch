@@ -1,6 +1,6 @@
 # PDF Ingestion and Extraction Fidelity Roadmap
 
-Status: closing (M001, M002, and M007 implemented with closure records; M003–M008 ready)
+Status: closing (M001, M002, and M007 implemented; M006 qualification remains open; M003–M005 and M008 ready)
 Planning baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731` (branch `feat/auto-20261110-0a674cdc`, 2026-11-11 UTC)
 
 References: `plans/000-long-term-specification.md` §5, 7, 8; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0002, ADR-0006, ADR-0007, ADR-0008.
@@ -22,9 +22,9 @@ This is a new subsystem boundary split out of fetch and extraction ownership. Th
 - **Infrastructure:** captured PDF corpus and fidelity measurement lane; faithful chunk construction for document kinds that are not HTML.
 - **Polish:** diagnostics, capability reporting, documentation accuracy.
 
-## 2. Current state and gaps
+## 2. Baseline gaps
 
-Detection is sound: Content-Type, `.pdf` extension, and a `%PDF-` magic sniff cover ordinary and mis-served PDFs, `classify_link` tags PDF link targets, and page-spec parsing, outline extraction, page labels, and password redaction are bounded and tested. The gaps are availability, budget, fidelity, and integration.
+At the planning baseline (`9d4d16f`, 2026-11-11), detection was sound: Content-Type, `.pdf` extension, and a `%PDF-` magic sniff covered ordinary and mis-served PDFs; `classify_link` tagged PDF link targets; and page-spec parsing, outline extraction, page labels, and password redaction were bounded and tested. The following gaps informed the milestones. Their current disposition is recorded in §9 and the closure records.
 
 Measured or code-evidenced at the planning baseline:
 
@@ -112,9 +112,7 @@ Deferred without a plan: OCR and rasterization, image and attachment extraction,
 
 ## 9. Closure and status
 
-The roadmap was approved for execution on 2026-11-11, and all eight implementation plans are `ready`. Approval is not closure: no milestone may start before its hard predecessor closes, and each still lands only through its own closure record.
-
-Implementation status at 2026-11-11: M001, M002, and M007 are implemented and verified on the uncommitted worktree, with closure records at `plans/closure/pdf-ingestion-fidelity/001-status.md`, `002-status.md`, and `007-status.md`. They stay `closing` until the closure commit records the candidate SHA and flips the registry rows to `closed` in the same commit. M003, M004, M005, and M008 remain `ready`. M006's production change landed at `5605cc2` with the browser default work; it is `closing` because the macOS and Windows arm64 size evidence, installer smoke, and wheel matrix are still outstanding.
+The roadmap was approved for execution on 2026-11-11. M001, M002, and M007 are implemented with closure records and remain `closing` pending SHA and status reconciliation. M006's production change landed at `5605cc2` with the browser default work and remains `closing` pending macOS arm64 size/native qualification, installer smoke beyond Linux x86_64, realistic-mix qualification, and the wheel matrix. M003, M004, M005, and M008 remain `ready`, subject to their hard dependencies.
 
 Each milestone needs its own `plans/closure/pdf-ingestion-fidelity/NNN-status.md` recording the implementation candidate, the corpus measurement before and after, tests and guards run with outcomes, unchanged safety evidence, failures and unrun verification, and residual risk. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 and M005 are corrective: each must record the defect observed at baseline and why the existing verification did not catch it.
 

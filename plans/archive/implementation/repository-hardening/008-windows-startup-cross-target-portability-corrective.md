@@ -14,11 +14,11 @@ Planning baseline: `a5f1b0dcd89d90d8ff4fb3bc264bdfcace7acb19`
 Relevant prior milestones and evidence:
 
 - M004 process/unsafe boundary:
-  `plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`
+  `plans/archive/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`
 - M004 historical closure:
   `plans/closure/repository-hardening/004-status.md`
 - M007 corrective process/unsafe ratchet:
-  `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md`
+  `plans/archive/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md`
 - M007 closure:
   `plans/closure/repository-hardening/007-status.md`
 - CodeGG parity M003 release handoff:

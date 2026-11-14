@@ -6,7 +6,7 @@ Recommendation: corrective pass required (M005 registered).
 
 Source implementation plan:
 
-- `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`
 
 Source subsystem roadmap:
 
@@ -41,7 +41,7 @@ tag, no binary GitHub Release). No tag was moved, no crate was overwritten,
 and no gate was weakened.
 
 The corrective path is registered as M005
-(`plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`):
+(`plans/archive/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`):
 a 0.4.1 patch release carrying only the workflow fix plus version metadata,
 repeating the full qualify → publish → tag → release → smoke sequence. M003
 remains conditionally closed and the downstream CodeGG adoption milestone

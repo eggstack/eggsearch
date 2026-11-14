@@ -4,7 +4,7 @@ Status: closed
 Source: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M025; corrective to M016
 Primary class: invariant (corrective)
 Baseline: `fd2634e`
-References: ADR-0010; `plans/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md`; `plans/closure/agentic-retrieval-integrity/016-status.md`; `src/meta/challenge/anubis.rs`; `src/meta/engines/startpage.rs`; `src/mcp/tools/web_fetch.rs`; `architecture/engines.md` § Challenge solving.
+References: ADR-0010; `plans/archive/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md`; `plans/closure/agentic-retrieval-integrity/016-status.md`; `src/meta/challenge/anubis.rs`; `src/meta/engines/startpage.rs`; `src/mcp/tools/web_fetch.rs`; `architecture/engines.md` § Challenge solving.
 Dependencies: ADR-0010 (accepted); M016 is closed. This is a new corrective plan, not an amendment to M016.
 
 ## Objective

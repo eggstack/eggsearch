@@ -5,8 +5,8 @@ Primary class: capability / immutable release qualification
 Planning baseline: eggsearch `main` at `90e996ef6c83c969e30c30a36bc9d968a85dc00f`.
 Roadmap: `plans/subsystems/mode-off-repository-locality-corrective-roadmap.md`
 Normative: `plans/000-long-term-specification.md`, `plans/002-long-term-roadmap.md`, `plans/003-planning-process.md`.
-Historic release precedent: `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`, `plans/closure/codegg-legacy-search-parity/005-status.md`.
-Current producer precedent: `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` and its M001 closure.
+Historic release precedent: `plans/archive/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`, `plans/closure/codegg-legacy-search-parity/005-status.md`.
+Current producer precedent: `plans/archive/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md` and its M001 closure.
 Release contracts: `docs/release.md`, `release/eggpack/`, `packaging/release-targets.txt`, `packaging/release-validate.sh`, `packaging/check-workflow-pins.py`, `packaging/check-planning-consistency.py`.
 Downstream consumer: `dbowm91/codegg`, C002 `plans/implementation/search-eggsearch-pair-compatibility-corrective/002-v041-local-only-offline-dispatch-requalification.md`.
 

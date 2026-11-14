@@ -3,7 +3,7 @@
 Status: closed (hosted canonical Linux, macOS, and Windows portability qualification passed on final candidate `de69f1ddd7a7e4acc067fb9892c438f6165cfe83`)
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md`
+`plans/archive/implementation/standalone-mcp-local-inference/004-compact-schema-discoverability-corrective.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

@@ -16,9 +16,9 @@ Planning baseline: `79ac110e4be53daaf8fb6c45f8276de3f2b5f86b`
 
 Original milestones and closure records under correction:
 
-- M001: `plans/implementation/repository-hardening/001-dependency-security-and-policy-gate.md`
+- M001: `plans/archive/implementation/repository-hardening/001-dependency-security-and-policy-gate.md`
 - M001 closure: `plans/closure/repository-hardening/001-status.md`
-- M004: `plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`
+- M004: `plans/archive/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`
 - M004 closure: `plans/closure/repository-hardening/004-status.md`
 
 Related state that MUST remain unchanged unless new evidence exists:
