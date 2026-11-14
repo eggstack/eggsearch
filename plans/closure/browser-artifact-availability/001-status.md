@@ -10,6 +10,8 @@ Roadmap: `plans/subsystems/browser-artifact-availability-roadmap.md` M001
 
 - `[fetch.browser].idle_timeout_ms` (default 90 000, minimum 5 000) with
   configuration validation.
+- Browser close is capped at five seconds, so a browser that stops acknowledging
+  shutdown cannot hold the lifecycle write lock.
 - `BrowserLifecycle` gained a render gate (`RwLock`), last-activity tracking,
   per-session counters, an idle watchdog, and enforced `max_requests`.
 - `browser_fetch_with_policy` holds the render gate for the whole render and
@@ -41,7 +43,7 @@ Roadmap: `plans/subsystems/browser-artifact-availability-roadmap.md` M001
 | `cargo test --locked --all-features --test browser_transport` | passed (feature-gated browser tests) |
 | `make check` | fmt, clippy, no-default check, and 6 320 tests passed; packaging stops at the workstation-only `mavis-trash: unsupported OS: Plan9` |
 | `cargo zigbuild --locked --release --target armv7-unknown-linux-gnueabihf` | passed on the final code (4m03s) |
-| Hosted CI run `43567644057` | `ci` (Linux) and Windows portability jobs succeeded; macOS canonical verification is recorded with the M002 closure |
+| Hosted CI run `43567644057` | `ci` (Linux), Windows portability, and macOS canonical jobs succeeded (macOS rerun after a hung runner) |
 
 ## Migration and compatibility
 

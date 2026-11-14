@@ -83,7 +83,7 @@ descendants on the macOS arm64 host; after the idle interval it was 0.
 | Installer smoke | x86_64 Linux consumer evidence `outcome = passed`; other targets not run | partial |
 | Realistic-mix qualification | not run as a multi-case matrix; one live escalated case and one teardown observation recorded | outstanding |
 | Live ten-tool verification | 29/29 scenario checks | pass |
-| Hosted CI | run `43567644057`: Windows portability and Linux `ci` succeeded; macOS canonical rerun in progress | partial |
+| Hosted CI | run `43567644057`: `ci` (Linux), Windows portability, and macOS canonical all succeeded; follow-up run `43570723164` validates the bounded-close HEAD | pass |
 
 ## Migration and compatibility
 

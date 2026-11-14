@@ -49,7 +49,7 @@ ADR: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
 | Command | Outcome |
 |---|---|
 | `make check` | 6 320 passed, 0 failed, 28 ignored; packaging stops at the workstation-only `mavis-trash: unsupported OS: Plan9` |
-| Hosted CI run `43567644057` | Windows portability and Linux `ci` jobs succeeded; macOS canonical verification pending at the time of writing |
+| Hosted CI run `43567644057` | all three jobs succeeded; the macOS job passed on the rerun after the first runner stopped updating |
 | `python3 packaging/check-http-dependency-shape.py` | pass, chromiumoxide-only in both graphs |
 | `cargo check --locked --no-default-features` | pass |
 | Hosted candidate `43567654611` | x86_64 and aarch64 Linux built and qualified natively; armv7 built and qualified structurally |
