@@ -146,7 +146,7 @@ dependency guard still rejects any other reqwest root in either graph.
 
 ### M003 — Distribution and live qualification (infrastructure/evidence) — conditionally closed
 
-Closure: `plans/closure/browser-artifact-availability/003-status.md`. Outstanding: macOS x86_64/aarch64 evidence, Windows arm64 validation, installer smoke beyond x86_64 Linux, and the realistic-mix matrix.
+Closure: `plans/closure/browser-artifact-availability/003-status.md`. Outstanding: macOS aarch64 size and native qualification, installer smoke beyond x86_64 Linux, the realistic-mix matrix, and the wheel matrix.
 
 Measure and record the exact candidate: per-target size delta, realistic-mix
 qualification with idle teardown, installer smoke, wheel decoupling and matrix,

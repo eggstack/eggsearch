@@ -35,11 +35,13 @@ are the published `v0.4.4` assets.
 | `aarch64-unknown-linux-gnu` | 18,524,080 | 24,912,912 | +6,388,832 (+34.5%) | built, qualified natively, validated |
 | `armv7-unknown-linux-gnueabihf` | 17,710,392 | 24,171,000 | +6,460,608 (+36.5%) | built, qualified structurally, validated |
 | `x86_64-pc-windows-msvc` | 25,869,312 | 34,971,648 | +9,102,336 (+35.2%) | built, qualified, validated |
-| `x86_64-apple-darwin` | 19,779,368 | — | — | build still running at closure time |
+| `x86_64-apple-darwin` | 19,779,368 | 26,776,776 | +6,997,408 (+35.4%) | built, qualified, validated |
 | `aarch64-apple-darwin` | 17,960,304 | — | — | build job cancelled by the runner |
-| `aarch64-pc-windows-msvc` | 21,655,040 | — | — | build passed; validation still running at closure time |
+| `aarch64-pc-windows-msvc` | 21,655,040 | 29,320,704 | +7,665,664 (+35.4%) | built, qualified, validated |
 
-The measured deltas are larger than the macOS arm measurement in
+The candidate run concluded `cancelled` because the `aarch64-apple-darwin` job
+was cancelled at one second; every other job completed and its per-job evidence
+is valid. The measured deltas are larger than the macOS arm measurement in
 `docs/retrieval-quality-extraction-qualification.md` (+30.6%) because the
 release profile, target, and dependency set differ. They are recorded, not
 asserted as a threshold.
@@ -77,11 +79,11 @@ descendants on the macOS arm64 host; after the idle interval it was 0.
 | armv7 build | hosted build and structural qualification | pass |
 | Linux native qualification | x86_64 and aarch64 `status = passed`, `support = required` | pass |
 | Windows qualification | x86_64 qualified and validated | pass |
-| macOS qualification | x86_64 running, aarch64 cancelled | outstanding |
+| macOS qualification | x86_64 passed; aarch64 cancelled by the runner | partial |
 | Installer smoke | x86_64 Linux consumer evidence `outcome = passed`; other targets not run | partial |
 | Realistic-mix qualification | not run as a multi-case matrix; one live escalated case and one teardown observation recorded | outstanding |
 | Live ten-tool verification | 29/29 scenario checks | pass |
-| Hosted CI | run `43567644057`: Windows portability and Linux `ci` succeeded; macOS canonical pending | partial |
+| Hosted CI | run `43567644057`: Windows portability and Linux `ci` succeeded; macOS canonical rerun in progress | partial |
 
 ## Migration and compatibility
 
@@ -97,19 +99,19 @@ descendants on the macOS arm64 host; after the idle interval it was 0.
 ## Known limitations and outstanding conditions
 
 1. `aarch64-apple-darwin` was cancelled by the hosted runner after one second;
-   the cause is external to the candidate and the job must be re-run.
-2. `x86_64-apple-darwin` and `aarch64-pc-windows-msvc` were still building or
-   validating when this record was written.
-3. Installer smoke is recorded only for `x86_64-unknown-linux-gnu`.
-4. The realistic-mix qualification (static, JavaScript, challenge, and PDF
+   the cause is external to the candidate and the job must be re-run. Its size
+   and native qualification are the only missing target evidence.
+2. Installer smoke is recorded only for `x86_64-unknown-linux-gnu`.
+3. The realistic-mix qualification (static, JavaScript, challenge, and PDF
    fixtures with escalation rate and p95 latency) was not run as a matrix; the
    live session and the single teardown observation are the evidence so far.
+4. The wheel matrix was not dispatched for this candidate.
 5. Chrome version dependence remains an environment observation, not a
    threshold.
 
 ## Recommendation
 
 Conditionally closed. The default artifacts, the wheel asymmetry, and the live
-ten-tool surface are verified on the candidate, and four of seven targets have
+ten-tool surface are verified on the candidate, and six of seven targets have
 build and size evidence. The named conditions above must be discharged before
 this milestone can move to `closed`.
