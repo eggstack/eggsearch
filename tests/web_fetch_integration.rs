@@ -4526,7 +4526,7 @@ async fn web_fetch_response_has_transport_field() {
         include_links: None,
         pdf: None,
         cache_policy: None,
-        render: None,
+        render: Some("http_only".to_string()),
         browser_profile: None,
         max_cache_age_seconds: None,
         focus: None,
@@ -5954,4 +5954,109 @@ async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
         "the synthesized pass-challenge URL is submitted once"
     );
     assert_eq!(replay.hits(), 1, "one cookie-bearing replay");
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_explicit_browser_with_rendering_disabled_reports_browser_disabled() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for("https://example.com".to_string());
+    args.render = Some("browser".to_string());
+    let err = run_web_fetch(state, args).await.expect_err("disabled");
+    let message = format!("{err}");
+    assert!(
+        message.contains("disabled"),
+        "expected a browser_disabled outcome, got: {message}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_auto_without_rendering_reports_browser_unavailable() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/anubis");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<html><head><script id="anubis_challenge">{"rules":{"difficulty":6}}</script></head><body><div id="app"></div></body></html>"#,
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for(server.url("/anubis"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("http fetch succeeds");
+    assert_eq!(value["browser_escalated"], false);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == "browser_unavailable"),
+        "expected browser_unavailable warning: {warnings:?}"
+    );
+}
+
+#[cfg(not(feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_explicit_browser_requires_the_feature() {
+    let state = Arc::new(ServerState::build(AppConfig::default()).expect("state builds"));
+    let mut args = fetch_args_for("https://example.com".to_string());
+    args.render = Some("browser".to_string());
+    let err = run_web_fetch(state, args).await.expect_err("not compiled");
+    let message = format!("{err}");
+    assert!(
+        message.contains("not compiled"),
+        "expected browser_not_compiled_in, got: {message}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_auto_classifies_a_js_shell_by_document_text_not_framing() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/shell");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(r#"<html><head><title>App</title></head><body><div id="app"></div><script src="app.js"></script></body></html>"#);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for(server.url("/shell"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("http fetch succeeds");
+    assert_eq!(value["browser_escalated"], false);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == "browser_unavailable"),
+        "the JS shell must be classified from document blocks, not framing: {warnings:?}"
+    );
 }

@@ -38,6 +38,7 @@ enum Ascii85Outcome {
 struct StreamDict<'a> {
     length: Option<usize>,
     length_is_indirect: bool,
+    length_ref: Option<(u64, u64)>,
     filters: Vec<&'a [u8]>,
     is_xref: bool,
     xref_widths: Option<Vec<i64>>,
@@ -59,10 +60,18 @@ pub fn scan_stream_budget(bytes: &[u8], budget: usize) -> Result<usize, FetchErr
     let mut search_from = 0usize;
 
     while let Some(keyword) = next_stream_keyword(bytes, search_from) {
-        let info = match enclosing_dictionary(bytes, search_from, keyword) {
+        let mut info = match enclosing_dictionary(bytes, search_from, keyword) {
             Some((start, end)) => parse_stream_dict(&bytes[start..end]),
             None => StreamDict::default(),
         };
+        if info.length_is_indirect {
+            if let Some((object, generation)) = info.length_ref {
+                if let Some(length) = resolve_indirect_length(bytes, object, generation) {
+                    info.length = Some(length);
+                    info.length_is_indirect = false;
+                }
+            }
+        }
         let content_start = content_offset(bytes, keyword);
         let (content, next) = stream_content(bytes, content_start, info.length);
         let remaining = budget.saturating_sub(total);
@@ -385,8 +394,10 @@ fn parse_stream_dict(dict: &[u8]) -> StreamDict<'_> {
                 match name {
                     b"Length" => {
                         if info.length.is_none() && !info.length_is_indirect {
-                            if is_indirect_reference(&dict[value_end..]) {
+                            if let Some(reference) = parse_indirect_reference(&dict[value_start..])
+                            {
                                 info.length_is_indirect = true;
+                                info.length_ref = Some(reference);
                             } else {
                                 info.length = parse_integer(value)
                                     .and_then(|value| usize::try_from(value).ok());
@@ -501,20 +512,59 @@ fn parse_integer(token: &[u8]) -> Option<i64> {
     std::str::from_utf8(token).ok()?.parse().ok()
 }
 
-fn is_indirect_reference(rest: &[u8]) -> bool {
+fn parse_indirect_reference(rest: &[u8]) -> Option<(u64, u64)> {
     let mut cursor = skip_ws(rest, 0);
-    let number_end = token_end(rest, cursor);
-    if number_end == cursor || parse_integer(&rest[cursor..number_end]).is_none() {
-        return false;
-    }
-    cursor = skip_ws(rest, number_end);
+    let end = token_end(rest, cursor);
+    let object = u64::try_from(parse_integer(&rest[cursor..end])?).ok()?;
+    cursor = skip_ws(rest, end);
+    let end = token_end(rest, cursor);
+    let generation = u64::try_from(parse_integer(&rest[cursor..end])?).ok()?;
+    cursor = skip_ws(rest, end);
     if rest.get(cursor) != Some(&b'R') {
-        return false;
+        return None;
     }
-    match rest.get(cursor + 1) {
-        None => true,
-        Some(&byte) => is_whitespace(byte) || is_delimiter(byte),
+    Some((object, generation))
+}
+
+/// Resolve an indirect `/Length` by locating its object header and reading the
+/// integer that follows it. The stream boundary still has to land on
+/// `endstream`; an unresolvable reference keeps the conservative refusal.
+fn resolve_indirect_length(bytes: &[u8], object: u64, generation: u64) -> Option<usize> {
+    let object_token = object.to_string();
+    let generation_token = generation.to_string();
+    let mut from = 0usize;
+    while let Some(pos) = find_subslice(bytes, object_token.as_bytes(), from) {
+        from = pos + object_token.len();
+        if pos > 0 {
+            let prev = bytes[pos - 1];
+            if prev.is_ascii_digit() || prev == b'.' {
+                continue;
+            }
+        }
+        let mut cursor = skip_ws(bytes, pos + object_token.len());
+        let gen_end = token_end(bytes, cursor);
+        if gen_end == cursor || &bytes[cursor..gen_end] != generation_token.as_bytes() {
+            continue;
+        }
+        cursor = skip_ws(bytes, gen_end);
+        if !bytes[cursor..].starts_with(b"obj") {
+            continue;
+        }
+        cursor = skip_ws(bytes, cursor + 3);
+        if bytes.get(cursor) == Some(&b'<') && bytes.get(cursor + 1) == Some(&b'<') {
+            continue;
+        }
+        let end = token_end(bytes, cursor);
+        if end == cursor {
+            continue;
+        }
+        if let Some(value) = parse_integer(&bytes[cursor..end]) {
+            if value >= 0 {
+                return usize::try_from(value).ok();
+            }
+        }
     }
+    None
 }
 
 fn value_end(bytes: &[u8], start: usize) -> usize {
@@ -772,6 +822,21 @@ mod tests {
         let payload = b"fallback payload".repeat(20);
         let compressed = deflate(&payload);
         let mut bytes = b"<< /Length 5 /Filter /FlateDecode >>\nstream\n".to_vec();
+        bytes.extend_from_slice(&compressed);
+        bytes.extend_from_slice(b"\nendstream\n");
+        assert_eq!(
+            scan_stream_budget(&bytes, SMALL_BUDGET).unwrap(),
+            payload.len()
+        );
+    }
+
+    #[test]
+    fn indirect_length_reference_is_resolved() {
+        let payload = b"resolved indirect length".repeat(10);
+        let compressed = deflate(&payload);
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(format!("9 0 obj\n{}\nendobj\n", compressed.len()).as_bytes());
+        bytes.extend_from_slice(b"<< /Length 9 0 R /Filter /FlateDecode >>\nstream\n");
         bytes.extend_from_slice(&compressed);
         bytes.extend_from_slice(b"\nendstream\n");
         assert_eq!(

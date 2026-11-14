@@ -1,25 +1,33 @@
-# Optional Features
+# Capabilities and Optional Features
 
-eggsearch ships with keyless web, fetch, advisory, registry, and scholarly paths by default. The following optional features require Cargo feature flags and config changes.
+eggsearch ships with keyless web, fetch, advisory, registry, and scholarly paths by default. Default builds also compile in PDF extraction and browser rendering. The remaining optional features require source-build Cargo features or config changes.
 
 ---
 
 ## PDF Extraction
 
-`web_fetch` handles PDF documents when the `pdf` Cargo feature is enabled and `[fetch].pdf_enabled = true` in config.
+`web_fetch` handles PDF documents in default builds. The `pdf` Cargo feature is
+compiled in, and `[fetch].pdf_enabled` defaults to the compiled-in feature state.
 
 ### Enabling
+
+Nothing is required in a default build. The explicit form is:
 
 ```toml
 [fetch]
 pdf_enabled = true
 ```
 
-Build with the `pdf` feature:
+A source build with `--no-default-features` leaves PDF out, so `[fetch].pdf_enabled`
+defaults to `false`; add the feature back explicitly:
 
 ```bash
-cargo build --features pdf
+cargo build --no-default-features --features pdf
 ```
+
+The published Python wheel enables `pdf` only
+(`default-features = false, features = ["pdf"]`), so it carries PDF extraction and
+no browser rendering. See the [Python library guide](python-library.md).
 
 ### Capabilities
 
@@ -122,35 +130,60 @@ naming the bound — never an empty result. A solved page that fails to parse is
 
 ## Browser Rendering
 
-Optional headless Chrome/Chromium rendering for JavaScript-heavy pages that ordinary HTTP fetching cannot render.
+Headless Chrome/Chromium rendering for JavaScript-heavy pages that ordinary HTTP fetching cannot render. The capability ships in default builds and uses a Chrome/Chromium already installed on the host.
 
 ### Enabling
 
-Requires the `browser` Cargo feature and config:
+The `browser` Cargo feature is compiled in by default and
+`[fetch.browser].enabled` defaults to the compiled-in feature state, so no
+config is required. The explicit form is:
 
 ```toml
 [fetch.browser]
 enabled = true
-policy = "http_only"
+policy = "auto"
 ```
 
-Build with the `browser` feature:
+A source build with `--no-default-features` leaves browser rendering out, and an
+explicit `render = "browser"` or `browser_profile` request then fails with
+`browser_not_compiled_in` instead of quietly falling back to HTTP. Add the
+feature back explicitly:
 
 ```bash
-cargo build --features browser
+cargo build --no-default-features --features browser
 ```
+
+Rendering requires a discovered Chrome/Chromium executable. eggsearch never
+downloads, installs, or manages one.
 
 ### Render Policy
 
-The `render` parameter on `web_fetch` controls transport selection:
+The `render` parameter on `web_fetch` controls transport selection. When the
+caller omits it, the configured `[fetch.browser].policy` applies; a per-call
+`render` overrides the configured policy.
 
 | Value | Behavior |
 |-------|----------|
-| `http_only` (default) | HTTP only, never launches Chrome |
-| `auto` | HTTP first, escalates to browser at most once for JavaScript shells or non-interactive verification pages |
+| `http_only` | HTTP only, never launches Chrome |
+| `auto` (default) | HTTP first, escalates to browser at most once for JavaScript shells or non-interactive verification pages |
 | `browser` | Browser directly, no HTTP prefetch. Fails if no Chrome/Chromium executable is available |
 
 `auto` does not escalate for interactive challenges, authentication pages, or rate-limited responses.
+
+### Error Outcomes
+
+An explicit `render = "browser"` or `browser_profile` request reports a stable
+code rather than silently downgrading to HTTP:
+
+| Code | Condition |
+|------|-----------|
+| `browser_not_compiled_in` | The binary was built without the `browser` feature |
+| `browser_disabled` | The feature is compiled but `[fetch.browser].enabled = false` |
+| `browser_unavailable` | Enabled, but no Chrome/Chromium executable was discovered |
+
+`auto` never errors. A page that warranted escalation but could not get it is
+returned over HTTP with the structured warning `browser_unavailable` and
+`browser_escalated: false`.
 
 ### Safety Properties
 
@@ -159,7 +192,7 @@ The `render` parameter on `web_fetch` controls transport selection:
 - **No challenge solving**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured error codes — never clicked, simulated, or solved with external services. This rule is scoped to the browser path; engine-level proof-of-work solving under ADR-0009 is a separate, opt-in, non-interactive mechanism
 - **Deterministic executable path**: An explicitly configured invalid browser executable path fails deterministically — does not silently fall back to auto-discovery
 - **Request interception**: All observable requests are intercepted and checked against the network policy
-- **Bounded extraction**: DOM size, request count, navigation time, and post-load wait are all bounded by configuration
+- **Bounded extraction**: DOM size, request count, navigation time, and post-load wait are all bounded by configuration. The session request bound is enforced: reaching `max_requests` closes the browser session and the next render relaunches, and an idle interval with no in-flight render tears the shared browser down
 - **Existing sanitation pipeline**: Rendered DOM flows through the same HTML extraction, text bounding, and prompt-injection sanitation as ordinary HTTP fetches
 
 ### Interactive Challenge Outcomes
@@ -186,14 +219,15 @@ Fresh raw cache entries can satisfy a new extraction mode, link setting, charact
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `false` | Enable browser rendering escalation |
-| `policy` | `"http_only"` | Render policy: `http_only`, `auto`, or `browser` |
+| `enabled` | `true` when compiled | Enable browser rendering escalation; `false` in a `--no-default-features` build |
+| `policy` | `"auto"` | Default render policy when `render` is omitted: `http_only`, `auto`, or `browser` |
 | `executable` | auto-discovered | Path to Chrome/Chromium executable |
 | `startup_timeout_ms` | `10000` | Browser startup timeout |
 | `navigation_timeout_ms` | `20000` | Page navigation timeout |
 | `post_load_wait_ms` | `1500` | Wait after page load |
 | `verification_wait_ms` | `10000` | Wait for non-interactive verification |
-| `max_requests` | `100` | Maximum requests per browser session |
+| `max_requests` | `100` | Renders per browser session; reaching it closes the session and the next render relaunches |
+| `idle_timeout_ms` | `90000` | Idle interval with no in-flight render after which the shared browser process is closed (minimum `5000`) |
 | `max_dom_bytes` | `4000000` | Maximum DOM size |
 | `global_concurrency` | `1` | Global browser concurrency |
 | `per_origin_concurrency` | `1` | Per-origin browser render cap (combined with `origin_browser_concurrency` via `min`) |

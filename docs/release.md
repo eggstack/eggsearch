@@ -85,6 +85,12 @@ PyPI's long description is embedded from `bindings/python/PYTHON_README.md`,
 which mirrors the root `README.md`. Updating that source changes the description
 on the next version upload; an existing PyPI release cannot be overwritten.
 
+The wheel is deliberately narrower than the binary assets:
+`bindings/python/Cargo.toml` sets `default-features = false, features = ["pdf"]`,
+so the Python distribution carries PDF extraction but not browser rendering.
+Python users who need rendering need the Rust binary or a source build that
+enables the feature; this asymmetry changes no binary asset name or count.
+
 Public install instructions are in `README.md` and `docs/python-library.md`.
 The published aarch64 wheel has passed native smoke and benchmarking; results
 are recorded in `plans/closure/python-pypi-distribution/004-status.md`. ARMv7
@@ -111,9 +117,10 @@ git push origin vX.Y.Z
 The `Release binaries` workflow validates the tag, checked-out commit,
 `Cargo.lock`, and exact crates.io version before starting the matrix. It builds
 default-feature assets for the seven targets in [installation.md](installation.md),
-uses a glibc 2.17 floor for Linux GNU artifacts, runs CLI plus keyless MCP
-stdio and Streamable HTTP/health/tool-list smoke tests, and writes checksums
-only after smoke completes.
+so every published binary includes PDF extraction and browser rendering; `egress`
+is never in a release asset. Linux GNU builds keep a glibc 2.17 floor. The
+workflow runs CLI plus keyless MCP stdio and Streamable HTTP/health/tool-list
+smoke tests, and writes checksums only after smoke completes.
 The ARMv7 job runs CLI smoke under QEMU; native jobs run the full protocol
 smoke. macOS artifacts are unsigned.
 

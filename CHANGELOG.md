@@ -156,8 +156,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `focus_scope: "document"` for a focused addressed read. `next_cursor` and
   `cursor_status` are gone; `cursor_mismatch` is removed and `plan_mismatch` and
   `document_unavailable` are added.
+- **PDF extraction and browser rendering ship in default builds.**
+  `default = ["pdf", "browser"]`, so `[fetch].pdf_enabled` and
+  `[fetch.browser].enabled` now default from the compiled-in feature state
+  (`true` in a default build, `false` under `--no-default-features`) and
+  `[fetch.browser].policy` defaults to `auto`. The configured policy is applied
+  when the caller omits `render`; a per-call `render` overrides it. The default
+  dependency graph reaches `reqwest` only transitively through `chromiumoxide`
+  for loopback DevTools discovery; `src/` stays reqwest-free and `Cargo.toml`
+  declares no direct dependency on it.
+- **The shared browser has an enforced lifecycle.** `[fetch.browser].idle_timeout_ms`
+  (default `90000`, minimum `5000`) closes the shared browser process after that
+  idle interval with no render in flight, and `max_requests` (default `100`) is
+  now enforced per session: reaching it closes the session and the next render
+  relaunches. `provider_status.browser_capabilities.lifecycle` reports
+  `resident`, `session_launches`, `renders`, `idle_teardowns`, and
+  `session_cap_teardowns`, and is `null` when the feature is not compiled or
+  browser rendering is disabled.
+- **Browser failures are honest.** An explicit `render = "browser"` or
+  `browser_profile` request returns `browser_not_compiled_in` when the feature is
+  absent, `browser_disabled` when `[fetch.browser].enabled = false`, and
+  `browser_unavailable` when no Chrome/Chromium is discovered, instead of
+  silently performing an HTTP fetch. `render = "auto"` never errors: a page that
+  warranted escalation but could not get it returns the HTTP document with the
+  `browser_unavailable` structured warning and `browser_escalated: false`.
+- **The Python wheel stays PDF-only.** `bindings/python/Cargo.toml` builds the
+  crate with `default-features = false, features = ["pdf"]`, so the wheel carries
+  PDF extraction and no browser rendering. Binary release assets are unchanged:
+  seven binaries, seven checksums, and the same 19-file inventory.
 
 ### Fixed
+
+- PDF pre-parse scanning resolves indirect `/Length` references from their object headers instead of refusing every filtered stream that uses them, so ordinary generated PDFs extract in default builds.
+- `web_fetch` `render = "auto"` classifies JavaScript shells from document text rather than the sanitized framing text or the HTML source length, so escalation actually triggers on empty mount-point pages.
+
 
 - `web_fetch` solves a published Anubis challenge when `[search.challenge]` is enabled and
   replays the request once with the pass cookie, returning the real document instead of the wall.

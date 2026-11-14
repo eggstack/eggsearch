@@ -201,7 +201,7 @@ impl Default for FetchLimits {
             redirect_limit: 5,
             allow_private_network: false,
             allow_localhost: false,
-            pdf_enabled: false,
+            pdf_enabled: cfg!(feature = "pdf"),
             pdf_max_pages: 25,
             pdf_max_chars_per_page: 12000,
             pdf_max_total_chars: 50000,

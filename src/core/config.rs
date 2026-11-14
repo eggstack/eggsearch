@@ -433,8 +433,25 @@ fn default_browser_post_load_wait_ms() -> u64 {
 fn default_browser_verification_wait_ms() -> u64 {
     10_000
 }
+fn default_pdf_enabled() -> bool {
+    cfg!(feature = "pdf")
+}
+fn default_browser_enabled() -> bool {
+    cfg!(feature = "browser")
+}
+fn default_browser_policy() -> String {
+    "auto".to_string()
+}
 fn default_browser_max_requests() -> usize {
     100
+}
+/// Default idle teardown for the shared browser lifecycle in milliseconds.
+pub const DEFAULT_BROWSER_IDLE_TIMEOUT_MS: u64 = 90_000;
+/// Minimum accepted idle teardown for the shared browser lifecycle.
+pub const MIN_BROWSER_IDLE_TIMEOUT_MS: u64 = 5_000;
+
+fn default_browser_idle_timeout_ms() -> u64 {
+    DEFAULT_BROWSER_IDLE_TIMEOUT_MS
 }
 fn default_browser_max_dom_bytes() -> usize {
     4_000_000
@@ -518,9 +535,9 @@ impl Default for FetchCacheSection {
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FetchBrowserSection {
-    #[serde(default)]
+    #[serde(default = "default_browser_enabled")]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default = "default_browser_policy")]
     pub policy: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
@@ -534,6 +551,8 @@ pub struct FetchBrowserSection {
     pub verification_wait_ms: u64,
     #[serde(default = "default_browser_max_requests")]
     pub max_requests: usize,
+    #[serde(default = "default_browser_idle_timeout_ms")]
+    pub idle_timeout_ms: u64,
     #[serde(default = "default_browser_max_dom_bytes")]
     pub max_dom_bytes: usize,
     #[serde(default = "default_origin_browser_concurrency")]
@@ -549,14 +568,15 @@ pub struct FetchBrowserSection {
 impl Default for FetchBrowserSection {
     fn default() -> Self {
         Self {
-            enabled: false,
-            policy: "http_only".into(),
+            enabled: default_browser_enabled(),
+            policy: default_browser_policy(),
             executable: None,
             startup_timeout_ms: default_browser_startup_timeout_ms(),
             navigation_timeout_ms: default_browser_navigation_timeout_ms(),
             post_load_wait_ms: default_browser_post_load_wait_ms(),
             verification_wait_ms: default_browser_verification_wait_ms(),
             max_requests: default_browser_max_requests(),
+            idle_timeout_ms: default_browser_idle_timeout_ms(),
             max_dom_bytes: default_browser_max_dom_bytes(),
             global_concurrency: default_origin_browser_concurrency(),
             per_origin_concurrency: default_origin_browser_concurrency(),
@@ -609,8 +629,9 @@ pub struct FetchSection {
     pub sanitize_output: bool,
     /// Whether PDF text extraction is enabled. Requires the `pdf`
     /// Cargo feature to be compiled in. When disabled, PDF
-    /// responses are rejected with a clear message. Default: `false`.
-    #[serde(default)]
+    /// responses are rejected with a clear message. Defaults to the
+    /// compiled-in state.
+    #[serde(default = "default_pdf_enabled")]
     pub pdf_enabled: bool,
     /// Maximum number of PDF pages to attempt extracting text from.
     /// Default: 25.
@@ -711,7 +732,7 @@ impl Default for FetchSection {
             include_links_default: false,
             user_agent: default_user_agent(),
             sanitize_output: default_sanitize_output(),
-            pdf_enabled: false,
+            pdf_enabled: default_pdf_enabled(),
             pdf_max_pages: default_pdf_max_pages(),
             pdf_max_chars_per_page: default_pdf_max_chars_per_page(),
             pdf_max_total_chars: default_pdf_max_total_chars(),
@@ -1538,6 +1559,20 @@ impl AppConfig {
             return Err(CoreError::Config(
                 "[fetch].browser.max_requests must be > 0".to_string(),
             ));
+        }
+        if !matches!(
+            self.fetch.browser.policy.as_str(),
+            "http_only" | "auto" | "browser"
+        ) {
+            return Err(CoreError::Config(format!(
+                "[fetch].browser.policy must be one of http_only, auto, browser; got '{}'",
+                self.fetch.browser.policy
+            )));
+        }
+        if self.fetch.browser.idle_timeout_ms < MIN_BROWSER_IDLE_TIMEOUT_MS {
+            return Err(CoreError::Config(format!(
+                "[fetch].browser.idle_timeout_ms must be >= {MIN_BROWSER_IDLE_TIMEOUT_MS}"
+            )));
         }
         if self.fetch.browser.max_dom_bytes == 0 {
             return Err(CoreError::Config(

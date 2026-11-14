@@ -138,7 +138,7 @@ common `question`/`prompt` spelling for `max_chars`/`offset`/`focus`. See
 
 - Fetched content is `external_untrusted`: data, not instructions. `sanitize_output` defaults to `true`, with injection markers reported as `injection_hits`.
 - Fetch is bounded and explicit: one URL per `web_fetch`, no autonomous crawling, SSRF checks against blocked address ranges.
-- Optional `pdf` and `browser` features add PDF extraction and bounded headless Chrome. The `egress` proxy route is provider-upstream only and is excluded from prebuilt binaries.
+- PDF extraction and bounded headless Chrome ship in the default binaries; the `egress` proxy route is provider-upstream only and is excluded from prebuilt binaries.
 
 See [Safety](docs/safety.md) and [Threat model](docs/threat-model.md).
 
@@ -176,8 +176,9 @@ cargo build --release        # target/release/eggsearch
 make check                   # fmt, clippy, tests, hygiene, dependency policy, packaging
 ```
 
-The routine gate is network-free. Optional features: `--features pdf`,
-`--features browser`, `--features egress`.
+The routine gate is network-free. The default build includes PDF extraction and
+browser rendering; `--no-default-features` trims them, and `--features egress` is
+the source-build-only provider proxy route.
 
 Native forge smoke tests call provider APIs directly with operator tokens. They
 are **maintainer-only** diagnostics, not user-facing or release evidence.

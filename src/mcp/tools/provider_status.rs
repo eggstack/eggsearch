@@ -58,6 +58,11 @@ fn build_payload_without_probe(
         .map(|d| (d.id.clone(), health_registry.health_view(&d.id)))
         .collect();
 
+    #[cfg(feature = "browser")]
+    let browser_lifecycle = state
+        .browser_lifecycle
+        .as_ref()
+        .map(|lifecycle| lifecycle.status());
     let (browser_compiled, browser_configured, browser_discovered, browser_usable, browser_reason) = {
         #[cfg(feature = "browser")]
         {
@@ -92,6 +97,20 @@ fn build_payload_without_probe(
             (false, false, false, false, Some("not compiled".to_string()))
         }
     };
+
+    #[cfg(feature = "browser")]
+    let browser_lifecycle_json = match browser_lifecycle {
+        Some(status) => serde_json::json!({
+            "resident": status.resident,
+            "session_launches": status.session_launches,
+            "renders": status.renders,
+            "idle_teardowns": status.idle_teardowns,
+            "session_cap_teardowns": status.session_cap_teardowns,
+        }),
+        None => serde_json::Value::Null,
+    };
+    #[cfg(not(feature = "browser"))]
+    let browser_lifecycle_json = serde_json::Value::Null;
 
     let (profiles_compiled, profiles_configured, profiles_usable, profiles_reason) = {
         #[cfg(feature = "browser")]
@@ -184,6 +203,7 @@ fn build_payload_without_probe(
             "discovered": browser_discovered,
             "usable": browser_usable,
             "reason": browser_reason,
+            "lifecycle": browser_lifecycle_json,
         },
         "persistent_browser_profiles_capabilities": {
             "compiled": profiles_compiled,

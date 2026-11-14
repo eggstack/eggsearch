@@ -29,7 +29,7 @@ Docs.rs: `all-features = true`, targets `x86_64-unknown-linux-gnu`, `x86_64-appl
 
 | Flag | Pulls in | Purpose |
 |------|----------|---------|
-| `default` | nothing | Minimal build; routine gate still compiles `--no-default-features` separately |
+| `default` | `pdf` + `browser` | Default build compiles PDF extraction and browser rendering; `egress` stays out of default, and the routine gate still compiles `--no-default-features` separately |
 | `mock` | nothing | Test-only engine harness (`src/meta/mock.rs`); **required for integration/corpus tests** — plain `cargo test` misses most of them |
 | `pdf` | `dep:lopdf` (0.42, `default-features = false`) | PDF text extraction |
 | `browser` | `dep:chromiumoxide` (0.9, `default-features = false`) | Headless Chrome/Chromium rendering |
@@ -69,7 +69,7 @@ Forbidden (selective split, must stay off):
 
 Consequences:
 
-- No direct `reqwest` dependency in `Cargo.toml` and no `reqwest::` usage in production `src/` (guard `no_direct_reqwest_in_production_source`). The resolved graph contains no `reqwest` path from `rmcp`; the only remaining `reqwest` edge is `chromiumoxide` under the `browser` feature.
+- No direct `reqwest` dependency in `Cargo.toml` and no `reqwest::` usage in production `src/` (guard `no_direct_reqwest_in_production_source`). The resolved graph contains no `reqwest` path from `rmcp`; the only `reqwest` edge is `chromiumoxide` (loopback DevTools discovery), which `default = ["pdf", "browser"]` now pulls into the default graph. `packaging/check-http-dependency-shape.py` therefore permits `reqwest` in both the default and all-features graphs only when its direct reverse-dependency set is exactly `["chromiumoxide"]`; ADR-0014 decision 6 accepts that edge and supersedes repository-hardening M006's zero-reqwest objective.
 - Retry authority belongs to `OriginController` alone; eggfetch `logical-retry` stays disabled so retry policy is not split across two owners.
 - Engines use automatic gzip/Brotli decompression; no `.decompress(false)` workaround remains after eggfetch-core 0.2.0 (guard `html_scrape_engines_use_automatic_decompression`).
 - HTML scrape and JSON API engines pair an explicit `engine_timeout()` total deadline with `read_bounded_body()` streaming byte caps.
@@ -192,7 +192,8 @@ cargo run -- mcp stdio
 cargo run -- mcp serve
 ```
 
-Feature-scoped runs:
+Feature-scoped runs (default features already include `pdf` and `browser`, so the
+flags below are only needed after `--no-default-features` or to be explicit):
 
 ```bash
 cargo run --features mock -- search "test query"

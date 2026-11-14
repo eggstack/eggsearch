@@ -92,6 +92,18 @@ pub async fn browser_fetch_with_policy(
         .await
         .map_err(BrowserFetchError::PolicyViolation)?;
 
+    let gate = lifecycle.begin_render().await;
+    let result = render_once(lifecycle, url, config, sanitize_output).await;
+    lifecycle.finish_render(gate).await;
+    result
+}
+
+async fn render_once(
+    lifecycle: &Arc<BrowserLifecycle>,
+    url: &str,
+    config: &BrowserConfig,
+    sanitize_output: bool,
+) -> Result<BrowserFetchResult, BrowserFetchError> {
     let browser = lifecycle
         .ensure_browser()
         .await

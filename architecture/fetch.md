@@ -397,10 +397,12 @@ identical outcome.
   `/Type`, and `/W` from that dictionary only.
 - The content region uses the declared `/Length` when it is a direct integer
   and `endstream` follows; otherwise it falls back to the next `endstream`. An
-  indirect `/Length` on a filtered stream is refused instead of falling back:
-  `lopdf` resolves the reference and inflates the full declared extent, which
-  the `endstream` fallback can under-measure when the compressed bytes contain
-  that keyword.
+  indirect `/Length` is resolved first by locating its `N G obj` header and
+  reading the integer that follows it. If the reference resolves, the direct
+  rule applies; if it cannot be resolved, a filtered stream is still refused
+  instead of falling back, because `lopdf` resolves the reference and inflates
+  the full declared extent, which the `endstream` fallback can under-measure
+  when the compressed bytes contain that keyword.
 - `FlateDecode` is inflated through a reader capped at the stream's remaining
   allowance plus one inflate block, including `lopdf`'s raw-deflate retry for a
   zlib stream that produces nothing. `ASCII85Decode` is decoded under the same
@@ -424,7 +426,8 @@ identical outcome.
   with kind `pdf_decompression_bound_exceeded`. `measured` always exceeds
   `budget`: it is the accounted bytes for a measurement breach, and
   `budget + 1` for a structural refusal (an unmeasurable `LZWDecode` stream, an
-  indirect `/Length` on a filtered stream, or a width beyond eight bytes). No
+  unresolvable indirect `/Length` on a filtered stream, or a width beyond eight
+  bytes). No
   page metadata, text, or blocks are produced.
 
 An `/Encrypt` document is refused before decryption is ever considered:
@@ -460,9 +463,17 @@ DNS/refused/unreachable→Connection, TLS/protocol/other→Other).
 
 ## 9. Browser Rendering (`browser/`, 8 files, feature `browser`)
 
-Headless Chrome/Chromium over CDP. Without the feature, browser paths fail with
-`BrowserNotCompiledIn`; with the feature but `enabled = false`, with
-`BrowserDisabled`.
+Headless Chrome/Chromium over CDP. The `browser` feature is in the default set, so
+the capability is compiled into default binaries and `[fetch.browser].policy`
+defaults to `auto`; HTTP remains the hot path and rendering is escalation.
+An explicit `render = "browser"` or `browser_profile` request reports the stable
+codes `browser_not_compiled_in` (feature absent), `browser_disabled`
+(`enabled = false`), and `browser_unavailable` (no discovered executable)
+instead of silently performing an HTTP fetch. The tool-level codes are the
+agent contract; the fetch-layer error variants of the same names remain reserved
+for direct library use. `RenderPolicy::Auto` never errors:
+when escalation was warranted but unavailable, the call returns the HTTP document
+with the `browser_unavailable` structured warning and `browser_escalated: false`.
 
 | File | Responsibility |
 |------|---------------|
@@ -501,7 +512,22 @@ Headless Chrome/Chromium over CDP. Without the feature, browser paths fail with
   starts. `BrowserConfig` clamps timeouts (`startup` 10 s / max 60 s,
   `navigation` 20 s / max 120 s, `post_load` 1.5 s / max 30 s, `verification`
   10 s / max 60 s), `max_requests` (100 / 1000), `max_dom_bytes` (4 M / 50 M),
-  and global/per-origin concurrency (1 / 4).
+  and global/per-origin concurrency (1 / 4). `idle_timeout_ms` has a 90 s default
+  and a hard 5 s floor enforced by configuration validation, not by clamping.
+- **Shared bounded lifecycle**: one `BrowserLifecycle` per process, not one per
+  call. `begin_render` takes the read side of the render gate and counts the
+  render; `finish_render` drops the gate, touches activity, and — once
+  `requests_this_session` reaches `max_requests` — takes the write side and
+  closes the session for `SessionCap`, so the next render relaunches. An idle
+  timer closes the browser and cancels its handler after
+  `[fetch.browser].idle_timeout_ms` with no render in flight, which returns the
+  process to its HTTP-only memory baseline instead of holding a browser for the
+  process lifetime. Teardown is safe against a concurrent render and never
+  disables the lifecycle.
+- **Observable counters**: `BrowserLifecycleStatus` reports `resident`,
+  `session_launches`, `renders`, `idle_teardowns`, and `session_cap_teardowns`
+  as `provider_status.browser_capabilities.lifecycle`; the object is `null` when
+  the feature is not compiled or `[fetch.browser].enabled = false`.
 
 ### Navigation with per-request SSRF
 

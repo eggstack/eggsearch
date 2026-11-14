@@ -114,6 +114,8 @@ pub enum WarningCode {
     FetchWarning,
     /// The fetched body is an anti-bot challenge page, not the requested document.
     FetchChallengePage,
+    /// Escalation was warranted but no usable browser rendering capability exists.
+    BrowserUnavailable,
 
     // --- PDF Quality ---
     /// A PDF page has sparse or low-quality extracted text.
@@ -267,6 +269,7 @@ impl WarningCode {
             Self::FetchLinksTruncated => "fetch_links_truncated",
             Self::FetchWarning => "fetch_warning",
             Self::FetchChallengePage => "fetch_challenge_page",
+            Self::BrowserUnavailable => "browser_unavailable",
             Self::PdfPageSparseText => "pdf_page_sparse_text",
             Self::PdfPageCidCorrupt => "pdf_page_cid_corrupt",
             Self::PdfPageLikelyScanned => "pdf_page_likely_scanned",
@@ -361,6 +364,7 @@ impl WarningCode {
             | Self::FetchLinksTruncated
             | Self::FetchWarning
             | Self::FetchChallengePage
+            | Self::BrowserUnavailable
             | Self::PdfPageSparseText
             | Self::PdfPageCidCorrupt
             | Self::PdfPageLikelyScanned
@@ -517,6 +521,9 @@ impl WarningCode {
             }
             Self::FetchChallengePage => Some(
                 "Retry with render=\"auto\" or a browser transport; the body is an anti-bot challenge, not the requested document.",
+            ),
+            Self::BrowserUnavailable => Some(
+                "Browser escalation was needed but rendering is unavailable; check provider_status.browser_capabilities.reason.",
             ),
             Self::PdfPageSparseText => {
                 Some("Page has sparse text; content may be incomplete or degraded.")

@@ -154,11 +154,14 @@ python -m pip install --only-binary=:all: eggsearch
 
 Do not build the source distribution on an SBC. The source distribution is a
 developer fallback for environments outside the published wheel matrix. The
-extension package enables no optional Rust `browser`, `egress`, or `pdf`
-features. The native library uses the same Eggsearch configuration, provider
-credential environment variables, bounded operations, sanitization, and trust
-labels as the Rust engine. It does not probe credentials during import.
-Python distributions do not alter Eggpack's binary release assets.
+extension package builds the Rust crate with `default-features = false,
+features = ["pdf"]`: the wheel carries PDF extraction only, and no `browser` or
+`egress` feature is compiled. Python users who need browser rendering need the
+Rust binary or a source build that enables the feature. The native library uses
+the same Eggsearch configuration, provider credential environment variables,
+bounded operations, sanitization, and trust labels as the Rust engine. It does
+not probe credentials during import. Python distributions do not alter Eggpack's
+binary release assets.
 
 An sdist build requires Rust 1.89, a C toolchain, and the Cargo dependencies in
 `bindings/python/Cargo.lock`. It can build offline when those locked crate

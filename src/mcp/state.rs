@@ -405,7 +405,11 @@ impl ServerState {
                 block_media: config.fetch.browser.block_media,
                 persistent_profiles: config.fetch.browser.persistent_profiles.clone(),
             };
-            Some(Arc::new(BrowserLifecycle::new(discovery, browser_config)))
+            Some(Arc::new(
+                BrowserLifecycle::new(discovery, browser_config).with_idle_timeout(
+                    std::time::Duration::from_millis(config.fetch.browser.idle_timeout_ms),
+                ),
+            ))
         } else {
             None
         };

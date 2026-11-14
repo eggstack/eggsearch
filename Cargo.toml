@@ -38,7 +38,7 @@ name = "eggsearch"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["pdf", "browser"]
 mock = []
 pdf = ["dep:lopdf", "dep:flate2"]
 browser = ["dep:chromiumoxide"]

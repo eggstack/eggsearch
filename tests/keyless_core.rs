@@ -59,6 +59,27 @@ fn e3_no_keys_provider_status_succeeds() {
     assert!(result.is_ok(), "provider_status failed: {:?}", result.err());
 }
 
+#[cfg(feature = "browser")]
+#[test]
+fn e5_provider_status_reports_browser_lifecycle_counters() {
+    let cfg = scrubbed_config();
+    let state = Arc::new(ServerState::build(cfg).unwrap());
+    let value = eggsearch::mcp::tools::run_provider_status(
+        state,
+        eggsearch::mcp::tools::ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("provider_status succeeds");
+    let lifecycle = &value["browser_capabilities"]["lifecycle"];
+    assert_eq!(lifecycle["resident"], false);
+    assert_eq!(lifecycle["session_launches"], 0);
+    assert_eq!(lifecycle["renders"], 0);
+    assert_eq!(lifecycle["idle_teardowns"], 0);
+    assert_eq!(lifecycle["session_cap_teardowns"], 0);
+}
+
 #[test]
 fn e4_no_keys_credentialed_providers_non_routable() {
     let cfg = scrubbed_config();

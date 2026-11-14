@@ -5,6 +5,24 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RenderRequest {
+    HttpOnly,
+    Auto,
+    Browser,
+}
+
+fn parse_render_request(raw: Option<&str>) -> Result<RenderRequest, ToolError> {
+    match raw.unwrap_or("http_only") {
+        "http_only" => Ok(RenderRequest::HttpOnly),
+        "auto" => Ok(RenderRequest::Auto),
+        "browser" => Ok(RenderRequest::Browser),
+        other => Err(ToolError::Validation(format!(
+            "invalid render policy '{other}': expected http_only, auto, or browser"
+        ))),
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
@@ -209,50 +227,65 @@ pub async fn run_web_fetch_with_progress(
     #[cfg(not(feature = "browser"))]
     let _profile_lock: Option<()> = None;
 
+    let configured_render = if state.config.fetch.browser.enabled {
+        match state.config.fetch.browser.policy.as_str() {
+            "http_only" | "auto" | "browser" => state.config.fetch.browser.policy.as_str(),
+            _ => "http_only",
+        }
+    } else {
+        "http_only"
+    };
+    let render_request =
+        parse_render_request(Some(args.render.as_deref().unwrap_or(configured_render)))?;
+
     #[cfg(feature = "browser")]
-    let render_policy_str = args
-        .render
-        .clone()
-        .unwrap_or_else(|| "http_only".to_string());
-    #[cfg(not(feature = "browser"))]
-    let _render_policy_str = args
-        .render
-        .clone()
-        .unwrap_or_else(|| "http_only".to_string());
+    let render_policy = match render_request {
+        RenderRequest::HttpOnly => crate::fetch::browser::RenderPolicy::HttpOnly,
+        RenderRequest::Auto => crate::fetch::browser::RenderPolicy::Auto,
+        RenderRequest::Browser => crate::fetch::browser::RenderPolicy::Browser,
+    };
     #[cfg(feature = "browser")]
     let mut browser_available = false;
     #[cfg(not(feature = "browser"))]
     let browser_available = false;
 
-    #[cfg(feature = "browser")]
-    let render_policy = {
-        let rp: crate::fetch::browser::RenderPolicy = serde_json::from_value(
-            serde_json::Value::String(render_policy_str.clone()),
-        )
-        .map_err(|e| {
-            ToolError::Validation(format!("invalid render policy '{render_policy_str}': {e}"))
-        })?;
-        rp
-    };
+    #[cfg(not(feature = "browser"))]
+    {
+        if matches!(render_request, RenderRequest::Browser) || args.browser_profile.is_some() {
+            return Err(browser_not_compiled_error());
+        }
+    }
 
     #[cfg(feature = "browser")]
     {
-        if matches!(render_policy, crate::fetch::browser::RenderPolicy::HttpOnly)
-            && args.browser_profile.is_some()
-        {
+        use crate::fetch::browser::RenderPolicy;
+
+        if matches!(render_policy, RenderPolicy::HttpOnly) && args.browser_profile.is_some() {
             return Err(ToolError::Validation(
                 "browser_profile is not valid with render=http_only".to_string(),
             ));
         }
 
-        if !matches!(render_policy, crate::fetch::browser::RenderPolicy::HttpOnly) {
-            if state.browser_lifecycle().is_some() {
-                browser_available = true;
-            } else if matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser) {
-                return Err(browser_unavailable_error(
-                    "browser rendering is enabled but no Chrome/Chromium executable was found; \
-                     set [fetch.browser].executable or install Chrome/Chromium",
-                ));
+        let explicit_browser =
+            matches!(render_policy, RenderPolicy::Browser) || args.browser_profile.is_some();
+        match state.browser_lifecycle() {
+            None => {
+                if explicit_browser {
+                    return Err(browser_disabled_error());
+                }
+            }
+            Some(lifecycle) if !lifecycle.is_available() => {
+                if explicit_browser {
+                    return Err(browser_unavailable_error(
+                        "browser rendering is enabled but no Chrome/Chromium executable was found; \
+                         set [fetch.browser].executable or install Chrome/Chromium",
+                    ));
+                }
+            }
+            Some(_) => {
+                if !matches!(render_policy, RenderPolicy::HttpOnly) {
+                    browser_available = true;
+                }
             }
         }
 
@@ -546,6 +579,7 @@ pub async fn run_web_fetch_with_progress(
     let mut retry_after_ms: Option<u64> = None;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
     progress.phase("plan");
+    let mut auto_escalation_unavailable = false;
 
     #[cfg(feature = "browser")]
     let browser_direct = matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser);
@@ -666,11 +700,22 @@ pub async fn run_web_fetch_with_progress(
                     let escalated = false;
 
                     #[cfg(feature = "browser")]
-                    if browser_available
-                        && matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto)
-                    {
+                    if matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto) {
                         let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                        let text_len = body_bytes.len();
+                        let text_len = resp
+                            .document
+                            .as_ref()
+                            .map(|document| {
+                                document
+                                    .blocks
+                                    .iter()
+                                    .map(|block| block.text.trim().chars().count())
+                                    .sum::<usize>()
+                            })
+                            .or_else(|| {
+                                resp.text.as_deref().map(|text| text.trim().chars().count())
+                            })
+                            .unwrap_or(0);
                         let title_str = resp.title.as_deref().unwrap_or("");
                         let classification = crate::fetch::browser::classify_response(
                             resp.status,
@@ -691,11 +736,15 @@ pub async fn run_web_fetch_with_progress(
                                     | crate::fetch::browser::FetchDisposition::NonInteractiveVerification
                             );
                         if should_escalate {
-                            let remaining =
-                                deadline.saturating_duration_since(std::time::Instant::now());
-                            if remaining.as_millis() >= 2000 && state.browser_lifecycle().is_some()
-                            {
-                                match tokio::time::timeout(
+                            if !browser_available {
+                                auto_escalation_unavailable = true;
+                            } else {
+                                let remaining =
+                                    deadline.saturating_duration_since(std::time::Instant::now());
+                                if remaining.as_millis() < 2000 {
+                                    auto_escalation_unavailable = true;
+                                } else {
+                                    match tokio::time::timeout(
                                         remaining,
                                         run_browser_fetch(
                                             state.as_ref(),
@@ -742,9 +791,24 @@ pub async fn run_web_fetch_with_progress(
                                                 next_action.as_deref(),
                                             ));
                                         }
-                                        Ok(Err(_)) | Err(_) => {}
+                                        Ok(Err(_)) | Err(_) => {
+                                            auto_escalation_unavailable = true;
+                                        }
                                     }
+                                }
                             }
+                        }
+                    }
+                    #[cfg(not(feature = "browser"))]
+                    if matches!(render_request, RenderRequest::Auto) {
+                        let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
+                        if crate::fetch::challenge::detect(
+                            resp.title.as_deref(),
+                            &String::from_utf8_lossy(body_bytes),
+                        )
+                        .is_some()
+                        {
+                            auto_escalation_unavailable = true;
                         }
                     }
 
@@ -1000,6 +1064,14 @@ pub async fn run_web_fetch_with_progress(
         structured.push(crate::core::warning::AgentWarning::new(
             crate::core::warning::WarningCode::FetchLinksTruncated,
             "link list was truncated; not all links are included".to_string(),
+        ));
+    }
+    if auto_escalation_unavailable {
+        structured.push(crate::core::warning::AgentWarning::new(
+            crate::core::warning::WarningCode::BrowserUnavailable,
+            "browser escalation was needed but rendering is unavailable; see \
+             provider_status.browser_capabilities.reason"
+                .to_string(),
         ));
     }
     if limit_clamped {

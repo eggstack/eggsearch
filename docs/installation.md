@@ -48,8 +48,12 @@ $installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/
 ```
 
 Each installer downloads a default-feature executable, verifies the adjacent
-SHA-256 file, checks `eggsearch --version`, and installs atomically. For a
-source installation or an unsupported target, use:
+SHA-256 file, checks `eggsearch --version`, and installs atomically. Default
+executables include PDF extraction and browser rendering. Browser rendering uses
+a Chrome/Chromium already installed on the host: eggsearch never downloads,
+installs, or updates one, and an explicit render request reports
+`browser_unavailable` when none is discovered. For a source installation or an
+unsupported target, use:
 
 ```bash
 cargo install eggsearch --locked

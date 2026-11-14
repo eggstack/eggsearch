@@ -755,7 +755,7 @@ batch_concurrency = 2
 | `allow_localhost` | `false` |
 | `include_links_default` | `false` |
 | `sanitize_output` | `true` |
-| `pdf_enabled` | `false` |
+| `pdf_enabled` | the compiled-in `pdf` feature state: `true` in a default build, `false` under `--no-default-features` |
 | `pdf_max_pages` | `25` |
 | `pdf_max_chars_per_page` | `12_000` |
 | `pdf_max_total_chars` | `50_000` |
@@ -841,18 +841,19 @@ When enabled, local results use `local_trusted` trust labels and can be surfaced
 
 ## Browser Rendering
 
-The `[fetch.browser]` section configures optional headless Chrome/Chromium rendering. Browser rendering is disabled by default and requires the `browser` Cargo feature.
+The `[fetch.browser]` section configures headless Chrome/Chromium rendering. The `browser` Cargo feature is compiled into default builds, `enabled` defaults to that compiled-in state, and `policy` defaults to `auto`. Rendering uses an already-installed Chrome/Chromium; eggsearch never downloads or installs one.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `false` | Enable browser rendering escalation |
-| `policy` | `"http_only"` | Render policy: `http_only`, `auto`, or `browser` |
+| `enabled` | `true` when compiled | Enable browser rendering escalation; `false` in a `--no-default-features` build |
+| `policy` | `"auto"` | Render policy used when the caller omits `render`: `http_only`, `auto`, or `browser`. A per-call `render` overrides it. |
 | `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails deterministically — it does not fall back to auto-discovery. |
 | `startup_timeout_ms` | `10000` | Browser startup timeout |
 | `navigation_timeout_ms` | `20000` | Page navigation timeout |
 | `post_load_wait_ms` | `1500` | Wait after page load |
 | `verification_wait_ms` | `10000` | Wait for non-interactive verification |
-| `max_requests` | `100` | Maximum requests per browser session |
+| `max_requests` | `100` | Renders per browser session (1–1000). The bound is enforced: reaching it closes the session, and the next render relaunches. |
+| `idle_timeout_ms` | `90000` | Idle interval with no in-flight render after which the shared browser process is closed. Minimum `5000`; a lower value fails config validation. |
 | `max_dom_bytes` | `4000000` | Maximum DOM size |
 | `global_concurrency` | `1` | Global browser concurrency |
 | `per_origin_concurrency` | `1` | Per-origin browser render cap (combined with `origin_browser_concurrency` via `min`) |

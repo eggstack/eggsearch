@@ -28,8 +28,15 @@ post-update restart hook. Operator install steps live in `docs/installation.md`.
 Executable names are stable and carry no version; the tag `vX.Y.Z` is the
 version namespace. Windows assets keep the `.exe` suffix, non-Windows assets
 never do. Linux GNU builds use pinned Zig/cargo-zigbuild with a glibc 2.17
-floor. Default features build every release asset; PDF, browser, and egress
-features are never separate binary products.
+floor. Default features build every release asset, so each published binary
+carries PDF extraction and browser rendering; `egress` stays a non-default
+source-build feature and is never a binary product.
+
+The Python wheel is a separate distribution, not a second binary SKU.
+`bindings/python/Cargo.toml` builds the crate with
+`default-features = false, features = ["pdf"]`, so the wheel carries PDF
+extraction but not browser rendering, which still needs a system Chrome/Chromium.
+Asset names, the seven targets, and the 19-name release inventory are unchanged.
 
 `src/platform.rs` mirrors the same seven rows as `RELEASE_TARGETS` with
 `rust_target`, `asset`, normalized `os` (`macos` for the `darwin` rows), and

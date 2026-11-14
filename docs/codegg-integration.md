@@ -120,7 +120,7 @@ allow_private_network = false
 allow_localhost = false
 include_links_default = false
 sanitize_output = true
-pdf_enabled = false
+pdf_enabled = true
 batch_max_items = 8
 batch_max_items_cap = 20
 batch_max_chars_per_item = 12000
@@ -1462,7 +1462,7 @@ silent failure.
 | Freshness unenforced | `structured_warnings` with `freshness_unenforced` | Show notice; results may be stale |
 | Request deadline exceeded | `telemetry.deadline_exceeded = true`, `subqueries_interrupted`/`subqueries_skipped` | Show timeout warning; partial results may still be valid |
 | Fetch truncated | `text_truncated = true` on fetch response | Show "Content truncated" notice; offer to re-fetch with higher `max_chars` |
-| PDF unsupported | Error: `pdf_not_enabled` | Show "PDF extraction not enabled"; suggest enabling `pdf_enabled` in config |
+| PDF unsupported | Error: `pdf_disabled` (or `pdf_not_compiled_in` in a source build without the feature) | Show "PDF extraction not enabled"; suggest enabling `pdf_enabled` in config |
 | Local workspace mismatch | No `local_repo_match` on local results | Fall back to remote; inform user no local checkout was found |
 | Local workspace dirty | `local_repo_match` with dirty state | Show warning; local results may contain uncommitted changes |
 | Research evidence gaps | `evidence_gaps` in response | Display gap checklist; offer to fetch missing sources |

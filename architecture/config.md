@@ -122,7 +122,7 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `include_links_default` | `bool` | `false` | Default link inclusion |
 | `user_agent` | `String` | `eggsearch/<version>` | HTTP user agent |
 | `sanitize_output` | `bool` | `true` | Tier 2 framing + Tier 3 marker scan on fetched text |
-| `pdf_enabled` | `bool` | `false` | PDF extraction (requires the `pdf` feature) |
+| `pdf_enabled` | `bool` | compiled-in (`true` with the `pdf` feature) | PDF text extraction; source builds without the feature resolve `false` |
 | `pdf_max_pages` | `usize` | `25` | PDF page budget |
 | `pdf_max_chars_per_page` | `usize` | `12_000` | Per-page extraction cap |
 | `pdf_max_total_chars` | `usize` | `50_000` | Total PDF extraction budget |
@@ -142,7 +142,7 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `origin_circuit_failure_threshold` | `u8` | `3` | Retryable failures before the circuit opens |
 | `origin_circuit_duration_ms` | `u64` | `60_000` | Circuit open duration |
 | `cache` | `FetchCacheSection` | see below | In-memory fetch cache |
-| `browser` | `FetchBrowserSection` | disabled | Headless rendering escalation |
+| `browser` | `FetchBrowserSection` | enabled when compiled | Headless rendering escalation; HTTP remains the hot path |
 
 `[fetch.cache]`: `enabled = true`, `memory_max_entries = 256`,
 `memory_max_bytes = 67_108_864` (64 MB raw bodies),
@@ -150,12 +150,17 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 (64 MB extracted documents, independent budget),
 `default_ttl_seconds = 900`.
 
-`[fetch.browser]`: `enabled = false`, `policy = "http_only"`,
-`executable = None` (auto-discovered; an explicit invalid path fails
+`[fetch.browser]`: `enabled` resolves from the compiled-in `browser` feature
+(`true` in default builds), `policy = "auto"` (HTTP first; escalate at most once
+for a JavaScript shell, a non-interactive verification page, or a detected
+challenge), `executable = None` (auto-discovered; an explicit invalid path fails
 deterministically with `ExplicitPathInvalid`, never falls back),
 `startup_timeout_ms = 10_000`, `navigation_timeout_ms = 20_000`,
 `post_load_wait_ms = 1_500`, `verification_wait_ms = 10_000`,
-`max_requests = 100`, `max_dom_bytes = 4_000_000`,
+`max_requests = 100` (enforced renders per browser session; reaching the cap
+closes the session and the next render relaunches), `idle_timeout_ms = 90_000`
+(minimum `5_000`; the shared browser closes after this idle interval),
+`max_dom_bytes = 4_000_000`,
 `global_concurrency = 1`, `per_origin_concurrency = 1`,
 `block_media = true`, plus `[fetch.browser.persistent_profiles]`:
 `enabled = false`, `profiles_dir = None` (platform default),

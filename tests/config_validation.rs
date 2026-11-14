@@ -454,7 +454,13 @@ fn default_config_has_expected_values() {
     assert!(!cfg.fetch.allow_private_network);
     assert!(!cfg.fetch.allow_localhost);
     assert!(cfg.fetch.sanitize_output);
-    assert!(!cfg.fetch.pdf_enabled);
+    assert_eq!(cfg.fetch.pdf_enabled, cfg!(feature = "pdf"));
+    assert_eq!(cfg.fetch.browser.enabled, cfg!(feature = "browser"));
+    assert_eq!(cfg.fetch.browser.policy, "auto");
+    assert_eq!(
+        cfg.fetch.browser.idle_timeout_ms,
+        eggsearch::core::config::DEFAULT_BROWSER_IDLE_TIMEOUT_MS
+    );
     assert_eq!(cfg.fetch.pdf_max_bytes, 16_777_216);
     assert_eq!(cfg.fetch.pdf_max_decompressed_bytes, 67_108_864);
     assert!(!cfg.local.enabled);
@@ -1340,4 +1346,20 @@ fn mcp_tasks_bounds_are_enforced() {
     assert!(config.validate().is_err());
     config.mcp.tasks.poll_interval_ms = 10_000;
     assert!(config.validate().is_ok());
+}
+
+#[test]
+fn validate_rejects_browser_idle_timeout_below_floor() {
+    let mut cfg = default_config();
+    cfg.fetch.browser.idle_timeout_ms = eggsearch::core::config::MIN_BROWSER_IDLE_TIMEOUT_MS - 1;
+    let err = cfg.validate().unwrap_err();
+    assert!(err.to_string().contains("idle_timeout_ms"));
+}
+
+#[test]
+fn validate_rejects_unknown_browser_policy() {
+    let mut cfg = default_config();
+    cfg.fetch.browser.policy = "sometimes".to_string();
+    let err = cfg.validate().unwrap_err();
+    assert!(err.to_string().contains("browser.policy"));
 }

@@ -517,6 +517,36 @@ pub(crate) fn browser_profile_requires_attention_error(
     ToolError::execution_with_data(ToolErrorCode::ManualInteractionRequired, error_msg, data)
 }
 
+#[cfg(not(feature = "browser"))]
+pub(crate) fn browser_not_compiled_error() -> ToolError {
+    let message = "browser rendering is not compiled into this build; rebuild with                    --features browser or use an official release";
+    let data = serde_json::json!({
+        "code": "browser_not_compiled_in",
+        "message": message,
+        "manual_interaction_required": false,
+    });
+    ToolError::execution_with_data(
+        ToolErrorCode::CapabilityUnavailable,
+        message.to_string(),
+        data,
+    )
+}
+
+#[cfg(feature = "browser")]
+pub(crate) fn browser_disabled_error() -> ToolError {
+    let message = "browser rendering is disabled; set [fetch.browser].enabled = true,                    or use render = \"http_only\"";
+    let data = serde_json::json!({
+        "code": "browser_disabled",
+        "message": message,
+        "manual_interaction_required": false,
+    });
+    ToolError::execution_with_data(
+        ToolErrorCode::CapabilityUnavailable,
+        message.to_string(),
+        data,
+    )
+}
+
 #[cfg(feature = "browser")]
 pub(crate) fn browser_unavailable_error(reason: &str) -> ToolError {
     let data = serde_json::json!({
