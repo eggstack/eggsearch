@@ -1,6 +1,14 @@
 # Configuration
 
-eggsearch reads `$XDG_CONFIG_HOME/eggsearch/config.toml` and falls back to defaults when the file is absent.
+The config file is optional. eggsearch reads it from a platform-specific
+location:
+
+- Linux: `$XDG_CONFIG_HOME/eggsearch/config.toml`, usually
+  `~/.config/eggsearch/config.toml`
+- macOS: `~/Library/Application Support/eggsearch/config.toml`
+- Windows: `%APPDATA%\eggsearch\config.toml`
+
+If no config file is found, built-in defaults apply.
 
 ## Minimal Default
 
@@ -69,8 +77,8 @@ schema guidance and the existing diagnostic-by-default response behavior.
 `full` and accepts `full`, `research`, `code`, or `minimal`; any other value is
 a parse error naming the four accepted values. Resolution order is fixed:
 contract metadata, then compact schema projection, then the preset filter.
-`tool_preset` never changes the `response_detail` default — that stays
-`schema_profile`'s job, and `full` plus `full` is byte-identical to the
+`tool_preset` does not change the `response_detail` default, which is controlled
+by `schema_profile`. The `full` preset with the full schema matches the
 pre-capability advertisement.
 
 | Preset | Tools advertised |
@@ -84,17 +92,14 @@ Hidden tools are hidden from `tools/list` only. They still execute when called
 directly, their argument schemas are unchanged, and no tool is removed or
 renamed. `next_actions` are filtered to the active preset so a model is never
 pointed at a tool it cannot see; each drop is counted in `next_actions_omitted`
-rather than rewriting the suggestion. Measured advertisement sizes (full /
-compact serialized bytes): `full` 73,161 / 19,611; `research` 65,560 / 16,498;
-`code` 68,429 / 16,820; `minimal` 57,985 / 13,116. The compact `minimal`
-preset is 66% of the compact `full` size — the remainder is mandatory schema
-envelope, so no preset reaches half without a schema change.
+rather than rewriting the suggestion. Compact presets reduce the advertised
+schema while preserving the required tool definitions.
 
 `excerpt_budget_chars` defaults to 4,000 and must be between 256 and 32,000.
-It is one response-wide ceiling on card passage text — `snippet` plus
-`excerpts[].text` — measured in serialized characters including the
-`<<<EXTERNAL_UNTRUSTED …>>>` framing, not a per-card cap and not a token
-count. It applies to `compact` and `brief` only; `standard` and `diagnostic`
+It is one response-wide ceiling on card passage text, including `snippet` and
+`excerpts[].text`. It is measured in serialized characters including the
+`<<<EXTERNAL_UNTRUSTED …>>>` framing, not per card or in tokens. It applies to
+`compact` and `brief` only; `standard` and `diagnostic`
 responses are unchanged. Within the budget, passages whose normalized token
 shingles overlap by at least 0.80 collapse to the earliest occurrence, so an
 identical snippet repeated across results is not paid for twice. The response
@@ -110,11 +115,11 @@ All 44 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
-| `duckduckgo` | html_scrape | — | Default generic provider |
-| `brave` | html_scrape | — | Default generic provider |
-| `startpage` | html_scrape | — | Selectable; the upstream Anubis proof-of-work wall is solved when `[search.challenge].enabled = true` |
-| `yahoo` | html_scrape | — | Default generic provider |
-| `mojeek` | html_scrape | — | |
+| `duckduckgo` | html_scrape | none | Default generic provider |
+| `brave` | html_scrape | none | Default generic provider |
+| `startpage` | html_scrape | none | Selectable; the upstream Anubis proof-of-work wall is solved when `[search.challenge].enabled = true` |
+| `yahoo` | html_scrape | none | Default generic provider |
+| `mojeek` | html_scrape | none | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
 | `brave_api` | api_key | `BRAVE_API_KEY` | |
 | `exa` | api_key | `EXA_API_KEY` | Exa semantic search (native freshness/domain filters, highlights on excerpt demand) |
@@ -130,30 +135,30 @@ All 44 built-in providers:
 | `gitea_code` | api_key | custom env | Requires `base_url` in `[search.api.gitea_code]` |
 | `gitea_issues` | api_key | custom env | Requires `base_url` in `[search.api.gitea_issues]` |
 | `gitea_releases` | api_key | custom env | Requires `base_url` in `[search.api.gitea_releases]` |
-| `osv` | json_api | — | Security advisory search |
+| `osv` | json_api | none | Security advisory search |
 | `github_advisory` | api_key | `GITHUB_TOKEN` | GitHub Security Advisories |
-| `nvd` | json_api | — | NIST National Vulnerability Database |
-| `cisa_kev` | json_api | — | CISA Known Exploited Vulnerabilities |
-| `rustsec` | json_api | — | RustSec Advisory Database |
-| `crates_io` | json_api | — | crates.io package metadata |
-| `pypi` | json_api | — | PyPI package metadata |
-| `npm_registry` | json_api | — | npm package metadata |
-| `go_pkg` | json_api | — | Go Proxy module metadata |
-| `maven_central` | json_api | — | Maven Central artifact metadata |
-| `nuget` | json_api | — | NuGet package metadata |
-| `rubygems` | json_api | — | RubyGems gem metadata |
-| `packagist` | json_api | — | Packagist package metadata |
-| `openalex` | json_api | — | OpenAlex scholarly search |
-| `crossref` | json_api | — | Crossref scholarly search |
+| `nvd` | json_api | none | NIST National Vulnerability Database |
+| `cisa_kev` | json_api | none | CISA Known Exploited Vulnerabilities |
+| `rustsec` | json_api | none | RustSec Advisory Database |
+| `crates_io` | json_api | none | crates.io package metadata |
+| `pypi` | json_api | none | PyPI package metadata |
+| `npm_registry` | json_api | none | npm package metadata |
+| `go_pkg` | json_api | none | Go Proxy module metadata |
+| `maven_central` | json_api | none | Maven Central artifact metadata |
+| `nuget` | json_api | none | NuGet package metadata |
+| `rubygems` | json_api | none | RubyGems gem metadata |
+| `packagist` | json_api | none | Packagist package metadata |
+| `openalex` | json_api | none | OpenAlex scholarly search |
+| `crossref` | json_api | none | Crossref scholarly search |
 | `semantic_scholar` | api_key | `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar scholarly search |
 | `sourcegraph` | api_key | `SOURCEGRAPH_API_KEY` | Sourcegraph code search |
 | `firecrawl_developer` | json_api | optional `FIRECRAWL_API_KEY` | Firecrawl Developer Index (keyless-optional; enable in [search.providers]) |
-| `wikipedia` | json_api | — | MediaWiki Action API article search (enable in [search.providers]) |
-| `arxiv` | structured_api | — | arXiv Atom metadata API with shared request pacing (enable in [search.providers]) |
+| `wikipedia` | json_api | none | MediaWiki Action API article search (enable in [search.providers]) |
+| `arxiv` | structured_api | none | arXiv Atom metadata API with shared request pacing (enable in [search.providers]) |
 | `pubmed` | json_api | optional `NCBI_API_KEY` | NCBI E-utilities PubMed search (optional `NCBI_API_EMAIL` contact identity) |
-| `hn_algolia` | json_api | — | Hacker News story search with native freshness filters |
+| `hn_algolia` | json_api | none | Hacker News story search with native freshness filters |
 | `github_repositories` | json_api | optional `GITHUB_TOKEN` | GitHub repository discovery (not code search) |
-| `local_workspace` | local | — | Requires `[local]` config |
+| `local_workspace` | local | none | Requires `[local]` config |
 
 `provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured") and a machine-readable `skip_code` (e.g. `missing_api_key`, `missing_searxng_config`, `disabled_by_user`, `cooldown_active`).
 
@@ -188,11 +193,10 @@ Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`
 
 ## Intent-Aware Provider Routing
 
-`web_search` already derives a retrieval intent from the query. Routing can use
-that intent to add specialist providers to the default candidate set — for
-example asking `osv` on a security query, or `github_code` on a code query. Routing only **adds**: it never removes, reorders, or displaces an
-explicitly requested provider, a profile's providers, or the shipped default
-list.
+`web_search` derives a retrieval intent from the query. Routing can add
+specialist providers to the default candidate set, such as `osv` for a security
+query or `github_code` for a code query. Routing only adds providers. It never
+removes or reorders explicitly requested, profile, or default providers.
 
 ```toml
 [search.routing]
@@ -211,7 +215,7 @@ cooldown and health filter.
 
 | Derived intent | Preferred providers, in order | Capability each must declare |
 |---|---|---|
-| `web`, `docs` | none | — |
+| `web`, `docs` | none | none |
 | `code` | `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph` | declares code-search or repository-filter support |
 | `issues` | `github_issues`, `gitlab_issues`, `gitea_issues`, `firecrawl_developer` | declares issue-search support |
 | `releases` | `github_releases`, `gitlab_releases`, `gitea_releases` | declares release-search support |
@@ -231,16 +235,9 @@ warning rather than being silently dropped; `keyword_unsupported` names a
 provider that knows the subject but cannot answer a keyword query, such as
 `rustsec`.
 
-`intent_mode` ships `apply`. The default follows the tier-1 candidate-snapshot
-gate, which measures seven shipped-default-set cases (one per disclosed intent)
-against the `security-nvd-first` negative control: routing adds the specialist
-for every non-empty preference row, `recall_at_5`, `MRR@5`, `nDCG@5`,
-authoritative survival, and `distinct_domains_topk` all improve on those five
-cases, no case regresses, and the control is detected with a 1.0 `recall_at_5`
-drop across two identical runs.
-`tests/retrieval_quality.rs::intent_routing_rollout_gate_matches_the_recorded_decision`
-recomputes that comparison and fails if the default and the recorded decision
-disagree.
+`intent_mode` defaults to `apply`, adding eligible specialists to the candidate
+set based on query intent. Set it to `off` to report the routing decision
+without adding providers. Explicit providers and profile choices keep precedence.
 
 ## Offset Windows, Progress, and Tasks
 
@@ -257,9 +254,9 @@ poll_interval_ms = 1000
 
 | Setting | Default | Bounds | Meaning |
 |---------|---------|--------|---------|
-| `enabled` | `false` | — | Exposes the MCP Tasks extension to clients that negotiate it. While off, every long call runs synchronously. |
+| `enabled` | `false` | none | Exposes the MCP Tasks extension to clients that negotiate it. While off, every long call runs synchronously. |
 | `ttl_ms` | `300000` | `1000`–`3600000` | Lifetime of a task record held in process memory. |
-| `max_concurrent` | `4` | `1`–`16` | Concurrent task cap. Above it, a call silently falls back to the synchronous path — never an error. |
+| `max_concurrent` | `4` | `1`–`16` | Concurrent task cap. Above it, a call silently falls back to the synchronous path instead of returning an error. |
 | `poll_interval_ms` | `1000` | `250`–`10000` | Suggested client polling interval reported with a task. |
 
 **Offset windows** are always available and need no configuration. `web_fetch`,
@@ -332,123 +329,26 @@ cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
 
 | Setting | Default | Bounds | Meaning |
 |---------|---------|--------|---------|
-| `enabled` | `false` | — | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
+| `enabled` | `false` | none | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
 | `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
 | `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
 | `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
 | `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider. `0` disables reuse, so every request re-solves. |
 
-Two upstreams use this gate. `mojeek` publishes an ALTCHA challenge
-(`PBKDF2/SHA-256`, cost 8000); a captured live challenge resolved at counter
-291 in roughly 0.4 s. `startpage` publishes an Anubis challenge whose
-difficulty is risk-scored per client: the honest `eggsearch` user agent
-received difficulty 6 while a browser user agent received 4. Expected cost is
-`16^difficulty` SHA-256 candidates. A measured difficulty-6 solve took 23.07M
-candidates in 3.05 s on one core in a release build; difficulty 5 is roughly
-1.05M candidates and difficulty 4 roughly 65.5K. Debug builds are about two
-orders of magnitude slower and are not a valid baseline. Raising
-`max_difficulty` to 6 therefore also requires raising `max_attempts`, whose
-2,000,000 default matches the default ceiling of 5, plus `timeout_ms` and
-`[search].timeout_ms` of at least 8000.
+Challenge solving is supported for bounded, non-interactive proof-of-work
+challenges from Mojeek and Startpage. If you raise `max_difficulty`, increase
+`max_attempts` and both solver and search timeouts as needed. Requests that hit a
+configured limit fail with a structured `blocked` outcome. The solver does not
+attempt interactive CAPTCHA, OCR, third-party solving services, or unsupported
+challenge methods.
 
-Anubis method coverage follows the published registry: `fast`, `slow` (the
-deprecated alias of `fast`), `preact`, `metarefresh`, and the WASM `sha256`
-method (ADR-0013). `metarefresh` echoes `challenge.randomData` after the wait
-the page or `Refresh:` header published, a bounded JSON `wait` when neither
-exists, or `difficulty + 1` seconds otherwise, and performs no hashing.
-`sha256` publishes leading zero bits; because `max_difficulty` stays measured in
-fast-equivalent nibbles, such a challenge is admitted when `ceil(bits / 4)` is
-at or below the ceiling (4 admits 16 bits and rejects 17; 6 admits 24), and the
-cost projection uses `2^bits`. `argon2id` and `hashx` remain
-`unsupported scheme`. A `metarefresh` wait longer than `timeout_ms` is refused
-with `challenge not solved: wall clock exhausted` rather than sleeping past the
-budget.
-
-`challenge.extensions` is parsed and bounded: absent, `null`, and `[]` are
-solvable, and a present list holds at most 8 names of 1–64 bytes each from
-ASCII alphanumerics, `-`, `_`, and `.`. A non-empty list containing any name
-other than `css-load` is refused before the ceiling, any wait, any hash, and
-any request, with `anubis challenge declares unsupported extensions [<names>]`
-recorded under `unsupported scheme`. With `enabled = true`, `css-load` — the
-one extension ADR-0012 permits — costs exactly one same-origin `GET` to
-`{origin}{base_prefix}/.within.website/x/cmd/anubis/ext/css-load/{uuid}` with
-no cookie, no authorization header, redirects disabled, and a discarded 4 KiB
-body; a non-2xx status or transport failure refuses with `blocked` under
-`unsupported scheme` and zero pass requests. `headless` and unknown names are
-refused with zero requests.
-
-Before hashing, the solver projects the published work (`16^difficulty`
-candidates for the nibble methods, `2^bits` for `sha256`) against the configured
-ceilings and refuses with the projection in the reason, for example
-`anubis difficulty 7 projects 268M candidates, beyond the configured attempt
-ceiling 2000000` or `anubis difficulty 5 projects 1M candidates (~136 ms),
-beyond the configured wall-clock budget 50 ms`. The projection admits a
-challenge; it never replaces the per-attempt or wall-clock ceiling. An already
-spent challenge reports `already spent`, and an unusable published base prefix
-reports `unsafe base prefix`, both before any request or hashing.
-
-Pass-cookie identity is opaque: the solver never looks for a fixed cookie name.
-It takes every non-deletion pair the pass-challenge response set — empty values
-and deletion cookies dropped, duplicate names resolved by the last non-deletion
-value — replays them joined with `; `, and derives the reuse window from the
-longest usable published lifetime among them, clamped by `cookie_ttl_seconds`.
-`spchal-auth`, `techaro.lol-anubis-auth`, and dynamic-suffix names work
-unchanged, ALTCHA keeps its published `chllg` name, and there is no cookie-name
-knob. The table applies to each replayed pair; the longest usable value wins:
-
-| Response attribute | Stored window |
-|---|---|
-| neither `Max-Age` nor `Expires` | `cookie_ttl_seconds` (unchanged) |
-| `Max-Age=N` | `min(N, cookie_ttl_seconds)`; `Max-Age=0` stores nothing |
-| `Expires=<IMF-fixdate>` | `min(expiry - now, cookie_ttl_seconds)`; an expiry at or before now stores nothing |
-| both `Max-Age` and `Expires` | `Max-Age` wins (RFC 6265 §5.3) |
-| an attribute present but unusable | nothing is stored (fail closed) |
-
-A stored window never exceeds `cookie_ttl_seconds`, so the setting stays the
-operator ceiling, and `cookie_ttl_seconds = 0` disables reuse regardless of what
-an upstream published. A pair set the upstream rejects on replay is evicted
-immediately, so the next request starts from a challenge page instead of sending
-tokens the server has already refused.
-
-When `[egress]` is routed (`enabled = true` with at least one hop) and challenge
-solving reuses pass cookies, `eggsearch doctor` warns that a pass token bound to
-the client's egress address is re-challenged or rejected when the exit address
-changes, and suggests `cookie_ttl_seconds = 0` when the route does not keep one
-exit address per process. eggsearch does not detect egress addresses, never
-shortens the window because a route exists, and never rotates exits; the warning
-is the whole mitigation and rejection eviction is the recovery.
-
-`web_fetch` uses the same opt-in. With `enabled = true`, a fetched page classified as an Anubis
-challenge is solved once and the request replayed once with the cookie pairs the pass response
-issued, so the caller receives the protected document instead of the wall. `max_difficulty`,
-`max_attempts`, and `timeout_ms` apply unchanged, further bounded by the remaining `web_fetch` call
-deadline; `cookie_ttl_seconds` does not apply, because a fetch-side pair set is used for that one
-replay and never stored. When solving is off, refused, unsupported, or the replay is still
-challenged, `web_fetch` keeps returning the marked page (`manual_interaction_required: true` plus one
-`fetch_challenge_page` warning). `batch_fetch` does not solve yet.
-
-Every `provider_status` call reports a `challenge_solver` block with
-process-lifetime per-provider solve and refusal counters plus the last attempt's
-candidate count and bounded-computation milliseconds; the field set is described
-in `architecture/engines.md` § Challenge solving.
-
-The solve is probabilistic: the nonce is uniform, so an attempt can legitimately
-reach `max_attempts` without a hit and report `blocked` with
-`challenge not solved: attempts exhausted`. At roughly twice the expected work
-about one attempt in seven does; a later call usually succeeds. Treat it as a
-retryable provider condition, not a defect.
-
-Solving is attempted at most once per provider per search request and reused
-for `cookie_ttl_seconds`. Pass cookies (the opaque Anubis pair set and ALTCHA's
-`chllg`) are held in process memory only, are never written to disk, and never
-appear in logs, `provider_status`, diagnostics, or fixtures. A challenged
-provider that is disabled, above the ceiling, unsupported, or out of budget
-still reports `error_class: blocked` with a reason naming the bound — never an
-empty result. A solved page that fails to parse is `parse_error`, not `blocked`.
-
-Raising `max_difficulty` does not by itself make `startpage` return rows: its
-result extraction needs the payload parser described in
-`architecture/engines.md` § Challenge solving.
+Search pass cookies are held in process memory only, bounded by
+`cookie_ttl_seconds`, and never written to disk or logs. On the HTTP path,
+`web_fetch` can solve one Anubis challenge when enabled. Set `render = "http_only"`
+to avoid automatic browser escalation for that request. Fetch-side pass cookies
+are used for one replay and not stored. `batch_fetch` does not solve challenges.
+See [Capabilities and Optional Features](features.md#bounded-challenge-solving)
+for the supported methods and safety limits.
 
 ## Provider Profiles
 
@@ -614,9 +514,11 @@ enabled = true
 api_key_env = "GITHUB_TOKEN"
 ```
 
-### Enhanced Research
+### Add a SearXNG Instance
 
-Brave API, SearXNG, and Semantic Scholar are optional enhancements for richer scholarly search.
+To add a SearXNG instance as a search provider, replace the example URL with
+your instance address. The instance must allow JSON output; see [Provider
+Setup](provider-setup.md#searxng) for the required SearXNG setting:
 
 ```toml eggsearch-config
 [search]
@@ -625,19 +527,21 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["brave_api", "searxng", "duckduckgo", "brave", "mojeek"]
+default_providers = ["duckduckgo", "brave", "yahoo", "searxng"]
 
 [search.providers]
 duckduckgo = true
 brave = true
-startpage = true
-mojeek = true
+yahoo = true
 searxng = true
 
 [search.searxng]
 enabled = true
 base_url = "https://search.example.org"
 ```
+
+Credentialed providers such as Brave Search API and Semantic Scholar need
+separate API-key configuration. See [Provider Setup](provider-setup.md).
 
 ### Developer Index (keyless-optional)
 
@@ -755,14 +659,19 @@ batch_concurrency = 2
 | `allow_localhost` | `false` |
 | `include_links_default` | `false` |
 | `sanitize_output` | `true` |
-| `pdf_enabled` | the compiled-in `pdf` feature state: `true` in a default build, `false` under `--no-default-features` |
+| `pdf_enabled` | Compiled-in feature state. Enabled by default in current source builds, absent from published `v0.4.4` binaries, and disabled by `--no-default-features` |
 | `pdf_max_pages` | `25` |
 | `pdf_max_chars_per_page` | `12_000` |
 | `pdf_max_total_chars` | `50_000` |
 | `pdf_max_bytes` | `16_777_216` |
 | `pdf_max_decompressed_bytes` | `67_108_864` |
 
-The fetch side is bounded by both byte and character budgets. The byte cap is a hard response limit. `max_chars_cap` is the document/extraction budget — how much of the page is extracted and addressable in `document.blocks` / `document.chunks` — and therefore the cost knob; it is not the returned-text ceiling. `max_chars_default` (and the caller's `max_chars`) bounds only the returned `text` window, clamped to `max_chars_cap`. `document.document_truncated` reports extraction stopping at the document budget; `document.text_truncated` reports window clipping.
+Fetch is bounded by byte and character budgets. The byte cap limits the
+response body. `max_chars_cap` limits how much text is extracted and made
+available in `document.blocks` and `document.chunks`; it is not the returned-text
+limit. `max_chars_default` and the caller's `max_chars` bound the returned
+`text` window, up to `max_chars_cap`. `document.document_truncated` marks an
+extraction limit; `document.text_truncated` marks a clipped return window.
 
 `max_bytes` is the body cap for everything except PDF documents. A response
 identified as PDF by `Content-Type: application/pdf` or by a `.pdf` URL path
@@ -771,19 +680,14 @@ at the generic 2 MB cap. `pdf_max_bytes` must be between 1 and 268,435,456
 (256 MiB); the default is 16 MiB. A PDF that is recognised only by its
 `%PDF-` magic (no Content-Type, no `.pdf` path) is still read under
 `max_bytes`, because the body cap is fixed before the first bytes arrive.
-A PDF refused for declared length, or truncated at the effective cap, returns
-`content_too_large` naming the configured limit — never a parse error.
+A PDF that exceeds the effective body cap returns `content_too_large`, not a
+parse error.
 
-`pdf_max_decompressed_bytes` caps how many bytes a PDF may expand into once
-its streams are decompressed, measured over the whole document before the
-parser runs. The default is 64 MiB, comfortably above the largest baseline
-document and four times the `pdf_max_bytes` default; the validated range is
-1,048,576 to 1,073,741,824 bytes. A document that would exceed it — by measured
-expansion, by a declared xref `/W` geometry, or by using `LZWDecode`, whose
-expansion cannot be measured — fails with `pdf_decompression_bound_exceeded`.
-Encrypted documents are refused with `pdf_encrypted` whether or not a password
-is supplied; `pdf_password` is accepted for wire compatibility and is
-unsupported.
+`pdf_max_decompressed_bytes` limits total expanded stream data before parsing.
+It defaults to 64 MiB and accepts 1 MiB through 1 GiB. A document that exceeds
+this limit or cannot be bounded fails with `pdf_decompression_bound_exceeded`.
+Encrypted documents fail with `pdf_encrypted`; `pdf_password` remains in the
+schema for compatibility but is unsupported.
 
 `allow_private_network = true` and `allow_localhost = true` are operator escape hatches. Keep them off for general MCP exposure.
 
@@ -841,13 +745,17 @@ When enabled, local results use `local_trusted` trust labels and can be surfaced
 
 ## Browser Rendering
 
-The `[fetch.browser]` section configures headless Chrome/Chromium rendering. The `browser` Cargo feature is compiled into default builds, `enabled` defaults to that compiled-in state, and `policy` defaults to `auto`. Rendering uses an already-installed Chrome/Chromium; eggsearch never downloads or installs one.
+The `[fetch.browser]` section configures headless Chrome/Chromium rendering.
+Current source builds enable the `browser` Cargo feature by default; published
+`v0.4.4` binaries do not include it. `enabled` follows the compiled-in feature
+state, and `policy` defaults to `auto`. Rendering requires an installed
+Chrome/Chromium. Eggsearch never downloads or installs a browser.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `true` when compiled | Enable browser rendering escalation; `false` in a `--no-default-features` build |
+| `enabled` | `true` when compiled | Enables browser rendering. The feature is included by default in current source builds, but not in published `v0.4.4` binaries. |
 | `policy` | `"auto"` | Render policy used when the caller omits `render`: `http_only`, `auto`, or `browser`. A per-call `render` overrides it. |
-| `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails deterministically — it does not fall back to auto-discovery. |
+| `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails instead of falling back to auto-discovery. |
 | `startup_timeout_ms` | `10000` | Browser startup timeout |
 | `navigation_timeout_ms` | `20000` | Page navigation timeout |
 | `post_load_wait_ms` | `1500` | Wait after page load |
@@ -870,9 +778,13 @@ The `[fetch.browser.persistent_profiles]` section configures named, origin-scope
 | `allowed_profiles` | empty (all allowed) | Allowlist of profile names |
 | `profile_process_timeout_ms` | `30000` | Timeout for profile-scoped browser processes |
 
-Profiles are created through CLI-only headed login (`eggsearch browser-login`). MCP callers select profiles by name via the `browser_profile` field on `web_fetch`. Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml` with Chrome data in a sibling `chrome-data/` directory.
-
-Profiles are disabled by default. When disabled, MCP callers cannot use `browser_profile`. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. `browser-login` waits for the operator to press Enter (or until the configured timeout), and uses the configured executable selected during discovery. Later profile-scoped MCP fetches launch against the same profile `chrome-data` directory using the browser's default context. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
+Profiles are disabled by default. Create them with the local CLI command
+`eggsearch browser-login`, which opens a headed browser for operator sign-in.
+MCP callers can select an enabled profile by name with `browser_profile` on
+`web_fetch`; each profile is restricted to its recorded origin. Chrome manages
+the profile's cookies and storage. Eggsearch never exports or logs them.
+Removing a profile does not invalidate the process-local cache until the server
+process exits.
 
 ## Provider Status
 
@@ -880,13 +792,13 @@ Profiles are disabled by default. When disabled, MCP callers cannot use `browser
 
 Each provider descriptor includes:
 
-- `id`, `display_name`, `kind` — identity
-- `enabled`, `default`, `configured` — config state
-- `requires_api_key` — whether an API key env var is needed
-- `routable` — whether the provider can actually be queried right now
-- `skip_reason` — human-readable explanation when `routable` is `false`
-- `skip_code` — machine-readable skip code when `routable` is `false`
-- `capabilities` — feature flags (code search, freshness, etc.)
+- `id`, `display_name`, `kind`: identity
+- `enabled`, `default`, `configured`: config state
+- `requires_api_key`: whether an API key env var is needed
+- `routable`: whether the provider can actually be queried right now
+- `skip_reason`: human-readable explanation when `routable` is `false`
+- `skip_code`: machine-readable skip code when `routable` is `false`
+- `capabilities`: feature flags (code search, freshness, etc.)
 
 Skip codes are stable snake_case strings: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`.
 

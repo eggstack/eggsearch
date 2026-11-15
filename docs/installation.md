@@ -37,29 +37,30 @@ PowerShell:
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
 ```
 
-Pin a published executable version when reproducibility matters:
+Pin a published executable version when reproducibility matters. The latest
+binary release is `v0.4.4`:
 
 ```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.4.3
+curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --version 0.4.4
 ```
 
 ```powershell
-$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.4.3
+$installer = irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1; & ([scriptblock]::Create($installer)) -Version 0.4.4
 ```
 
-Each installer downloads a default-feature executable, verifies the adjacent
-SHA-256 file, checks `eggsearch --version`, and installs atomically. Default
-executables include PDF extraction and browser rendering. Browser rendering uses
-a Chrome/Chromium already installed on the host: eggsearch never downloads,
-installs, or updates one, and an explicit render request reports
-`browser_unavailable` when none is discovered. For a source installation or an
-unsupported target, use:
+Each installer downloads a host-matched executable, verifies its SHA-256 file
+and version, then installs atomically. The published `v0.4.4` binaries predate
+the current source defaults for PDF extraction and browser rendering, so neither
+feature is included in those binaries. Current source builds enable both by
+default. Browser rendering requires Chrome or Chromium already installed on the
+host. Eggsearch never downloads, installs, or updates a browser, and an explicit
+render request reports `browser_unavailable` when none is discovered.
 
-```bash
-cargo install eggsearch --locked
-```
+For unsupported targets, the installer may fall back to `cargo install eggsearch
+--locked` under the conditions below. To build the current checkout from source,
+run `cargo build --release`.
 
-The pinned Unix installer requests assets from the exact `vX.Y.Z` release. The
+The pinned installer requests assets from the exact `vX.Y.Z` release. The
 unpinned form uses `releases/latest/download` for convenience.
 
 For configuring Eggsearch as a local stdio server in LM Studio, see

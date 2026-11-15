@@ -6,7 +6,8 @@ eggsearch supports 44 search providers across ten categories: web search (HTML s
 
 | Category | Examples | User Requirement |
 |----------|----------|-----------------|
-| **Keyless defaults** | DuckDuckGo, Startpage, Yahoo | none |
+| **Keyless defaults** | DuckDuckGo, Brave Search (HTML), Yahoo | none |
+| **Keyless non-default** | Startpage, Mojeek | none; Startpage may require bounded challenge solving |
 | **Keyless specialist** | OSV, NVD, CISA KEV, RustSec, OpenAlex, Crossref, all package registries | none |
 | **Keyless source-specific** | Wikipedia, arXiv, Hacker News (Algolia) | none |
 | **Keyless-optional specialist** | Firecrawl Developer Index, PubMed, GitHub Repositories | none (optional key/contact raises limits) |
@@ -18,7 +19,9 @@ All credentialed providers are disabled or non-routable unless explicitly config
 
 ## Web Search Providers
 
-These providers require no API key and work via HTML scraping.
+These providers require no API key and parse public search-result HTML. Like SearXNG, eggsearch is a metasearch system: it queries independent upstream engines and combines their results rather than maintaining a web index. HTML is an upstream format, not a stable API, so markup changes, rate limits, and challenge pages can cause provider-specific failures. eggsearch distinguishes those failures from a confirmed empty result. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) for observed HTML providers. Respect each upstream's terms and rate limits. Challenge solving is opt-in and limited to bounded computational proof-of-work; interactive CAPTCHAs, third-party solvers, proxy rotation, and user-agent spoofing are not supported. See [Capabilities and Optional Features](features.md#bounded-challenge-solving).
+
+The SearXNG provider below is different: it calls a SearXNG instance's JSON API, not its HTML page.
 
 ### DuckDuckGo (default)
 
@@ -39,39 +42,22 @@ These providers require no API key and work via HTML scraping.
 ### Startpage
 
 - ID: `startpage`
-- Enabled by default: yes
-- Included in `default_providers`: **no**
-- No configuration needed, but the upstream currently refuses every request
-- Startpage fronts the search routes with an Anubis proof-of-work challenge (`#anubis_challenge`, currently difficulty 6 for the honest `eggsearch` user agent). Without challenge solving the engine reports `blocked` rather than parsing an empty SERP, so it is not part of the shipped defaults.
-- To opt into paying the solve cost, enable `[search.challenge]` and raise the ceiling to the published difficulty:
+- Enabled by default, but not included in `default_providers`
+- No API key is required
+- The upstream may present a proof-of-work challenge. Without challenge solving, eggsearch reports the provider as `blocked`.
+- To opt in, enable the provider and bounded challenge solving:
 
   ```toml
-  [search]
-  timeout_ms = 8000
-
   [search.providers]
   startpage = true
 
   [search.challenge]
   enabled = true
-  max_difficulty = 6
-  max_attempts = 32000000
-  timeout_ms = 8000
   ```
 
-  Three ceilings must move together, not just the difficulty. Expected work is `16^difficulty` SHA-256 candidates; a measured difficulty-6 wall took 23.07M candidates and 3.05 s on one core in a release build. The default `max_attempts = 2000000` matches the default ceiling of 5 and would stop a difficulty-6 solve before the wall clock does, so raise it too. Raise `[search].timeout_ms` as well, because the search deadline wins over the solve budget.
-
-  The solve is probabilistic, not deterministic: the nonce is uniform, so an attempt that reaches `max_attempts` without a hit is expected rather than abnormal. At `32000000` (roughly twice the expected work) about one attempt in seven exhausts the ceiling and reports `blocked` with `challenge not solved: attempts exhausted`; a later call usually succeeds. Raise `max_attempts` toward the validated maximum of `100000000` and the deadline with it if you need higher reliability, accepting the extra wall clock on the unlucky fraction.
-
-  With `max_difficulty = 5` (the default) a difficulty-6 wall is refused with a reason naming both values, and the provider stays `blocked`.
-- Anubis method coverage follows the published registry: `fast`, `slow` (solved as the `fast` alias), `preact`, `metarefresh`, and the WASM `sha256` method. `metarefresh` echoes `challenge.randomData` after the wait the page or `Refresh:` header published, or `difficulty + 1` seconds when neither is present; `sha256` publishes leading zero bits and is admitted when `ceil(bits / 4)` is at or below `max_difficulty`. `argon2id` and `hashx` remain `unsupported scheme`. The shipped Startpage wall publishes `fast`; `metarefresh` was observed on `anubis.techaro.lol` v1.28.3 on 2026-11-13; `slow`, `preact`, and `sha256` are synthetic-fixture verified only, because no deployment publishing them was observed.
-- The pass-cookie identity is opaque. The solver replays every non-deletion pair the pass-challenge response set, whatever the names (`spchal-auth` on Startpage, `techaro.lol-anubis-auth`, or a dynamic suffix), joined with `; `, and derives the reuse window from the longest usable published lifetime among them, clamped by `cookie_ttl_seconds`. There is no cookie-name configuration knob.
-- Anubis `challenge.extensions` is bounded and fail-closed. A non-empty list containing anything other than `css-load` is refused before any request and attributed to `unsupported scheme`, with the extension names in the sentence. `css-load` (ADR-0012) performs one same-origin extension `GET` before the pass request, only while `[search.challenge].enabled = true`; `headless` is never attempted.
-- A solved search returns rows: the engine reads the inline React payload
-  (`React.createElement(UIStartpage.AppSerp…, {…})` → `render.presenter.regions.mainline[]`)
-  first and keeps the older `div.result` selectors as a fallback. Live verification on
-  2026-11-12 returned 5/5 rows with titles, URLs and snippets in 3.88 s including the solve.
-  See `architecture/engines.md` § Challenge solving and § Scraper Fidelity.
+Challenge solving is off by default and can add time to a search. Its difficulty,
+attempt, and timeout limits are configurable. See [Capabilities and Optional
+Features](features.md#bounded-challenge-solving) for limits and restrictions.
 
 ### Yahoo (default)
 
@@ -83,11 +69,9 @@ These providers require no API key and work via HTML scraping.
 ### Mojeek
 
 - ID: `mojeek`
-- Enabled by default: **no**
+- Disabled by default and not included in `default_providers`
 - Independent search engine with its own index
-- Enable: set `mojeek = true` in `[search.providers]`
-- Mojeek answers automated queries with an ALTCHA proof-of-work challenge. Without challenge solving the engine reports `blocked`. With `[search.challenge] enabled = true` it solves the published `PBKDF2/SHA-256` challenge (measured cost 8000, a captured live challenge resolved at counter 291 in roughly 0.4 s inside the default `max_attempts` and `timeout_ms`), caches the `chllg` pass cookie for `cookie_ttl_seconds`, replays it once, and then parses the normal `ul.results-standard` result list.
-- Solving is attempted at most once per search request and at most once per cookie TTL. A disabled solver, a ceiling breach, or an unsupported published algorithm returns `blocked` with a reason naming the bound; the pass cookie never appears in logs or `provider_status`.
+- Enable it in `[search.providers]`:
 
   ```toml
   [search.providers]
@@ -96,6 +80,10 @@ These providers require no API key and work via HTML scraping.
   [search.challenge]
   enabled = true
   ```
+
+The upstream may require an ALTCHA proof-of-work challenge. Challenge solving is
+off by default, uses configured limits, and can add CPU time. See
+[Capabilities and Optional Features](features.md#bounded-challenge-solving).
 
 ## Keyless-Optional Developer Index
 
@@ -141,7 +129,7 @@ wikipedia = true
 
 - Select explicitly, e.g. `web_search({"query": "...", "providers": ["wikipedia"]})`
 
-Results map to canonical article URLs (`https://en.wikipedia.org/wiki/<Title>`), the page title, and a bounded snippet. The API returns highlighted snippets as small HTML fragments; those are reduced to plain text through eggsearch's normal extraction path and then sanitized by the common pipeline. Native capabilities: `result_timestamps` only (`srprop=timestamp`, the page last-modified timestamp, preserved in `published_at`). Safe-search, language, region, domain filters, news, and freshness are not claimed — every one of those constraints is local approximation. An HTTP 200 body carrying a MediaWiki `error` object (for example `ratelimited`) fails the call as a provider-scoped parse error rather than returning empty success.
+Results map to canonical article URLs (`https://en.wikipedia.org/wiki/<Title>`), the page title, and a bounded snippet. The API returns highlighted snippets as small HTML fragments; those are reduced to plain text through eggsearch's normal extraction path and then sanitized by the common pipeline. Native capabilities: `result_timestamps` only (`srprop=timestamp`, the page last-modified timestamp, preserved in `published_at`). Safe-search, language, region, domain filters, news, and freshness are not claimed: every one of those constraints is local approximation. An HTTP 200 body carrying a MediaWiki `error` object (for example `ratelimited`) fails the call as a provider-scoped parse error rather than returning empty success.
 
 ### arXiv
 
@@ -198,14 +186,14 @@ api_key_env = "NCBI_API_KEY"
 export NCBI_API_EMAIL="ops@example.org"
 ```
 
-Every request identifies itself truthfully as `tool=eggsearch` with a real `eggsearch/<version>` User-Agent. No fabricated contact identity is ever sent: without `NCBI_API_EMAIL` the `email` parameter is simply omitted, which leaves the operator non-compliant with NCBI's request for contact information rather than silently impersonating a maintainer. Per-call result counts are bounded to 25 for interactive agent retrieval. If the summary phase fails, the whole call fails — partial or fabricated citation metadata is never returned.
+Every request identifies itself truthfully as `tool=eggsearch` with a real `eggsearch/<version>` User-Agent. No fabricated contact identity is ever sent: without `NCBI_API_EMAIL` the `email` parameter is simply omitted, which leaves the operator non-compliant with NCBI's request for contact information rather than silently impersonating a maintainer. Per-call result counts are bounded to 25 for interactive agent retrieval. If the summary phase fails, the whole call fails: partial or fabricated citation metadata is never returned.
 
 Native capabilities: `scholarly_search` and `result_timestamps` (`epubdate`, falling back to `pubdate`, normalized from shapes such as `2024 Feb 3`, `2024 Feb`, or `2024`; unrecognized shapes are dropped rather than guessed).
 
 ### GitHub Repositories
 
 - ID: `github_repositories`
-- Official repository search endpoint (`GET /search/repositories`) — repository **discovery**, not code search
+- Official repository search endpoint (`GET /search/repositories`): repository **discovery**, not code search
 - Enable in `[search.providers]`:
 
 ```toml
@@ -223,7 +211,11 @@ api_key_env = "GITHUB_TOKEN"
 
 Keyless routing works at GitHub's unauthenticated limits; a missing token never makes the provider unroutable and never yields `missing_api_key`. Results carry the `owner/repo` full name as the title, the canonical `html_url`, the repository description (or bounded language/star/fork/issue metadata when the description is absent), and `pushed_at` as the result timestamp. Requests are ordered `sort=updated&order=desc` for deterministic freshness.
 
-Native capabilities: `result_timestamps` only. This provider deliberately does **not** claim `code_search` or `repo_indexing` — repository discovery is not file/code search — and it does not replace `github_code`, `github_issues`, or `github_releases`. Rate-limit responses (HTTP 403/429) flow through the normal provider failure and cooldown path; they are provider-scoped and never make the server unhealthy.
+Native capability: `result_timestamps` only. Repository discovery is not file or
+code search, so this provider does not claim `code_search` or `repo_indexing` and
+does not replace `github_code`, `github_issues`, or `github_releases`. Rate-limit
+responses (HTTP 403/429) follow the normal provider failure and cooldown path;
+they affect only this provider and never make the server unhealthy.
 
 ## API-Key Providers
 
@@ -249,7 +241,7 @@ Native capabilities: `safe_search`, `freshness` (relative `pd|pw|pm|py` and exac
 - ID: `exa`
 - Semantic/neural web retrieval through `POST https://api.exa.ai/search` (auth `x-api-key: <EXA_API_KEY>`)
 - Enabled by default: **no**; opt-in semantic complement to the HTML/SERP sources
-- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["exa"]`
+- Included in `default_providers`: **no**; never becomes default automatically: select explicitly via `providers: ["exa"]`
 - Enable and configure in `[search.api.exa]`:
 
 ```toml
@@ -271,7 +263,7 @@ eggsearch uses Exa only for search metadata/highlights. Generated summaries, out
 - ID: `tavily`
 - General web retrieval through `POST https://api.tavily.com/search` (auth `Authorization: Bearer <TAVILY_API_KEY>`)
 - Enabled by default: **no**; opt-in complement to the HTML/SERP sources
-- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["tavily"]`
+- Included in `default_providers`: **no**; never becomes default automatically: select explicitly via `providers: ["tavily"]`
 - Enable and configure in `[search.api.tavily]`:
 
 ```toml
@@ -293,7 +285,7 @@ eggsearch uses Tavily only for search metadata/chunks with `search_depth=basic`.
 - ID: `serpapi`
 - Google web results through `GET https://serpapi.com/search` (auth `api_key` query parameter)
 - Enabled by default: **no**; opt-in complement to the HTML/SERP sources
-- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["serpapi"]`
+- Included in `default_providers`: **no**; never becomes default automatically: select explicitly via `providers: ["serpapi"]`
 - Enable and configure in `[search.api.serpapi]`:
 
 ```toml
@@ -306,10 +298,10 @@ The environment variable `SERPAPI_API_KEY` must be set at runtime. `base_url` re
 
 Native capabilities: `safe_search` (`Off -> safe=off`, `Moderate|Strict -> safe=active`; Google exposes a two-state filter, so the three-state model is approximate), `language` (`hl`, e.g. `en`, `en-US` -> `en-us`; unrepresentable values omitted), and `region` (`gl`, 2-letter country code lowercased; unrepresentable values omitted). Everything else is **not** claimed:
 
-- `freshness` — the current engine page documents `tbs` only generically ("advanced search parameters ... dates") without value syntax, so eggsearch does not send it rather than guess; freshness and exact date ranges stay locally approximated.
-- `domain_filters` — the Google engine exposes no site-restriction parameter; filtering stays local.
-- `news` — news would require the separately billed `tbm=nws` vertical, which eggsearch never requests. Use a native-news provider instead.
-- `result_timestamps` — `organic_results` entries carry no documented per-result date, so `published_at` is never synthesized.
+- `freshness`: the current engine page documents `tbs` only generically ("advanced search parameters ... dates") without value syntax, so eggsearch does not send it rather than guess; freshness and exact date ranges stay locally approximated.
+- `domain_filters`: the Google engine exposes no site-restriction parameter; filtering stays local.
+- `news`: news would require the separately billed `tbm=nws` vertical, which eggsearch never requests. Use a native-news provider instead.
+- `result_timestamps`: `organic_results` entries carry no documented per-result date, so `published_at` is never synthesized.
 
 Request discipline: `engine=google` is always sent explicitly so a future upstream default change cannot silently change which engine backs this id. No other SerpApi feature is used: no `tbm` verticals, no `async`/`no_cache`/`zero_trace`/`json_restrictor`, and no generated answers. The engine exposes no documented result-count parameter, so the result budget is enforced by bounded local truncation of `organic_results`. Missing/invalid credentials and quota/rate failures are provider-scoped (a `429` becomes a rate-limited failure with cooldown) and never make the server unhealthy.
 
@@ -320,7 +312,7 @@ Credential handling: SerpApi authenticates with a query parameter, so eggsearch 
 - ID: `kagi`
 - Premium web results through `POST https://kagi.com/api/v1/search` (auth `Authorization: Bearer <KAGI_API_KEY>`)
 - Enabled by default: **no**; opt-in complement to the HTML/SERP sources
-- Included in `default_providers`: **no**; never becomes default automatically — select explicitly via `providers: ["kagi"]`
+- Included in `default_providers`: **no**; never becomes default automatically: select explicitly via `providers: ["kagi"]`
 - Enable and configure in `[search.api.kagi]`:
 
 ```toml
@@ -331,11 +323,11 @@ api_key_env = "KAGI_API_KEY"
 
 The environment variable `KAGI_API_KEY` must be set at runtime. API usage is billed separately from any Kagi subscription on a pay-as-you-go basis (`https://kagi.com/api/pricing`), so a Kagi account with a payment method and API billing enabled is an operator responsibility. `base_url` remains overridable through the same section for tests/proxies and is the v1 base (`https://kagi.com/api/v1`); the engine appends `/search`.
 
-Native capabilities: `safe_search` (`Off -> false`, `Moderate|Strict -> true`; Kagi exposes a single boolean, so the three-state model is approximate), `freshness` (exact `YYYY-MM-DD` ranges map to `filters.after`/`filters.before`; relative `day|week|month|year` map to a UTC cutoff of 1/7/30/365 days ago, and an exact range always wins), `region` (`filters.region`, ISO 3166-1 alpha-2 uppercased; unrepresentable values omitted), `domain_filters` (the documented inline lens `lens.sites_included`/`lens.sites_excluded`, which restrict rather than boost), and `result_timestamps` (`data.search[].time` preserved when it parses, feeding freshness reranking). Language is not claimed — Kagi exposes region but no language field. `news` is not claimed — the news workflow is a separate result collection eggsearch never requests.
+Native capabilities: `safe_search` (`Off -> false`, `Moderate|Strict -> true`; Kagi exposes a single boolean, so the three-state model is approximate), `freshness` (exact `YYYY-MM-DD` ranges map to `filters.after`/`filters.before`; relative `day|week|month|year` map to a UTC cutoff of 1/7/30/365 days ago, and an exact range always wins), `region` (`filters.region`, ISO 3166-1 alpha-2 uppercased; unrepresentable values omitted), `domain_filters` (the documented inline lens `lens.sites_included`/`lens.sites_excluded`, which restrict rather than boost), and `result_timestamps` (`data.search[].time` preserved when it parses, feeding freshness reranking). Language is not claimed: Kagi exposes region but no language field. `news` is not claimed: the news workflow is a separate result collection eggsearch never requests.
 
 Request discipline: every request pins `workflow: "search"` and only `data.search[]` is read. Other collections Kagi may return in the same payload (`data.news`, `data.code`, `data.interesting_finds`, `data.related_search`, `data.infobox`, ...) are ignored rather than coerced into source cards. Billed extras (`extract`) and account personalization (`personalizations`) are never sent.
 
-Terms compliance: the Kagi API Terms permit using returned Results in your own applications and services, including sending them to an AI model to answer your users' queries, and integrating them that way is not a prohibited transfer. eggsearch honors the two constraints that bind this integration: results are not cached, stored, or indexed by the engine (the only persistence is a user-requested evidence bundle artifact), and rate limits are never circumvented — a quota response is terminal for that attempt, is reported as a provider-scoped rate-limited failure, and starts a health cooldown. The historical v0 endpoint is never called. Missing/invalid credentials and quota failures are provider-scoped and never make the server unhealthy.
+Terms compliance: the Kagi API Terms permit using returned Results in your own applications and services, including sending them to an AI model to answer your users' queries, and integrating them that way is not a prohibited transfer. eggsearch honors the two constraints that bind this integration: results are not cached, stored, or indexed by the engine (the only persistence is a user-requested evidence bundle artifact), and rate limits are never circumvented: a quota response is terminal for that attempt, is reported as a provider-scoped rate-limited failure, and starts a health cooldown. The historical v0 endpoint is never called. Missing/invalid credentials and quota failures are provider-scoped and never make the server unhealthy.
 
 ### GitHub Code Search
 
@@ -467,7 +459,18 @@ enabled = true
 base_url = "https://searx.example.org"
 ```
 
-Both flags must be set and `base_url` must be non-empty for the SearXNG provider to activate. The engine appends `/search` to the configured `base_url`.
+Both flags must be set and `base_url` must be non-empty for the SearXNG provider to activate. The adapter requests `GET /search` with `format=json`, `categories=general`, and `language=en-US`.
+
+Enable JSON output in the SearXNG instance's `settings.yml`:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+SearXNG returns `403` when a requested format is disabled, and many public instances disable JSON. Use an instance that permits JSON API access. See the official [SearXNG Search API documentation](https://docs.searxng.org/dev/search_api).
 
 ## Special Providers
 
@@ -499,7 +502,7 @@ api_key_env = "GITHUB_TOKEN"
 - No API key needed
 - Enabled by default: yes
 - Advisory lookup by CVE ID
-- Native capability declared: none. NVD is an advisory service, not a generic-search one, and the engine maps only `keywordSearch` onto the upstream request, so `supports_freshness` is `false` — freshness is not forwarded and no local approximation claims otherwise.
+- Native capability declared: none. NVD is an advisory service, not a generic-search one, and the engine maps only `keywordSearch` onto the upstream request, so `supports_freshness` is `false`: freshness is not forwarded and no local approximation claims otherwise.
 
 ### CISA Known Exploited Vulnerabilities
 
@@ -622,7 +625,13 @@ Local results appear in `repo_search` and are fetched via `repo_fetch` with `hos
 
 ### Default Providers
 
-The `default_providers` list controls which providers are queried when a tool call does not specify explicit providers. Every field of the `[search]` table is required once that table is present, and `mode = "live"` additionally requires at least one enabled provider:
+The `default_providers` list controls which providers are queried when a tool
+call does not specify providers. If you add a `[search]` table, include its six
+core fields: `mode`, `default_max_results`, `max_results_cap`,
+`max_query_chars`, `timeout_ms`, and `default_providers`. Other fields have
+defaults. In `live` mode, at least one enabled provider is required.
+
+This example selects the built-in keyless defaults:
 
 ```toml
 [search]
@@ -636,7 +645,6 @@ default_providers = ["duckduckgo", "brave", "yahoo"]
 [search.providers]
 duckduckgo = true
 brave = true
-startpage = true
 yahoo = true
 ```
 
@@ -660,7 +668,7 @@ cooldown and health filter.
 
 | Derived intent | Preferred providers, in order | Capability each must declare |
 |---|---|---|
-| `web`, `docs` | none | — |
+| `web`, `docs` | none | none |
 | `code` | `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph` | declares code-search or repository-filter support |
 | `issues` | `github_issues`, `gitlab_issues`, `gitea_issues`, `firecrawl_developer` | declares issue-search support |
 | `releases` | `github_releases`, `gitlab_releases`, `gitea_releases` | declares release-search support |
@@ -690,9 +698,9 @@ as native coverage, so a real `native_*_unavailable` warning is still reported.
 `provider_status` always carries a top-level `challenge_solver` object, whether or not
 `[search.challenge] enabled = true`:
 
-- `enabled` — the configured `[search.challenge].enabled` value.
-- `untracked_providers` — records dropped because the four-entry provider cap was already full.
-- `providers.<id>` — `solves_attempted`, `solves_succeeded`, `solves_errored`, `cookie_hits`,
+- `enabled`: the configured `[search.challenge].enabled` value.
+- `untracked_providers`: records dropped because the four-entry provider cap was already full.
+- `providers.<id>`: `solves_attempted`, `solves_succeeded`, `solves_errored`, `cookie_hits`,
   `cookie_misses`, `last_candidates`, `last_wall_clock_ms`, and a fixed ten-key `refusals` object
   (`difficulty above ceiling`, `attempts exhausted`, `wall clock exhausted`, `unsupported scheme`,
   `malformed parameters`, `pass cookie absent`, `pass cookie rejected`, `challenge expired`,
@@ -728,7 +736,7 @@ If a provider listed in `default_providers` is disabled or lacks a valid API key
 | `credential_not_configured` | Credential not configured | Credential entry exists but is not fully configured | Incomplete `[search.api.<id>]` section | Complete the API config section | No |
 | `credential_env_missing` | Credential environment variable not set | `api_key_env` is set but the env var is not present at runtime | Environment variable not exported in the shell | Export the env var or add it to your shell profile | No |
 | `credential_invalid` | Credential invalid (empty) | Environment variable is set but empty | Env var exported with empty value | Set the env var to a valid value | No |
-| `cooldown_active` | Cooldown active | Provider is temporarily suppressed after repeated failures | 3+ consecutive failures (rate limit, timeout, network error) | Wait for cooldown to expire (15–60s depending on failure class) | **Yes** — auto-recovers |
+| `cooldown_active` | Cooldown active | Provider is temporarily suppressed after repeated failures | 3+ consecutive failures (rate limit, timeout, network error) | Wait for cooldown to expire (15–60s depending on failure class) | **Yes**: auto-recovers |
 | `not_built` | Not built | Provider was excluded at compile time | Feature-gated or compiled out of the binary | Rebuild with the required feature flag | No |
 | `unknown` | Unknown | Catch-all for unrecognized skip conditions | Edge case or internal error | Run `eggsearch doctor` for details | No |
 
@@ -762,15 +770,15 @@ A single successful query immediately clears cooldown, resets the failure counte
 
 The `health_views` field in `provider_status` provides per-provider health views with:
 
-- `status` — current health state (`Healthy`, `Degraded`, `Cooldown`, `Unknown`)
-- `consecutive_failures` — current failure streak
-- `last_error_class` — most recent failure class (e.g. `RateLimited`, `Timeout`, `NetworkError`)
-- `last_error_message` — human-readable error from the last failure
-- `cooldown_until` — remaining cooldown time (e.g. `"42s"`)
-- `cooldown_reason` — why cooldown was triggered (e.g. `"rate limited"`, `"repeated timeouts"`)
-- `last_latency_ms` — latency of the most recent query
-- `last_success_at` — time since last success (e.g. `"15s ago"`)
-- `last_failure_at` — time since last failure
+- `status`: current health state (`Healthy`, `Degraded`, `Cooldown`, `Unknown`)
+- `consecutive_failures`: current failure streak
+- `last_error_class`: most recent failure class (e.g. `RateLimited`, `Timeout`, `NetworkError`)
+- `last_error_message`: human-readable error from the last failure
+- `cooldown_until`: remaining cooldown time (e.g. `"42s"`)
+- `cooldown_reason`: why cooldown was triggered (e.g. `"rate limited"`, `"repeated timeouts"`)
+- `last_latency_ms`: latency of the most recent query
+- `last_success_at`: time since last success (e.g. `"15s ago"`)
+- `last_failure_at`: time since last failure
 
 ### Routing Integration
 
@@ -780,9 +788,9 @@ When resolving which providers to query, eggsearch checks `is_in_cooldown()` for
 
 One shared probe service (`src/meta/probe.rs`) backs all diagnostics:
 
-- `eggsearch doctor --probe` — prints `[OK]`/`[FAIL]`/`[SKIP]` per provider plus started/succeeded/failed/skipped summary
-- MCP `provider_status` with `{"probe": true}` — returns a typed `probe` section with the same outcomes
-- `make live-smoke` / `cargo test --features live-smoke --test corpus_runner -- --ignored` — explicit live verification
+- `eggsearch doctor --probe`: prints `[OK]`/`[FAIL]`/`[SKIP]` per provider plus started/succeeded/failed/skipped summary
+- MCP `provider_status` with `{"probe": true}`: returns a typed `probe` section with the same outcomes
+- `make live-smoke` / `cargo test --features live-smoke --test corpus_runner -- --ignored`: explicit live verification
 
 Probe policy: narrowest `test`/1-result request, 5s per-provider deadline, 20s aggregate deadline, max 4 concurrent probes, 256-char bounded sanitized messages. Failures update advisory health state but never override explicit provider selection. Missing credentials/config yield skipped outcomes with stable `skip_code` (never a misleading network failure). Credentials and raw upstream bodies are never echoed. Routine `make check` stays network-free; live probes run only when explicitly requested.
 

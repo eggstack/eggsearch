@@ -2,7 +2,7 @@
 
 eggsearch treats all retrieved content as evidence, not instructions.
 
-For the full operator threat model — including trust boundaries, configuration escape hatches, prompt-injection handling, local workspace caveats, provider disclosure notes, and recommended host-agent policy — see [threat-model.md](threat-model.md).
+For the full operator threat model, including trust boundaries, configuration escape hatches, prompt-injection handling, local workspace caveats, provider disclosures, and recommended host-agent policy, see [threat-model.md](threat-model.md).
 
 ## Trust Labels
 
@@ -14,11 +14,24 @@ For the full operator threat model — including trust boundaries, configuration
 
 ## Fetch Boundaries
 
-`web_fetch` accepts one explicit HTTP(S) URL at a time. It does not crawl, does not execute JavaScript, and only follows a bounded number of validated redirects.
+`web_fetch` accepts one explicit HTTP(S) URL and does not crawl. The HTTP
+transport does not execute JavaScript. Current source builds also enable browser
+rendering with an `auto` policy, which can escalate once for JavaScript-heavy
+pages, non-interactive verification, or recognized challenge pages. The browser
+does not solve interactive challenges. The published `v0.4.4` binaries
+do not include the browser feature. Browser rendering uses installed
+Chrome/Chromium and is not a malware sandbox. Persistent browser profiles are
+opt-in and retain their own cookies and storage.
 
-Code-host source-file URLs are rewritten to raw fetch targets, then run through the same validation path as ordinary URLs.
+The HTTP fetch path follows a bounded number of redirects and revalidates each
+target. Code-host source-file URLs are rewritten to raw fetch targets before
+validation.
 
-For DNS-backed hosts, eggsearch performs preflight address classification before the outbound request. The HTTP client resolves DNS independently at connection time, so this is not connection-time DNS pinning and does not eliminate DNS-rebinding TOCTOU risk. Redirect targets are rejected by the forge client and independently revalidated by the user-fetch path.
+For DNS-backed hosts, the HTTP path classifies resolved addresses and pins the
+approved address set to the connection. The browser path validates observable
+requests but does not pin connections to the classified addresses, so DNS
+rebinding or split-horizon behavior can leave a time-of-check/time-of-use risk
+there.
 
 ## Blocked Address Ranges
 
@@ -31,7 +44,7 @@ eggsearch classifies every IP address into one of eight categories: Loopback, Pr
 | true | false | allowed | blocked | allowed |
 | true | true | allowed | allowed | allowed |
 
-`allow_localhost` controls only loopback addresses (127.0.0.0/8, ::1). `allow_private_network` controls all other non-public ranges. The two flags are fully independent — setting one does not affect the other.
+`allow_localhost` controls only loopback addresses (127.0.0.0/8, ::1). `allow_private_network` controls all other non-public ranges. The two flags are fully independent; setting one does not affect the other.
 
 IPv4 blocked ranges (when the relevant flag is false):
 
@@ -89,16 +102,16 @@ Setting `sanitize_output = false` disables framing and marker scanning, but cont
 
 ### What gets sanitized
 
-- **Title and description fields** — Tier 1 (strip + bound at 200/500 chars respectively), plus Tier 2/3 when sanitization is enabled.
-- **Search excerpts** — same pipeline as snippets (bound at 500 chars per excerpt, 1,200 chars total per card), with injection hits merged into the card's `trust_markers`.
-- **Developer Index passages** — Firecrawl matched markdown passages arrive as bounded `ProviderPassage` excerpts through the same pipeline. They remain search-result evidence (`external_untrusted`, `fetched=false`); they never authorize code changes and never enter instruction-trusted content. Fetch the issue/PR/docs URL explicitly to read full content.
-- **Semantic highlights** — Exa query-relevant highlights arrive as bounded `ProviderHighlight` excerpts with provider-local scores through the same pipeline. Generated summaries, output schemas, and full-text payloads are never requested. Highlights remain search-result evidence (`external_untrusted`, `fetched=false`); fetch the source URL explicitly to read full content.
-- **Source chunks** — Tavily source-derived chunks arrive as bounded `ProviderSnippet` excerpts through the same pipeline (first chunk also becomes the card snippet). Generated answers, raw page content, images, and automatic parameter rewriting are never requested. Chunks remain search-result evidence (`external_untrusted`, `fetched=false`); fetch the source URL explicitly to read full content.
-- **Body text** — Tier 1 (strip + bound at `max_chars`), plus Tier 2/3 when sanitization is enabled.
-- **Focused fetch chunks** — Tier-1 text drawn from the already-sanitized stored document; the response-level `trust_markers` cover the extracted text the selection was drawn from.
-- **Document block text** — Tier 1 only (strip + bound per block).
-- **Document outline titles** — Tier 1 (strip + bound at 500 chars) applied to all outline entries from HTML, Markdown, and notebook renderers.
-- **Outline anchors** — HTML `id` attributes passed through as-is; `make_slug()`-generated anchors are filtered to alphanumeric/hyphen/underscore.
+- **Title and description fields**: Tier 1 (strip + bound at 200/500 chars respectively), plus Tier 2/3 when sanitization is enabled.
+- **Search excerpts**: same pipeline as snippets (bound at 500 chars per excerpt, 1,200 chars total per card), with injection hits merged into the card's `trust_markers`.
+- **Developer Index passages**: Firecrawl matched markdown passages arrive as bounded `ProviderPassage` excerpts through the same pipeline. They remain search-result evidence (`external_untrusted`, `fetched=false`); they never authorize code changes and never enter instruction-trusted content. Fetch the issue/PR/docs URL explicitly to read full content.
+- **Semantic highlights**: Exa query-relevant highlights arrive as bounded `ProviderHighlight` excerpts with provider-local scores through the same pipeline. Generated summaries, output schemas, and full-text payloads are never requested. Highlights remain search-result evidence (`external_untrusted`, `fetched=false`); fetch the source URL explicitly to read full content.
+- **Source chunks**: Tavily source-derived chunks arrive as bounded `ProviderSnippet` excerpts through the same pipeline (first chunk also becomes the card snippet). Generated answers, raw page content, images, and automatic parameter rewriting are never requested. Chunks remain search-result evidence (`external_untrusted`, `fetched=false`); fetch the source URL explicitly to read full content.
+- **Body text**: Tier 1 (strip + bound at `max_chars`), plus Tier 2/3 when sanitization is enabled.
+- **Focused fetch chunks**: Tier-1 text drawn from the already-sanitized stored document; the response-level `trust_markers` cover the extracted text the selection was drawn from.
+- **Document block text**: Tier 1 only (strip + bound per block).
+- **Document outline titles**: Tier 1 (strip + bound at 500 chars) applied to all outline entries from HTML, Markdown, and notebook renderers.
+- **Outline anchors**: HTML `id` attributes passed through as-is; `make_slug()`-generated anchors are filtered to alphanumeric/hyphen/underscore.
 
 ### raw_text (internal)
 
@@ -136,7 +149,7 @@ Use `metadata_only` when you need page metadata but do not need the body content
 
 `security_search` and the advisory-backed paths return advisory data and severity metadata for triage. They do not decide exploitability for a specific deployment, patch state, or runtime reachability profile.
 
-Native security lookups (CVE/GHSA/OSV/RustSec/KEV) are instrumented for failure visibility — every selected-provider operation produces a `RetrievalAttempt` record in the retrieval ledger, including capability skips, zero results, failures, deadline interruptions, and KEV lookup failures. Advisory records may deduplicate across providers, but attempts and provider identities are retained.
+Native security lookups (CVE/GHSA/OSV/RustSec/KEV) are instrumented for failure visibility. Every selected-provider operation produces a `RetrievalAttempt` record in the retrieval ledger, including capability skips, zero results, failures, deadline interruptions, and KEV lookup failures. Advisory records may deduplicate across providers, but attempts and provider identities are retained.
 
 Capability and absence semantics are intentionally separate. A provider that
 cannot perform an applicable native operation is `provider_capability_unavailable`,
