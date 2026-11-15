@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: closing (M001/M002 closed; M003 conditionally closed)
+Status: closing (M001/M002 closed; M003 blocked)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
@@ -72,10 +72,16 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
   structured warning.
 - M001 and M002 are closed. Their closure records capture implementation and
   live-tool evidence.
-- M003 is conditionally closed. Six of seven targets have build and size
-  evidence; the macOS arm64 job was cancelled by the hosted runner. Remaining
-  evidence: macOS arm64 size/native qualification, installer smoke beyond Linux
-  x86_64, realistic-mix qualification, and the wheel matrix.
+- M003 is blocked on exact candidate `62387208ac8bc20efb545b68f0704f466bab7295`.
+  Its Python wheel builds and dependency audit pass, but installed-wheel and sdist
+  smoke fail at the typed-request/schema assertion. A native macOS arm64 build and
+  direct `install.sh`/`release-smoke.sh` checks pass locally; the standard
+  installer/release-smoke wrappers remain unrun. The hosted arm64 build job was
+  cancelled before steps because `macos-14-arm64-us-default` is unsupported (the
+  generated release workflow uses the same `macos-14` label). The realistic-mix
+  harness cannot escalate against its local fixture because browser interception
+  blocks private/local targets. Hosted CI passed on this exact candidate; the
+  exact-candidate live ten-tool run remains outstanding.
 
 ## 5. Dependency graph
 
@@ -128,9 +134,9 @@ configuration, a source build without the feature returns `browser_not_compiled_
 for an explicit request, `enabled = false` returns `browser_disabled`, and the
 dependency guard still rejects any other reqwest root in either graph.
 
-### M003 — Distribution and live qualification (infrastructure/evidence) — conditionally closed
+### M003 — Distribution and live qualification (infrastructure/evidence) — blocked
 
-Closure: `plans/closure/browser-artifact-availability/003-status.md`. Outstanding: macOS aarch64 size and native qualification, installer smoke beyond x86_64 Linux, the realistic-mix matrix, and the wheel matrix.
+Closure: `plans/closure/browser-artifact-availability/003-status.md`. Exact-candidate run `43738031441` passed build/qualification/consumer validation for six targets; macOS arm64 hosted execution was blocked by an unsupported runner configuration, although native local build/size/installer evidence passed. The Python wheel smoke failed; realistic-mix and exact-candidate live ten-tool runs remain unqualified.
 
 Measure and record the exact candidate: per-target size delta, realistic-mix
 qualification with idle teardown, installer smoke, wheel decoupling and matrix,

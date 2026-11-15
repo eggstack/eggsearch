@@ -1,11 +1,15 @@
 # B003 — Distribution and Live Qualification
 
-Status: ready
+Status: blocked
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M003
 Primary class: infrastructure and evidence
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 References: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md` § Decision 7, § Verification; `plans/adrs/ADR-0007-pdf-artifact-availability.md` § Verification gate; `plans/implementation/pdf-ingestion-fidelity/006-artifact-availability.md`; `docs/retrieval-quality-extraction-qualification.md`; `docs/release.md`; `docs/installation.md`; `docs/python-library.md`; `architecture/packaging.md`.
 Dependencies: hard B002 (default artifact availability). Interface: PDF roadmap M006 owns the PDF artifact acceptance; this plan supplies the wheel selection it must adopt. Operational: system Chrome/Chromium on the qualification host; hosted CI.
+
+## Current disposition
+
+The qualification attempt against `62387208ac8bc20efb545b68f0704f466bab7295` is blocked. The Python native wheel smoke fails its typed-request/schema contract assertion, and the prescribed local realistic-mix fixture cannot reach browser rendering because browser interception blocks private/local targets. The hosted Eggpack arm64 job is cancelled because `macos-14-arm64-us-default` is unsupported; the generated release workflow uses the same `macos-14` label, so this returns to its producer owner. Per the stop conditions below, do not change production behavior or generated release workflow in this plan; record the failure and return fixes to their owning workstreams. Exact evidence is in `plans/closure/browser-artifact-availability/003-status.md`.
 
 ## Objective
 

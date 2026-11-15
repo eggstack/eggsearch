@@ -1,0 +1,22 @@
+[fetch]
+enabled = true
+timeout_ms = 30000
+allow_private_network = true
+allow_localhost = true
+sanitize_output = true
+pdf_enabled = true
+
+[fetch.browser]
+enabled = true
+policy = "auto"
+executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+startup_timeout_ms = 15000
+navigation_timeout_ms = 30000
+post_load_wait_ms = 1500
+verification_wait_ms = 10000
+max_requests = 13
+idle_timeout_ms = 5000
+max_dom_bytes = 4000000
+global_concurrency = 1
+per_origin_concurrency = 1
+block_media = true

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "qualification": "browser-artifact-availability-m003-macos-arm64-installer-smoke-001",
+  "candidate_sha": "62387208ac8bc20efb545b68f0704f466bab7295",
+  "source_sha": "62387208ac8bc20efb545b68f0704f466bab7295",
+  "source_worktree_clean": true,
+  "host": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "system": "Darwin",
+    "machine": "arm64"
+  },
+  "target": "aarch64-apple-darwin",
+  "asset": "eggsearch-aarch64-apple-darwin",
+  "version": "0.4.4",
+  "binary_sha256": "4fea05ad8acf6c0da1a3a9ab424f80db826612837666884e0acdf5f68ae9946b",
+  "installer": {
+    "script": "packaging/install.sh",
+    "download_source": "temporary loopback HTTP server",
+    "checksum_verified": true,
+    "temporary_home": true,
+    "cargo_fallback_used": false,
+    "outcome": "passed",
+    "stdout": "eggsearch-aarch64-apple-darwin: OK\ninstalled eggsearch at /var/folders/2j/dlwhrpps66scv9bw8f7vdfg40000gq/T/eggsearch-m003-installer-y34ki0v9/home/.local/bin/eggsearch\nadd /var/folders/2j/dlwhrpps66scv9bw8f7vdfg40000gq/T/eggsearch-m003-installer-y34ki0v9/home/.local/bin to PATH to invoke eggsearch directly"
+  },
+  "release_smoke": {
+    "script": "packaging/release-smoke.sh",
+    "stdio_and_loopback_http_mcp": true,
+    "outcome": "passed",
+    "stdout_tail": ""
+  },
+  "outcome": "passed"
+}
