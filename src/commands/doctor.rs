@@ -276,6 +276,15 @@ fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
         ));
     }
 
+    if cfg.egress.is_routed()
+        && cfg.search.challenge.enabled
+        && cfg.search.challenge.cookie_ttl_seconds > 0
+    {
+        warnings.push(
+            "[egress] is routed and [search.challenge] reuses pass cookies; a challenge token bound to the client's egress address is re-challenged or rejected when the exit address changes — set [search.challenge].cookie_ttl_seconds = 0 if the route does not keep one exit address per process".to_string(),
+        );
+    }
+
     warnings
 }
 
@@ -326,7 +335,58 @@ async fn probe_providers(state: &ServerState) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use eggsearch::core::config::{ApiProviderConfig, AppConfig, SearxngConfig};
+    use eggsearch::core::config::{
+        ApiProviderConfig, AppConfig, EgressHopConfig, EgressSection, SearxngConfig,
+    };
+
+    fn routed_egress() -> EgressSection {
+        EgressSection {
+            enabled: true,
+            hops: vec![EgressHopConfig {
+                scheme: "http".to_string(),
+                host: "127.0.0.1".to_string(),
+                port: 8080,
+                username: None,
+                password_env: None,
+            }],
+        }
+    }
+
+    fn egress_warnings(cfg: &AppConfig) -> usize {
+        collect_warnings(cfg)
+            .iter()
+            .filter(|warning| warning.starts_with("[egress]"))
+            .count()
+    }
+
+    #[test]
+    fn egress_with_cookie_reuse_warns_exactly_once() {
+        let mut cfg = AppConfig::default();
+        cfg.search.challenge.enabled = true;
+        cfg.egress = routed_egress();
+        assert_eq!(egress_warnings(&cfg), 1);
+        assert!(collect_warnings(&cfg)
+            .iter()
+            .any(|warning| warning.contains("cookie_ttl_seconds = 0")));
+
+        cfg.search.challenge.cookie_ttl_seconds = 0;
+        assert_eq!(egress_warnings(&cfg), 0, "zero TTL disables reuse");
+        cfg.search.challenge.cookie_ttl_seconds = 240;
+
+        cfg.search.challenge.enabled = false;
+        assert_eq!(
+            egress_warnings(&cfg),
+            0,
+            "disabled challenge reuses nothing"
+        );
+        cfg.search.challenge.enabled = true;
+
+        cfg.egress.enabled = false;
+        assert_eq!(egress_warnings(&cfg), 0, "an unrouted egress cannot vary");
+        cfg.egress = routed_egress();
+        cfg.egress.hops.clear();
+        assert_eq!(egress_warnings(&cfg), 0, "an empty chain is not routed");
+    }
 
     #[test]
     fn empty_credential_env_is_reported_as_missing_not_configured() {

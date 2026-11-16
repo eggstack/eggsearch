@@ -335,6 +335,70 @@ fn normalize_html_whitespace(s: &str) -> String {
     out
 }
 
+/// Extract links from a Markdown representation via `pulldown-cmark` link
+/// events. Applies the same URL resolution, classification, bounding, and
+/// `MAX_LINKS` cap as [`extract_links_from_html`], so a negotiated Markdown
+/// body never reports an empty link list when it contains links.
+pub fn extract_links_from_markdown(markdown: &str, base_url: &str) -> LinkExtractionResult {
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+
+    let base = url::Url::parse(base_url).ok();
+    let mut total_seen: usize = 0;
+    let mut links: Vec<ExtractedLink> = Vec::new();
+    let mut truncated = false;
+    let mut pending: Option<(String, String)> = None;
+
+    for event in Parser::new(markdown) {
+        match event {
+            Event::Start(Tag::Link { dest_url, .. }) => {
+                pending = Some((dest_url.to_string(), String::new()));
+            }
+            Event::End(TagEnd::Link) => {
+                let Some((href, text)) = pending.take() else {
+                    continue;
+                };
+                total_seen += 1;
+                if links.len() >= MAX_LINKS {
+                    truncated = true;
+                    continue;
+                }
+                let Some(page_url) = base.as_ref() else {
+                    continue;
+                };
+                let Ok(url) = page_url.join(&href) else {
+                    continue;
+                };
+                let url_string = url.to_string();
+                if url_string.chars().count() > SNIPPET_MAX_CHARS {
+                    continue;
+                }
+                let (text, _) = bound_text(text.trim(), SNIPPET_MAX_CHARS);
+                let same_domain = Some(page_url.host_str() == url.host_str());
+                let link_kind = classify_link(page_url, &url);
+                links.push(ExtractedLink {
+                    text,
+                    url: url_string,
+                    link_kind,
+                    rel: None,
+                    same_domain,
+                });
+            }
+            Event::Text(text) | Event::Code(text) => {
+                if let Some((_, link_text)) = pending.as_mut() {
+                    link_text.push_str(&text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    LinkExtractionResult {
+        links,
+        total_seen,
+        truncated,
+    }
+}
+
 fn extract_links(document: &scraper::Html, base_url: &str) -> LinkExtractionResult {
     use url::Url;
 
@@ -861,5 +925,40 @@ mod tests {
         let page = url::Url::parse("https://example.com/").unwrap();
         let link = url::Url::parse("https://example.com/issues/123").unwrap();
         assert_eq!(classify_link(&page, &link), LinkKind::SameDomain);
+    }
+
+    #[test]
+    fn markdown_links_inline_and_reference_resolve_against_page() {
+        let markdown = "[inline](./docs) and [reference][r]\n\n[r]: https://example.com/ref";
+        let result = extract_links_from_markdown(markdown, "https://example.com/base/page");
+        assert_eq!(result.total_seen, 2);
+        assert!(!result.truncated);
+        let urls: Vec<&str> = result.links.iter().map(|l| l.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            vec!["https://example.com/base/docs", "https://example.com/ref"]
+        );
+        assert_eq!(result.links[0].text, "inline");
+        assert_eq!(result.links[1].text, "reference");
+    }
+
+    #[test]
+    fn markdown_links_respect_the_shared_cap() {
+        let mut markdown = String::new();
+        for index in 0..(MAX_LINKS + 3) {
+            markdown.push_str(&format!("[link {index}](https://example.com/{index})\n\n"));
+        }
+        let result = extract_links_from_markdown(&markdown, "https://example.com/");
+        assert_eq!(result.links.len(), MAX_LINKS);
+        assert_eq!(result.total_seen, MAX_LINKS + 3);
+        assert!(result.truncated);
+    }
+
+    #[test]
+    fn markdown_without_links_is_empty_not_truncated() {
+        let result = extract_links_from_markdown("# Title\n\nNo links here.", "https://x.com/");
+        assert!(result.links.is_empty());
+        assert_eq!(result.total_seen, 0);
+        assert!(!result.truncated);
     }
 }

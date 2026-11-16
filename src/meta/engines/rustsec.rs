@@ -346,6 +346,34 @@ mod tests {
         ));
     }
 
+    #[tokio::test]
+    async fn keyword_query_is_rejected_and_the_engine_is_not_routed() {
+        use crate::meta::engines::SearchEngine;
+
+        let engine = RustSecEngine {
+            client: Client::new(),
+        };
+        let request = super::super::EngineSearchRequest::simple(
+            "serde deserialization",
+            5,
+            Duration::from_secs(1),
+        );
+        let error = engine
+            .search(&request)
+            .await
+            .expect_err("RustSec cannot answer a keyword query");
+        match error {
+            EngineError::Unsupported { reason, .. } => {
+                assert!(
+                    reason.contains("keyword search not supported"),
+                    "got reason: {reason}"
+                );
+            }
+            other => panic!("expected EngineError::Unsupported, got {other:?}"),
+        }
+        assert!(!crate::meta::routing::serves_keyword_query("rustsec"));
+    }
+
     #[test]
     fn test_convert_to_metadata() {
         let advisory = RustSecAdvisory {

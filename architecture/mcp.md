@@ -122,7 +122,7 @@ Registration lives in `server.rs`; behavior lives in `tools/`; semantics live in
 
 | Tool | Purpose | Key Parameters | Backend Path |
 |------|---------|---------------|--------------|
-| `web_search` | Live metasearch returning source cards, never page text | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `safe_search`, `excerpt_count` | `MetadataSearchAdapter::web_search` (+ `resolve_provider_routing` selection) |
+| `web_search` | Live metasearch returning source cards, never page text or a synthesized answer | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `safe_search`, `excerpt_count` | `MetadataSearchAdapter::web_search` (+ `resolve_provider_routing` selection) |
 | `web_fetch` | Bounded extraction of one explicit HTTP(S) URL | `url`, `max_chars`, `timeout_ms`, `extract_mode`, `include_links`, `pdf`, `cache_policy`, `focus`/`focus_max_chunks`/`focus_max_chars`, `render`, `browser_profile` | `FetchClient` (+ cache tiers, `OriginController`, optional browser transport) |
 | `batch_fetch` | Bounded fan-out over explicit URLs or repo locators, per-item results | `items` (web + repo, each with `focus` projection), `max_items`, `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error` | `FetchClient` per web item + repo-fetch handler per repo item; deterministic `project_*` per payload |
 | `provider_status` | Diagnostic provider/capability report with optional bounded live probe | `probe`, `recipe_detail` (`none`/`summary`/`full`) | `adapter.provider_status()` + health registry; probe path uses the shared probe service |
@@ -175,7 +175,7 @@ Every tool module follows one pipeline:
 `map_tool_result` is the single result/error boundary:
 
 - `Ok(value)` → structured success (`CallToolResult::structured`: native `structuredContent` plus a text JSON fallback for older clients).
-- `ToolError::Validation` (legacy) and `ToolError::Execution { code, message, data, repair }` → repairable `isError: true` tool result with a stable `code` and bounded `RepairHint { field, accepted[<=20], suggested_value }`. Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`. Legacy `Validation` strings are code-inferred so old call sites stay repairable without a flag day.
+- `ToolError::Validation` (legacy) and `ToolError::Execution { code, message, data, repair }` → repairable `isError: true` tool result with a stable `code` and bounded `RepairHint { field, accepted[<=20], suggested_value }`. Stable codes: `invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, `plan_mismatch`, `document_unavailable`. Legacy `Validation` strings are code-inferred so old call sites stay repairable without a flag day.
 - `ToolError::InvalidRequest` → JSON-RPC `invalid_params`. Reserved for shapes that cannot be interpreted at all.
 - `ToolError::Internal` → JSON-RPC `internal_error` without stack traces. Reserved for server faults.
 
@@ -206,6 +206,15 @@ Ordinary agent schemas stay slim. The canonical vocabulary is:
 
 Advanced fields (`providers`, `timeout_ms`, `profile`, `mode`, `workflow`, legacy `include_*`) remain accepted at runtime but are hidden from `tools/list` input schemas (`#[schemars(skip)]`). When both forms are present they must agree; disagreement is a repairable `ConflictingArguments`/`InvalidSemanticValue` error with a bounded repair hint, never a silent override. Unknown tokens are `InvalidSemanticValue` with the accepted list echoed.
 
+Wire compatibility aliases are serde-only spellings for agents trained on other
+search/fetch servers. `web_fetch` accepts `max_length` for `max_chars`,
+`start_index` for `offset`, and `question` or `prompt` for `focus`. An alias is
+not a second schema property: the canonical field's description names the
+accepted spelling, and sending a canonical field together with its alias is a
+duplicate-field deserialization error (a repairable invalid-arguments result),
+not a silent precedence rule. Aliases never change validation, budgeting, or
+response shape.
+
 ---
 
 ## Semantic Contract (`tool_contract.rs`)
@@ -217,7 +226,7 @@ One `ToolContract` per stable tool is the authoritative source for selection sem
 - `purpose` / `use_when` / `not_for` — one-phrase capability, selection trigger, explicit non-goal.
 - `domain` — `web`, `fetch`, `repository`, `security`, `research`, `evidence`, `diagnostic`.
 - `disclosure` — advisory host hint only, never policy-enforcing: `core` (`web_search`, `web_fetch`, `repo_search`), `deferred` (specialists), `diagnostic` (`provider_status`).
-- `read_only` / `open_world` — static MCP annotation hints. All 10 tools are read-only; all except `provider_status` and `build_evidence_bundle` are open-world. `provider_status` reports `open_world_hint=false` even though `probe=true` performs bounded live checks, because annotations never vary by arguments.
+- `read_only` / `destructive` / `idempotent` / `open_world` — static MCP annotation hints, always emitted explicitly. All 10 tools report `readOnlyHint=true`, `destructiveHint=false`, and `idempotentHint=true`; all except `provider_status` and `build_evidence_bundle` report `openWorldHint=true`. `provider_status` uses `openWorldHint=false` even though `probe=true` performs bounded live checks, because annotations never vary by arguments.
 - `keywords` — discovery terms (e.g. `cve`, `ghsa`, `kev` for `security_search`; `batch`, `fan-out` for `batch_fetch`).
 - `aliases` — discovery-only index names (e.g. `websearch`, code-search alias, `deep_research`). Never wire names; never valid in `next_actions`.
 - `related_tools` / `next_tools` — semantic neighborhood and likely follow-ups (e.g. `web_search` → `web_fetch`, `batch_fetch`; `repo_search` → `repo_fetch`, `repo_map`).
@@ -229,6 +238,103 @@ The registry is tested sorted, unique, and exactly 10 entries.
 ---
 
 ## `tools/list`: Name-Sorted Advertisement + FNV Fingerprint
+
+Advertisement is a three-stage pipeline with a fixed order: contract
+metadata is applied first, then the compact schema projection, then the preset
+filter from `[mcp].tool_preset`. The `ToolRouter` is built from the unfiltered
+set, so dispatch never consults the advertised copy — this is what makes a
+hidden tool still callable. The active preset is logged once at construction as
+`mcp advertisement preset=… schema_profile=… advertised=… hidden=…`, and
+`provider_status.mcp_advertisement` reports `tool_preset`, `schema_profile`,
+`advertised_count`, `advertised_tools` and `hidden_tools`. No `tools/list._meta`
+signal is emitted, deliberately: `MetaObject` is SEP-owned and a strict client
+may reject unknown keys.
+
+`next_actions` filtering happens at the single `EggsearchServer::respond` →
+`filter_payload` seam and covers top-level `next_actions`,
+`workflow_coverage.next_actions`, `step_tools`, and `steps`/`fallbacks`. Drops
+are counted in the additive `next_actions_omitted` field, never rewritten into
+another tool, and `full` is a strict no-op. Every non-`full` preset is closed
+under `ToolContract.next_tools` by test, so a preset cannot advertise a tool
+whose follow-up suggestions name a hidden one.
+
+## Offset windows, progress, and tasks
+
+`web_fetch`, `batch_fetch` and `research_search` accept optional `offset` and
+`limit` for random access. A read is the original request re-specified with the
+window: the request-plan key is derived server-side from the fields that define
+the document or set, is never echoed by the caller, and deliberately excludes
+`offset`/`limit`. There is **no server-side addressing state** — no window,
+offset or page is retained across calls, so a window is a pure function of the
+request and the cached document.
+
+The unit and the ceiling differ by tool:
+
+- `web_fetch` addresses characters of the addressable document text: every
+  chunk text joined by a single `\n`, measured before control-character
+  stripping and before trust framing. `offset` is zero-based; `limit` defaults
+  to the effective `max_chars` window and is clamped to `[fetch].max_chars_cap`.
+- `batch_fetch` addresses the item list. `limit` defaults to `max_items` and is
+  clamped to `[fetch].batch_max_items_cap`.
+- `research_search` addresses non-empty result groups. `limit` defaults to the
+  `max_groups`-derived page size and is clamped to `RESEARCH_PAGE_GROUPS` (14).
+
+Ranges are half-open `[from, to)` in Unicode scalar values and clamp rather
+than error: `offset >= total` returns an empty window with `from == to == total`
+(and `text == ""` for `web_fetch`). A response is **addressed** when at least
+one of `offset`/`limit` is supplied. Only addressed responses carry window
+keys, and `with_addressing_keys` (`tools/common.rs`) declares the key strings
+once:
+
+| Tool | Keys added |
+|------|------------|
+| `web_fetch` | `text_from`, `text_to`, `text_total`, `doc_id`, plus `next_offset` when more text remains |
+| `batch_fetch` | `item_from`, `item_to`, `item_total`, plus `next_offset` when more items remain |
+| `research_search` | `group_from`, plus `next_offset` when more groups remain, `aggregate_scope: "document"`, `total_groups` and `returned_groups` |
+
+`web_fetch` also adds `focus_scope: "document"` whenever a non-null `focus`
+accompanies an addressed read, because focus selects over the whole document
+and is not recomputed per window. `text_total` is the Unicode scalar count of
+every chunk text joined by a single `\n`, measured before control-character
+stripping and before trust framing; it is not duplicated inside `document`, and
+`document.text_chars_returned` stays window-scoped. `doc_id` is the
+deterministic `doc_<16hex(url, title, kind)>` document identity — stable and
+never random, but not a content hash, so two different bodies at one URL under
+one title share it.
+
+A call that sends neither `offset` nor `limit` receives the pre-M020 payload
+with no addressing key added. `limit = 0` is `invalid_semantic_value` with
+`repair.field = "limit"`; a `limit` above the server maximum is clamped and
+reported in `structured_warnings` under `max_results_clamped`. A request whose
+caller-supplied plan bound the server had to clamp is `plan_mismatch`
+(`focus_max_chars` above `[fetch].max_chars_cap` for `web_fetch`; `max_items` or
+`max_total_chars` above their `[fetch]` caps for `batch_fetch`; `max_results`
+above `[search].max_results_cap` or `max_per_group` of 0 for
+`research_search`). An addressed `web_fetch` request that produced nothing to
+address — an unfetched page, `extract_mode: "metadata_only"`, or a document
+with no chunks — is `document_unavailable`, distinguishable from
+`upstream_failed`.
+
+Reading by offset never widens a bound: the effective timeout is
+`min(caller timeout_ms, [fetch].timeout_ms)`, and no call exceeds its character,
+item, or group ceiling. `chunk_id` remains the citation and evidence address;
+offsets are for reading and chunk ids are for citing.
+
+`src/mcp/progress.rs` emits progress only when the request carries
+`_meta.progressToken`. Fixed phases are `plan`, `dispatch n/m`, `extract`,
+`merge`, `group`, `project`; notifications are rate-limited to one per 250 ms,
+capped at 64 per call and 4 KiB total, carry counts only with each message
+bounded to 64 bytes of ASCII, and are spawned so they can never delay the
+response.
+
+`src/mcp/tasks.rs` exposes the MCP Tasks extension only when `[mcp.tasks]`
+`enabled` is true **and** the client declared it. `ServerHandler::get_task`,
+`update_task` and `cancel_task` forward to `rmcp::task_manager::TaskManager`;
+without it they return `method_not_found`. Eligible calls are `research_search`
+with `depth = "deep"` and `batch_fetch` with more than eight items. At
+`max_concurrent` the call silently takes the synchronous path instead of
+failing. Cancellation is cooperative through the task context. Task ids are
+transport state and never enter evidence identity.
 
 `apply_contract_metadata()` runs once at construction: for each router-generated tool it overwrites `description` and `annotations` from the contract registry, attaches the compact `outputSchema` from `output_schema.rs`, then sorts by name so `tools/list` is deterministic and cacheable across transports and protocol eras.
 
@@ -259,6 +365,7 @@ Tool behavior modules carry unit coverage in-file plus the shared `tools/tests.r
 
 - `diagnostic` — full observability payload, passthrough with no added keys.
 - `standard` — specialist research/security default surface. Keeps full `retrieval_summary`, `conflict_metadata`, `workflow_coverage`, `evidence_role_summary`, `capability_enforcement`, and fetch/cache metadata; summarizes only `routing_decision` (→ `routing_summary`) and `telemetry.routing_decision`.
+- `excerpt economy` — orthogonal to the four detail levels and applied inside `compact` and `brief` for `web_search`, `repo_search`, `research_search` and `security_search`. One response-wide ceiling (`[mcp].excerpt_budget_chars`, default 4000, range 256–32000) bounds `snippet` plus `excerpts[].text` measured in serialized characters including trust framing. Passages whose normalized 4-token shingle sets overlap by at least 0.80 collapse to the earliest occurrence, confirmed by exact shingle comparison so a hash collision can never suppress on its own; passages under four tokens compare only by exact equality. The pass is greedy and first-wins, so output order is unchanged. A top-level `excerpt_economy` object reports `budget_chars`, `considered_count`, `admitted_count`, `redundant_count`, `over_budget_count`, `clipped_count`, `chars_before` and `chars_after`, with the invariant `admitted + redundant + over_budget == considered`; a card that lost passages carries `excerpts_suppressed`. Suppression never reorders results, changes a stable ID, or drops a whole result.
 - `compact` — ordinary agent operation. Trims excerpts to 1 per card, replaces `routing_decision` with `routing_summary`, replaces `retrieval_summary`/`conflict_metadata` with `retrieval_status`/`conflict_indicator`, drops `workflow_coverage`/`telemetry`/`document`/`links`, strips per-vulnerability `references`/`details`, caps `repo_map` entries at 50. Every projection stamps `response_detail` plus an explicit truncation marker (`projection_excerpts_trimmed`, `projection_entries_truncated`, `links_omitted_in_compact`).
 - `brief` — applies compact safety reductions, then retains identity, status, trust, warnings, applicability and citation fields using explicit allowlists. Content strings remain intact when the serialized response fits the configured `[mcp].brief_max_chars` budget; only oversized responses progressively clip strings at UTF-8 character boundaries before complete result records are omitted from the tail with `returned_count`, `omitted_count`, and `output_truncated`. Oversized applicability lists use an `applicability_summary` with affected, not-affected, unknown, total and omitted counts; provider failures expose `providers_failed_summary` when records are omitted. Omitted batch failure records retain their indexes in `failed_member_indices`. Text plus overlapping focus chunks are avoided through the existing compact fetch projection. The structured result and text fallback are both brief; callers request `diagnostic` for the full diagnostic payload.
 

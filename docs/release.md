@@ -5,24 +5,15 @@ publish eggsearch or publish a GitHub Release automatically. The crate is
 published directly to crates.io with `cargo publish`; the binary workflow then
 assembles a draft GitHub Release after all target artifacts qualify.
 
-The first binary-enabled release, `v0.3.9`, completed this sequence on the
-qualified commit `0cbbeee79a34b7f6d2d226cef535096adc58b4c3`. Qualification run
-`34653366561` and tagged release run `34655458760` passed all seven targets;
-the published release contains the exact 16-asset contract. Unix installer and
-updater checks passed locally, and native Windows PowerShell latest/pinned
-installer plus `update --check` smoke passed in run `34660182644`.
+`v0.4.4` is the latest published binary release, published on 2026-10-19. Its
+binaries predate the current source defaults for PDF extraction and browser
+rendering, so neither feature is enabled in those binaries. Current source builds
+enable both by default.
 
-`v0.4.3` is the latest published binary release. It was qualified and published
-from the exact source recorded in `plans/closure/mode-off-repository-locality-corrective/002-status.md`.
 The separate Python distribution `eggsearch==0.4.4` was published to PyPI on
-2026-10-28; it does not represent a new binary release. `v0.4.2` was staged by
-the Eggpack producer with the 19-asset contract, attested while draft, and
-published on 2026-10-07. `v0.4.1` remains the first binary release carrying the
-frozen CodeGG parity surface; `v0.4.0` is crate + tag only, with no published
-binaries. Corrections after a crates.io publication always require a new
-version, a new changelog entry, and full re-qualification; see
-`plans/closure/codegg-legacy-search-parity/005-status.md` and the current
-Mode-Off corrective plan.
+2026-10-28; it does not represent a new binary release. Corrections after a
+crates.io publication require a new version, a changelog entry, and full
+re-qualification.
 
 ## Preparation
 
@@ -85,6 +76,12 @@ PyPI's long description is embedded from `bindings/python/PYTHON_README.md`,
 which mirrors the root `README.md`. Updating that source changes the description
 on the next version upload; an existing PyPI release cannot be overwritten.
 
+The wheel is deliberately narrower than the binary assets:
+`bindings/python/Cargo.toml` sets `default-features = false, features = ["pdf"]`,
+so the Python distribution carries PDF extraction but not browser rendering.
+Python users who need rendering need the Rust binary or a source build that
+enables the feature; this asymmetry changes no binary asset name or count.
+
 Public install instructions are in `README.md` and `docs/python-library.md`.
 The published aarch64 wheel has passed native smoke and benchmarking; results
 are recorded in `plans/closure/python-pypi-distribution/004-status.md`. ARMv7
@@ -111,9 +108,10 @@ git push origin vX.Y.Z
 The `Release binaries` workflow validates the tag, checked-out commit,
 `Cargo.lock`, and exact crates.io version before starting the matrix. It builds
 default-feature assets for the seven targets in [installation.md](installation.md),
-uses a glibc 2.17 floor for Linux GNU artifacts, runs CLI plus keyless MCP
-stdio and Streamable HTTP/health/tool-list smoke tests, and writes checksums
-only after smoke completes.
+so every published binary includes PDF extraction and browser rendering; `egress`
+is never in a release asset. Linux GNU builds keep a glibc 2.17 floor. The
+workflow runs CLI plus keyless MCP stdio and Streamable HTTP/health/tool-list
+smoke tests, and writes checksums only after smoke completes.
 The ARMv7 job runs CLI smoke under QEMU; native jobs run the full protocol
 smoke. macOS artifacts are unsigned.
 
@@ -171,7 +169,7 @@ inventory.
 Publishing stays manual. The candidate qualifier, release producer, and
 provenance workflow do not publish the crate or GitHub Release: crates.io is
 first, the draft is second, and a human performs the final publish. A tag whose
-crate version is not yet visible on crates.io must not be dispatched — publish
+crate version is not yet visible on crates.io must not be dispatched. Publish
 the crate first.
 
 `Release provenance` must run **while the release is still a draft**: its guard

@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `faa1da2e5d5a8c38045001fec1ae1a230bc36bde`
-Implementation plan: `plans/implementation/python-native-library/007-windows-safe-read-corrective.md`
+Implementation plan: `plans/archive/implementation/python-native-library/007-windows-safe-read-corrective.md`
 Roadmap: `plans/subsystems/python-native-library-roadmap.md` M007
 
 ## Defect

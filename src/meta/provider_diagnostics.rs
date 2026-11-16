@@ -12,9 +12,16 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::core::provider::{
-    built_in_provider_descriptor, provider_configured_state, ProviderSkipCode, KNOWN_PROVIDER_IDS,
+    built_in_provider_descriptor, provider_configured_state, KNOWN_PROVIDER_IDS,
 };
-use crate::core::repo_search::SearchProfile;
+pub use crate::meta::provider_health_view::{ParseShape, ProviderHealthStatus, ProviderHealthView};
+
+mod decisions;
+
+pub use decisions::{
+    resolve_provider_routing, IntentRoutingAttempt, ProviderIntentRoutingReport,
+    ProviderRoutingDecision, ProviderRoutingError, ProviderSkipReason,
+};
 
 /// Coarse error class for health tracking. Matches `ErrorClass` from adapter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +32,10 @@ pub enum FailureClass {
     HttpStatus,
     /// The engine responded but the HTML could not be parsed.
     ParseError,
+    /// The upstream served a challenge, consent, or anti-bot interstitial
+    /// instead of a results page. Cooldown matches rate limiting: the
+    /// provider is not retried until that window expires.
+    Blocked,
     /// A network-level error (DNS, TLS, connection reset, etc.).
     NetworkError,
     /// The engine returned HTTP 429 (rate-limited).
@@ -65,6 +76,7 @@ impl FailureClass {
             Self::Timeout => "timeout",
             Self::HttpStatus => "http_status",
             Self::ParseError => "parse_error",
+            Self::Blocked => "blocked",
             Self::NetworkError => "network_error",
             Self::RateLimited => "rate_limited",
             Self::Panic => "panic",
@@ -79,6 +91,7 @@ impl FailureClass {
             "timeout" => Self::Timeout,
             "http_status" => Self::HttpStatus,
             "parse_error" => Self::ParseError,
+            "blocked" => Self::Blocked,
             "network_error" => Self::NetworkError,
             "rate_limited" => Self::RateLimited,
             "panic" => Self::Panic,
@@ -93,60 +106,13 @@ impl From<crate::meta::adapter::ErrorClass> for FailureClass {
             crate::meta::adapter::ErrorClass::Timeout => Self::Timeout,
             crate::meta::adapter::ErrorClass::HttpStatus => Self::HttpStatus,
             crate::meta::adapter::ErrorClass::ParseError => Self::ParseError,
+            crate::meta::adapter::ErrorClass::Blocked => Self::Blocked,
             crate::meta::adapter::ErrorClass::NetworkError => Self::NetworkError,
             crate::meta::adapter::ErrorClass::RateLimited => Self::RateLimited,
             crate::meta::adapter::ErrorClass::Panic => Self::Panic,
             crate::meta::adapter::ErrorClass::Unknown => Self::Unknown,
         }
     }
-}
-
-/// Health status for a provider, derived from the health entry.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderHealthStatus {
-    /// No recent failures; provider is operating normally.
-    Healthy,
-    /// Some recent failures but not in cooldown.
-    Degraded,
-    /// Provider is in cooldown after repeated failures.
-    Cooldown,
-    /// No health data recorded yet.
-    Unknown,
-}
-
-/// A compact per-provider health view embedded in provider descriptors.
-///
-/// Distinct from [`ProviderHealthSnapshot`] which mixes config state
-/// (enabled, configured) with health. This view is purely health-focused
-/// and designed to be embedded in provider status output.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ProviderHealthView {
-    /// Derived health status.
-    pub status: ProviderHealthStatus,
-    /// Number of consecutive failures (0 if last call succeeded).
-    pub consecutive_failures: u32,
-    /// Error class of the most recent failure, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error_class: Option<String>,
-    /// Bounded human-readable message of the most recent failure.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error_message: Option<String>,
-    /// When the provider will exit cooldown, if in cooldown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cooldown_until: Option<String>,
-    /// Reason for the current cooldown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cooldown_reason: Option<String>,
-    /// Latency of the most recent call in milliseconds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_latency_ms: Option<u64>,
-    /// When the last successful call occurred (ISO 8601 / RFC 3339).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_success_at: Option<String>,
-    /// When the last failed call occurred (ISO 8601 / RFC 3339).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_failure_at: Option<String>,
 }
 
 /// A serializable snapshot of a single provider's health state.
@@ -190,6 +156,7 @@ struct ProviderHealthEntry {
     consecutive_failures: u32,
     cooldown_until: Option<Instant>,
     cooldown_reason: Option<String>,
+    last_parse_shape: Option<ParseShape>,
 }
 
 impl ProviderHealthEntry {
@@ -203,6 +170,7 @@ impl ProviderHealthEntry {
             consecutive_failures: 0,
             cooldown_until: None,
             cooldown_reason: None,
+            last_parse_shape: None,
         }
     }
 
@@ -248,6 +216,7 @@ impl ProviderHealthEntry {
                 let elapsed = t.elapsed().as_secs();
                 format!("{elapsed}s ago")
             }),
+            parse_shape: self.last_parse_shape,
         }
     }
 }
@@ -288,7 +257,7 @@ impl ProviderHealthRegistry {
     }
 
     /// Record a successful provider call.
-    pub fn record_success(&self, provider_id: &str, latency_ms: u64) {
+    pub fn record_success(&self, provider_id: &str, latency_ms: u64, result_count: usize) {
         let mut entries = self.lock_entries();
         let entry = entries
             .entry(provider_id.to_string())
@@ -298,6 +267,11 @@ impl ProviderHealthRegistry {
         entry.last_latency_ms = Some(latency_ms);
         entry.cooldown_until = None;
         entry.cooldown_reason = None;
+        entry.last_parse_shape = Some(if result_count == 0 {
+            ParseShape::Empty
+        } else {
+            ParseShape::Ok
+        });
     }
 
     /// Record a failed provider call.
@@ -319,6 +293,9 @@ impl ProviderHealthRegistry {
         entry.last_failure_message = bounded;
         entry.last_latency_ms = Some(latency_ms);
         entry.consecutive_failures += 1;
+        if failure_class == FailureClass::ParseError {
+            entry.last_parse_shape = Some(ParseShape::Shifted);
+        }
 
         // Enter cooldown after threshold consecutive failures. An
         // expired previous cooldown is eligible for re-entry so the
@@ -327,6 +304,7 @@ impl ProviderHealthRegistry {
         if entry.consecutive_failures >= COOLDOWN_THRESHOLD && cooldown_expired {
             let (duration, reason) = match failure_class {
                 FailureClass::RateLimited => (RATE_LIMIT_COOLDOWN, "rate limited"),
+                FailureClass::Blocked => (RATE_LIMIT_COOLDOWN, "blocked by upstream"),
                 FailureClass::Timeout => (TIMEOUT_COOLDOWN, "repeated timeouts"),
                 FailureClass::NetworkError | FailureClass::HttpStatus => {
                     (TRANSPORT_COOLDOWN, "transport failures")
@@ -366,6 +344,7 @@ impl ProviderHealthRegistry {
                 last_latency_ms: None,
                 last_success_at: None,
                 last_failure_at: None,
+                parse_shape: None,
             })
     }
 
@@ -454,350 +433,6 @@ impl std::fmt::Debug for ProviderHealthRegistry {
             .field("entries_count", &entries.len())
             .finish()
     }
-}
-
-/// A skip reason for a single provider in the routing decision.
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ProviderSkipReason {
-    /// The provider id that was skipped.
-    pub provider_id: String,
-    /// Machine-actionable reason code for programmatic handling.
-    /// Stable across versions — agents can match on these.
-    ///
-    /// Known codes: `"cooldown"`, `"not_built"`, `"unknown"`.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub reason_code: String,
-    /// Human-readable reason for skipping.
-    pub reason: String,
-    /// The failure class if skipped due to a recent failure.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub failure_class: Option<String>,
-    /// When cooldown expires, if skipped due to cooldown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cooldown_until: Option<String>,
-    /// Machine-actionable skip code for programmatic handling.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub skip_code: Option<ProviderSkipCode>,
-}
-
-/// Result of provider routing resolution.
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub struct ProviderRoutingDecision {
-    /// The profile requested by the caller, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requested_profile: Option<SearchProfile>,
-    /// The explicit provider IDs requested by the caller.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub requested_providers: Vec<String>,
-    /// The providers actually selected for this request.
-    pub selected_providers: Vec<String>,
-    /// Providers that were skipped and why.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub skipped_providers: Vec<ProviderSkipReason>,
-    /// Whether the profile fell back to default providers.
-    pub degraded: bool,
-    /// Whether some providers were skipped but others remain active.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub partial: bool,
-    /// Human-readable explanation of the routing decision.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-/// Error from provider routing resolution.
-#[derive(Debug)]
-pub enum ProviderRoutingError {
-    /// An explicitly requested provider is not known.
-    UnknownProvider(String),
-    /// An explicitly requested provider is disabled.
-    DisabledProvider(String),
-    /// An explicitly requested provider is enabled and configured, but the
-    /// environment variable holding its required credential is unset or empty.
-    MissingCredential {
-        /// The requested provider id.
-        id: String,
-        /// The credential environment variable the operator must populate.
-        env: String,
-    },
-    /// An explicitly requested provider is enabled and configured, but this
-    /// build has no search engine for it, so it can never be queried.
-    NotBuilt(String),
-    /// No default providers are available.
-    NoDefaultProviders(String),
-}
-
-impl std::fmt::Display for ProviderRoutingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnknownProvider(id) => write!(f, "unknown provider id: {id}"),
-            Self::DisabledProvider(id) => write!(f, "provider is disabled: {id}"),
-            Self::MissingCredential { id, env } => write!(
-                f,
-                "provider {id} is enabled but its required credential is not set; populate the {env} environment variable"
-            ),
-            Self::NotBuilt(id) => write!(
-                f,
-                "provider {id} is enabled and configured but has no engine in this build, so it cannot be queried"
-            ),
-            Self::NoDefaultProviders(msg) => write!(f, "no default providers: {msg}"),
-        }
-    }
-}
-
-impl ProviderRoutingError {
-    /// Stable skip code describing why an explicitly requested provider could
-    /// not be routed, for typed downstream handling.
-    pub fn skip_code(&self) -> ProviderSkipCode {
-        match self {
-            Self::UnknownProvider(_) => ProviderSkipCode::UnknownProvider,
-            Self::DisabledProvider(_) => ProviderSkipCode::DisabledByUser,
-            Self::MissingCredential { .. } => ProviderSkipCode::MissingApiKey,
-            Self::NotBuilt(_) => ProviderSkipCode::NotBuilt,
-            Self::NoDefaultProviders(_) => ProviderSkipCode::Unknown,
-        }
-    }
-}
-
-impl std::error::Error for ProviderRoutingError {}
-
-/// Resolve provider routing with optional health-aware cooldown.
-///
-/// This consolidates the provider selection logic used by `web_search`,
-/// `repo_search`, `security_search`, and `research_search`.
-///
-/// # Arguments
-///
-/// * `requested_providers` - Explicit provider IDs from the caller.
-/// * `profile` - Optional search profile for provider selection.
-/// * `adapter_provider_ids` - IDs of providers actually built by the adapter.
-/// * `config` - Application configuration for provider resolution.
-/// * `health` - Process-local health registry for cooldown decisions.
-/// * `strict_explicit` - When true, explicit provider errors are hard failures.
-pub fn resolve_provider_routing(
-    requested_providers: &[String],
-    profile: Option<SearchProfile>,
-    adapter_provider_ids: &[String],
-    config: &crate::core::config::AppConfig,
-    health: &ProviderHealthRegistry,
-    strict_explicit: bool,
-) -> Result<ProviderRoutingDecision, ProviderRoutingError> {
-    let adapter_set: std::collections::BTreeSet<&str> =
-        adapter_provider_ids.iter().map(|s| s.as_str()).collect();
-
-    // Explicit providers are strict
-    if !requested_providers.is_empty() {
-        return resolve_explicit_providers(
-            requested_providers,
-            &adapter_set,
-            config,
-            strict_explicit,
-        );
-    }
-
-    // Profile-based or default routing
-    let (mut effective_providers, degraded, _warnings) =
-        config.resolve_profile_providers(profile, &[]);
-
-    let mut skipped = Vec::new();
-    let mut partial = false;
-
-    // Filter through actual adapter availability
-    if let Some(profile) = profile {
-        let mut filtered = Vec::new();
-        let mut any_skipped = false;
-
-        for id in &effective_providers {
-            if adapter_set.contains(id.as_str()) {
-                // Check cooldown — skip cooled-down providers only for profile/default routing
-                if health.is_in_cooldown(id) {
-                    let snapshot = health.snapshot(id, true, true);
-                    skipped.push(ProviderSkipReason {
-                        provider_id: id.clone(),
-                        reason_code: "cooldown".to_string(),
-                        reason: format!(
-                            "in cooldown after {}",
-                            snapshot.cooldown_reason.unwrap_or_default()
-                        ),
-                        failure_class: snapshot.recent_failure_class,
-                        cooldown_until: snapshot.cooldown_until,
-                        skip_code: Some(ProviderSkipCode::CooldownActive),
-                    });
-                    any_skipped = true;
-                } else {
-                    filtered.push(id.clone());
-                }
-            } else {
-                skipped.push(ProviderSkipReason {
-                    provider_id: id.clone(),
-                    reason_code: "not_built".to_string(),
-                    reason: format!(
-                        "[{}] {}",
-                        ProviderSkipCode::NotBuilt.as_str(),
-                        ProviderSkipCode::NotBuilt.display_name()
-                    ),
-                    failure_class: None,
-                    cooldown_until: None,
-                    skip_code: Some(ProviderSkipCode::NotBuilt),
-                });
-                any_skipped = true;
-            }
-        }
-
-        if filtered.is_empty() && !effective_providers.is_empty() {
-            // All profile providers unavailable — degrade to defaults
-            effective_providers = config
-                .resolve_providers(&[])
-                .map_err(|e| ProviderRoutingError::NoDefaultProviders(e.to_string()))?;
-            return Ok(ProviderRoutingDecision {
-                requested_profile: Some(profile),
-                requested_providers: vec![],
-                selected_providers: effective_providers,
-                skipped_providers: skipped,
-                degraded: true,
-                partial: false,
-                reason: Some(format!("{profile} profile fell back to default providers")),
-            });
-        }
-
-        if any_skipped && !filtered.is_empty() {
-            partial = true;
-        }
-
-        effective_providers = filtered;
-    } else {
-        // Default routing — also filter by adapter availability
-        let mut filtered = Vec::new();
-        for id in &effective_providers {
-            if adapter_set.contains(id.as_str()) && !health.is_in_cooldown(id) {
-                filtered.push(id.clone());
-            } else if !adapter_set.contains(id.as_str()) {
-                // Provider not built — skip silently for default routing
-            } else {
-                // In cooldown — skip for default routing
-                let snapshot = health.snapshot(id, true, true);
-                skipped.push(ProviderSkipReason {
-                    provider_id: id.clone(),
-                    reason_code: "cooldown".to_string(),
-                    reason: format!(
-                        "in cooldown after {}",
-                        snapshot.cooldown_reason.unwrap_or_default()
-                    ),
-                    failure_class: snapshot.recent_failure_class,
-                    cooldown_until: snapshot.cooldown_until,
-                    skip_code: Some(ProviderSkipCode::CooldownActive),
-                });
-            }
-        }
-        if !filtered.is_empty() {
-            effective_providers = filtered;
-        }
-    }
-
-    let reason = if degraded {
-        Some("profile fell back to default providers".to_string())
-    } else if partial {
-        Some(format!(
-            "{:?} profile skipped unavailable providers",
-            profile.unwrap_or_default()
-        ))
-    } else {
-        profile.map(|p| format!("using {} profile providers", p.as_str()))
-    };
-
-    Ok(ProviderRoutingDecision {
-        requested_profile: profile,
-        requested_providers: vec![],
-        selected_providers: effective_providers,
-        skipped_providers: skipped,
-        degraded,
-        partial,
-        reason,
-    })
-}
-
-/// Handle explicit provider resolution.
-fn resolve_explicit_providers(
-    requested_providers: &[String],
-    adapter_set: &std::collections::BTreeSet<&str>,
-    config: &crate::core::config::AppConfig,
-    strict: bool,
-) -> Result<ProviderRoutingDecision, ProviderRoutingError> {
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    let mut deduped = Vec::new();
-    for id in requested_providers {
-        if seen.insert(id.clone()) {
-            deduped.push(id.clone());
-        }
-    }
-
-    // Validate every requested id against three distinct failure classes, so an
-    // explicit request can never be silently narrowed to a different provider
-    // set than the caller asked for:
-    //
-    //   1. not a known provider id at all;
-    //   2. known, but the operator has not enabled it (or it needs a
-    //      credential that is configured-but-unset);
-    //   3. known and enabled, but this build has no engine for it.
-    //
-    // In strict mode each class is a hard, typed error. In non-strict mode each
-    // class is recorded as a typed skip so the decision still explains itself.
-    let mut skipped: Vec<ProviderSkipReason> = Vec::new();
-    let mut selected: Vec<String> = Vec::new();
-    for id in &deduped {
-        let rejection = if adapter_set.contains(id.as_str()) {
-            None
-        } else if !KNOWN_PROVIDER_IDS.contains(&id.as_str())
-            && !config.search.providers.contains_key(id)
-            && !config.search.api.contains_key(id)
-        {
-            Some(ProviderRoutingError::UnknownProvider(id.clone()))
-        } else if let Some(env) = config.api_provider_credential_missing(id) {
-            Some(ProviderRoutingError::MissingCredential {
-                id: id.clone(),
-                env: env.to_string(),
-            })
-        } else if !config.provider_is_available(id) {
-            Some(ProviderRoutingError::DisabledProvider(id.clone()))
-        } else {
-            // Enabled and configured, yet no engine exists for this id in this
-            // build. Selecting it anyway would report success with nothing
-            // queried, so it must be surfaced rather than dropped.
-            Some(ProviderRoutingError::NotBuilt(id.clone()))
-        };
-
-        match rejection {
-            None => selected.push(id.clone()),
-            Some(err) => {
-                if strict {
-                    return Err(err);
-                }
-                skipped.push(ProviderSkipReason {
-                    provider_id: id.clone(),
-                    reason_code: err.skip_code().as_str().to_string(),
-                    reason: err.to_string(),
-                    failure_class: None,
-                    cooldown_until: None,
-                    skip_code: Some(err.skip_code()),
-                });
-            }
-        }
-    }
-
-    let partial = !skipped.is_empty() && !selected.is_empty();
-    Ok(ProviderRoutingDecision {
-        requested_profile: None,
-        requested_providers: deduped,
-        selected_providers: selected,
-        skipped_providers: skipped,
-        degraded: false,
-        partial,
-        reason: Some(if partial {
-            "using explicitly requested providers; some were skipped as unroutable".to_string()
-        } else {
-            "using explicitly requested providers".to_string()
-        }),
-    })
 }
 
 /// Capability enforcement tracking for search responses.
@@ -1268,11 +903,13 @@ impl CapabilityEnforcementTelemetry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::provider::ProviderSkipCode;
+    use crate::core::repo_search::SearchProfile;
 
     #[test]
     fn health_registry_record_success() {
         let registry = ProviderHealthRegistry::new();
-        registry.record_success("duckduckgo", 150);
+        registry.record_success("duckduckgo", 150, 1);
 
         let snapshot = registry.snapshot("duckduckgo", true, true);
         assert_eq!(snapshot.status, ProviderHealthStatus::Healthy);
@@ -1311,7 +948,7 @@ mod tests {
         }
         assert!(registry.is_in_cooldown("brave"));
 
-        registry.record_success("brave", 200);
+        registry.record_success("brave", 200, 1);
         assert!(!registry.is_in_cooldown("brave"));
         let snapshot = registry.snapshot("brave", true, true);
         assert_eq!(snapshot.status, ProviderHealthStatus::Healthy);
@@ -1354,7 +991,7 @@ mod tests {
         }));
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            registry.record_success("duckduckgo", 100);
+            registry.record_success("duckduckgo", 100, 1);
         }));
         assert!(result.is_ok());
     }
@@ -1526,6 +1163,7 @@ mod tests {
             degraded: false,
             partial: true,
             reason: Some("coding profile skipped unavailable providers".to_string()),
+            intent_routing: None,
         };
         let json = serde_json::to_string(&decision).unwrap();
         assert!(json.contains("coding"));
@@ -1566,6 +1204,7 @@ mod tests {
             &cfg,
             &health,
             true,
+            None,
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -1589,6 +1228,7 @@ mod tests {
             &cfg,
             &health,
             true,
+            None,
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -1618,6 +1258,7 @@ mod tests {
             &cfg,
             &health,
             true,
+            None,
         )
         .unwrap();
         assert!(result.partial);
@@ -1649,6 +1290,7 @@ mod tests {
             &cfg,
             &health,
             true,
+            None,
         )
         .unwrap();
         assert!(result.degraded);
@@ -1682,6 +1324,7 @@ mod tests {
             &cfg,
             &health,
             true,
+            None,
         )
         .unwrap();
         // brave should be skipped due to cooldown
@@ -1710,6 +1353,7 @@ mod tests {
             &cfg,
             &health,
             true,
+            None,
         )
         .unwrap();
         // Explicit provider should NOT be skipped even if cooled down
@@ -1731,7 +1375,8 @@ mod tests {
         let mut results = Vec::new();
         for _ in 0..5 {
             let decision =
-                resolve_provider_routing(&[], None, &adapter_ids, &cfg, &health, true).unwrap();
+                resolve_provider_routing(&[], None, &adapter_ids, &cfg, &health, true, None)
+                    .unwrap();
             results.push(decision.selected_providers.clone());
         }
         for window in results.windows(2) {
@@ -2023,7 +1668,7 @@ mod tests {
     #[test]
     fn health_view_healthy_after_success() {
         let registry = ProviderHealthRegistry::new();
-        registry.record_success("brave", 150);
+        registry.record_success("brave", 150, 1);
         let view = registry.health_view("brave");
         assert_eq!(view.status, ProviderHealthStatus::Healthy);
         assert_eq!(view.consecutive_failures, 0);
@@ -2074,7 +1719,7 @@ mod tests {
         for _ in 0..3 {
             registry.record_failure("brave", FailureClass::Timeout, "timed out", 100);
         }
-        registry.record_success("brave", 200);
+        registry.record_success("brave", 200, 1);
         let view = registry.health_view("brave");
         assert_eq!(view.status, ProviderHealthStatus::Healthy);
         assert!(view.cooldown_until.is_none());
@@ -2157,12 +1802,15 @@ mod tests {
             last_latency_ms: Some(150),
             last_success_at: Some("5s ago".to_string()),
             last_failure_at: None,
+            parse_shape: Some(ParseShape::Empty),
         };
         let json = serde_json::to_string(&view).unwrap();
         assert!(json.contains("healthy"));
         assert!(json.contains("150"));
+        assert!(json.contains("\"parse_shape\":\"empty\""));
         let parsed: ProviderHealthView = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.status, ProviderHealthStatus::Healthy);
         assert_eq!(parsed.last_latency_ms, Some(150));
+        assert_eq!(parsed.parse_shape, Some(ParseShape::Empty));
     }
 }

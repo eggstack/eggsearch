@@ -1,5 +1,10 @@
 # Repository Hardening M006 — Chromiumoxide Zero-Reqwest Closure
 
+> Superseded 2026-11-14 by
+> `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md` § Decision 6.
+> The chromiumoxide `reqwest` edge is accepted and guard-bounded rather than
+> removed. This record remains the blocked-state evidence and is not a closure.
+
 Status: blocked
 
 Recommendation: blocked

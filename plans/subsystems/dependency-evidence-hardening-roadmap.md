@@ -232,7 +232,7 @@ and make security applicability consume only evidence that actually proves a
 resolved version.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md`.
+`plans/archive/implementation/dependency-evidence-hardening/001-typed-evidence-and-applicability-boundary.md`.
 
 Exit: requirements/checksum observations cannot produce resolved-version
 Affected/NotAffected claims; assessment confidence is bounded by dependency
@@ -247,7 +247,7 @@ semantics, apply Python requirement/name rules, and make dispatch path-safe on
 Windows and Unix.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md`.
+`plans/archive/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md`.
 
 Exit: Cargo aliases/path/git/workspace semantics are represented, `go.sum`
 is integrity-only, `go.mod` requirements and replacements are not treated as
@@ -264,7 +264,7 @@ heuristics with bounded structural parsing for csproj/POM inputs while keeping
 Gradle heuristics conservative.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md`.
+`plans/archive/implementation/dependency-evidence-hardening/003-dotnet-jvm-structured-correctness.md`.
 
 Exit: NuGet target frameworks/RIDs and Direct/Transitive/Project-like types are
 handled explicitly; Maven exclusions/dependency-management cannot masquerade
@@ -278,7 +278,7 @@ Objective: distinguish Bundler resolved specs from child constraints and retain
 GEM/GIT/PATH plus Composer source/dist provenance.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md`.
+`plans/archive/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md`.
 
 Exit: nested Gemfile.lock requirements are never reported as resolved versions;
 VCS/path sources do not silently inherit public-registry certainty; Composer
@@ -293,7 +293,7 @@ workspaces, links, descriptors, peer suffixes, or unsupported lockfile versions
 as ordinary registry packages.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md`.
+`plans/archive/implementation/dependency-evidence-hardening/005-javascript-lockfile-modernization.md`.
 
 Exit: npm v1-v3, Yarn Classic plus the supported modern Yarn shape, and pnpm
 v6/v9 fixtures produce deterministic correct resolved findings or explicit
@@ -308,7 +308,7 @@ Docker `FROM` options/stages safely, and route Docker-backed Actions into OCI
 evidence rather than fake GitHub package versions.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md`.
+`plans/archive/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md`.
 
 Exit: full commit SHA, tag/branch, local action, Docker action, OCI tag,
 OCI digest, variable, and stage alias cases are distinguishable and none is
@@ -323,7 +323,7 @@ states, add property/fuzz/corpus coverage, and qualify the full hardening
 workstream.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md`.
+`plans/archive/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md`.
 
 Exit: file/finding budgets are deterministic, truncation is explicit, parser
 fuzz/property tests cover the production dispatch boundary, realistic
@@ -331,10 +331,10 @@ multi-ecosystem fixtures prevent format regressions, and canonical gates pass
 on the exact candidate.
 
 Sequencing:
-`plans/implementation/dependency-evidence-hardening/000-overview-and-sequencing.md`.
+`plans/archive/implementation/dependency-evidence-hardening/000-overview-and-sequencing.md`.
 
 Handoff checklist:
-`plans/implementation/dependency-evidence-hardening/008-implementation-handoff-checklist.md`.
+`plans/archive/implementation/dependency-evidence-hardening/008-implementation-handoff-checklist.md`.
 
 ## 9. Cross-cutting requirements
 
@@ -453,7 +453,7 @@ process corrective-pass rule.
 Class: invariant + corrective capability.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md`.
+`plans/archive/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md`.
 
 Objective: enforce source compatibility before exact advisory applicability,
 make package identity rules explicit per ecosystem, preserve semantically
@@ -472,7 +472,7 @@ no unresolved correctness blocker. M008 closed at implementation commit
 Class: polish + closure infrastructure.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`.
+`plans/archive/implementation/dependency-evidence-hardening/010-final-closure-and-registry-reconciliation.md`.
 
 Objective: qualify the corrected M008 candidate and reconcile roadmap,
 registry, sequencing, handoff, and terminal closure evidence without changing
@@ -509,7 +509,7 @@ registered as a new corrective milestone.
 Class: invariant + corrective capability.
 
 Plan:
-`plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md`.
+`plans/archive/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md`.
 
 Objective: make request-field and dependency-file applicability use one
 `PackageEcosystem` identity contract and remove implicit crates.io fallback

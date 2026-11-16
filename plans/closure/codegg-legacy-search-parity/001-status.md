@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md`
 
 Source subsystem roadmap:
 

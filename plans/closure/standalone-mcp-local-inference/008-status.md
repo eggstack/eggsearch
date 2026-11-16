@@ -3,7 +3,7 @@
 Status: closed at `772a073fd40e9f044017b26bae18a6efd0724b1d`
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/008-compact-browser-render-reachability-corrective.md`
+`plans/archive/implementation/standalone-mcp-local-inference/008-compact-browser-render-reachability-corrective.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

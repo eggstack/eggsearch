@@ -44,7 +44,7 @@ The term *experimental SBC support* covers hardware-model/runtime/footprint unce
 
 M001–M003 are closed. The first public release was manually dispatched through the configured PyPI Trusted Publisher and pre-created GitHub `pypi` environment; the maintainer directed that no required reviewer be used. M004 is post-publication. Its native aarch64 sample is complete; ARMv7 32-bit physical benchmarking is deferred by the maintainer and remains the only M004 blocker. Keep ARMv7 support experimental until that evidence exists.
 
-Implementation handoffs: `plans/implementation/python-pypi-distribution/001-python315-toolchain-and-abi3.md` through `004-post-publication-sbc-benchmarking.md`. Closure records go to `plans/closure/python-pypi-distribution/NNN-status.md`. Keep the registry aligned.
+Implementation handoffs: `plans/archive/implementation/python-pypi-distribution/001-python315-toolchain-and-abi3.md` through `004-post-publication-sbc-benchmarking.md`. Closure records go to `plans/closure/python-pypi-distribution/NNN-status.md`. Keep the registry aligned.
 
 ## Global verification and risks
 

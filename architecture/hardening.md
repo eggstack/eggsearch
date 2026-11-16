@@ -145,7 +145,7 @@ Permits are `OwnedSemaphorePermit`s scoped to the fetch; success resets the fail
 
 ## Property, adversarial, and fault-injection strategy
 
-- **Property (`tests/property_*.rs`, 17 suites):** invariant assertions over arbitrary input — determinism, idempotency (`strip_control_chars`, `canonicalize_url`), bound respect, UTF-8 safety, offset validity, merge commutativity/associativity (`TrustMarkers`), root containment, ledger validity, dependency-parse dispatch determinism and per-file budgets, and never-panic renderers. Each file names its module under test so the invariant stays beside the code it pins.
+- **Property (`tests/property_*.rs`, 18 suites):** invariant assertions over arbitrary input — determinism, idempotency (`strip_control_chars`, `canonicalize_url`), bound respect, UTF-8 safety, offset validity, merge commutativity/associativity (`TrustMarkers`), root containment, ledger validity, dependency-parse dispatch determinism and per-file budgets, and never-panic renderers. Each file names its module under test so the invariant stays beside the code it pins.
 - **Adversarial (`tests/corpus/adversarial/`, 9 files, 271+ cases):** hand-built edge corpora. `adversarial_corpus.rs` asserts structural validity; behavioral suites assert handling.
 - **Fault injection (`tests/dispatch_fault_injection.rs`):** provider success/partial/total failure, timeouts, hangs, concurrency saturation, panic containment, health and cooldown transitions, deterministic ordering, exact partial-result telemetry. Requires the `mock` feature.
 - **Probe conformance (`tests/provider_probe_conformance.rs`):** the shared probe service under the same failure taxonomy plus explicit-request-after-degraded semantics and descriptor source-of-truth for native versus local domain filtering.
@@ -176,7 +176,7 @@ The remaining guards cover: `no_direct_reqwest_in_production_source`; `captured_
 
 ## Property test index
 
-17 `proptest` suites pin the pure-function invariants. Representative properties per file:
+18 `proptest` suites pin the pure-function invariants. Representative properties per file:
 
 | Suite | Module under test | Key properties |
 |-------|-------------------|----------------|

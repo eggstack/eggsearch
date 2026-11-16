@@ -2,7 +2,7 @@
 
 Status: **closed** — implementation, staging, provenance attestation, and publication are all complete. The `v0.4.2` draft was attested in run `37561960304` and published on 2026-10-07. Publishing it exposed a real defect in the provenance workflow that had never been executed; see §13.
 
-Source plan: `plans/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`
+Source plan: `plans/archive/implementation/eggpack-release-adoption/001-seven-target-eggpack-producer-cutover.md`
 
 Producer-side closure (authoritative for the Eggpack subsystem): `eggstack/eggpack` — `plans/closure/ecosystem-adoption/003b-status.md`.
 

@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/python-native-library/001-shared-sdk-facade-and-parity.md`
+- `plans/archive/implementation/python-native-library/001-shared-sdk-facade-and-parity.md`
 
 Source subsystem roadmap:
 

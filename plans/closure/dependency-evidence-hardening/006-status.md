@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md`
+- `plans/archive/implementation/dependency-evidence-hardening/006-actions-oci-reference-semantics.md`
 
 Source subsystem roadmap:
 

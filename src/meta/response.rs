@@ -48,6 +48,13 @@ pub struct WebSearchResponse {
     /// `None` when no constrained fields were requested.
     pub capability_enforcement:
         Option<crate::meta::provider_diagnostics::CapabilityEnforcementTelemetry>,
+    /// Intent derived from the query when the caller omitted `intent`.
+    /// Additive; `None` when the caller supplied an intent explicitly.
+    pub derived_intent: Option<String>,
+    /// Stable reason codes behind [`Self::derived_intent`], in
+    /// precedence order. Additive; `None` unless the query was
+    /// classified.
+    pub derived_intent_reasons: Option<Vec<String>>,
 }
 
 #[cfg(test)]

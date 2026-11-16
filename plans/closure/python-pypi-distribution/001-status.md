@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `1135608af5d625cd72db6704adf3bcabd1a58ab1`
-Implementation plan: `plans/implementation/python-pypi-distribution/001-python315-toolchain-and-abi3.md`
+Implementation plan: `plans/archive/implementation/python-pypi-distribution/001-python315-toolchain-and-abi3.md`
 Roadmap: `plans/subsystems/python-pypi-distribution-roadmap.md` M001
 Pull request: #10
 

@@ -25,9 +25,11 @@ curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/instal
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
 ```
 
-Pin a version, or install from source with `cargo install eggsearch --locked`. The
-installer verifies a SHA-256 checksum and the version, and never elevates — see
-[Installation](docs/installation.md) for targets and fallback rules.
+Pin a release version when reproducibility matters. `cargo install eggsearch --locked`
+installs the published crate. To build the current checkout, run
+`cargo build --release`. The installer verifies its SHA-256 checksum and
+version, and never elevates. See [Installation](docs/installation.md) for
+supported targets and fallback rules.
 
 Install the native asyncio Python package separately:
 
@@ -85,7 +87,7 @@ providers, so one provider failing is reported as a warning rather than failing
 the query. One URL per `web_fetch`, `batch_fetch` for explicit fan-out, `--json`
 for machine output.
 
-Register with a client — rendering is read-only, `--apply` is opt-in:
+Preview client configuration first. Rendering is read-only; `--apply` is opt-in:
 
 ```bash
 eggsearch integrate list
@@ -103,10 +105,10 @@ or a persistent loopback endpoint:
 ```bash
 $ eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp &
 $ curl -s http://127.0.0.1:11320/healthz
-{"service":"eggsearch","status":"ready","version":"0.4.3","protocol":"streamable-http"}
+{"service":"eggsearch","status":"ready","version":"0.4.4","protocol":"streamable-http"}
 ```
 
-`mcp serve` accepts loopback binds only and registers no service on its own — see
+`mcp serve` accepts loopback binds only and does not register a service. See
 [Deployment](docs/deployment.md) and [Managed service](docs/service.md).
 
 ## MCP tools
@@ -127,40 +129,44 @@ $ curl -s http://127.0.0.1:11320/healthz
 Start with the tool that matches the task: `web_search` for research, `repo_search`
 for codebases, `security_search` for advisories, `research_search` for comparisons.
 `provider_status` is for hosts and troubleshooting, not a first research step.
-Responses carry machine-readable `next_actions` — keep the working set small and
-hydrate specialists on demand. See [Tool matrix](docs/tool-matrix.md) and
-[Agent workflows](docs/agent-workflows.md).
+Responses include machine-readable `next_actions`, so keep the working set small
+and load specialized tools only as needed. `web_search` returns source cards, not
+a synthesized answer; read useful sources with `web_fetch`. See [Tool matrix](docs/tool-matrix.md)
+and [Agent workflows](docs/agent-workflows.md) for details.
 
 ## Safety
 
 - Fetched content is `external_untrusted`: data, not instructions. `sanitize_output` defaults to `true`, with injection markers reported as `injection_hits`.
 - Fetch is bounded and explicit: one URL per `web_fetch`, no autonomous crawling, SSRF checks against blocked address ranges.
-- Optional `pdf` and `browser` features add PDF extraction and bounded headless Chrome. The `egress` proxy route is provider-upstream only and is excluded from prebuilt binaries.
+- Current source builds enable PDF extraction and browser rendering by default.
+  Published `v0.4.4` binaries predate that change and include neither feature.
+  Browser rendering requires an existing Chrome or Chromium installation.
+  The opt-in `egress` proxy route is limited to provider upstreams and is
+  excluded from prebuilt binaries.
 
 See [Safety](docs/safety.md) and [Threat model](docs/threat-model.md).
 
 ## Documentation
 
-**Using it** — [Quickstart](docs/quickstart-codegg.md) ·
+**Using it:** [Quickstart](docs/quickstart-codegg.md) ·
 [Configuration](docs/config.md) ·
 [Tool matrix](docs/tool-matrix.md) ·
 [Agent workflows](docs/agent-workflows.md) ·
 [Provider setup](docs/provider-setup.md) ·
-[Optional features](docs/features.md)
+[Optional features](docs/features.md) ·
+[Safety](docs/safety.md)
 
-**Operating it** — [Installation](docs/installation.md) ·
+**Operating it:** [Installation](docs/installation.md) ·
 [Deployment](docs/deployment.md) ·
 [MCP integrations](docs/integrations.md) ·
 [Managed service](docs/service.md) ·
-[Update](docs/update.md) ·
-[Dependency security](docs/dependency-security.md) ·
-[Release process](docs/release.md) ·
-[Release checklist](docs/release-checklist.md)
+[Update](docs/update.md)
 
-**Building it** — [Architecture overview](architecture/overview.md) ·
+**Developing it:** [Architecture overview](architecture/overview.md) ·
 [MCP response contract](architecture/codegg-contract.md) ·
-[CodeGG harness integration](docs/codegg-integration.md) ·
-[Test inventory](docs/test-inventory.md)
+[CodeGG integration](docs/codegg-integration.md) ·
+[Test inventory](docs/test-inventory.md) ·
+[Release process](docs/release.md)
 
 The in-process asyncio Python package is published separately on PyPI. See the
 [Python library guide](docs/python-library.md) for its API, platform limits,
@@ -173,12 +179,13 @@ cargo build --release        # target/release/eggsearch
 make check                   # fmt, clippy, tests, hygiene, dependency policy, packaging
 ```
 
-The routine gate is network-free. Optional features: `--features pdf`,
-`--features browser`, `--features egress`.
+The routine gate is network-free. Current source builds include PDF extraction
+and browser rendering by default. `--no-default-features` omits them, and
+`--features egress` enables the source-build-only provider proxy route.
 
 Native forge smoke tests call provider APIs directly with operator tokens. They
 are **maintainer-only** diagnostics, not user-facing or release evidence.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

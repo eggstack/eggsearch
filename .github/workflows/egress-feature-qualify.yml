@@ -185,7 +185,7 @@ jobs:
         include:
           - runner: macos-15-intel
             target: x86_64-apple-darwin
-          - runner: macos-14
+          - runner: macos-15
             target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

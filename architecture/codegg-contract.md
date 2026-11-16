@@ -168,8 +168,9 @@ Stable semantic `ToolErrorCode` strings (`as_str()`):
 `invalid_semantic_value`, `conflicting_arguments`,
 `capability_unavailable`, `provider_unavailable`, `policy_denied`,
 `budget_invalid`, `locator_invalid`, `manual_interaction_required`,
-`upstream_failed` — plus the protocol-level `invalid_request` and
-`internal`, which are transport codes, not repairable semantics.
+`upstream_failed`, `plan_mismatch`, `document_unavailable` — plus the
+protocol-level `invalid_request` and `internal`, which are transport codes, not
+repairable semantics.
 `RepairHint` is bounded: `accepted` capped at 20 entries, field
 strings at 128 chars, `suggested_value` at 256 chars. Distinguish
 tool-level `isError` from transport failure; match on `code` to

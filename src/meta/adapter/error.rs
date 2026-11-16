@@ -11,6 +11,9 @@ pub enum ErrorClass {
     HttpStatus,
     /// The engine responded but the HTML could not be parsed.
     ParseError,
+    /// The upstream served a challenge, consent, or anti-bot interstitial
+    /// instead of a results page.
+    Blocked,
     /// A network-level error (DNS, TLS, connection reset, etc.).
     NetworkError,
     /// The engine returned HTTP 429 (rate-limited).
@@ -28,6 +31,7 @@ impl ErrorClass {
             Self::Timeout => "timeout",
             Self::HttpStatus => "http_status",
             Self::ParseError => "parse_error",
+            Self::Blocked => "blocked",
             Self::NetworkError => "network_error",
             Self::RateLimited => "rate_limited",
             Self::Panic => "panic",
@@ -43,6 +47,7 @@ pub(crate) fn classify(err: &EngineError) -> ErrorClass {
         BadStatus { status, .. } if *status == 429 => ErrorClass::RateLimited,
         BadStatus { .. } => ErrorClass::HttpStatus,
         ParseFailed { .. } => ErrorClass::ParseError,
+        Blocked { .. } => ErrorClass::Blocked,
         NetworkError { reason, .. } if reason.contains("panicked during dispatch") => {
             ErrorClass::Panic
         }

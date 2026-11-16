@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `baf00cfc8e72f5975010f62e40d5d56985f77c78`
-Implementation plan: `plans/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md`
+Implementation plan: `plans/archive/implementation/python-native-library/005-inflight-cancellation-and-default-config-corrective.md`
 Predecessors: `plans/closure/python-native-library/002-status.md` (M002), `plans/closure/python-native-library/003-status.md` (M003)
 Roadmap: `plans/subsystems/python-native-library-roadmap.md` M005
 

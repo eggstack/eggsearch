@@ -3,7 +3,7 @@
 Status: closed (brief extraction preserves the paired document; compact security goal values are discoverable; final hosted CI passes)
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md`
+`plans/archive/implementation/standalone-mcp-local-inference/005-brief-document-extraction-and-paired-requalification.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`

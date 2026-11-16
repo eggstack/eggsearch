@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md`
+- `plans/archive/implementation/mcp-tool-surface-consolidation/004-agent-result-projection-and-context-budget.md`
 
 Source subsystem roadmap:
 

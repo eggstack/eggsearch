@@ -231,12 +231,14 @@ pub fn synthetic_document_for_text(text: &str, id_prefix: &str) -> FetchDocument
         });
     }
     FetchDocument {
+        doc_id: String::new(),
         kind: DocumentKind::Html,
         render_format: RenderFormat::AgentBlocksV1,
         text_format: "plain".to_string(),
         text_chars_returned: text.chars().count(),
         text_truncated: false,
         block_truncated: false,
+        document_truncated: false,
         link_truncated: false,
         metadata: None,
         outline: Vec::new(),
@@ -289,12 +291,14 @@ mod tests {
 
     fn doc(chunks: Vec<DocumentChunk>) -> FetchDocument {
         FetchDocument {
+            doc_id: String::new(),
             kind: crate::core::document::DocumentKind::Html,
             render_format: crate::core::document::RenderFormat::AgentBlocksV1,
             text_format: "plain".to_string(),
             text_chars_returned: 0,
             text_truncated: false,
             block_truncated: false,
+            document_truncated: false,
             link_truncated: false,
             metadata: None,
             outline: Vec::<DocumentOutlineEntry>::new(),

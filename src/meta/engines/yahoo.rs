@@ -5,10 +5,17 @@ use scraper::Html;
 
 use super::error::EngineError;
 use super::models::SearchResult;
+use super::{PageMarker, ScrapeShape};
 
 const ENGINE: &str = "yahoo";
 const YAHOO_URL: &str = "https://search.yahoo.com/search";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+const SHAPE: ScrapeShape = ScrapeShape {
+    result_container: "div.algo-sr",
+    empty_markers: &[PageMarker::Text("We did not find results for")],
+    blocked_markers: &[PageMarker::Text("Before you continue to Yahoo")],
+};
 
 pub async fn search(
     client: &Client,
@@ -41,13 +48,13 @@ pub async fn search(
     parse(&body, max_results)
 }
 
-fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
+pub(super) fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
     let document = Html::parse_document(html);
 
-    let result_sel = sel(ENGINE, "div.algo-sr")?;
-    let link_sel = sel(ENGINE, "div.compTitle a")?;
-    let title_sel = sel(ENGINE, "div.compTitle a h3 span")?;
-    let snippet_sel = sel(ENGINE, "div.compText")?;
+    let result_sel = super::sel(ENGINE, SHAPE.result_container)?;
+    let link_sel = super::sel(ENGINE, "div.compTitle a")?;
+    let title_sel = super::sel(ENGINE, "div.compTitle a h3 span")?;
+    let snippet_sel = super::sel(ENGINE, "div.compText")?;
 
     let mut results = Vec::new();
 
@@ -98,7 +105,7 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         });
     }
 
-    Ok(results)
+    super::finalize_scrape(ENGINE, &document, &SHAPE, results)
 }
 
 fn parse_yahoo_url(href: &str) -> String {
@@ -123,13 +130,6 @@ fn parse_yahoo_url(href: &str) -> String {
     urlencoding::decode(&slice[..end])
         .map(|s| s.into_owned())
         .unwrap_or_else(|_| slice[..end].to_string())
-}
-
-fn sel(engine: &'static str, s: &str) -> Result<scraper::Selector, EngineError> {
-    scraper::Selector::parse(s).map_err(|e| EngineError::ParseFailed {
-        engine,
-        reason: format!("invalid selector '{s}': {e:?}"),
-    })
 }
 
 #[cfg(test)]
@@ -237,5 +237,21 @@ mod tests {
         let results = parse(html, 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://valid.com");
+    }
+
+    #[test]
+    fn test_drifted_result_container_is_parse_failed_not_empty() {
+        let html = r#"
+            <div class="dd fst algo algo-sr relsrch Sr">
+                <div class="compTitleRenamed">
+                    <a href="https://rust-lang.org/"><h3><span>Rust</span></h3></a>
+                </div>
+            </div>
+        "#;
+        let err = parse(html, 10).expect_err("a result container with no parseable row is drift");
+        assert!(
+            matches!(err, EngineError::ParseFailed { .. }),
+            "unexpected error: {err:?}"
+        );
     }
 }

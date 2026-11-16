@@ -119,6 +119,8 @@ async fn web_fetch_disabled_by_policy_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: "https://example.com/".into(),
             max_chars: None,
             timeout_ms: None,
@@ -168,6 +170,8 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -206,6 +210,8 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: "https://example.com/".into(),
             max_chars: Some(0),
             timeout_ms: None,
@@ -253,6 +259,8 @@ async fn web_fetch_respects_include_links_default() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -305,6 +313,8 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -350,6 +360,8 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -405,6 +417,8 @@ async fn web_fetch_sanitize_emits_marker_warning() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/inject"),
             max_chars: None,
             timeout_ms: None,
@@ -458,6 +472,8 @@ async fn web_fetch_empty_url_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: "".into(),
             max_chars: None,
             timeout_ms: None,
@@ -488,6 +504,8 @@ async fn web_fetch_unsupported_scheme_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: "file:///etc/passwd".into(),
             max_chars: None,
             timeout_ms: None,
@@ -518,6 +536,8 @@ async fn web_fetch_embedded_credentials_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: "https://user:pass@example.com/secret".into(),
             max_chars: None,
             timeout_ms: None,
@@ -546,6 +566,8 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
         let res = run_web_fetch(
             state.clone(),
             WebFetchArgs {
+                offset: None,
+                limit: None,
                 url: url.into(),
                 max_chars: None,
                 timeout_ms: None,
@@ -591,6 +613,8 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/redirect"),
             max_chars: None,
             timeout_ms: None,
@@ -646,6 +670,8 @@ async fn web_fetch_mcp_level_full_response_shape() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/article"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -793,6 +819,8 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: Some(5000),
             timeout_ms: None,
@@ -859,6 +887,8 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/meta"),
             max_chars: None,
             timeout_ms: None,
@@ -935,6 +965,8 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/doc"),
             max_chars: None,
             timeout_ms: None,
@@ -984,6 +1016,8 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/plain"),
             max_chars: None,
             timeout_ms: None,
@@ -1038,6 +1072,8 @@ async fn web_fetch_document_metadata_only_no_body_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/meta"),
             max_chars: None,
             timeout_ms: None,
@@ -1096,6 +1132,8 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/long"),
             max_chars: Some(30),
             timeout_ms: None,
@@ -1161,6 +1199,8 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/small"),
             max_chars: None,
             timeout_ms: None,
@@ -1224,6 +1264,8 @@ async fn web_fetch_document_has_blocks_and_chunks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/structured"),
             max_chars: None,
             timeout_ms: None,
@@ -1299,6 +1341,8 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/chunked"),
             max_chars: None,
             timeout_ms: None,
@@ -1385,6 +1429,8 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -1451,6 +1497,8 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/both"),
             max_chars: None,
             timeout_ms: None,
@@ -1518,6 +1566,8 @@ async fn web_fetch_document_outline_populated_from_title() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/outline"),
             max_chars: None,
             timeout_ms: None,
@@ -1585,6 +1635,8 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/sanitize"),
             max_chars: None,
             timeout_ms: None,
@@ -1649,6 +1701,8 @@ async fn web_fetch_document_rust_source_has_code_kind() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/main.rs"),
             max_chars: None,
             timeout_ms: None,
@@ -1711,6 +1765,8 @@ async fn web_fetch_document_json_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/data.json"),
             max_chars: None,
             timeout_ms: None,
@@ -1762,6 +1818,8 @@ async fn web_fetch_document_markdown_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/readme.md"),
             max_chars: None,
             timeout_ms: None,
@@ -1836,6 +1894,8 @@ async fn web_fetch_document_toml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/Cargo.toml"),
             max_chars: None,
             timeout_ms: None,
@@ -1889,6 +1949,8 @@ async fn web_fetch_document_yaml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/config.yaml"),
             max_chars: None,
             timeout_ms: None,
@@ -1939,6 +2001,8 @@ async fn web_fetch_document_diff_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/changes.diff"),
             max_chars: None,
             timeout_ms: None,
@@ -1992,6 +2056,8 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/prose.txt"),
             max_chars: None,
             timeout_ms: None,
@@ -2054,6 +2120,8 @@ async fn web_fetch_document_code_preserves_line_ranges() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/lib.rs"),
             max_chars: None,
             timeout_ms: None,
@@ -2118,6 +2186,8 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/config.json"),
             max_chars: None,
             timeout_ms: None,
@@ -2173,6 +2243,8 @@ async fn web_fetch_document_truncation_at_line_boundary() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/big.rs"),
             max_chars: Some(500), // Small budget
             timeout_ms: None,
@@ -2197,27 +2269,7 @@ async fn web_fetch_document_truncation_at_line_boundary() {
         .expect("document should be present");
     assert_eq!(doc["kind"], "code");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-
-    // Truncation should happen at line boundaries (blocks are not
-    // split mid-line). Each block's text should be complete lines.
-    let total_block_chars: usize = blocks
-        .iter()
-        .filter_map(|b| b["text"].as_str())
-        .map(|t| t.chars().count())
-        .sum();
-    assert!(
-        total_block_chars <= 500,
-        "total block chars {total_block_chars} should not exceed budget 500"
-    );
-
-    // Should report truncation
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "should indicate truncation"
-    );
+    assert_window_scoped_text(&v, 500, "code file at a line boundary");
 }
 
 #[tokio::test]
@@ -2240,6 +2292,8 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/code.rs"),
             max_chars: None,
             timeout_ms: None,
@@ -2292,6 +2346,8 @@ async fn web_fetch_document_application_json_no_extension() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/api/data"),
             max_chars: None,
             timeout_ms: None,
@@ -2353,6 +2409,8 @@ async fn web_fetch_links_classification() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2430,6 +2488,8 @@ async fn web_fetch_links_seen_metadata() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2484,6 +2544,8 @@ async fn web_fetch_links_empty_when_not_requested() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2541,6 +2603,8 @@ async fn web_fetch_links_same_domain_detection() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/page"),
             max_chars: None,
             timeout_ms: None,
@@ -2585,10 +2649,10 @@ async fn web_fetch_links_same_domain_detection() {
 // ---------------------------------------------------------------------------
 // Phase D: Long-line / oversized-block truncation tests
 //
-// Verifies that render_code, render_diff, and render_plaintext never
-// return a block whose text exceeds the configured max_chars budget.
-// A single oversized line or paragraph must be char-truncated and
-// flagged, not silently pushed in full.
+// Verifies that render_code, render_diff, and render_plaintext build a
+// document-scoped block set while the legacy `text` field stays inside the
+// caller's window. A single oversized line is cut only at the document
+// budget, and the window cut is flagged.
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -2616,6 +2680,8 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/bundle.json"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2642,22 +2708,7 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
     // Should be detected as JSON
     assert_eq!(doc["kind"], "json", "kind should be json");
 
-    // Block text must not exceed max_chars
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty(), "should have at least one block");
-    let block_text = blocks[0]["text"].as_str().expect("block text");
-    let block_chars = block_text.chars().count();
-    assert!(
-        block_chars <= 100,
-        "block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
-    );
-
-    // Truncation flags should be set
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set when a single line exceeds max_chars"
-    );
+    assert_window_scoped_text(&v, 100, "minified JSON");
 }
 
 #[tokio::test]
@@ -2684,6 +2735,8 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/bundle.js"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2703,24 +2756,7 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
     .await
     .expect("ok");
 
-    let doc = v["document"]
-        .as_object()
-        .expect("document should be present");
-
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-    let block_text = blocks[0]["text"].as_str().expect("block text");
-    let block_chars = block_text.chars().count();
-    assert!(
-        block_chars <= 100,
-        "block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
-    );
-
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set for oversized JS line"
-    );
+    assert_window_scoped_text(&v, 100, "minified JavaScript");
 }
 
 #[tokio::test]
@@ -2749,6 +2785,8 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/changes.diff"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2773,24 +2811,7 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
         .expect("document should be present");
     assert_eq!(doc["kind"], "diff", "kind should be diff");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-
-    // Every block's text must be <= max_chars
-    for (i, block) in blocks.iter().enumerate() {
-        let text = block["text"].as_str().expect("block text");
-        let chars = text.chars().count();
-        assert!(
-            chars <= 100,
-            "block {i} text chars ({chars}) must be <= max_chars (100), got: {text:?}"
-        );
-    }
-
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set for oversized diff line"
-    );
+    assert_window_scoped_text(&v, 100, "single-hunk diff");
 }
 
 #[tokio::test]
@@ -2818,6 +2839,8 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/long.txt"),
             max_chars: Some(100),
             timeout_ms: None,
@@ -2842,25 +2865,9 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
         .expect("document should be present");
     assert_eq!(doc["kind"], "plain_text");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty(), "should have at least one block");
+    assert_window_scoped_text(&v, 100, "single long plain-text paragraph");
 
-    // The paragraph block text must be <= max_chars
-    let block_text = blocks[0]["text"].as_str().expect("block text");
-    let block_chars = block_text.chars().count();
-    assert!(
-        block_chars <= 100,
-        "paragraph block text chars ({block_chars}) must be <= max_chars (100), got: {block_text:?}"
-    );
-
-    // Truncation flags should be set
-    assert!(
-        doc["text_truncated"].as_bool().unwrap_or(false)
-            || doc["block_truncated"].as_bool().unwrap_or(false),
-        "truncation flags should be set for oversized paragraph"
-    );
-
-    // Line range should be preserved from the original paragraph
+    let blocks = v["document"]["blocks"].as_array().expect("blocks");
     assert_eq!(
         blocks[0]["line_start"], 1,
         "line_start should be 1 for the first paragraph"
@@ -2868,7 +2875,7 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
 }
 
 #[tokio::test]
-async fn web_fetch_code_block_text_never_exceeds_max_chars() {
+async fn web_fetch_code_block_text_covers_the_document_budget() {
     use httpmock::prelude::*;
 
     // A code file with one very long line (minified) and some normal lines.
@@ -2892,6 +2899,8 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/minified.js"),
             max_chars: Some(200),
             timeout_ms: None,
@@ -2915,18 +2924,7 @@ async fn web_fetch_code_block_text_never_exceeds_max_chars() {
         .as_object()
         .expect("document should be present");
 
-    let blocks = doc["blocks"].as_array().expect("blocks");
-    assert!(!blocks.is_empty());
-
-    // No block should exceed the budget
-    for (i, block) in blocks.iter().enumerate() {
-        let text = block["text"].as_str().expect("block text");
-        let chars = text.chars().count();
-        assert!(
-            chars <= 200,
-            "block {i} text chars ({chars}) must be <= max_chars (200), got: {text:?}"
-        );
-    }
+    assert_window_scoped_text(&v, 200, "minified code block");
 
     // Should report truncation since the minified line was truncated
     assert!(
@@ -3021,6 +3019,8 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/doc.pdf"),
             max_chars: None,
             timeout_ms: None,
@@ -3116,6 +3116,8 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/doc.pdf"),
             max_chars: None,
             timeout_ms: None,
@@ -3204,6 +3206,8 @@ async fn web_fetch_empty_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/sparse-main"),
             max_chars: None,
             timeout_ms: None,
@@ -3258,6 +3262,8 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/rich-main"),
             max_chars: None,
             timeout_ms: None,
@@ -3317,6 +3323,8 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/tiny-main"),
             max_chars: None,
             timeout_ms: None,
@@ -3369,6 +3377,8 @@ async fn web_fetch_body_only_page_still_works() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/body-only"),
             max_chars: None,
             timeout_ms: None,
@@ -3434,6 +3444,8 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/many-links"),
             max_chars: None,
             timeout_ms: None,
@@ -3515,6 +3527,8 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/few-links"),
             max_chars: None,
             timeout_ms: None,
@@ -3583,11 +3597,15 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
+    cfg.fetch.max_chars_default = 12;
+    cfg.fetch.max_chars_cap = 12;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/truncated-outline"),
             max_chars: Some(12),
             timeout_ms: None,
@@ -3617,7 +3635,9 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     // The truncation must have actually triggered for this test to be
     // meaningful.
     assert!(
-        doc["block_truncated"].as_bool().unwrap_or(false)
+        doc.get("block_truncated")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false)
             || doc["text_truncated"].as_bool().unwrap_or(false),
         "expected truncation flag, got: {doc:?}"
     );
@@ -3675,6 +3695,8 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/retry-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3739,6 +3761,8 @@ async fn web_fetch_respects_deadline_during_retry() {
     let result = run_web_fetch(
         state,
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/slow-503"),
             max_chars: None,
             timeout_ms: Some(200),
@@ -3792,6 +3816,8 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
             run_web_fetch(
                 s,
                 WebFetchArgs {
+                    offset: None,
+                    limit: None,
                     url,
                     max_chars: None,
                     timeout_ms: None,
@@ -3845,6 +3871,8 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/cache-hit-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3869,6 +3897,8 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/cache-hit-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3913,6 +3943,8 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/refresh-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3945,6 +3977,8 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/refresh-test"),
             max_chars: None,
             timeout_ms: None,
@@ -3990,6 +4024,8 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/bypass-test"),
             max_chars: None,
             timeout_ms: None,
@@ -4021,6 +4057,8 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/bypass-test"),
             max_chars: None,
             timeout_ms: None,
@@ -4066,6 +4104,8 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/private-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4089,6 +4129,8 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/private-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4134,6 +4176,8 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/vary-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4157,6 +4201,8 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            offset: None,
+            limit: None,
             url: server.url("/vary-page"),
             max_chars: None,
             timeout_ms: None,
@@ -4195,6 +4241,8 @@ async fn web_fetch_render_http_only_never_uses_browser() {
     cfg.fetch.allow_private_network = true;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/page", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4229,6 +4277,8 @@ async fn web_fetch_render_auto_returns_useful_http_content() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/article", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4263,6 +4313,8 @@ async fn web_fetch_render_auto_no_escalate_401() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/auth", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4296,6 +4348,8 @@ async fn web_fetch_render_auto_no_escalate_429() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/rate-limited", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4329,6 +4383,8 @@ async fn web_fetch_render_auto_no_escalate_404() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/not-found", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4362,6 +4418,8 @@ async fn web_fetch_render_auto_no_escalate_403() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/forbidden", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4386,6 +4444,8 @@ async fn web_fetch_render_auto_no_escalate_403() {
 async fn web_fetch_render_invalid_returns_validation_error() {
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: "https://example.com".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4419,6 +4479,8 @@ async fn web_fetch_render_invalid_returns_validation_error() {
 async fn web_fetch_profile_with_http_only_rejected() {
     let state = state_with_default();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: "https://example.com".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4455,6 +4517,8 @@ async fn web_fetch_response_has_transport_field() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4462,7 +4526,7 @@ async fn web_fetch_response_has_transport_field() {
         include_links: None,
         pdf: None,
         cache_policy: None,
-        render: None,
+        render: Some("http_only".to_string()),
         browser_profile: None,
         max_cache_age_seconds: None,
         focus: None,
@@ -4511,6 +4575,8 @@ async fn web_fetch_profile_lock_acquired_and_released() {
     });
 
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: "https://example.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4569,6 +4635,8 @@ async fn web_fetch_profile_origin_mismatch_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: "https://other-site.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4614,6 +4682,8 @@ async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: format!("http://localhost:{}/article", server.port()),
         max_chars: None,
         timeout_ms: None,
@@ -4653,6 +4723,8 @@ async fn web_fetch_explicit_browser_unavailable_returns_failure() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: "https://example.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4704,6 +4776,8 @@ async fn web_fetch_profile_lock_contention_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        offset: None,
+        limit: None,
         url: "https://example.com/page".to_string(),
         max_chars: None,
         timeout_ms: None,
@@ -4882,4 +4956,1107 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .arg("--allow-empty")
         .output()
         .ok();
+}
+
+// ---------------------------------------------------------------------------
+// Phase F: PDF byte budget (M001)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "pdf")]
+fn build_pdf_with_padding(text: &str, padding_bytes: usize) -> Vec<u8> {
+    use lopdf::content::{Content, Operation};
+    use lopdf::{dictionary, Document, Object, Stream};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+
+    let font_id = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+    });
+
+    let resources_id = doc.add_object(dictionary! {
+        "Font" => dictionary! {
+            "F1" => font_id,
+        },
+    });
+
+    let content = Content {
+        operations: vec![
+            Operation::new("BT", vec![]),
+            Operation::new("Tf", vec!["F1".into(), 12.into()]),
+            Operation::new("Td", vec![100.into(), 700.into()]),
+            Operation::new("Tj", vec![Object::string_literal(text)]),
+            Operation::new("ET", vec![]),
+        ],
+    };
+
+    let content_id = doc.add_object(Stream::new(dictionary! {}, content.encode().unwrap()));
+    let page_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content_id,
+        "Resources" => resources_id,
+    });
+
+    let pages = dictionary! {
+        "Type" => "Pages",
+        "Kids" => vec![page_id.into()],
+        "Count" => 1,
+    };
+    doc.objects.insert(pages_id, Object::Dictionary(pages));
+
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    if padding_bytes > 0 {
+        doc.add_object(Stream::new(
+            dictionary! { "Type" => "Metadata" },
+            vec![b'p'; padding_bytes],
+        ));
+    }
+
+    let mut buf = Vec::new();
+    doc.save_to(&mut buf).unwrap();
+    buf
+}
+
+async fn serve_chunked_once(content_type: &str, body: Vec<u8>, chunk_size: usize) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let content_type = content_type.to_string();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind loopback listener");
+    let addr = listener.local_addr().expect("listener address");
+    tokio::spawn(async move {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(pair) => pair,
+            Err(_) => return,
+        };
+        let mut scratch = [0u8; 4096];
+        let _ = socket.read(&mut scratch).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+        );
+        if socket.write_all(head.as_bytes()).await.is_err() {
+            return;
+        }
+        for chunk in body.chunks(chunk_size.max(1)) {
+            let framed = format!("{:x}\r\n", chunk.len());
+            let _ = socket.write_all(framed.as_bytes()).await;
+            let _ = socket.write_all(chunk).await;
+            let _ = socket.write_all(b"\r\n").await;
+        }
+        let _ = socket.write_all(b"0\r\n\r\n").await;
+        let _ = socket.shutdown().await;
+    });
+    format!("http://{addr}/download")
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn web_fetch_pdf_above_max_bytes_within_pdf_budget_extracts() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pdf_body = build_pdf_with_padding("Budgeted PDF body", 2_200_000);
+    let pdf_len = pdf_body.len();
+    let default_max_bytes = AppConfig::default().fetch.max_bytes;
+    assert!(
+        pdf_len > default_max_bytes,
+        "fixture PDF ({pdf_len} bytes) must exceed the generic max_bytes ({default_max_bytes})"
+    );
+
+    server.mock(|when, then| {
+        when.method(GET).path("/paper.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("content-length", pdf_len.to_string())
+            .body(pdf_body);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let v = run_web_fetch(
+        state,
+        WebFetchArgs {
+            offset: None,
+            limit: None,
+            url: server.url("/paper.pdf"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+            render: None,
+            browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("a PDF within pdf_max_bytes must fetch and extract");
+
+    assert_eq!(v["document"]["kind"], "pdf");
+    let text = v["text"].as_str().expect("text should be present");
+    assert!(
+        text.contains("Budgeted PDF body"),
+        "extracted text should contain the page text: {text}"
+    );
+    assert_eq!(
+        v["document"]["metadata"]["content_length"].as_u64(),
+        Some(pdf_len as u64)
+    );
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn web_fetch_pdf_above_pdf_budget_returns_size_outcome() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pdf_body = build_pdf_with_padding("Oversized PDF body", 8_000);
+    let pdf_len = pdf_body.len();
+    server.mock(|when, then| {
+        when.method(GET).path("/huge.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("content-length", pdf_len.to_string())
+            .body(pdf_body);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    cfg.fetch.pdf_max_bytes = 4096;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let err = run_web_fetch(
+        state,
+        WebFetchArgs {
+            offset: None,
+            limit: None,
+            url: server.url("/huge.pdf"),
+            max_chars: None,
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: None,
+            cache_policy: None,
+            render: None,
+            browser_profile: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect_err("a PDF above pdf_max_bytes must be refused");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("content_too_large"),
+        "expected the size outcome, got: {message}"
+    );
+    assert!(
+        message.contains("max 4096"),
+        "the size outcome must name the configured pdf_max_bytes, got: {message}"
+    );
+    assert!(
+        !message.contains("pdf_parse_error"),
+        "a size problem must not be reported as a parse error, got: {message}"
+    );
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn pdf_chunked_body_truncated_at_budget_returns_size_outcome() {
+    let body = build_pdf_with_padding("Chunked PDF body", 6_000);
+    assert!(body.len() > 3_000);
+    let url = serve_chunked_once("application/pdf", body, 512).await;
+
+    let mut config = AppConfig::default();
+    config.fetch.pdf_enabled = true;
+    config.fetch.pdf_max_bytes = 2048;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let result = client
+        .fetch(&url, None, ExtractMode::Text, false, None)
+        .await;
+    match result {
+        Err(eggsearch::fetch::FetchError::ContentTooLarge(_, cap)) => {
+            assert_eq!(cap, 2048, "size outcome must name pdf_max_bytes");
+        }
+        other => panic!("expected ContentTooLarge(_, 2048), got: {other:?}"),
+    }
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn magic_sniffed_pdf_without_declared_signal_stays_under_max_bytes() {
+    let mut body = b"%PDF-1.7\n".to_vec();
+    body.extend(std::iter::repeat_n(b'x', 6_000));
+    let url = serve_chunked_once("application/octet-stream", body, 512).await;
+
+    let mut config = AppConfig::default();
+    config.fetch.pdf_enabled = true;
+    config.fetch.pdf_max_bytes = 1_000_000;
+    config.fetch.max_bytes = 2048;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let result = client
+        .fetch(&url, None, ExtractMode::Text, false, None)
+        .await;
+    match result {
+        Err(eggsearch::fetch::FetchError::ContentTooLarge(_, cap)) => {
+            assert_eq!(
+                cap, 2048,
+                "a magic-sniffed PDF reached the body read under max_bytes and must report that cap"
+            );
+        }
+        other => panic!("expected ContentTooLarge(_, 2048), got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn non_pdf_chunked_body_still_truncates_without_error() {
+    let url = serve_chunked_once("text/plain", vec![b'a'; 6_000], 512).await;
+
+    let mut config = AppConfig::default();
+    config.fetch.max_bytes = 2048;
+    config.fetch.pdf_max_bytes = 1_000_000;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let response = client
+        .fetch(&url, None, ExtractMode::Text, false, None)
+        .await
+        .expect("non-PDF truncation stays a successful response");
+    assert!(
+        response.truncated,
+        "non-PDF bodies above max_bytes keep the truncated flag"
+    );
+}
+
+#[tokio::test]
+async fn non_pdf_declared_length_above_max_bytes_keeps_generic_cap() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let body = vec![b'x'; 5_000];
+    server.mock(|when, then| {
+        when.method(GET).path("/big");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .header("content-length", body.len().to_string())
+            .body(&body);
+    });
+
+    let mut config = AppConfig::default();
+    config.fetch.max_bytes = 1024;
+    config.fetch.pdf_max_bytes = 4_000_000;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    let client = eggsearch::fetch::client::FetchClient::new(
+        config.fetch_limits(),
+        "eggsearch/test".to_string(),
+        true,
+    )
+    .expect("client builds");
+
+    let result = client
+        .fetch(&server.url("/big"), None, ExtractMode::Text, false, None)
+        .await;
+    match result {
+        Err(eggsearch::fetch::FetchError::ContentTooLarge(size, cap)) => {
+            assert_eq!(size, 5_000);
+            assert_eq!(cap, 1024, "non-PDF paths keep max_bytes");
+        }
+        other => panic!("expected ContentTooLarge(5000, 1024), got: {other:?}"),
+    }
+}
+
+fn assert_window_scoped_text(v: &serde_json::Value, max_chars: usize, label: &str) {
+    let doc = &v["document"];
+    let returned = doc["text_chars_returned"]
+        .as_u64()
+        .expect("text_chars_returned") as usize;
+    assert!(
+        returned <= max_chars,
+        "{label}: window-scoped text_chars_returned {returned} exceeds max_chars {max_chars}"
+    );
+    let blocks = doc["blocks"].as_array().expect("blocks");
+    assert!(!blocks.is_empty(), "{label}: blocks must be present");
+    let widest = blocks
+        .iter()
+        .map(|block| block["text"].as_str().unwrap_or_default().chars().count())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        widest > max_chars,
+        "{label}: blocks must cover the document, widest block {widest} never exceeded max_chars {max_chars}"
+    );
+    assert!(
+        doc["text_truncated"].as_bool().unwrap_or(false)
+            || doc["block_truncated"].as_bool().unwrap_or(false),
+        "{label}: the window cut must be flagged"
+    );
+}
+
+fn long_html_server(body_chars: usize) -> httpmock::MockServer {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let paragraph = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu ";
+    let mut body = String::from("<html><body>");
+    while body.len() < body_chars {
+        body.push_str("<p>");
+        body.push_str(paragraph);
+        body.push_str(paragraph);
+        body.push_str("</p>");
+    }
+    body.push_str("</body></html>");
+    server.mock(move |when, then| {
+        when.method(GET).path("/long");
+        then.status(200)
+            .header("content-type", "text/html")
+            .body(body);
+    });
+    server
+}
+
+fn fetch_args_for(url: String) -> WebFetchArgs {
+    WebFetchArgs {
+        offset: None,
+        limit: None,
+        url,
+        max_chars: None,
+        timeout_ms: None,
+        extract_mode: None,
+        include_links: None,
+        pdf: None,
+        cache_policy: None,
+        render: None,
+        browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
+        response_detail: None,
+    }
+}
+
+#[tokio::test]
+async fn unaddressed_read_serves_the_chunk_aligned_first_window() {
+    let server = long_html_server(40_000);
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let value = run_web_fetch(state.clone(), fetch_args_for(server.url("/long")))
+        .await
+        .expect("unaddressed fetch");
+
+    for key in [
+        "next_cursor",
+        "cursor_status",
+        "text_from",
+        "text_to",
+        "text_total",
+        "next_offset",
+        "doc_id",
+        "focus_scope",
+    ] {
+        assert!(
+            value.get(key).is_none(),
+            "an unaddressed payload must not carry {key}"
+        );
+    }
+
+    let chunks = value["document"]["chunks"].as_array().expect("chunks");
+    assert!(!chunks.is_empty(), "the first window must carry chunks");
+    let joined = chunks
+        .iter()
+        .map(|chunk| chunk["text"].as_str().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(
+        value["text"].as_str(),
+        Some(joined.as_str()),
+        "the unaddressed window is the chunk-aligned page"
+    );
+    assert_eq!(
+        value["document"]["text_chars_returned"].as_u64(),
+        Some(joined.chars().count() as u64)
+    );
+    assert_eq!(value["document"]["text_truncated"], serde_json::json!(true));
+
+    let mut wide = fetch_args_for(server.url("/long"));
+    wide.offset = Some(0);
+    wide.limit = Some(50_000);
+    let wide = run_web_fetch(state, wide).await.expect("addressed read");
+    let total = wide["text_total"].as_u64().expect("text_total") as u64;
+    assert!(
+        (joined.chars().count() as u64) < total,
+        "a multi-window document must exceed its unaddressed first window"
+    );
+}
+
+#[tokio::test]
+async fn limit_above_the_server_maximum_is_clamped_with_a_warning() {
+    let server = long_html_server(40_000);
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.max_chars_default = 2_000;
+    cfg.fetch.max_chars_cap = 2_000;
+    let state = Arc::new(ServerState::build(cfg).expect("capped state builds"));
+
+    let mut args = fetch_args_for(server.url("/long"));
+    args.offset = Some(0);
+    args.limit = Some(9_000);
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("clamped window is not an error");
+    assert_eq!(value["text_from"].as_u64(), Some(0));
+    assert_eq!(value["text_to"].as_u64(), Some(2_000));
+    assert!(value["next_offset"].as_u64().is_some());
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .expect("structured warnings");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == serde_json::json!("max_results_clamped")),
+        "a clamped limit must be reported: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "opt-in live network; reads two disjoint offset windows of one real document"]
+async fn offset_windows_live() {
+    let url = std::env::var("EGGSEARCH_LIVE_OFFSET_URL")
+        .unwrap_or_else(|_| "https://www.rfc-editor.org/rfc/rfc9110.txt".to_string());
+    let mut cfg = AppConfig::default();
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut first_args = fetch_args_for(url.clone());
+    first_args.offset = Some(0);
+    first_args.limit = Some(4_000);
+    let first = run_web_fetch(state.clone(), first_args)
+        .await
+        .expect("first window");
+    let total = first["text_total"].as_u64().expect("text_total") as usize;
+    let first_to = first["text_to"].as_u64().expect("text_to") as usize;
+    let doc_id = first["doc_id"].as_str().expect("doc_id").to_string();
+    println!("url={url} doc_id={doc_id} text_total={total} first=[0,{first_to})");
+
+    let second_from = first_to + 1_000;
+    let mut second_args = fetch_args_for(url);
+    second_args.offset = Some(second_from);
+    second_args.limit = Some(4_000);
+    let second = run_web_fetch(state, second_args)
+        .await
+        .expect("second window");
+    let second_from = second["text_from"].as_u64().expect("text_from") as usize;
+    let second_to = second["text_to"].as_u64().expect("text_to") as usize;
+    let first_chars = first["text"].as_str().unwrap_or_default().chars().count();
+    let second_chars = second["text"].as_str().unwrap_or_default().chars().count();
+    println!(
+        "first_chars={first_chars} second=[{second_from},{second_to}) second_chars={second_chars}"
+    );
+
+    assert_eq!(first["text_total"], second["text_total"]);
+    assert_eq!(first["doc_id"], second["doc_id"]);
+    assert!(second_from > first_to, "the windows must be disjoint");
+    assert!(
+        second_from + second_chars <= total,
+        "the union must stay inside text_total"
+    );
+    assert!(
+        !first["text"].as_str().unwrap_or_default().is_empty()
+            && !second["text"].as_str().unwrap_or_default().is_empty(),
+        "both windows must return text"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_marks_anubis_and_altcha_challenge_pages() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/anubis");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<!DOCTYPE html><html><head><script id="anubis_version">"v1.26.4"</script><script id="anubis_challenge">{"rules":{"difficulty":6}}</script></head><body><div id="app"></div><p>Anubis could not load its JavaScript.</p></body></html>"#,
+            );
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/altcha");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<html><body><div class="captcha-wrap">JavaScript is required to complete this challenge</div></body></html>"#,
+            );
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/ordinary");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                "<html><head><title>Docs</title></head><body><h1>Hello</h1><p>World</p></body></html>",
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    for (path, family) in [("/anubis", "anubis"), ("/altcha", "altcha")] {
+        let v = run_web_fetch(state.clone(), fetch_args_for(server.url(path)))
+            .await
+            .expect("challenge page fetch succeeds");
+        assert_eq!(v["fetched"], true, "{path}");
+        assert_eq!(v["status"], 200, "{path}");
+        assert_eq!(v["manual_interaction_required"], true, "{path}");
+        let warnings = v["structured_warnings"]
+            .as_array()
+            .expect("structured warnings");
+        let challenge = warnings
+            .iter()
+            .find(|warning| warning["code"] == "fetch_challenge_page")
+            .expect("challenge warning present");
+        let message = challenge["message"].as_str().unwrap_or_default();
+        assert!(message.contains(family), "{path}: got {message}");
+    }
+
+    let ordinary = run_web_fetch(state, fetch_args_for(server.url("/ordinary")))
+        .await
+        .expect("ordinary fetch succeeds");
+    assert_eq!(ordinary["manual_interaction_required"], false);
+    let warnings = ordinary["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(!warnings
+        .iter()
+        .any(|warning| warning["code"] == "fetch_challenge_page"));
+}
+
+const ANUBIS_PASS_COOKIE: &str = "pass-cookie-123";
+
+fn anubis_fast_challenge_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "fast", "difficulty": 2},
+        "challenge": {
+            "issuedAt": "2026-11-11T00:00:00Z",
+            "metadata": {"User-Agent": "eggsearch"},
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "fast",
+            "randomData": "abc123def456",
+            "redir": "/search?q=rust",
+            "policyRuleHash": "00",
+            "difficulty": 2,
+            "spent": false
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn anubis_wall<'a>(
+    server: &'a httpmock::MockServer,
+    replay_body: &str,
+) -> (httpmock::Mock<'a>, httpmock::Mock<'a>, httpmock::Mock<'a>) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("spchal-auth={ANUBIS_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("set-cookie", "sp_pow=pow-1; Path=/")
+            .header("set-cookie", "spchal-cookie-verification=verif-1; Path=/")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge")
+            .header("cookie", "sp_pow=pow-1; spchal-cookie-verification=verif-1");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("spchal-auth={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly"),
+            )
+            .body("");
+    });
+    (replay, wall, pass)
+}
+
+fn anubis_state(enabled: bool) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = enabled;
+    Arc::new(ServerState::build(cfg).expect("state builds"))
+}
+
+fn challenge_warning_count(value: &serde_json::Value) -> usize {
+    value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|warning| warning["code"] == "fetch_challenge_page")
+        .count()
+}
+
+const ANUBIS_DEFAULT_PASS_COOKIE_NAME: &str = "techaro.lol-anubis-auth";
+const ANUBIS_DEFAULT_VERIFY_COOKIE_NAME: &str = "techaro.lol-anubis-cookie-verification";
+
+fn anubis_default_name_wall<'a>(
+    server: &'a httpmock::MockServer,
+    replay_body: &str,
+) -> (httpmock::Mock<'a>, httpmock::Mock<'a>, httpmock::Mock<'a>) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET).path("/").header(
+            "cookie",
+            format!(
+                "{ANUBIS_DEFAULT_VERIFY_COOKIE_NAME}=verif-1; {ANUBIS_DEFAULT_PASS_COOKIE_NAME}={ANUBIS_PASS_COOKIE}"
+            ),
+        );
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("{ANUBIS_DEFAULT_VERIFY_COOKIE_NAME}=verif-1; Path=/; HttpOnly"),
+            )
+            .header(
+                "set-cookie",
+                format!(
+                    "{ANUBIS_DEFAULT_PASS_COOKIE_NAME}={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"
+                ),
+            )
+            .body("");
+    });
+    (replay, wall, pass)
+}
+
+fn anubis_header_only_metarefresh_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "metarefresh", "difficulty": 0},
+        "challenge": {
+            "id": "01a1cc17-0000-7000-8000-000000000002",
+            "method": "metarefresh",
+            "randomData": "meta-token-123",
+            "redir": "/",
+            "difficulty": 0,
+            "spent": false,
+            "wait": 0
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div><span id="anubis_version">v1.28.3</span><noscript>Anubis could not load its JavaScript. The server may be overloaded.</noscript></body></html>"#
+    )
+}
+
+#[tokio::test]
+async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust is fast and reliable"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&value),
+        0,
+        "a solved fetch carries no challenge warning"
+    );
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(pass.hits(), 1, "the published challenge is answered once");
+    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+}
+
+#[tokio::test]
+async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
+
+    let value = run_web_fetch(anubis_state(false), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1, "one request is made");
+    assert_eq!(pass.hits(), 0, "solving is not attempted");
+    assert_eq!(replay.hits(), 0, "no replay is issued");
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    cfg.search.challenge.max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let value = run_web_fetch(state, fetch_args_for(server.url("/")))
+        .await
+        .expect("refused solve keeps the marked response");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(pass.hits(), 0, "a refusal stops before the pass request");
+    assert_eq!(replay.hits(), 0, "a refusal issues no replay");
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_wall(&server, &anubis_fast_challenge_page());
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("a challenged replay keeps the marked response");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(pass.hits(), 1, "the call solves exactly once");
+    assert_eq!(replay.hits(), 1, "the call replays exactly once");
+}
+
+#[tokio::test]
+async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (_, _, _) = anubis_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+    let serialized = serde_json::to_string(&value).expect("payload is serializable");
+
+    for canary in [ANUBIS_PASS_COOKIE, "pow-1", "spchal-auth", "sp_pow"] {
+        assert!(
+            !serialized.contains(canary),
+            "cookie material {canary} must not reach the payload: {serialized}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_replays_a_default_anubis_pass_cookie() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, pass) = anubis_default_name_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust is fast and reliable"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&value),
+        0,
+        "a solved fetch carries no challenge warning"
+    );
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(pass.hits(), 1, "the pass-challenge is answered once");
+    assert_eq!(
+        replay.hits(),
+        1,
+        "the joined default-name pairs are replayed once"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, _, pass) = anubis_default_name_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
+    );
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+    let serialized = serde_json::to_string(&value).expect("payload is serializable");
+
+    for canary in [
+        ANUBIS_PASS_COOKIE,
+        "verif-1",
+        ANUBIS_DEFAULT_PASS_COOKIE_NAME,
+        ANUBIS_DEFAULT_VERIFY_COOKIE_NAME,
+    ] {
+        assert!(
+            !serialized.contains(canary),
+            "cookie material {canary} must not reach the payload: {serialized}"
+        );
+    }
+    assert_eq!(pass.hits(), 1, "the pass-challenge is answered once");
+    assert_eq!(
+        replay.hits(),
+        1,
+        "the joined default-name pairs are replayed once"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "spchal-auth=meta-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                "<html><head><title>Anubis docs</title></head><body><h1>How Anubis works</h1><p>A meta refresh challenge waits.</p></body></html>",
+            );
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(anubis_header_only_metarefresh_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge")
+            .query_param("challenge", "meta-token-123")
+            .query_param("id", "01a1cc17-0000-7000-8000-000000000002");
+        then.status(200)
+            .header("set-cookie", "spchal-auth=meta-pass; Path=/; HttpOnly")
+            .body("");
+    });
+
+    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("a header-only metarefresh fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("A meta refresh challenge waits"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(challenge_warning_count(&value), 0);
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(
+        pass.hits(),
+        1,
+        "the synthesized pass-challenge URL is submitted once"
+    );
+    assert_eq!(replay.hits(), 1, "one cookie-bearing replay");
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_explicit_browser_with_rendering_disabled_reports_browser_disabled() {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for("https://example.com".to_string());
+    args.render = Some("browser".to_string());
+    let err = run_web_fetch(state, args).await.expect_err("disabled");
+    let message = format!("{err}");
+    assert!(
+        message.contains("disabled"),
+        "expected a browser_disabled outcome, got: {message}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_auto_without_rendering_reports_browser_unavailable() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/anubis");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                r#"<html><head><script id="anubis_challenge">{"rules":{"difficulty":6}}</script></head><body><div id="app"></div></body></html>"#,
+            );
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for(server.url("/anubis"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("http fetch succeeds");
+    assert_eq!(value["browser_escalated"], false);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == "browser_unavailable"),
+        "expected browser_unavailable warning: {warnings:?}"
+    );
+}
+
+#[cfg(not(feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_explicit_browser_requires_the_feature() {
+    let state = Arc::new(ServerState::build(AppConfig::default()).expect("state builds"));
+    let mut args = fetch_args_for("https://example.com".to_string());
+    args.render = Some("browser".to_string());
+    let err = run_web_fetch(state, args).await.expect_err("not compiled");
+    let message = format!("{err}");
+    assert!(
+        message.contains("not compiled"),
+        "expected browser_not_compiled_in, got: {message}"
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn web_fetch_auto_classifies_a_js_shell_by_document_text_not_framing() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/shell");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(r#"<html><head><title>App</title></head><body><div id="app"></div><script src="app.js"></script></body></html>"#);
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for(server.url("/shell"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("http fetch succeeds");
+    assert_eq!(value["browser_escalated"], false);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == "browser_unavailable"),
+        "the JS shell must be classified from document blocks, not framing: {warnings:?}"
+    );
 }

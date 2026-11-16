@@ -1,0 +1,53 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 370 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 720 Tm (Clean text sample) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 704 Tm (The parser reads each line in stream order.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 688 Tm (Every sentence stays on its own line.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 672 Tm (The definition of a token is stable.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 656 Tm (A single column holds the whole page.) Tj ET
+
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >>  >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 319 >>
+stream
+BT /F1 10 Tf 1 0 0 1 72 720 Tm (The identifier for the record is deterministic.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 704 Tm (No ligature glyphs appear in this sample.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 688 Tm (No table and no columns are present.) Tj ET
+BT /F1 10 Tf 1 0 0 1 72 672 Tm (The final line closes the document.) Tj ET
+
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >>  >> /Contents 6 0 R >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000618 00000 n 
+0000000745 00000 n 
+0000001115 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1242
+%%EOF

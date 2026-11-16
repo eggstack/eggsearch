@@ -93,39 +93,6 @@ pub enum Mode {
     Live,
 }
 
-#[derive(
-    Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "lowercase")]
-#[allow(missing_docs)]
-pub enum McpSchemaProfile {
-    #[default]
-    Full,
-    Compact,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct McpSection {
-    #[serde(default)]
-    pub schema_profile: McpSchemaProfile,
-    #[serde(default = "default_brief_max_chars")]
-    pub brief_max_chars: usize,
-}
-
-fn default_brief_max_chars() -> usize {
-    8_000
-}
-
-impl Default for McpSection {
-    fn default() -> Self {
-        Self {
-            schema_profile: McpSchemaProfile::Full,
-            brief_max_chars: default_brief_max_chars(),
-        }
-    }
-}
-
 impl Mode {
     /// Parse a mode string. Only `"off"` and `"live"` are accepted; `"ask"`
     /// is a host-level policy and is not a valid value at this layer.
@@ -200,6 +167,21 @@ pub struct ProfileConfig {
     pub providers: Vec<String>,
 }
 
+/// Upper bound for `[search].cache_ttl_seconds` (24 hours).
+const SEARCH_CACHE_TTL_MAX_SECONDS: u64 = 86_400;
+
+/// Upper bound for `[search].cache_max_entries`.
+const SEARCH_CACHE_MAX_ENTRIES_LIMIT: usize = 4096;
+
+/// Upper bound for `[fetch].pdf_max_bytes` (256 MiB).
+const PDF_MAX_BYTES_LIMIT: usize = 268_435_456;
+
+/// Lower bound for `[fetch].pdf_max_decompressed_bytes` (1 MiB).
+const PDF_MIN_DECOMPRESSED_BYTES: usize = 1_048_576;
+
+/// Upper bound for `[fetch].pdf_max_decompressed_bytes` (1 GiB).
+const PDF_MAX_DECOMPRESSED_BYTES_LIMIT: usize = 1_073_741_824;
+
 /// The `[search]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
@@ -260,6 +242,29 @@ pub struct SearchSection {
     /// many subqueries target it simultaneously.
     #[serde(default = "default_multiquery_provider_concurrency")]
     pub multiquery_provider_concurrency: usize,
+    /// Time-to-live in seconds for process-local `web_search` fan-out
+    /// cache entries. `0` disables the cache. Default: 300. Bounded to
+    /// 0..=86400 (24 hours). The TTL is a freshness bound, not a
+    /// correctness guarantee: a hit can be up to one TTL stale, and a
+    /// fan-out with any provider failure or deadline interruption is
+    /// never stored.
+    #[serde(default = "default_search_cache_ttl_seconds")]
+    pub cache_ttl_seconds: u64,
+    /// Maximum number of process-local `web_search` fan-out cache
+    /// entries. Default: 128. Bounded to 1..=4096. A single entry is
+    /// additionally dropped when its total row count exceeds the
+    /// internal per-entry row cap, so one oversized fan-out can never
+    /// evict the whole cache.
+    #[serde(default = "default_search_cache_max_entries")]
+    pub cache_max_entries: usize,
+    /// Bounded challenge-solving configuration for keyless HTML
+    /// upstreams. Disabled by default. See ADR-0009.
+    #[serde(default)]
+    pub challenge: ChallengeSection,
+    /// Intent-aware provider routing. On by default; see
+    /// `plans/archive/implementation/agentic-retrieval-integrity/006-intent-aware-provider-routing.md`.
+    #[serde(default)]
+    pub routing: RoutingSection,
 }
 
 impl Default for SearchSection {
@@ -286,7 +291,7 @@ impl Default for SearchSection {
             timeout_ms: 8000,
             default_providers: vec![
                 "duckduckgo".to_string(),
-                "startpage".to_string(),
+                "brave".to_string(),
                 "yahoo".to_string(),
             ],
             providers,
@@ -298,6 +303,10 @@ impl Default for SearchSection {
             exact_error: crate::core::error_query::ExactErrorConfig::default(),
             multiquery_concurrency: default_multiquery_concurrency(),
             multiquery_provider_concurrency: default_multiquery_provider_concurrency(),
+            cache_ttl_seconds: default_search_cache_ttl_seconds(),
+            cache_max_entries: default_search_cache_max_entries(),
+            challenge: ChallengeSection::default(),
+            routing: RoutingSection::default(),
         }
     }
 }
@@ -337,6 +346,12 @@ fn default_multiquery_concurrency() -> usize {
 fn default_multiquery_provider_concurrency() -> usize {
     2
 }
+fn default_search_cache_ttl_seconds() -> u64 {
+    300
+}
+fn default_search_cache_max_entries() -> usize {
+    128
+}
 fn default_pdf_max_pages() -> usize {
     25
 }
@@ -345,6 +360,12 @@ fn default_pdf_max_chars_per_page() -> usize {
 }
 fn default_pdf_max_total_chars() -> usize {
     50000
+}
+fn default_pdf_max_bytes() -> usize {
+    16_777_216
+}
+fn default_pdf_max_decompressed_bytes() -> usize {
+    67_108_864
 }
 fn default_batch_max_items() -> usize {
     8
@@ -412,8 +433,25 @@ fn default_browser_post_load_wait_ms() -> u64 {
 fn default_browser_verification_wait_ms() -> u64 {
     10_000
 }
+fn default_pdf_enabled() -> bool {
+    cfg!(feature = "pdf")
+}
+fn default_browser_enabled() -> bool {
+    cfg!(feature = "browser")
+}
+fn default_browser_policy() -> String {
+    "auto".to_string()
+}
 fn default_browser_max_requests() -> usize {
     100
+}
+/// Default idle teardown for the shared browser lifecycle in milliseconds.
+pub const DEFAULT_BROWSER_IDLE_TIMEOUT_MS: u64 = 90_000;
+/// Minimum accepted idle teardown for the shared browser lifecycle.
+pub const MIN_BROWSER_IDLE_TIMEOUT_MS: u64 = 5_000;
+
+fn default_browser_idle_timeout_ms() -> u64 {
+    DEFAULT_BROWSER_IDLE_TIMEOUT_MS
 }
 fn default_browser_max_dom_bytes() -> usize {
     4_000_000
@@ -497,9 +535,9 @@ impl Default for FetchCacheSection {
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FetchBrowserSection {
-    #[serde(default)]
+    #[serde(default = "default_browser_enabled")]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default = "default_browser_policy")]
     pub policy: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
@@ -513,6 +551,8 @@ pub struct FetchBrowserSection {
     pub verification_wait_ms: u64,
     #[serde(default = "default_browser_max_requests")]
     pub max_requests: usize,
+    #[serde(default = "default_browser_idle_timeout_ms")]
+    pub idle_timeout_ms: u64,
     #[serde(default = "default_browser_max_dom_bytes")]
     pub max_dom_bytes: usize,
     #[serde(default = "default_origin_browser_concurrency")]
@@ -528,14 +568,15 @@ pub struct FetchBrowserSection {
 impl Default for FetchBrowserSection {
     fn default() -> Self {
         Self {
-            enabled: false,
-            policy: "http_only".into(),
+            enabled: default_browser_enabled(),
+            policy: default_browser_policy(),
             executable: None,
             startup_timeout_ms: default_browser_startup_timeout_ms(),
             navigation_timeout_ms: default_browser_navigation_timeout_ms(),
             post_load_wait_ms: default_browser_post_load_wait_ms(),
             verification_wait_ms: default_browser_verification_wait_ms(),
             max_requests: default_browser_max_requests(),
+            idle_timeout_ms: default_browser_idle_timeout_ms(),
             max_dom_bytes: default_browser_max_dom_bytes(),
             global_concurrency: default_origin_browser_concurrency(),
             per_origin_concurrency: default_origin_browser_concurrency(),
@@ -588,8 +629,9 @@ pub struct FetchSection {
     pub sanitize_output: bool,
     /// Whether PDF text extraction is enabled. Requires the `pdf`
     /// Cargo feature to be compiled in. When disabled, PDF
-    /// responses are rejected with a clear message. Default: `false`.
-    #[serde(default)]
+    /// responses are rejected with a clear message. Defaults to the
+    /// compiled-in state.
+    #[serde(default = "default_pdf_enabled")]
     pub pdf_enabled: bool,
     /// Maximum number of PDF pages to attempt extracting text from.
     /// Default: 25.
@@ -602,6 +644,16 @@ pub struct FetchSection {
     /// Default: 50000.
     #[serde(default = "default_pdf_max_total_chars")]
     pub pdf_max_total_chars: usize,
+    /// Maximum response body size in bytes for PDF documents, applied when
+    /// the response is identified as PDF by Content-Type or a `.pdf` path.
+    /// Default: 16777216 (16 MiB). Must be between 1 and 268435456.
+    #[serde(default = "default_pdf_max_bytes")]
+    pub pdf_max_bytes: usize,
+    /// Maximum bytes a PDF document may expand into once its streams are
+    /// decompressed, measured over the whole document before parsing.
+    /// Default: 67108864 (64 MiB). Must be between 1048576 and 1073741824.
+    #[serde(default = "default_pdf_max_decompressed_bytes")]
+    pub pdf_max_decompressed_bytes: usize,
 
     // --- Batch fetch configuration ---
     /// Default maximum number of items in a batch fetch request.
@@ -680,10 +732,12 @@ impl Default for FetchSection {
             include_links_default: false,
             user_agent: default_user_agent(),
             sanitize_output: default_sanitize_output(),
-            pdf_enabled: false,
+            pdf_enabled: default_pdf_enabled(),
             pdf_max_pages: default_pdf_max_pages(),
             pdf_max_chars_per_page: default_pdf_max_chars_per_page(),
             pdf_max_total_chars: default_pdf_max_total_chars(),
+            pdf_max_bytes: default_pdf_max_bytes(),
+            pdf_max_decompressed_bytes: default_pdf_max_decompressed_bytes(),
             batch_max_items: default_batch_max_items(),
             batch_max_items_cap: default_batch_max_items_cap(),
             batch_max_chars_per_item: default_batch_max_chars_per_item(),
@@ -1182,6 +1236,8 @@ impl AppConfig {
             pdf_max_pages: self.fetch.pdf_max_pages,
             pdf_max_chars_per_page: self.fetch.pdf_max_chars_per_page,
             pdf_max_total_chars: self.fetch.pdf_max_total_chars,
+            pdf_max_bytes: self.fetch.pdf_max_bytes,
+            pdf_max_decompressed_bytes: self.fetch.pdf_max_decompressed_bytes,
         }
     }
 
@@ -1196,6 +1252,16 @@ impl AppConfig {
                 "[mcp].brief_max_chars must be between 512 and 32000".to_string(),
             ));
         }
+        if !(MIN_EXCERPT_BUDGET_CHARS..=MAX_EXCERPT_BUDGET_CHARS)
+            .contains(&self.mcp.excerpt_budget_chars)
+        {
+            return Err(CoreError::Config(
+                "[mcp].excerpt_budget_chars must be between 256 and 32000".to_string(),
+            ));
+        }
+        if let Err(message) = self.mcp.tasks.validate() {
+            return Err(CoreError::Config(message));
+        }
         if self.fetch.max_chars_cap < self.fetch.max_chars_default {
             return Err(CoreError::Config(format!(
                 "[fetch].max_chars_cap ({}) must be >= [fetch].max_chars_default ({})",
@@ -1206,6 +1272,20 @@ impl AppConfig {
             return Err(CoreError::Config(
                 "[fetch].max_bytes must be > 0".to_string(),
             ));
+        }
+        if !(1..=PDF_MAX_BYTES_LIMIT).contains(&self.fetch.pdf_max_bytes) {
+            return Err(CoreError::Config(format!(
+                "[fetch].pdf_max_bytes ({}) must be between 1 and {PDF_MAX_BYTES_LIMIT}",
+                self.fetch.pdf_max_bytes
+            )));
+        }
+        if !(PDF_MIN_DECOMPRESSED_BYTES..=PDF_MAX_DECOMPRESSED_BYTES_LIMIT)
+            .contains(&self.fetch.pdf_max_decompressed_bytes)
+        {
+            return Err(CoreError::Config(format!(
+                "[fetch].pdf_max_decompressed_bytes ({}) must be between {PDF_MIN_DECOMPRESSED_BYTES} and {PDF_MAX_DECOMPRESSED_BYTES_LIMIT}",
+                self.fetch.pdf_max_decompressed_bytes
+            )));
         }
         if self.fetch.timeout_ms == 0 {
             return Err(CoreError::Config(
@@ -1238,6 +1318,20 @@ impl AppConfig {
                 "[search].max_query_chars must be > 0".to_string(),
             ));
         }
+        if self.search.cache_ttl_seconds > SEARCH_CACHE_TTL_MAX_SECONDS {
+            return Err(CoreError::Config(format!(
+                "[search].cache_ttl_seconds ({}) must be <= {SEARCH_CACHE_TTL_MAX_SECONDS}; 0 disables the cache",
+                self.search.cache_ttl_seconds
+            )));
+        }
+        if !(1..=SEARCH_CACHE_MAX_ENTRIES_LIMIT).contains(&self.search.cache_max_entries) {
+            return Err(CoreError::Config(format!(
+                "[search].cache_max_entries ({}) must be between 1 and {SEARCH_CACHE_MAX_ENTRIES_LIMIT}",
+                self.search.cache_max_entries
+            )));
+        }
+        self.search.challenge.validate()?;
+        self.search.routing.validate()?;
 
         // Provider validation
         let known: std::collections::BTreeSet<&str> = KNOWN_PROVIDER_IDS.iter().copied().collect();
@@ -1465,6 +1559,20 @@ impl AppConfig {
             return Err(CoreError::Config(
                 "[fetch].browser.max_requests must be > 0".to_string(),
             ));
+        }
+        if !matches!(
+            self.fetch.browser.policy.as_str(),
+            "http_only" | "auto" | "browser"
+        ) {
+            return Err(CoreError::Config(format!(
+                "[fetch].browser.policy must be one of http_only, auto, browser; got '{}'",
+                self.fetch.browser.policy
+            )));
+        }
+        if self.fetch.browser.idle_timeout_ms < MIN_BROWSER_IDLE_TIMEOUT_MS {
+            return Err(CoreError::Config(format!(
+                "[fetch].browser.idle_timeout_ms must be >= {MIN_BROWSER_IDLE_TIMEOUT_MS}"
+            )));
         }
         if self.fetch.browser.max_dom_bytes == 0 {
             return Err(CoreError::Config(
@@ -1769,1210 +1877,18 @@ pub fn default_config_path() -> PathBuf {
     PathBuf::from("eggsearch.toml")
 }
 
+mod challenge;
+mod mcp;
+mod routing;
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mode_parsing() {
-        assert_eq!(Mode::parse("off").unwrap(), Mode::Off);
-        assert_eq!(Mode::parse("live").unwrap(), Mode::Live);
-        assert!(Mode::parse("nope").is_err());
-    }
-
-    #[test]
-    fn mode_parsing_rejects_documented_aliases() {
-        // The previous build accepted "ask", "local_only", "localonly",
-        // and "local" as aliases for Live. The current build is strict
-        // and only accepts "off" and "live".
-        for alias in ["ask", "local_only", "localonly", "local"] {
-            assert!(
-                Mode::parse(alias).is_err(),
-                "{alias} should be rejected, was accepted as a Live alias"
-            );
-        }
-    }
-
-    #[test]
-    fn default_config_loads() {
-        let c = AppConfig::default();
-        assert!(c.search.default_max_results > 0);
-        assert!(!c.search.default_providers.is_empty());
-    }
-
-    #[test]
-    fn default_providers_lists_known_engines() {
-        let c = AppConfig::default();
-        for expected in [
-            "duckduckgo",
-            "brave",
-            "startpage",
-            "yahoo",
-            "mojeek",
-            "searxng",
-        ] {
-            assert!(
-                c.search.providers.contains_key(expected),
-                "missing default provider: {expected}"
-            );
-        }
-    }
-
-    #[test]
-    fn default_searxng_is_disabled() {
-        let c = AppConfig::default();
-        assert!(!c.search.searxng.enabled);
-        assert!(c.search.searxng.base_url.is_none());
-        assert_eq!(c.search.providers.get("searxng"), Some(&false));
-    }
-
-    #[test]
-    fn searxng_provider_is_available_requires_enabled_and_base_url() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("searxng".to_string(), true);
-        assert!(!c.provider_is_available("searxng"));
-
-        c.search.searxng.enabled = true;
-        assert!(!c.provider_is_available("searxng"));
-
-        c.search.searxng.base_url = Some(String::new());
-        assert!(!c.provider_is_available("searxng"));
-
-        c.search.searxng.base_url = Some("https://searx.example.org".to_string());
-        assert!(c.provider_is_available("searxng"));
-    }
-
-    #[test]
-    fn default_mojeek_is_disabled() {
-        let c = AppConfig::default();
-        assert_eq!(c.search.providers.get("mojeek"), Some(&false));
-    }
-
-    #[test]
-    fn round_trip_toml() {
-        let c = AppConfig::default();
-        let text = toml::to_string(&c).unwrap();
-        let parsed: AppConfig = toml::from_str(&text).unwrap();
-        assert_eq!(
-            parsed.search.default_max_results,
-            c.search.default_max_results
-        );
-    }
-
-    #[test]
-    fn resolve_providers_uses_default_when_empty() {
-        let c = AppConfig::default();
-        let out = c.resolve_providers(&[]).unwrap();
-        assert_eq!(out, c.search.default_providers);
-    }
-
-    #[test]
-    fn resolve_providers_dedupes_override() {
-        let c = AppConfig::default();
-        let out = c
-            .resolve_providers(&["brave".into(), "brave".into(), "duckduckgo".into()])
-            .unwrap();
-        assert_eq!(out, vec!["brave".to_string(), "duckduckgo".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_filters_to_enabled() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("duckduckgo".to_string(), true);
-        c.search.providers.insert("brave".to_string(), false);
-        c.search.default_providers = vec!["duckduckgo".to_string(), "brave".to_string()];
-
-        let out = c.resolve_providers(&[]).unwrap();
-        assert_eq!(out, vec!["duckduckgo".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_rejects_disabled_in_explicit_list() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("duckduckgo".to_string(), true);
-        c.search.providers.insert("brave".to_string(), false);
-
-        let result = c.resolve_providers(&["brave".to_string()]);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("disabled"));
-    }
-
-    #[test]
-    fn resolve_providers_empty_when_all_disabled() {
-        let mut c = AppConfig::default();
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-
-        let result = c.resolve_providers(&[]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn resolve_providers_preserves_order() {
-        let c = AppConfig::default();
-        let out = c
-            .resolve_providers(&["yahoo".into(), "duckduckgo".into()])
-            .unwrap();
-        assert_eq!(out, vec!["yahoo".to_string(), "duckduckgo".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_dedups() {
-        let c = AppConfig::default();
-        let out = c
-            .resolve_providers(&["brave".into(), "brave".into(), "brave".into()])
-            .unwrap();
-        assert_eq!(out, vec!["brave".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_validates_enabled() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("duckduckgo".to_string(), true);
-        c.search.providers.insert("brave".to_string(), false);
-
-        let out = c.resolve_providers(&["brave".to_string()]);
-        assert!(out.is_err());
-        assert!(out.unwrap_err().to_string().contains("disabled"));
-    }
-
-    #[test]
-    fn save_load_round_trip_through_filesystem() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        let c = AppConfig::default();
-        c.save(&path).unwrap();
-        let loaded = AppConfig::load(&path).unwrap();
-        assert_eq!(
-            loaded.search.default_max_results,
-            c.search.default_max_results
-        );
-        assert_eq!(loaded.search.mode, c.search.mode);
-        assert_eq!(loaded.search.default_providers, c.search.default_providers);
-    }
-
-    #[test]
-    fn load_malformed_toml_returns_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("bad.toml");
-        std::fs::write(&path, "this is not [valid toml").unwrap();
-        let err = AppConfig::load(&path);
-        assert!(err.is_err(), "expected error for malformed TOML");
-    }
-
-    #[test]
-    fn load_missing_file_returns_default() {
-        let path = std::path::Path::new("/nonexistent/path/config.toml");
-        let cfg = AppConfig::load(path).unwrap();
-        assert_eq!(cfg.search.mode, Mode::default());
-    }
-
-    #[test]
-    fn enabled_provider_ids_returns_only_enabled() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("duckduckgo".to_string(), true);
-        c.search.providers.insert("brave".to_string(), false);
-        c.search.providers.insert("startpage".to_string(), true);
-
-        let ids = c.enabled_provider_ids();
-        assert!(ids.contains(&"duckduckgo".to_string()));
-        assert!(!ids.contains(&"brave".to_string()));
-        assert!(ids.contains(&"startpage".to_string()));
-    }
-
-    #[test]
-    fn effective_provider_ids_include_configured_api_provider() {
-        let mut c = AppConfig::default();
-        let env = "EGGSEARCH_TEST_EFFECTIVE_PROVIDER_KEY";
-        std::env::set_var(env, "test_key");
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some(env.to_string()),
-                base_url: None,
-            },
-        );
-
-        let ids = c.effective_provider_ids();
-        std::env::remove_var(env);
-        assert!(ids.contains(&"brave_api".to_string()), "got: {ids:?}");
-    }
-
-    #[test]
-    fn misconfigured_default_providers_lists_disabled() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("duckduckgo".to_string(), true);
-        c.search.providers.insert("brave".to_string(), false);
-        c.search.providers.insert("startpage".to_string(), true);
-        c.search.providers.insert("yahoo".to_string(), false);
-        c.search.default_providers = vec![
-            "duckduckgo".to_string(),
-            "brave".to_string(),
-            "yahoo".to_string(),
-            "ghost".to_string(), // not in the providers map at all
-        ];
-
-        let misconfigured = c.misconfigured_default_providers();
-        assert!(
-            misconfigured.contains(&"brave".to_string()),
-            "got: {misconfigured:?}"
-        );
-        assert!(
-            misconfigured.contains(&"yahoo".to_string()),
-            "got: {misconfigured:?}"
-        );
-        assert!(
-            misconfigured.contains(&"ghost".to_string()),
-            "got: {misconfigured:?}"
-        );
-        assert!(
-            !misconfigured.contains(&"duckduckgo".to_string()),
-            "got: {misconfigured:?}"
-        );
-        assert_eq!(misconfigured.len(), 3, "got: {misconfigured:?}");
-    }
-
-    #[test]
-    fn misconfigured_default_providers_empty_when_all_enabled() {
-        let c = AppConfig::default();
-        assert!(c.misconfigured_default_providers().is_empty());
-    }
-
-    #[test]
-    fn validate_accepts_defaults() {
-        let c = AppConfig::default();
-        assert!(
-            c.validate().is_ok(),
-            "default config should validate: {:?}",
-            c.validate().err()
-        );
-    }
-
-    #[test]
-    fn validate_rejects_cap_below_default() {
-        let mut c = AppConfig::default();
-        c.fetch.max_chars_cap = 100;
-        c.fetch.max_chars_default = 12_000;
-        let err = c.validate().expect_err("expected validation failure");
-        assert!(err.to_string().contains("max_chars_cap"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_zero_max_bytes() {
-        let mut c = AppConfig::default();
-        c.fetch.max_bytes = 0;
-        let err = c.validate().expect_err("expected validation failure");
-        assert!(err.to_string().contains("max_bytes"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_zero_timeouts() {
-        let mut c = AppConfig::default();
-        c.fetch.timeout_ms = 0;
-        let err = c.validate().expect_err("expected fetch timeout failure");
-        assert!(err.to_string().contains("[fetch].timeout_ms"), "got: {err}");
-
-        let mut c2 = AppConfig::default();
-        c2.search.timeout_ms = 0;
-        let err2 = c2.validate().expect_err("expected search timeout failure");
-        assert!(
-            err2.to_string().contains("[search].timeout_ms"),
-            "got: {err2}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_excessive_profile_process_timeout() {
-        let mut c = AppConfig::default();
-        c.fetch
-            .browser
-            .persistent_profiles
-            .profile_process_timeout_ms = MAX_PROFILE_PROCESS_TIMEOUT_MS + 1;
-        let err = c
-            .validate()
-            .expect_err("expected profile process timeout cap failure");
-        assert!(
-            err.to_string()
-                .contains("profile_process_timeout_ms exceeds maximum"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_zero_default_max_results() {
-        let mut c = AppConfig::default();
-        c.search.default_max_results = 0;
-        let err = c
-            .validate()
-            .expect_err("expected default_max_results failure");
-        assert!(
-            err.to_string().contains("default_max_results"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_max_results_cap_below_default_max_results() {
-        let mut c = AppConfig::default();
-        c.search.default_max_results = 50;
-        c.search.max_results_cap = 10;
-        let err = c.validate().expect_err("expected cap failure");
-        assert!(
-            err.to_string().contains("default_max_results"),
-            "got: {err}"
-        );
-        assert!(err.to_string().contains("max_results_cap"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_zero_max_results_cap() {
-        let mut c = AppConfig::default();
-        c.search.max_results_cap = 0;
-        let err = c.validate().expect_err("expected max_results_cap failure");
-        assert!(err.to_string().contains("max_results_cap"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_zero_max_query_chars() {
-        let mut c = AppConfig::default();
-        c.search.max_query_chars = 0;
-        let err = c.validate().expect_err("expected max_query_chars failure");
-        assert!(err.to_string().contains("max_query_chars"), "got: {err}");
-    }
-
-    #[test]
-    fn default_search_section_has_sanitize_output_true() {
-        let c = AppConfig::default();
-        assert!(c.search.sanitize_output);
-    }
-
-    #[test]
-    fn default_fetch_section_has_sanitize_output_true() {
-        let c = AppConfig::default();
-        assert!(c.fetch.sanitize_output);
-    }
-
-    #[test]
-    fn validate_rejects_no_providers_enabled_in_live_mode() {
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        let err = c.validate().expect_err("expected no-providers failure");
-        assert!(
-            err.to_string()
-                .contains("no traditional providers are enabled"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_allows_no_providers_in_off_mode() {
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Off;
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        // mode=off with no providers is fine - no search is attempted
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn validate_allows_api_only_deployment_in_live_mode() {
-        use super::ApiProviderConfig;
-
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL traditional providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        // Enable an API provider so live mode is valid
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("BRAVE_API_KEY".to_string()),
-                base_url: None,
-            },
-        );
-        // Setting env var so validation passes
-        std::env::set_var("BRAVE_API_KEY", "test_key");
-        assert!(
-            c.validate().is_ok(),
-            "API-only deployment should be valid in live mode"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_live_mode_no_providers_no_api() {
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        let err = c.validate().expect_err("expected no-providers failure");
-        assert!(
-            err.to_string().contains("no API providers are configured"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_unknown_default_provider() {
-        let mut c = AppConfig::default();
-        c.search
-            .default_providers
-            .push("ghost_provider".to_string());
-        let err = c
-            .validate()
-            .expect_err("expected unknown default provider failure");
-        assert!(
-            err.to_string().contains("unknown provider: ghost_provider"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_unknown_provider_in_providers_map() {
-        let mut c = AppConfig::default();
-        c.search
-            .providers
-            .insert("ghost_provider".to_string(), true);
-        let err = c
-            .validate()
-            .expect_err("expected unknown providers map key failure");
-        assert!(
-            err.to_string().contains("unknown provider: ghost_provider"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_searxng_enabled_without_base_url() {
-        let mut c = AppConfig::default();
-        c.search.searxng.enabled = true;
-        c.search.searxng.base_url = None;
-        let err = c
-            .validate()
-            .expect_err("expected searxng without base_url failure");
-        assert!(
-            err.to_string().contains("base_url is missing or empty"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_searxng_enabled_with_empty_base_url() {
-        let mut c = AppConfig::default();
-        c.search.searxng.enabled = true;
-        c.search.searxng.base_url = Some(String::new());
-        let err = c
-            .validate()
-            .expect_err("expected searxng with empty base_url failure");
-        assert!(
-            err.to_string().contains("base_url is missing or empty"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_searxng_enabled_with_invalid_url() {
-        let mut c = AppConfig::default();
-        c.search.searxng.enabled = true;
-        c.search.searxng.base_url = Some("not a url".to_string());
-        let err = c
-            .validate()
-            .expect_err("expected searxng with invalid URL failure");
-        assert!(err.to_string().contains("not a valid URL"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_accepts_searxng_enabled_with_valid_url() {
-        let mut c = AppConfig::default();
-        c.search.searxng.enabled = true;
-        c.search.searxng.base_url = Some("https://searx.example.org".to_string());
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn resolve_providers_rejects_unknown_in_explicit_list() {
-        let c = AppConfig::default();
-        let result = c.resolve_providers(&["ghost_provider".to_string()]);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("unknown provider"),);
-    }
-
-    #[test]
-    fn resolve_providers_filters_disabled_default_providers() {
-        let mut c = AppConfig::default();
-        c.search.default_providers = vec!["duckduckgo".to_string(), "brave".to_string()];
-        c.search.providers.insert("brave".to_string(), false);
-
-        let out = c.resolve_providers(&[]).unwrap();
-        assert_eq!(out, vec!["duckduckgo".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_filters_unconfigured_api_default_provider() {
-        let mut c = AppConfig::default();
-        c.search.default_providers = vec!["brave_api".to_string()];
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("EGGSEARCH_TEST_MISSING_DEFAULT_API_KEY".to_string()),
-                base_url: None,
-            },
-        );
-
-        let err = c.resolve_providers(&[]).unwrap_err();
-        assert!(
-            err.to_string().contains("no default providers are enabled"),
-            "got: {err}"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // API provider config tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn default_api_map_is_empty() {
-        let c = AppConfig::default();
-        assert!(c.search.api.is_empty());
-    }
-
-    #[test]
-    fn api_provider_config_serde_roundtrip() {
-        let mut api = std::collections::BTreeMap::new();
-        api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: false,
-                api_key_env: Some("BRAVE_SEARCH_API_KEY".to_string()),
-                base_url: None,
-            },
-        );
-        let mut c = AppConfig::default();
-        c.search.api = api;
-
-        let text = toml::to_string(&c).unwrap();
-        let parsed: AppConfig = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.search.api.len(), 1);
-        let cfg = parsed.search.api.get("brave_api").unwrap();
-        assert!(!cfg.enabled);
-        assert_eq!(cfg.api_key_env.as_deref(), Some("BRAVE_SEARCH_API_KEY"));
-    }
-
-    #[test]
-    fn validate_rejects_api_provider_enabled_without_key_env() {
-        let mut c = AppConfig::default();
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: None,
-                base_url: None,
-            },
-        );
-        let err = c
-            .validate()
-            .expect_err("expected api_key_env missing failure");
-        assert!(
-            err.to_string().contains("api_key_env is missing or empty"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_api_provider_enabled_with_empty_key_env() {
-        let mut c = AppConfig::default();
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some(String::new()),
-                base_url: None,
-            },
-        );
-        let err = c
-            .validate()
-            .expect_err("expected api_key_env empty failure");
-        assert!(
-            err.to_string().contains("api_key_env is missing or empty"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_accepts_api_provider_disabled_without_key_env() {
-        let mut c = AppConfig::default();
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: false,
-                api_key_env: None,
-                base_url: None,
-            },
-        );
-        // Disabled providers don't need a key env
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_api_provider_with_invalid_base_url() {
-        let mut c = AppConfig::default();
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("BRAVE_SEARCH_API_KEY".to_string()),
-                base_url: Some("not a url".to_string()),
-            },
-        );
-        let err = c.validate().expect_err("expected invalid base_url failure");
-        assert!(err.to_string().contains("not a valid URL"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_accepts_api_provider_with_valid_config() {
-        let mut c = AppConfig::default();
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("BRAVE_SEARCH_API_KEY".to_string()),
-                base_url: Some("https://api.search.brave.com/res/v1/web/search".to_string()),
-            },
-        );
-        // Even if the env var isn't set, validate() only warns (doesn't error)
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn resolve_providers_accepts_configured_brave_api_in_explicit_list() {
-        let mut c = AppConfig::default();
-        let env = "EGGSEARCH_TEST_EXPLICIT_BRAVE_API_KEY";
-        std::env::set_var(env, "test_key");
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some(env.to_string()),
-                base_url: None,
-            },
-        );
-
-        let result = c.resolve_providers(&["brave_api".to_string()]);
-        std::env::remove_var(env);
-        assert!(
-            result.is_ok(),
-            "brave_api should be accepted: {:?}",
-            result.err()
-        );
-        assert_eq!(result.unwrap(), vec!["brave_api".to_string()]);
-    }
-
-    #[test]
-    fn resolve_providers_rejects_unconfigured_api_in_explicit_list() {
-        let mut c = AppConfig::default();
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("EGGSEARCH_TEST_MISSING_EXPLICIT_API_KEY".to_string()),
-                base_url: None,
-            },
-        );
-
-        let err = c.resolve_providers(&["brave_api".to_string()]).unwrap_err();
-        assert!(
-            err.to_string().contains("disabled or unavailable"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolve_providers_rejects_api_enabled_only_in_provider_map() {
-        let mut c = AppConfig::default();
-        c.search.providers.insert("brave_api".to_string(), true);
-
-        let err = c.resolve_providers(&["brave_api".to_string()]).unwrap_err();
-        assert!(
-            err.to_string().contains("disabled or unavailable"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn api_provider_config_default_values() {
-        let cfg = ApiProviderConfig {
-            enabled: false,
-            api_key_env: None,
-            base_url: None,
-        };
-        assert!(!cfg.enabled);
-        assert!(cfg.api_key_env.is_none());
-        assert!(cfg.base_url.is_none());
-    }
-
-    // -----------------------------------------------------------------------
-    // api_provider_is_configured helper tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn live_mode_valid_with_configured_api_provider() {
-        use super::ApiProviderConfig;
-
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL traditional providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        // Enable brave_api with env var set
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("EGGSEARCH_TEST_LIVE_MODE_KEY_12345".to_string()),
-                base_url: None,
-            },
-        );
-        std::env::set_var("EGGSEARCH_TEST_LIVE_MODE_KEY_12345", "test_key");
-        assert!(
-            c.validate().is_ok(),
-            "API-only deployment with configured env var should be valid"
-        );
-    }
-
-    #[test]
-    fn live_mode_invalid_with_missing_api_env() {
-        use super::ApiProviderConfig;
-
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL traditional providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        // Enable brave_api but env var is NOT set
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("EGGSEARCH_TEST_MISSING_KEY_98765".to_string()),
-                base_url: None,
-            },
-        );
-        let err = c.validate().expect_err("expected missing env var failure");
-        assert!(
-            err.to_string().contains("no API providers are configured"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn live_mode_invalid_with_empty_api_key_env() {
-        use super::ApiProviderConfig;
-
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL traditional providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        // Enabled API provider with empty api_key_env → rejected by
-        // per-field validation before the live-mode check
-        c.search.api.insert(
-            "brave_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some(String::new()),
-                base_url: None,
-            },
-        );
-        let err = c
-            .validate()
-            .expect_err("expected empty api_key_env failure");
-        assert!(
-            err.to_string().contains("api_key_env is missing or empty"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn live_mode_invalid_with_unknown_api_provider() {
-        use super::ApiProviderConfig;
-
-        let mut c = AppConfig::default();
-        c.search.mode = Mode::Live;
-        // Disable ALL traditional providers
-        let keys: Vec<_> = c.search.providers.keys().cloned().collect();
-        for key in keys {
-            c.search.providers.insert(key, false);
-        }
-        // Enable an unknown API provider (not in API_PROVIDER_IDS)
-        c.search.api.insert(
-            "unknown_api".to_string(),
-            ApiProviderConfig {
-                enabled: true,
-                api_key_env: Some("SOME_KEY".to_string()),
-                base_url: None,
-            },
-        );
-        std::env::set_var("SOME_KEY", "test_key");
-        // Unknown API provider passes per-field validation (it logs a warning
-        // but does not error) and is not in API_PROVIDER_IDS, so
-        // api_provider_is_configured returns false. Live mode should reject.
-        let err = c
-            .validate()
-            .expect_err("expected unknown api provider failure");
-        assert!(
-            err.to_string().contains("no API providers are configured"),
-            "got: {err}"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Profile config tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn default_profiles_map_is_empty() {
-        let c = AppConfig::default();
-        assert!(c.search.profiles.is_empty());
-    }
-
-    #[test]
-    fn validate_accepts_canonical_profile_names() {
-        let mut c = AppConfig::default();
-        c.search.profiles.insert(
-            "research".to_string(),
-            ProfileConfig {
-                providers: vec!["duckduckgo".to_string()],
-            },
-        );
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_unknown_profile_name() {
-        let mut c = AppConfig::default();
-        // Lookup goes through `SearchProfile::as_str()`, so a typo'd key can
-        // never be selected and would otherwise stay dead.
-        c.search.profiles.insert(
-            "reserach".to_string(),
-            ProfileConfig {
-                providers: vec!["duckduckgo".to_string()],
-            },
-        );
-        let err = c.validate().expect_err("typo'd profile must be rejected");
-        assert!(err.to_string().contains("reserach"), "{err}");
-    }
-
-    #[test]
-    fn validate_rejects_empty_profile_provider_list() {
-        let mut c = AppConfig::default();
-        c.search
-            .profiles
-            .insert("coding".to_string(), ProfileConfig { providers: vec![] });
-        let err = c
-            .validate()
-            .expect_err("empty provider list must be rejected");
-        assert!(err.to_string().contains("must not be empty"), "{err}");
-    }
-
-    #[test]
-    fn validate_rejects_unknown_provider_in_profile() {
-        let mut c = AppConfig::default();
-        c.search.profiles.insert(
-            "coding".to_string(),
-            ProfileConfig {
-                providers: vec!["not_a_provider".to_string()],
-            },
-        );
-        let err = c.validate().expect_err("unknown provider must be rejected");
-        assert!(err.to_string().contains("not_a_provider"), "{err}");
-    }
-
-    #[test]
-    fn profile_config_serde_roundtrip() {
-        let mut profiles = std::collections::BTreeMap::new();
-        profiles.insert(
-            "coding".to_string(),
-            ProfileConfig {
-                providers: vec![
-                    "github_code".to_string(),
-                    "github_issues".to_string(),
-                    "duckduckgo".to_string(),
-                ],
-            },
-        );
-        let mut c = AppConfig::default();
-        c.search.profiles = profiles;
-
-        let text = toml::to_string(&c).unwrap();
-        let parsed: AppConfig = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.search.profiles.len(), 1);
-        let coding = parsed.search.profiles.get("coding").unwrap();
-        assert_eq!(coding.providers.len(), 3);
-        assert_eq!(coding.providers[0], "github_code");
-    }
-
-    #[test]
-    fn resolve_profile_providers_no_profile_no_explicit() {
-        let c = AppConfig::default();
-        let (providers, degraded, warnings) = c.resolve_profile_providers(None, &[]);
-        assert!(!providers.is_empty());
-        assert!(!degraded);
-        assert!(warnings.is_empty());
-        assert_eq!(providers, c.search.default_providers);
-    }
-
-    #[test]
-    fn resolve_profile_providers_explicit_overrides_profile() {
-        let c = AppConfig::default();
-        let (providers, degraded, warnings) = c.resolve_profile_providers(
-            Some(crate::core::repo_search::SearchProfile::Coding),
-            &["duckduckgo".to_string()],
-        );
-        assert_eq!(providers, vec!["duckduckgo".to_string()]);
-        assert!(!degraded);
-        assert!(warnings.is_empty());
-    }
-
-    #[test]
-    fn resolve_profile_providers_coding_profile_uses_builtins() {
-        let c = AppConfig::default();
-        let (providers, _degraded, warnings) =
-            c.resolve_profile_providers(Some(crate::core::repo_search::SearchProfile::Coding), &[]);
-        // Coding profile built-in defaults include github_code, github_issues, etc.
-        // Most won't be enabled in default config, so some will be skipped with warnings
-        assert!(!providers.is_empty());
-        // Should have warnings about unavailable providers
-        assert!(!warnings.is_empty());
-        // Available providers should be a subset of default_providers
-        // (the non-github ones that are enabled)
-        for p in &providers {
-            assert!(
-                c.search.default_providers.contains(p),
-                "resolved provider {p} should be from default_providers"
-            );
-        }
-    }
-
-    #[test]
-    fn resolve_profile_providers_configured_profile_used() {
-        let mut c = AppConfig::default();
-        c.search.profiles.insert(
-            "coding".to_string(),
-            ProfileConfig {
-                providers: vec!["duckduckgo".to_string(), "startpage".to_string()],
-            },
-        );
-        let (providers, degraded, _warnings) =
-            c.resolve_profile_providers(Some(crate::core::repo_search::SearchProfile::Coding), &[]);
-        assert_eq!(providers, vec!["duckduckgo", "startpage"]);
-        assert!(!degraded);
-    }
-
-    #[test]
-    fn resolve_profile_providers_generic_falls_back_to_defaults() {
-        let c = AppConfig::default();
-        let (providers, degraded, _warnings) = c
-            .resolve_profile_providers(Some(crate::core::repo_search::SearchProfile::Generic), &[]);
-        assert_eq!(providers, c.search.default_providers);
-        assert!(!degraded);
-    }
-
-    #[test]
-    fn resolve_profile_providers_unknown_explicit_returns_warning() {
-        let c = AppConfig::default();
-        let (_providers, degraded, warnings) =
-            c.resolve_profile_providers(None, &["ghost_provider".to_string()]);
-        assert!(degraded);
-        assert!(warnings
-            .iter()
-            .any(|w| w.message.contains("provider_resolution_failed")));
-    }
-
-    #[test]
-    fn profile_config_toml_parse() {
-        let toml = r#"
-[search]
-mode = "live"
-default_max_results = 10
-max_results_cap = 50
-max_query_chars = 512
-timeout_ms = 8000
-default_providers = ["duckduckgo"]
-
-[search.providers]
-duckduckgo = true
-
-[search.profiles.coding]
-providers = ["github_code", "duckduckgo"]
-
-[search.profiles.security]
-providers = ["osv", "duckduckgo"]
-"#;
-        let c: AppConfig = toml::from_str(toml).unwrap();
-        assert_eq!(c.search.profiles.len(), 2);
-        let coding = c.search.profiles.get("coding").unwrap();
-        assert_eq!(coding.providers, vec!["github_code", "duckduckgo"]);
-        let security = c.search.profiles.get("security").unwrap();
-        assert_eq!(security.providers, vec!["osv", "duckduckgo"]);
-    }
-
-    #[test]
-    fn search_profile_parse_returns_none_for_unknown() {
-        use crate::core::repo_search::SearchProfile;
-        assert_eq!(SearchProfile::parse("unknown"), None);
-        assert_eq!(SearchProfile::parse(""), None);
-    }
-
-    #[test]
-    fn search_profile_parse_case_insensitive() {
-        use crate::core::repo_search::SearchProfile;
-        assert_eq!(SearchProfile::parse("Coding"), Some(SearchProfile::Coding));
-        assert_eq!(
-            SearchProfile::parse("SECURITY"),
-            Some(SearchProfile::Security)
-        );
-        assert_eq!(
-            SearchProfile::parse("Research"),
-            Some(SearchProfile::Research)
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Batch fetch config tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn default_batch_config_values() {
-        let c = AppConfig::default();
-        assert_eq!(c.fetch.batch_max_items, 8);
-        assert_eq!(c.fetch.batch_max_items_cap, 20);
-        assert_eq!(c.fetch.batch_max_chars_per_item, 12000);
-        assert_eq!(c.fetch.batch_max_total_chars, 50000);
-        assert_eq!(c.fetch.batch_max_total_chars_cap, 120000);
-        assert_eq!(c.fetch.batch_concurrency, 4);
-    }
-
-    #[test]
-    fn validate_accepts_default_batch_config() {
-        let c = AppConfig::default();
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn validate_rejects_zero_batch_max_items() {
-        let mut c = AppConfig::default();
-        c.fetch.batch_max_items = 0;
-        let err = c.validate().expect_err("expected batch_max_items failure");
-        assert!(err.to_string().contains("batch_max_items"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_rejects_zero_batch_max_items_cap() {
-        let mut c = AppConfig::default();
-        c.fetch.batch_max_items_cap = 0;
-        let err = c
-            .validate()
-            .expect_err("expected batch_max_items_cap failure");
-        assert!(
-            err.to_string().contains("batch_max_items_cap"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_batch_max_items_cap_below_batch_max_items() {
-        let mut c = AppConfig::default();
-        c.fetch.batch_max_items = 10;
-        c.fetch.batch_max_items_cap = 5;
-        let err = c
-            .validate()
-            .expect_err("expected cap below default failure");
-        assert!(
-            err.to_string().contains("batch_max_items_cap"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_zero_batch_max_total_chars() {
-        let mut c = AppConfig::default();
-        c.fetch.batch_max_total_chars = 0;
-        let err = c
-            .validate()
-            .expect_err("expected batch_max_total_chars failure");
-        assert!(
-            err.to_string().contains("batch_max_total_chars"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_batch_max_total_chars_cap_below_batch_max_total_chars() {
-        let mut c = AppConfig::default();
-        c.fetch.batch_max_total_chars = 50000;
-        c.fetch.batch_max_total_chars_cap = 10000;
-        let err = c.validate().expect_err("expected total chars cap failure");
-        assert!(
-            err.to_string().contains("batch_max_total_chars_cap"),
-            "got: {err}"
-        );
-    }
-
-    #[test]
-    fn validate_rejects_zero_batch_concurrency() {
-        let mut c = AppConfig::default();
-        c.fetch.batch_concurrency = 0;
-        let err = c
-            .validate()
-            .expect_err("expected batch_concurrency failure");
-        assert!(err.to_string().contains("batch_concurrency"), "got: {err}");
-    }
-
-    #[test]
-    fn batch_config_toml_roundtrip() {
-        let c = AppConfig::default();
-        let text = toml::to_string(&c).unwrap();
-        let parsed: AppConfig = toml::from_str(&text).unwrap();
-        assert_eq!(parsed.fetch.batch_max_items, c.fetch.batch_max_items);
-        assert_eq!(
-            parsed.fetch.batch_max_items_cap,
-            c.fetch.batch_max_items_cap
-        );
-        assert_eq!(
-            parsed.fetch.batch_max_chars_per_item,
-            c.fetch.batch_max_chars_per_item
-        );
-        assert_eq!(
-            parsed.fetch.batch_max_total_chars,
-            c.fetch.batch_max_total_chars
-        );
-        assert_eq!(
-            parsed.fetch.batch_max_total_chars_cap,
-            c.fetch.batch_max_total_chars_cap
-        );
-        assert_eq!(parsed.fetch.batch_concurrency, c.fetch.batch_concurrency);
-    }
-}
+mod tests;
+
+pub use challenge::ChallengeSection;
+pub use mcp::{
+    McpSchemaProfile, McpSection, McpTasksSection, McpToolPreset, DEFAULT_EXCERPT_BUDGET_CHARS,
+    DEFAULT_TASK_MAX_CONCURRENT, DEFAULT_TASK_POLL_INTERVAL_MS, DEFAULT_TASK_TTL_MS,
+    MAX_EXCERPT_BUDGET_CHARS, MAX_TASK_CONCURRENT, MAX_TASK_POLL_INTERVAL_MS, MAX_TASK_TTL_MS,
+    MIN_EXCERPT_BUDGET_CHARS, MIN_TASK_POLL_INTERVAL_MS, MIN_TASK_TTL_MS,
+};
+pub use routing::{IntentRoutingMode, RoutingSection, INTENT_ROUTING_MAX_EXTRA_PROVIDERS};

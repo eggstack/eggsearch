@@ -1,6 +1,6 @@
 # Repository Hardening — Overview and Sequencing
 
-Status: active; M001/M002/M007/M008/M009/M010 closed, M006 blocked
+Status: active; M001/M002/M007/M008/M009/M010 closed, M006 superseded by ADR-0014
 
 Source roadmap:
 `plans/subsystems/repository-hardening-roadmap.md`
@@ -24,7 +24,7 @@ modes and should produce separate closure evidence.
 | M003 | `003-rmcp-http-verification-on-eggfetch.md` | closed | none |
 | M004 | `004-process-and-unsafe-boundary-hardening.md` | closed through M007 | none |
 | M005 | `005-forge-safety-maintenance-decomposition.md` | closed | M004 (closed) |
-| M006 | `006-chromiumoxide-zero-reqwest-closure.md` | blocked | M003 + upstream chromiumoxide release |
+| M006 | `006-chromiumoxide-zero-reqwest-closure.md` | superseded by ADR-0014 | ADR-0014 § Decision 6 accepts the chromiumoxide reqwest edge; no upstream release required |
 | M007 | `007-corrective-closure-evidence-and-process-ratchet.md` | closed via M010 | none; schedule run `38290328560` passed |
 | M008 | `008-windows-startup-cross-target-portability-corrective.md` | closed | none; release gate cleared at `44f38ab` (CI `37036453017`, egress `37036467646`, release qualify `37036489273`) |
 | M009 | `009-first-tagged-release-provenance-reconciliation.md` | closed | `plans/closure/repository-hardening/009-status.md` |
@@ -84,9 +84,10 @@ Each milestone receives its own closure record under:
 `plans/closure/repository-hardening/NNN-status.md`
 
 Do not mark a later milestone closed based on a prior milestone's CI run.
-M006 remains blocked until an upstream artifact can satisfy its explicit
-dependency gate; do not substitute a permanent local fork merely to clear the
-registry.
+M006 is superseded by ADR-0014 § Decision 6: the chromiumoxide `reqwest` edge is
+accepted and guard-bounded, and production source stays reqwest-free. Do not
+substitute a permanent local fork; removing the edge remains a deferred
+optimization under that ADR.
 
 M007 may proceed immediately. If its code/guard corrections land before the
 first real scheduled dependency-security event, close M007 conditionally and

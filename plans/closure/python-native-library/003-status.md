@@ -2,7 +2,7 @@
 
 Status: closed
 Candidate: `ca4d0d6`
-Implementation plan: `plans/implementation/python-native-library/003-agent-api-types-and-compatibility.md`
+Implementation plan: `plans/archive/implementation/python-native-library/003-agent-api-types-and-compatibility.md`
 Predecessor: `plans/closure/python-native-library/002-status.md`
 
 ## Delivered

@@ -1,6 +1,6 @@
 # Repository Security, Supply-Chain, and Maintenance Hardening Roadmap
 
-Status: active; M001/M002/M007/M008/M009/M010/M011 closed, M006 blocked
+Status: active; M001/M002/M007/M008/M009/M010/M011 closed, M006 superseded by ADR-0014
 
 Planning baseline: `c49c600b76e690bb1bc52f641554cca6bf79f36f`
 
@@ -231,7 +231,7 @@ transport-feature change, and process refactor remain independently reviewable.
 
 ## 8. Milestones
 
-Current milestone state: M001/M007 are closed by M010 after reconciling the first scheduled dependency-security run `38290328560`. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 remains closed through M007. M005 remains closed. M006 remains blocked on upstream chromiumoxide. M011 is closed at `99316f31caf37ad2165cd5e822316942faf20c6f`; closure is recorded in `plans/closure/repository-hardening/011-status.md`. Original closure records remain historical evidence; M007 is the corrective control point.
+Current milestone state: M001/M007 are closed by M010 after reconciling the first scheduled dependency-security run `38290328560`. M002 is closed by M009 after reconciling the recorded first tagged-release provenance and immutable-release evidence. M003 remains closed. M004 remains closed through M007. M005 remains closed. M006 is superseded by ADR-0014: the chromiumoxide `reqwest` edge is accepted by decision and bounded by the dependency-shape guard, so the zero-reqwest objective is deferred rather than achieved. M011 is closed at `99316f31caf37ad2165cd5e822316942faf20c6f`; closure is recorded in `plans/closure/repository-hardening/011-status.md`. Original closure records remain historical evidence; M007 is the corrective control point.
 
 | Milestone | Current status | Control point |
 |---|---|---|
@@ -240,12 +240,12 @@ Current milestone state: M001/M007 are closed by M010 after reconciling the firs
 | M003 rmcp HTTP verification on eggfetch | closed | `plans/closure/repository-hardening/003-status.md` |
 | M004 process/unsafe boundary | closed through M007 once repository-wide guards pass | `plans/closure/repository-hardening/004-status.md` + M007 |
 | M005 forge safety decomposition | closed | `plans/closure/repository-hardening/005-status.md` |
-| M006 full zero-reqwest closure | blocked | `plans/closure/repository-hardening/006-status.md` |
-| M007 closure evidence + process ratchet corrective | closed by M010 | `plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
-| M008 Windows startup/release portability corrective | closed | `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
+| M006 full zero-reqwest closure | superseded by ADR-0014 | `plans/closure/repository-hardening/006-status.md` + `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md` |
+| M007 closure evidence + process ratchet corrective | closed by M010 | `plans/archive/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md` + `plans/closure/repository-hardening/007-status.md` |
+| M008 Windows startup/release portability corrective | closed | `plans/archive/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md` |
 | M009 first tagged-release provenance reconciliation | closed | `plans/closure/repository-hardening/009-status.md` |
 | M010 scheduled dependency-security evidence reconciliation | closed | `plans/closure/repository-hardening/010-status.md` |
-| M011 macOS symlink containment and test portability corrective | closed | `plans/implementation/repository-hardening/011-macos-symlink-containment-and-test-portability.md`; closure `plans/closure/repository-hardening/011-status.md`; exact candidate `99316f31caf37ad2165cd5e822316942faf20c6f`; also discharges deterministic retrieval M006 closure condition |
+| M011 macOS symlink containment and test portability corrective | closed | `plans/archive/implementation/repository-hardening/011-macos-symlink-containment-and-test-portability.md`; closure `plans/closure/repository-hardening/011-status.md`; exact candidate `99316f31caf37ad2165cd5e822316942faf20c6f`; also discharges deterministic retrieval M006 closure condition |
 
 ### M001 — Dependency remediation and enforceable dependency policy
 
@@ -256,7 +256,7 @@ dependency policy, add advisory/license/source checks to CI, and make
 exception/expiry handling explicit.
 
 Implementation plan:
-`plans/implementation/repository-hardening/001-dependency-security-and-policy-gate.md`.
+`plans/archive/implementation/repository-hardening/001-dependency-security-and-policy-gate.md`.
 
 ### M002 — CI and release supply-chain provenance
 
@@ -268,7 +268,7 @@ changing the 16 release-asset contract, and operationalize immutable future
 releases.
 
 Implementation plan:
-`plans/implementation/repository-hardening/002-ci-release-supply-chain-provenance.md`.
+`plans/archive/implementation/repository-hardening/002-ci-release-supply-chain-provenance.md`.
 
 ### M003 — Retire rmcp's reqwest HTTP client in favor of eggfetch
 
@@ -279,7 +279,7 @@ bounded MCP requests and remove the rmcp reqwest Streamable HTTP feature while
 retaining rmcp's client/child-process feature for stdio verification.
 
 Implementation plan:
-`plans/implementation/repository-hardening/003-rmcp-http-verification-on-eggfetch.md`.
+`plans/archive/implementation/repository-hardening/003-rmcp-http-verification-on-eggfetch.md`.
 
 ### M004 — Bounded process execution and unsafe-boundary consolidation
 
@@ -290,7 +290,7 @@ migrate startup/process probes to bounded deadlines/output, and consolidate
 Unix session/process-group setup into one narrowly allowed unsafe seam.
 
 Implementation plan:
-`plans/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`.
+`plans/archive/implementation/repository-hardening/004-process-and-unsafe-boundary-hardening.md`.
 
 ### M005 — Forge safety ownership decomposition
 
@@ -302,7 +302,7 @@ auditable owner and host-specific request/tree mechanics cannot silently fork
 that policy.
 
 Implementation plan:
-`plans/implementation/repository-hardening/005-forge-safety-maintenance-decomposition.md`.
+`plans/archive/implementation/repository-hardening/005-forge-safety-maintenance-decomposition.md`.
 
 ### M006 — Full zero-reqwest dependency-graph closure
 
@@ -314,8 +314,16 @@ client-injection seam exists). Adopt that release with HTTP discovery disabled
 for eggsearch's launch-only browser use, then prove `reqwest` is absent from
 the all-features graph.
 
+**Superseded 2026-11-14 by ADR-0014.** The default artifact decision accepts the
+chromiumoxide `reqwest` edge in both the default and all-features graphs, with
+`src/` still reqwest-free, no direct dependency, and the reverse-dependency set
+restricted to chromiumoxide by `packaging/check-http-dependency-shape.py`. Do not
+start this milestone; if an upstream release later makes HTTP discovery optional,
+removing the edge is an optimization under ADR-0014, not a reopening of this
+objective. The blocked closure record remains historical evidence.
+
 Implementation plan:
-`plans/implementation/repository-hardening/006-chromiumoxide-zero-reqwest-closure.md`.
+`plans/archive/implementation/repository-hardening/006-chromiumoxide-zero-reqwest-closure.md`.
 
 ### M007 — Corrective closure evidence and repository-wide process ratchet
 
@@ -328,7 +336,7 @@ closure has one operational dependency: a successful dependency-security run
 whose GitHub Actions event is `schedule`.
 
 Implementation plan:
-`plans/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md`.
+`plans/archive/implementation/repository-hardening/007-corrective-closure-evidence-and-process-ratchet.md`.
 
 ### M008 — Windows startup and cross-target release portability corrective
 
@@ -341,7 +349,7 @@ release gate for the next tagged release, including the intended v0.4.0 CodeGG
 parity handoff.
 
 Implementation plan:
-`plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md`.
+`plans/archive/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md`.
 
 ## 9. Cross-cutting requirements
 
@@ -424,7 +432,8 @@ The workstream is complete when:
 - production process capture/probes use bounded execution, and unsafe process
   session setup has exactly one documented owner;
 - forge safety policy is decomposed without behavioral drift;
-- chromiumoxide upstream support is adopted and `cargo tree --all-features -i
-  reqwest` shows no reqwest package (M006 remains externally blocked);
+- the chromiumoxide `reqwest` edge is accepted by ADR-0014 and bounded by
+  `packaging/check-http-dependency-shape.py`, with production source reqwest-free
+  (M006 superseded, not closed);
 - all milestones have SHA-specific closure records and no unresolved High/Medium
   finding is hidden by a waiver.

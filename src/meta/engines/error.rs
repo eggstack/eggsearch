@@ -21,6 +21,12 @@ pub enum EngineError {
         reason: String,
     },
 
+    #[error("engine '{engine}' blocked: {reason}")]
+    Blocked {
+        engine: &'static str,
+        reason: String,
+    },
+
     #[error("engine '{engine}' network error: {reason}")]
     NetworkError {
         engine: &'static str,
@@ -65,6 +71,18 @@ mod tests {
         assert!(s.contains("engine 'startpage'"));
         assert!(s.contains("parse failed"));
         assert!(s.contains("missing selector"));
+    }
+
+    #[test]
+    fn blocked_message() {
+        let err = EngineError::Blocked {
+            engine: "mojeek",
+            reason: "challenge page detected".to_string(),
+        };
+        let s = err.to_string();
+        assert!(s.contains("engine 'mojeek'"));
+        assert!(s.contains("blocked"));
+        assert!(s.contains("challenge page detected"));
     }
 
     #[test]

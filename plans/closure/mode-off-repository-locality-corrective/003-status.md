@@ -6,8 +6,8 @@ Implementation: `fcb1fb52a72af7d03e69d5c9069d97ca939f302d`
 Planning registration: `36954e5cf9b32aa82fc3979371541d4bf1217515`
 Prior status reconciliation: `5bf66ad1e38902d8f7599480a57b7e1aa96212bc`
 Closure evidence commit: recorded in the commit that updates this record
-Plan: `plans/implementation/mode-off-repository-locality-corrective/003-prepublication-exact-sha-qualifier.md`
-Related release: M002, `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md`
+Plan: `plans/archive/implementation/mode-off-repository-locality-corrective/003-prepublication-exact-sha-qualifier.md`
+Related release: M002, `plans/archive/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md`
 
 ## Result
 

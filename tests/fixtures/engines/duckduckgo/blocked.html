@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>DuckDuckGo</title>
+</head>
+<body>
+<form id="challenge-form" action="/anomaly.js" method="POST">
+<div class="anomaly-modal__mask"></div>
+<div class="anomaly-modal__modal is-ie" data-testid="anomaly-modal">
+<div class="anomaly-modal__title">Unfortunately, bots use DuckDuckGo too.</div>
+<div class="anomaly-modal__description">Please complete the following challenge to confirm this search was made by a human.</div>
+<div class="anomaly-modal__instructions">Select all squares containing a duck:</div>
+<div class="anomaly-modal__puzzle-margins">
+<div class="anomaly-modal__puzzle">
+<div class="anomaly-modal__box" data-index="0">
+<input type="checkbox" class="anomaly-modal__check">
+</div>
+<div class="anomaly-modal__box" data-index="1">
+<input type="checkbox" class="anomaly-modal__check">
+</div>
+</div>
+</div>
+</div>
+</form>
+</body>
+</html>

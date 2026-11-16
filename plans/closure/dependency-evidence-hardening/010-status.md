@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md`
+- `plans/archive/implementation/dependency-evidence-hardening/011-explicit-request-ecosystem-identity-consistency.md`
 
 Source subsystem roadmap:
 

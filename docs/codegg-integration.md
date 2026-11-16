@@ -14,7 +14,6 @@ eggsearch version: see `Cargo.toml` for the live release number.
 3. [Configuration Examples](#configuration-examples)
 4. [Legacy External-Search Provider Migration](#legacy-external-search-provider-migration)
    1. [`google_news` is retired, not remapped](#google_news-is-retired-not-remapped)
-   2. [Downstream Retirement Contract](#downstream-retirement-contract)
 5. [Tool Selection Policy](#tool-selection-policy)
 6. [Progressive disclosure integration](#progressive-disclosure-integration)
 7. [Required Task Workflows](#required-task-workflows)
@@ -92,13 +91,14 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
 multiquery_concurrency = 8
 multiquery_provider_concurrency = 2
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -113,13 +113,13 @@ enabled = true
 timeout_ms = 8000
 max_bytes = 2000000
 max_chars_default = 12000
-max_chars_cap = 50000
+max_chars_cap = 50000                # document/extraction budget and cost knob; max_chars bounds the returned-text window
 redirect_limit = 5
 allow_private_network = false
 allow_localhost = false
 include_links_default = false
 sanitize_output = true
-pdf_enabled = false
+pdf_enabled = true
 batch_max_items = 8
 batch_max_items_cap = 20
 batch_max_chars_per_item = 12000
@@ -132,7 +132,7 @@ batch_concurrency = 4
 
 ```toml eggsearch-config-parse-only
 # HTML scraper providers (enabled by default)
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 # Individual provider toggles (all enabled unless noted)
 [search.providers]
@@ -210,7 +210,7 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 [fetch]
 enabled = false
@@ -315,9 +315,9 @@ max_chars_default = 20000
 enabled = false
 ```
 
-No special config needed for `security_search` — OSV is enabled by
-default when no config overrides it. Include `assess_applicability: true`
-in requests for version-range matching.
+No special config is needed for `security_search`; OSV is enabled by default
+unless config disables it. Include `assess_applicability: true` in requests for
+version-range matching.
 
 ### Research-Focused
 
@@ -338,7 +338,7 @@ brave = true
 [fetch]
 enabled = true
 max_chars_default = 25000
-max_chars_cap = 75000
+max_chars_cap = 75000                # document/extraction budget and cost knob (not the returned-text ceiling)
 
 [local]
 enabled = false
@@ -439,8 +439,8 @@ Rules for the retiring harness:
   `default_providers`. Select them per request with `providers: ["serpapi"]` or
   `providers: ["kagi"]`. A missing or empty key produces a provider-scoped
   `missing_api_key` skip for that provider only, and a quota response produces
-  a provider-scoped rate-limited failure with health cooldown — never a global
-  search failure.
+  a provider-scoped rate-limited failure with health cooldown. It never causes a
+  global search failure.
 - Constraint truth for the two migrated providers differs from the legacy
   contract and is documented in `docs/provider-setup.md`:
   - `serpapi` natively enforces safe-search, language (`hl`), and region (`gl`).
@@ -477,112 +477,6 @@ eggsearch will import, so no provider id stands behind it.
   because the caller asked for a specific source and would receive different
   evidence than requested.
 
-### Downstream Retirement Contract
-
-This section is the handoff artifact for the workstream that deletes a retiring
-harness's in-tree external-search backend. It is written to be actionable
-without reading eggsearch's source.
-
-#### Minimum qualifying version
-
-The parity surface described above — the five keyless source providers, the two
-credentialed providers, the explicit-provider failure semantics, and the frozen
-ten-tool schema — first ships in **`eggsearch` 0.4.0**.
-
-Pin `>=0.4.1`. Do not pin an unqualified moving branch: the provider set,
-capability descriptors, and tool schema are stable within the minor line but a
-branch head can move underneath a retirement. `v0.4.0` is crate + tag only; the
-first binary release carrying this surface is `0.4.1`. Confirm what you
-actually have:
-
-```bash
-eggsearch --version          # must print: eggsearch 0.4.1
-```
-
-`provider_status` is the authoritative inventory check. It reports all 44 known
-provider ids with `enabled` / `configured` / `routable` and a typed `skip_code`.
-The full migration-relevant inventory below must be present. It includes the
-seven newly added parity providers (`wikipedia`, `arxiv`, `pubmed`,
-`hn_algolia`, `github_repositories`, `serpapi`, `kagi`) alongside the retained
-providers this migration also depends on:
-
-| Id | Expect `requires_api_key` | Expect `routable` when |
-|----|--------------------------|-----------------------|
-| `duckduckgo`, `mojeek`, `openalex`, `brave` | `false` | enabled in `[search.providers]` (defaults) |
-| `wikipedia`, `arxiv`, `hn_algolia` | `false` | enabled in `[search.providers]` (not default) |
-| `pubmed` | `false` | enabled in `[search.providers]` (not default) |
-| `github_repositories` | `false` | enabled in `[search.providers]` (not default) |
-| `brave_api`, `exa`, `tavily` | `true` | `[search.api.<id>]` enabled and credential resolves |
-| `serpapi`, `kagi` | `true` | `[search.api.<id>]` enabled and credential resolves |
-
-A `routable: false` provider is a configuration problem to fix, never a reason
-to substitute a different provider for an explicit request.
-
-#### Explicit-provider failure behavior
-
-When `providers` is non-empty, eggsearch treats it as a hard contract. It never
-silently converts an explicit request into automatic routing. Each requested id
-resolves to exactly one of these outcomes, and every outcome is a
-tool-level `isError` result carrying a stable `code` of `provider_unavailable`:
-
-| Condition | Result | Typed skip code |
-|-----------|--------|-----------------|
-| Not a known provider id | Error naming the id | `unknown_provider` |
-| Known, but not enabled / not configured | Error naming the id | `disabled_by_user` |
-| Known and enabled, credential unset or empty | Error **naming the environment variable to populate** | `missing_api_key` |
-| Known, enabled, configured, but no engine in this build | Error naming the id | `not_built` |
-
-Consequences a harness must accept:
-
-- A mixed list containing one unroutable id **fails the whole request**. eggsearch
-  does not narrow to the routable remainder, because the caller asked for both.
-- An empty `providers` array, or an absent field, means automatic routing. That
-  is the only path that may fall back.
-- When explicitly selected providers are queried and all of them fail, the error
-  carries the stable code `upstream_failed` and preserves each provider's
-  reason. This is an upstream fault, not a server fault; `internal_error` is
-  reserved for the latter.
-- Advisory provider health and cooldown never remove an explicitly requested
-  provider. If you need a provider excluded during an incident, take it out of
-  the `providers` array yourself.
-
-#### Retiring-harness checklist
-
-Once `>=0.4.1` is pinned and the providers above report `routable`, the
-downstream workstream may:
-
-1. **Delete its own external-search HTTP clients**, including the deprecated
-   Kagi v0 client and the Google News RSS parser. eggsearch owns outbound HTTP;
-   the harness keeps no provider endpoint knowledge.
-2. **Remove `backend="builtin"` and `fallback_to_builtin`** from its search
-   call sites. eggsearch is the backend, so there is nothing to fall back *to*.
-   A request that fails now fails loudly with a typed reason instead of silently
-   degrading to a second implementation.
-3. **Delete the `google_news` hint** and its conditional branches, and replace
-   them with `intent: "news"` plus an explicit `providers` array when source
-   control is required.
-4. **Keep its native wrappers as the model-facing API.** The ten eggsearch MCP
-   tools are the transport contract, not the vocabulary the model should speak.
-   eggsearch deliberately keeps `providers` and `timeout_ms` accepted-but-hidden
-   from the advertised schema: a harness should translate its own intents into
-   the canonical `goal` / `profile` / `workflow` / `sources` fields, and reserve
-   `providers` for cases where a human explicitly asked for a named source.
-5. **Expect no CodeGG-specific fields.** The MCP request and response schema
-   contains no harness-specific escape hatch, and none may be added. If your
-   retirement needs one, that is a defect in this contract, not a feature gap.
-
-#### What this contract does not change
-
-- The stable surface is still exactly ten tools. Migration adds providers, not
-  tools, and adds no request or response field.
-- The evolution policy is still additive-only, with `docs/tool-matrix.md` as the
-  schema budget.
-- No eggsearch provider id is deprecated by this migration. `brave` (keyless
-  HTML scrape) and `brave_api` (API key) remain distinct and both remain
-  supported.
-
----
-
 ## Tool Selection Policy
 
 ### Decision Tree
@@ -593,7 +487,7 @@ downstream workstream may:
 | Unknown repo structure | `repo_map` first | `repo_search` with structural subqueries |
 | CVE/GHSA/OSV/package/version/security terms | `security_search` | `web_search(intent="security")` |
 | Comparative/architectural/deep research | `research_search` | `web_search` with multiple queries |
-| Single explicit URL | `web_fetch` | — |
+| Single explicit URL | `web_fetch` | none |
 | Multiple known URLs/locators | `batch_fetch` | multiple `web_fetch` calls |
 | Handoff to another agent | `build_evidence_bundle` | raw summary |
 
@@ -613,11 +507,11 @@ downstream workstream may:
   them before trusting the result.
 - **Ignoring `unknown`/`insufficient_evidence` security states.** These
   are real outcomes, not failures. `unknown` applicability means the
-  tool cannot determine status — it does not mean "not affected."
+  tool cannot determine status; it does not mean "not affected."
 - **Treating local dirty/generated/vendor files as authoritative.** Local
   results with `is_generated`, `is_vendor`, `is_test`, or `is_example`
   flags are supplementary context, not implementation evidence. A dirty
-  checkout means uncommitted changes exist — trust the local content with
+  checkout means uncommitted changes exist. Trust the local content with
   caution.
 - **Assuming provider absence means factual absence.** If a provider is
   in cooldown or not configured, the search still runs with remaining
@@ -703,8 +597,8 @@ discovery -> hydrate 1–few definitions -> call -> follow next_actions`.
   display clamping.
 - Cache `tools/list` by the FNV-1a content fingerprint (`tool_fingerprint()`
   covers names, descriptions, annotations, input/output schemas, and
-  canonical discovery metadata) plus the server version — never by tool
-  count. Apply hydration state after retrieving a cached base surface.
+  canonical discovery metadata) plus the server version, not tool count. Apply
+  hydration state after retrieving a cached base surface.
   See `architecture/codegg-contract.md` sections 0–0.1 and 4 for the stable
   shapes.
 
@@ -1180,6 +1074,7 @@ and `warnings` (legacy string array) for backward compatibility.
 | `profile_degraded` | Warning | Profile fell back to default providers |
 | `profile_provider_not_built` | Notice | A profile provider is missing its API key |
 | `native_code_search_unavailable` | Notice | No GitHub/GitLab/Gitea provider configured |
+| `intent_routing_capability_excluded` | Notice | Intent-aware routing considered a preferred provider but it does not declare the capability the derived intent requires, so it was not added |
 | `freshness_unenforced` | Notice | Freshness requested but no provider enforces it |
 | `date_range_unenforced` | Notice | Exact date range requested but no provider enforces it |
 | `language_unenforced` | Notice | Language hint requested but no provider enforces it |
@@ -1200,9 +1095,10 @@ MCP tool errors (`isError: true`) with a stable `code`
 (`invalid_semantic_value`, `conflicting_arguments`,
 `capability_unavailable`, `provider_unavailable`, `policy_denied`,
 `budget_invalid`, `locator_invalid`, `manual_interaction_required`,
-`upstream_failed`) and a bounded `repair { field, accepted[],
-suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC
-`invalid_params`; server faults are `internal_error`. The harness should:
+`upstream_failed`, `plan_mismatch`, `document_unavailable`) and a bounded
+`repair { field, accepted[], suggested_value }`. Only uninterpretable
+invocation shapes are JSON-RPC `invalid_params`; server faults are
+`internal_error`. The harness should:
 
 1. Display the error message to the user.
 2. Check if partial results are still available (e.g. `repo_search`
@@ -1329,13 +1225,17 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 | Tool | Field | Default | Cap |
 |------|-------|---------|-----|
 | `web_search` | `max_results` | 10 | 50 (`max_results_cap`) |
-| `web_fetch` | `max_chars` | 12,000 | 50,000 (`max_chars_cap`) |
-| `batch_fetch` | `max_chars` (per item) | 12,000 | — |
+| `web_fetch` | `max_chars` (returned-text window; also accepted as `max_length`) | 12,000 | 50,000 (`max_chars_cap` document/extraction budget and cost knob) |
+| `batch_fetch` | `max_chars` (per item) | 12,000 | No separate hard cap; bounded by total budget |
 | `batch_fetch` | `max_total_chars` | 50,000 | 120,000 |
 | `batch_fetch` | items count | 8 | 20 |
 | `repo_fetch` | `max_chars` | 12,000 | 50,000 |
 | `repo_search` | `max_results` | 10 | 50 |
 | `repo_search` | `max_per_group` | 4 | 10 |
+
+`web_fetch` also accepts `start_index` for `offset` and `question` or `prompt`
+for `focus` as wire compatibility aliases; the canonical field names remain the
+documented ones.
 
 ### Concurrency Controls
 
@@ -1351,15 +1251,15 @@ When limits are exceeded, the bundle is truncated with a warning. Check
 |------|-------|---------|
 | Search | `timeout_ms` | 8,000 |
 | Fetch | `timeout_ms` | 8,000 |
-| Batch | `timeout_ms` | — (uses per-item fetch timeout) |
+| Batch | `timeout_ms` | Uses the per-item fetch timeout |
 
 ### Reducing Response Size
 
-- Set `max_chars` on fetch calls to limit extracted text.
+- Set `max_chars` on fetch calls to limit the returned-text window; the document is still extracted at `max_chars_cap`.
 - Set `max_results` on search calls to limit result count.
 - Use `include_links = false` (default) on fetch to skip link extraction.
 - Use `metadata_only` extract mode on `web_fetch` to get metadata without body content.
-- Pass `response_detail: "compact"` on search/fetch tools for ordinary operation (cards, stable IDs, trust, failure/absence state, and `next_actions` preserved; routing/telemetry/document detail omitted; ~37% web / ~49% fetch savings in representative fixtures). Use `"standard"` for specialist research/security work and `"diagnostic"` (default) for troubleshooting. `provider_status` stays diagnostic-only; `build_evidence_bundle` is identical in all modes.
+- Use `response_detail: "compact"` for ordinary search and fetch, `"standard"` for specialist research or security work, and `"diagnostic"` for troubleshooting. If omitted, the full schema profile defaults to `diagnostic` and the compact profile to `brief`. `provider_status` is diagnostic-only; `build_evidence_bundle` returns the same content in every mode.
 - Store full `structuredContent` internally and inject only the selected projection into model-visible context; never discard stable IDs, trust markers, warnings, or retrieval status when compacting display.
 
 ---
@@ -1397,10 +1297,10 @@ executions. Each action card should show:
 ### Security Verdicts
 
 For `security_search` applicability results, display verdict chips:
-- **Affected** (red) — status = `affected`
-- **Not affected** (green) — status = `not_affected`
-- **Unknown** (yellow) — status = `unknown`
-- **Insufficient evidence** (gray) — status = `insufficient_evidence`
+- **Affected** (red): status = `affected`
+- **Not affected** (green): status = `not_affected`
+- **Unknown** (yellow): status = `unknown`
+- **Insufficient evidence** (gray): status = `insufficient_evidence`
 
 Include confidence level and advisory IDs.
 
@@ -1414,12 +1314,12 @@ Display `evidence_gaps` as a checklist:
 ### Local Flags
 
 For local results, display flags in the evidence panel:
-- `is_generated` — generated file indicator
-- `is_vendor` — vendor/third-party indicator
-- `is_test` — test file indicator
-- `is_example` — example file indicator
-- `is_config` — configuration file indicator
-- `local_repo_match.match_confidence` — exact / strong / weak
+- `is_generated`: generated file indicator
+- `is_vendor`: vendor/third-party indicator
+- `is_test`: test file indicator
+- `is_example`: example file indicator
+- `is_config`: configuration file indicator
+- `local_repo_match.match_confidence`: exact / strong / weak
 - Dirty state badge when `dirty = true`
 
 ### Code Span Links
@@ -1455,7 +1355,7 @@ silent failure.
 | Freshness unenforced | `structured_warnings` with `freshness_unenforced` | Show notice; results may be stale |
 | Request deadline exceeded | `telemetry.deadline_exceeded = true`, `subqueries_interrupted`/`subqueries_skipped` | Show timeout warning; partial results may still be valid |
 | Fetch truncated | `text_truncated = true` on fetch response | Show "Content truncated" notice; offer to re-fetch with higher `max_chars` |
-| PDF unsupported | Error: `pdf_not_enabled` | Show "PDF extraction not enabled"; suggest enabling `pdf_enabled` in config |
+| PDF unsupported | Error: `pdf_disabled` (or `pdf_not_compiled_in` in a source build without the feature) | Show "PDF extraction not enabled"; suggest enabling `pdf_enabled` in config |
 | Local workspace mismatch | No `local_repo_match` on local results | Fall back to remote; inform user no local checkout was found |
 | Local workspace dirty | `local_repo_match` with dirty state | Show warning; local results may contain uncommitted changes |
 | Research evidence gaps | `evidence_gaps` in response | Display gap checklist; offer to fetch missing sources |
@@ -1476,29 +1376,14 @@ are present, they are valid evidence from the providers that succeeded.
 
 ## Versioning and Compatibility
 
-### Mode-Off Local Repository Release Contract
+### Mode-Off Local Repository Behavior
 
-The `v0.4.3` release candidate contains the correction for Mode-Off
-`repo_search`. Do not pin a consumer to it until the immutable release and
-source revision are recorded in
-`plans/closure/mode-off-repository-locality-corrective/002-status.md`; the
-release manifest and closure record are the identity and provenance sources.
-This eggsearch-side contract does not mean CodeGG has passed paired
-qualification or is ready to release.
-
-| Case | eggsearch contract | Required CodeGG requalification |
-|---|---|---|
-| Mode Off with enabled local workspace and `include_local=true` | Search configured local roots; local cards retain `local_trusted` provenance and response reports local workspace retrieval. Provider engines, package-registry resolution, and package advisory lookup are not called. | Use a private Mode-Off config and local fixture; invoke native `repo_search` and assert a fixture match plus zero remote engine/resolver calls. |
-| `include_local=false`, local backend disabled, or no local backend | Policy-denied; no automatic remote routing. | Verify the policy denial for the configured unavailable/opted-out case and ensure the harness does not fall back to the legacy search backend. |
-| `web_search` / `security_search` under Mode Off | Existing Mode-Off denial behavior remains in force. | Run the current denial checks against the same pinned binary. |
-| Live mode | Empty provider selection continues to mean normal auto-selection; explicit provider selection retains its existing routing. MCP tool surface remains ten tools with the structured `retrieval_summary` contract. | Recheck configured live provider behavior and response compatibility without changing consumer routing assumptions. |
-
-Before clearing CodeGG C002, update every version owner and immutable source
-pointer to the published release, set `CODEGG_EGGSEARCH_BIN` or its equivalent
-to that exact binary, run the native local fixture and Mode-Off denial cases,
-then run `scripts/verify.sh quick` on the same CodeGG commit. Record the paired
-binary digest and both source revisions in the consumer-owned closure. An
-eggsearch source-only test is not a substitute for this process-level check.
+- With Mode Off, an enabled local workspace, and `include_local = true`,
+  `repo_search` searches configured local roots only. It does not call remote
+  providers or package resolvers.
+- If local search is disabled, unavailable, or excluded by `include_local`,
+  `repo_search` returns a policy denial. It does not fall back to remote search.
+- `web_search` and `security_search` remain denied in Mode Off.
 
 ### Breaking Changes (require major version bump)
 

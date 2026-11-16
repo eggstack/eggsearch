@@ -2,6 +2,8 @@
 
 This report records the source-build comparison for M002. The offline tests use controlled HTTP fixtures and generated synthetic PDF content. Browser execution is classified as limited because this environment has no Chrome/Chromium executable and the production browser policy rejects loopback fixtures. No production SSRF relaxation or external test origin was used.
 
+This matrix is a build-feature and controlled-fixture comparison, not the PDF extraction-fidelity authority. Fidelity is measured by `tests/pdf_fidelity.rs` against the eight-class synthetic corpus in `tests/fixtures/pdf/corpus.json`, with per-case line-shape, intact-word, table-adjacency, ordered-passage, per-page-classification, running-head, and outline assertions plus a join-lines-and-strip-spaces negative control. Real-document measurement is the ignored recorder into `target/pdf-corpus/`. Suite registration is in `architecture/testing.md` and counts are in `docs/test-inventory.md`.
+
 ## Feature arms
 
 | Arm | Build command | Runtime | Release executable | Outcome |
@@ -28,7 +30,7 @@ Optional dependency versions resolved by `Cargo.lock`: `lopdf 0.42.0` and `chrom
 | Browser private-target denial / public-only policy | n/a | n/a | pass: policy tests, including loopback/private-target rejection | pass: same policy tests |
 | Cold/warm browser latency, JS passage recall, CPU/RSS, time-to-first-useful-text | not applicable | not measured as a paired benchmark | skip: no Chrome | skip: no Chrome |
 
-The generated PDF check asserts the expected text `Hello from PDF`, `kind=pdf`, byte counts, source extension and redirect count. The PDF module suite adds 57 passing unit tests for page selection, limits, metadata and quality classifications. OCR is not provided; image-only/scanned pages remain explicitly low-quality or unsupported. This report does not claim broad multi-page table, columns, outline, corrupt-CID or scan fixture recall.
+The generated PDF check asserts the expected text `Hello from PDF`, `kind=pdf`, byte counts, source extension and redirect count. At the time of this comparison the PDF module suite contributed 57 passing unit tests for page selection, limits, metadata and quality classifications; current counts live in `docs/test-inventory.md`. OCR is not provided; image-only/scanned pages remain explicitly low-quality or unsupported. This report does not claim broad multi-page table, columns, outline, corrupt-CID or scan fixture recall; those shapes are measured by `tests/pdf_fidelity.rs`, not by this matrix.
 
 ## Verification
 
@@ -40,3 +42,29 @@ The generated PDF check asserts the expected text `Hello from PDF`, `kind=pdf`, 
 - HTTP-only, PDF, browser and combined release build commands above all succeeded.
 
 No extractor behavior, default feature, public tool, or security policy changed. Detailed paired quality and resource figures for real JS rendering remain unmeasured and are not represented as passes.
+
+## Representation negotiation A/B (agentic retrieval integrity M003)
+
+M003 added default-on `Accept: text/markdown;q=1.0, text/html;q=0.9, */*;q=0.1`
+for HTML-ish targets. The controlled A/B serves one logical document in both
+representations from `httpmock` and fetches it through `run_web_fetch`:
+
+| Representation | Body chars | Extracted block chars | Approx tokens (chars/4) | Headings | Table rows | Code lines | Links | Focus-chunk hit |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| markdown | 356 | 251 | 63 | 2 | 3 | 4 | 2 | yes |
+| html | 560 | 251 | 63 | 2 | 3 | 4 | 2 | yes |
+
+The Markdown body is 36.4% smaller while extracted text, headings, table cells,
+code lines, link URLs, and the focus chunk are identical. Tests assert
+`markdown_bytes < html_bytes`, `markdown_block_chars <= html_block_chars`, the
+exact table rows and code lines, outline equality, and link-URL equality, so a
+Markdown-path fidelity regression fails rather than passing silently.
+
+A curl-level spot check of two Cloudflare-fronted origins observed
+`text/markdown` for the Markdown policy (7,031 and 18,334 bytes) versus
+`text/html` for the HTML policy (213,421 and 317,846 bytes), with
+`vary: accept-encoding, accept`. That comparison is not an end-to-end Eggsearch
+measurement and the HTML bodies include scripts, styles, and navigation, so it
+overstates content savings. It also observed no `x-markdown-tokens` header from
+either origin. Table and code-block fidelity on the negotiated path is
+evidenced by the controlled fixture, not by the spot check.

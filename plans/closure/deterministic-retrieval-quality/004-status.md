@@ -2,7 +2,7 @@
 
 Status: closed (no-change experiment)
 
-Source plan: `plans/implementation/deterministic-retrieval-quality/004-deterministic-relevance-and-selection.md`
+Source plan: `plans/archive/implementation/deterministic-retrieval-quality/004-deterministic-relevance-and-selection.md`
 
 Roadmap: `plans/subsystems/deterministic-retrieval-quality-roadmap.md`
 

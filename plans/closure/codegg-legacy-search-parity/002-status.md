@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md`
 
 Source subsystem roadmap:
 

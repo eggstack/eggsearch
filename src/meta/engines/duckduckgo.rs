@@ -5,10 +5,24 @@ use scraper::Html;
 
 use super::error::EngineError;
 use super::models::SearchResult;
+use super::{PageMarker, ScrapeShape};
 
 const ENGINE: &str = "duckduckgo";
 const DDG_URL: &str = "https://html.duckduckgo.com/html/";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+const SHAPE: ScrapeShape = ScrapeShape {
+    result_container: "div.result",
+    empty_markers: &[
+        PageMarker::Selector("div.no-results"),
+        PageMarker::Text("No results."),
+    ],
+    blocked_markers: &[
+        PageMarker::Selector("#challenge-form"),
+        PageMarker::Selector("div.anomaly-modal"),
+        PageMarker::Text("Unfortunately, bots use DuckDuckGo too."),
+    ],
+};
 
 pub async fn search(
     client: &Client,
@@ -40,18 +54,22 @@ pub async fn search(
     parse(&body, max_results)
 }
 
-fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
+pub(super) fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
     let document = Html::parse_document(html);
 
-    let result_sel = sel(ENGINE, "div.result")?;
-    let title_sel = sel(ENGINE, "a.result__a")?;
-    let snippet_sel = sel(ENGINE, "a.result__snippet")?;
+    let result_sel = super::sel(ENGINE, SHAPE.result_container)?;
+    let title_sel = super::sel(ENGINE, "a.result__a")?;
+    let snippet_sel = super::sel(ENGINE, "a.result__snippet")?;
 
     let mut results = Vec::new();
 
     for element in document.select(&result_sel) {
         if results.len() >= max_results {
             break;
+        }
+
+        if element.value().classes().any(|class| class == "result--ad") {
+            continue;
         }
 
         let Some(title_el) = element.select(&title_sel).next() else {
@@ -88,7 +106,7 @@ fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineErro
         });
     }
 
-    Ok(results)
+    super::finalize_scrape(ENGINE, &document, &SHAPE, results)
 }
 
 fn extract_destination_url(href: &str) -> Option<String> {
@@ -98,13 +116,6 @@ fn extract_destination_url(href: &str) -> Option<String> {
         .query_pairs()
         .find(|(k, _)| k == "uddg")
         .map(|(_, v)| v.into_owned())
-}
-
-fn sel(engine: &'static str, s: &str) -> Result<scraper::Selector, EngineError> {
-    scraper::Selector::parse(s).map_err(|e| EngineError::ParseFailed {
-        engine,
-        reason: format!("invalid selector '{s}': {e:?}"),
-    })
 }
 
 #[cfg(test)]
@@ -176,5 +187,26 @@ mod tests {
         let results = parse(html, 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://valid.com");
+    }
+
+    #[test]
+    fn test_parse_skips_sponsored_results() {
+        let html = r#"
+            <div class="result results_links results_links_deep result--ad ">
+                <h2 class="result__title">
+                    <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fy.js%3Fad_domain%3Dexample.com">Sponsored</a>
+                </h2>
+                <a class="result__snippet">Paid placement.</a>
+            </div>
+            <div class="result results_links results_links_deep web-result">
+                <h2 class="result__title">
+                    <a class="result__a" href="/l/?uddg=https%3A%2F%2Forganic.com">Organic</a>
+                </h2>
+                <a class="result__snippet">Editorial result.</a>
+            </div>
+        "#;
+        let results = parse(html, 10).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://organic.com");
     }
 }

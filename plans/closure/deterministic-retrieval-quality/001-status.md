@@ -5,7 +5,7 @@ Implementation candidate: `eggstack/eggsearch@310611b733c2067ddeab184618156ef072
 Production baseline: `eggstack/eggsearch@7ad8e81b2d8f7036d35dcb2772a1778c73d08c3b`
 Corpus: schema 1, `retrieval-quality-v1`, fingerprint `fnv1a64:b882ce3d844e8ace`
 Evaluator: `retrieval-quality-evaluator-v1`
-Plan: `plans/implementation/deterministic-retrieval-quality/001-benchmark-contract-and-reference-corpus.md`
+Plan: `plans/archive/implementation/deterministic-retrieval-quality/001-benchmark-contract-and-reference-corpus.md`
 
 ## Requirement evidence
 

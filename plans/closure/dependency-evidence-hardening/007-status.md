@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md`
+- `plans/archive/implementation/dependency-evidence-hardening/007-budgets-diagnostics-and-adversarial-qualification.md`
 
 Source subsystem roadmap:
 

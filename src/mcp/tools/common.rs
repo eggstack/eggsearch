@@ -21,6 +21,8 @@ pub enum ToolErrorCode {
     ManualInteractionRequired,
     UpstreamFailed,
     InvalidRequest,
+    PlanMismatch,
+    DocumentUnavailable,
     Internal,
 }
 
@@ -37,6 +39,8 @@ impl ToolErrorCode {
             Self::ManualInteractionRequired => "manual_interaction_required",
             Self::UpstreamFailed => "upstream_failed",
             Self::InvalidRequest => "invalid_request",
+            Self::PlanMismatch => "plan_mismatch",
+            Self::DocumentUnavailable => "document_unavailable",
             Self::Internal => "internal",
         }
     }
@@ -111,6 +115,125 @@ pub enum ToolError {
         message: String,
         data: Option<serde_json::Value>,
     },
+}
+
+pub(crate) enum AddressError {
+    PlanMismatch {
+        field: &'static str,
+        supplied: usize,
+        effective: usize,
+    },
+    DocumentUnavailable {
+        field: &'static str,
+        accepted: &'static [&'static str],
+    },
+}
+
+pub(crate) fn addressing_rejected(error: AddressError) -> ToolError {
+    match error {
+        AddressError::PlanMismatch {
+            field,
+            supplied,
+            effective,
+        } => ToolError::execution_with_repair(
+            ToolErrorCode::PlanMismatch,
+            format!(
+                "addressing requires the request plan the server serves; {field}={supplied} is clamped to {effective}"
+            ),
+            RepairHint::new(Some(field), &[], Some(&effective.to_string())),
+        ),
+        AddressError::DocumentUnavailable { field, accepted } => ToolError::execution_with_repair(
+            ToolErrorCode::DocumentUnavailable,
+            format!("this request produces no addressable document; change {field}"),
+            RepairHint::new(Some(field), accepted, None),
+        ),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct AddressWindow {
+    pub from: usize,
+    pub to: usize,
+    pub total: usize,
+}
+
+impl AddressWindow {
+    pub(crate) fn resolve(total: usize, offset: Option<usize>, limit: usize) -> Self {
+        let from = offset.unwrap_or(0).min(total);
+        let to = from.saturating_add(limit).min(total);
+        Self { from, to, total }
+    }
+
+    pub(crate) fn len(self) -> usize {
+        self.to.saturating_sub(self.from)
+    }
+
+    pub(crate) fn next_offset(self) -> Option<usize> {
+        (self.to < self.total).then_some(self.to)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct AddressKeys {
+    from: &'static str,
+    to: Option<&'static str>,
+    total: Option<&'static str>,
+}
+
+pub(crate) const TEXT_ADDRESS_KEYS: AddressKeys = AddressKeys {
+    from: "text_from",
+    to: Some("text_to"),
+    total: Some("text_total"),
+};
+
+pub(crate) const ITEM_ADDRESS_KEYS: AddressKeys = AddressKeys {
+    from: "item_from",
+    to: Some("item_to"),
+    total: Some("item_total"),
+};
+
+pub(crate) const GROUP_ADDRESS_KEYS: AddressKeys = AddressKeys {
+    from: "group_from",
+    to: None,
+    total: None,
+};
+
+pub(crate) fn with_addressing_keys(
+    mut payload: serde_json::Value,
+    keys: AddressKeys,
+    window: AddressWindow,
+) -> serde_json::Value {
+    let Some(object) = payload.as_object_mut() else {
+        return payload;
+    };
+    object.insert(keys.from.to_string(), serde_json::Value::from(window.from));
+    if let Some(to) = keys.to {
+        object.insert(to.to_string(), serde_json::Value::from(window.to));
+    }
+    if let Some(total) = keys.total {
+        object.insert(total.to_string(), serde_json::Value::from(window.total));
+    }
+    if let Some(next) = window.next_offset() {
+        object.insert("next_offset".to_string(), serde_json::Value::from(next));
+    }
+    payload
+}
+
+pub(crate) fn slice_chars(text: &str, from: usize, to: usize) -> &str {
+    if to <= from {
+        return "";
+    }
+    let start = text
+        .char_indices()
+        .nth(from)
+        .map(|(index, _)| index)
+        .unwrap_or(text.len());
+    let end = text
+        .char_indices()
+        .nth(to)
+        .map(|(index, _)| index)
+        .unwrap_or(text.len());
+    &text[start..end]
 }
 
 impl ToolError {
@@ -201,6 +324,14 @@ impl ToolError {
 
     pub fn budget_invalid(message: impl Into<String>) -> Self {
         Self::execution(ToolErrorCode::BudgetInvalid, message)
+    }
+
+    pub fn plan_mismatch(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::PlanMismatch, message)
+    }
+
+    pub fn document_unavailable(message: impl Into<String>) -> Self {
+        Self::execution(ToolErrorCode::DocumentUnavailable, message)
     }
 
     pub fn locator_invalid(message: impl Into<String>) -> Self {
@@ -384,6 +515,36 @@ pub(crate) fn browser_profile_requires_attention_error(
          reopen with: {next_action}"
     );
     ToolError::execution_with_data(ToolErrorCode::ManualInteractionRequired, error_msg, data)
+}
+
+#[cfg(not(feature = "browser"))]
+pub(crate) fn browser_not_compiled_error() -> ToolError {
+    let message = "browser rendering is not compiled into this build; rebuild with                    --features browser or use an official release";
+    let data = serde_json::json!({
+        "code": "browser_not_compiled_in",
+        "message": message,
+        "manual_interaction_required": false,
+    });
+    ToolError::execution_with_data(
+        ToolErrorCode::CapabilityUnavailable,
+        message.to_string(),
+        data,
+    )
+}
+
+#[cfg(feature = "browser")]
+pub(crate) fn browser_disabled_error() -> ToolError {
+    let message = "browser rendering is disabled; set [fetch.browser].enabled = true,                    or use render = \"http_only\"";
+    let data = serde_json::json!({
+        "code": "browser_disabled",
+        "message": message,
+        "manual_interaction_required": false,
+    });
+    ToolError::execution_with_data(
+        ToolErrorCode::CapabilityUnavailable,
+        message.to_string(),
+        data,
+    )
 }
 
 #[cfg(feature = "browser")]
@@ -698,10 +859,65 @@ pub(crate) async fn run_browser_fetch(
     result
 }
 
+pub(crate) fn project_cached_response(
+    response: &mut crate::core::fetch::WebFetchResponse,
+    window_chars: usize,
+    sanitize_output: bool,
+) {
+    let Some(document) = response.document.as_mut() else {
+        return;
+    };
+    if document.kind != crate::core::document::DocumentKind::Html || document.blocks.is_empty() {
+        return;
+    }
+    let final_url = response.final_url.clone();
+    let markdown = document.text_format == "markdown";
+    let (projected, truncated) =
+        crate::fetch::projection::project_document_text(&document.blocks, window_chars, markdown);
+    let chars = projected.chars().count();
+    let text = if sanitize_output {
+        crate::core::sanitize::frame(&projected, "text", &final_url)
+    } else {
+        projected
+    };
+    response.text = Some(text);
+    document.text_chars_returned = chars;
+    document.text_truncated = truncated;
+}
+
+pub(crate) fn project_cached_document(
+    document: &mut crate::fetch::cache::CachedExtractedDocument,
+    final_url: &str,
+    window_chars: usize,
+    sanitize_output: bool,
+) {
+    let Some(structured) = document.document.as_mut() else {
+        return;
+    };
+    if structured.kind != crate::core::document::DocumentKind::Html || structured.blocks.is_empty()
+    {
+        return;
+    }
+    let markdown = structured.text_format == "markdown";
+    let (projected, truncated) =
+        crate::fetch::projection::project_document_text(&structured.blocks, window_chars, markdown);
+    let chars = projected.chars().count();
+    let text = if sanitize_output {
+        crate::core::sanitize::frame(&projected, "text", final_url)
+    } else {
+        projected
+    };
+    document.text = Some(text);
+    structured.text_chars_returned = chars;
+    structured.text_truncated = truncated;
+}
+
 pub(crate) fn cached_document_response(
     requested_url: &str,
     raw: &crate::fetch::cache::RawFetchCacheEntry,
     document: &crate::fetch::cache::CachedExtractedDocument,
+    window_chars: usize,
+    sanitize_output: bool,
 ) -> crate::core::fetch::WebFetchResponse {
     let structured_document = document.document.clone().map(|mut structured_document| {
         if let Some(metadata) = structured_document.metadata.as_mut() {
@@ -710,7 +926,7 @@ pub(crate) fn cached_document_response(
         }
         structured_document
     });
-    crate::core::fetch::WebFetchResponse {
+    let mut response = crate::core::fetch::WebFetchResponse {
         url: requested_url.to_string(),
         final_url: raw.final_url.clone(),
         stable_id: Some(crate::core::identity::fetch_id(
@@ -724,6 +940,7 @@ pub(crate) fn cached_document_response(
         title: document.title.clone(),
         description: document.description.clone(),
         content_type: raw.content_type.clone(),
+        representation: document.representation,
         status: raw.status,
         fetched: true,
         truncated: document.truncated,
@@ -752,10 +969,13 @@ pub(crate) fn cached_document_response(
         response_headers: (!raw.headers.is_empty()).then(|| raw.headers.clone()),
         transport: document.transport.clone(),
         browser_escalated: document.browser_escalated,
+        accept_policy: None,
         manual_interaction_required: false,
         focus: None,
         raw_body: None,
-    }
+    };
+    project_cached_response(&mut response, window_chars, sanitize_output);
+    response
 }
 
 pub(crate) fn derived_cache_entry(
@@ -781,6 +1001,7 @@ pub(crate) fn derived_cache_entry(
             trust_markers: response.trust_markers.clone(),
             transport: response.transport.clone(),
             browser_escalated: response.browser_escalated,
+            representation: response.representation,
         },
         created_at: std::time::SystemTime::now(),
     }

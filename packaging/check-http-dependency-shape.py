@@ -8,23 +8,37 @@ def run(*args):
     return subprocess.run(args, check=False, capture_output=True, text=True)
 
 
-default = run("cargo", "tree", "--color", "never", "--locked", "-i", "reqwest")
-if default.returncode == 0 or "did not match any packages" not in default.stderr:
-    print("http-dependency-shape: reqwest must be absent from the default graph", file=sys.stderr)
-    sys.exit(1)
+def reverse_roots(*args):
+    result = run("cargo", "tree", "--color", "never", "--locked", *args, "-i", "reqwest")
+    if result.returncode != 0:
+        if "did not match any packages" in result.stderr:
+            return []
+        print(result.stderr, file=sys.stderr)
+        sys.exit(result.returncode)
+    return [
+        re.sub(r" v[^ ]+$", "", line.strip()[4:])
+        for line in result.stdout.splitlines()[1:]
+        if line.startswith(("├── ", "└── "))
+    ]
 
-all_features = run("cargo", "tree", "--color", "never", "--locked", "--all-features", "-i", "reqwest")
-if all_features.returncode != 0:
-    print(all_features.stderr, file=sys.stderr)
-    sys.exit(all_features.returncode)
-tree = all_features.stdout
-direct = [
-    re.sub(r" v[^ ]+$", "", line.strip()[4:])
-    for line in tree.splitlines()[1:]
-    if line.startswith(("├── ", "└── "))
-]
-if direct != ["chromiumoxide"]:
-    print("http-dependency-shape: reqwest must remain only through chromiumoxide in all-features", file=sys.stderr)
-    sys.exit(1)
 
-print("http-dependency-shape: default graph is reqwest-free; all-features reqwest is chromiumoxide-only")
+def check(label, *args):
+    roots = reverse_roots(*args)
+    if roots and roots != ["chromiumoxide"]:
+        print(
+            f"http-dependency-shape: {label} graph may carry reqwest only through "
+            f"chromiumoxide, found {roots}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return roots
+
+
+default_roots = check("default")
+all_features_roots = check("all-features", "--all-features")
+
+print(
+    "http-dependency-shape: reqwest "
+    f"default={default_roots or 'absent'} "
+    f"all-features={all_features_roots or 'absent'}"
+)

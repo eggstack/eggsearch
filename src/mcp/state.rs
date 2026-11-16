@@ -268,6 +268,11 @@ impl ServerState {
             None
         };
 
+        let search_cache = crate::meta::search_cache::SearchCacheSettings {
+            ttl: Duration::from_secs(config.search.cache_ttl_seconds),
+            max_entries: config.search.cache_max_entries,
+        };
+
         let adapter = MetadataSearchAdapter::new_with_egress(
             enabled,
             global_timeout,
@@ -279,6 +284,8 @@ impl ServerState {
             config.search.multiquery_concurrency,
             config.search.multiquery_provider_concurrency,
             &config.egress,
+            &config.search.challenge,
+            search_cache,
         )?;
 
         let misconfigured = config.misconfigured_default_providers();
@@ -398,7 +405,11 @@ impl ServerState {
                 block_media: config.fetch.browser.block_media,
                 persistent_profiles: config.fetch.browser.persistent_profiles.clone(),
             };
-            Some(Arc::new(BrowserLifecycle::new(discovery, browser_config)))
+            Some(Arc::new(
+                BrowserLifecycle::new(discovery, browser_config).with_idle_timeout(
+                    std::time::Duration::from_millis(config.fetch.browser.idle_timeout_ms),
+                ),
+            ))
         } else {
             None
         };
@@ -411,7 +422,6 @@ impl ServerState {
             None
         };
 
-        // Build local workspace backend
         let local_backend = match LocalWorkspaceBackend::new(config.local.clone()) {
             Ok(backend) if backend.is_enabled() => {
                 tracing::info!(

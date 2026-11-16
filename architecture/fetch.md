@@ -70,35 +70,67 @@ reported via `FetchTransform`.
 ### Per-fetch loop (`fetch`)
 
 1. `validate_url` on the initial URL, then optional code-host rewrite.
-2. Clamp caller `max_chars` to `[1, max_chars_cap]`; keep a separate
-   `max_chars_raw = max_chars_cap` budget for `raw_text` so internal consumers
-   (`repo_fetch` line/span selection) see full source text while tool output
-   stays clamped to the caller budget.
-3. Loop: validate current URL with resolved addresses → send → on 3xx require a
-   non-empty `Location`, resolve relative targets, reject past `redirect_limit`,
-   re-validate the target (failures map to `RedirectTargetBlocked`), continue.
+2. Resolve two budgets: extraction runs at the document budget
+   `document_chars = max_chars_cap`, while the returned `text` is projected at
+   `window_chars = caller max_chars` (or `max_chars_default`), clamped to
+   `max_chars_cap`. `raw_text` stays at `max_chars_cap` so internal consumers
+   (`repo_fetch` line/span selection) see full source text.
+   `document.document_truncated` reports extraction stopping at the document
+   budget; `document.text_truncated` reports window clipping. `document.blocks`
+   / `document.chunks` can therefore cover a document larger than one `text`
+   window.
+3. Loop: validate current URL with resolved addresses → send (with the selected `Accept` policy on
+   every hop; conditional `ETag`/`Last-Modified` stay first-hop-only) → on 3xx require a non-empty
+   `Location`, resolve relative targets, reject past `redirect_limit`, re-validate the target
+   (failures map to `RedirectTargetBlocked`), continue.
 4. On the final response, harvest `etag` / `last-modified` / `cache-control` /
    `expires` / `vary` for the cache layer.
-5. `Content-Length` pre-check: a declared length above `max_bytes` fails fast
-   with `ContentTooLarge`. Unparseable lengths warn and fall through to the
-   authoritative streaming cap.
+5. `Content-Length` pre-check: a declared length above the effective body cap
+   fails fast with `ContentTooLarge`. Unparseable lengths warn and fall through
+   to the authoritative streaming cap.
 6. Non-2xx becomes `HttpStatus`. Content-type gating runs twice from one source
    of truth: pre-body on headers + URL extension, then post-body with `%PDF-`
    magic sniff for mis-served PDFs.
-7. Body streams through `append_bounded` (cap `max_bytes`, UTF-8-safe, sets
-   `truncated`); `derive_from_raw` then builds the response, so cache raw hits
-   reuse the exact rendering path as network fetches.
+7. Body streams through `append_bounded` (cap `FetchLimits::body_cap`, UTF-8-safe,
+   sets `truncated`); `derive_from_raw` then builds the response, so cache raw
+   hits reuse the exact rendering path as network fetches. A PDF body that was
+   truncated at the cap is refused there as `ContentTooLarge` with the
+   configured cap, never handed to the parser.
 
 `fetch_conditional` repeats the loop with caller conditional headers for stale
 revalidation; a 304 returns empty-body status so the cache layer can refresh
 validators in place.
+
+### Representation negotiation (`accept.rs`, `negotiate.rs`)
+
+Every HTML-ish fetch asks for Markdown first, because the efficient representation is the happy
+path:
+
+`Accept: text/markdown;q=1.0, text/html;q=0.9, */*;q=0.1`
+
+`accept.rs` classifies the target before the request: extension-less and unknown targets, plus
+ordinary `.html`/`.php`-style pages, use the Markdown policy; PDF and binary/media/archive targets,
+JSON/XML/CSV/YAML/TOML and source/config extensions, code-host URLs rewritten to raw content, and
+`metadata_only` fetches use the plain HTML policy. `metadata_only` is excluded because page metadata
+lives in the HTML head. Browser transport is unchanged.
+
+`AcceptPolicy` (`md1` / `html1`) is the short policy token carried into the raw cache key.
+`negotiate.rs` owns the bounded fallback: a Markdown attempt that returns 406/415, an unsupported
+content type, or an empty extracted body is retried **once** with the HTML policy on the same
+origin-permit and redirect-safety path. Two requests maximum per fetch; `attempt_count` records the
+real count. An origin that ignores the header and answers HTML or plain text is already usable and
+is not retried — retrying 404/5xx under a second policy would only double traffic. The discarded
+Markdown attempt is never stored.
+
+Responses carry `representation: markdown | html`, and `FetchRenderMetadata` surfaces
+`x-markdown-tokens` / `x-original-tokens` when the origin sends them.
 
 ### Timeout / byte / redirect / content-type policy
 
 | Policy | Rule |
 |--------|------|
 | Timeout | `FetchLimits::timeout_ms` (default 8000). DNS phase consumes at most half (1500 ms floor); the remainder covers the HTTP round-trip plus body streaming. Send errors mapping to timeout become `FetchError::Timeout(timeout_ms)`. |
-| Bytes | `max_bytes` (default 2,000,000) caps the streamed body; `max_chars_default` (12,000) and `max_chars_cap` (50,000) cap extracted text and `raw_text` respectively. `max_url_len` is 8192 bytes. |
+| Bytes | `FetchLimits::body_cap` caps the streamed body: `pdf_max_bytes` (default 16,777,216) when the response is PDF-identified by Content-Type or a `.pdf` path, `max_bytes` (default 2,000,000) otherwise. `max_chars_default` (12,000) is the returned-text window when a caller omits `max_chars`, and `max_chars_cap` (50,000) is both the document-extraction budget and the `raw_text` bound. `max_url_len` is 8192 bytes. |
 | Redirects | `redirect_limit` (default 5) counts followed hops; exceeding it returns `RedirectLimitExceeded`. Missing/empty `Location` is `InvalidRedirectLocation`. |
 | Content-type | HTML (`text/html`, `application/xhtml+xml`), text (`text/*`, JSON/TOML/YAML/JS/XML families), and PDF (by type, `.pdf` extension, or magic) are accepted; anything else is `UnsupportedContentType`. PDF additionally requires the compile feature **and** `pdf_enabled` (`PdfNotCompiledIn` / `PdfDisabled`). |
 
@@ -124,8 +156,10 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 
 ### Raw tier: transport bytes
 
-- `RawCacheKey { url, scope }` where `url` is the canonicalized form from
-  `core::identity::canonicalize_url` (`build_raw_cache_key`).
+- `RawCacheKey { url, scope, accept_policy }` where `url` is the canonicalized form from
+  `core::identity::canonicalize_url` (`build_raw_cache_key`) and `accept_policy` is `md1` or
+  `html1`. The policy is a cache dimension, so a Markdown body can never be served for an HTML key
+  or vice versa, including after a 304 revalidation.
 - `RawFetchCacheEntry` stores `final_url`, `status`, filtered headers, `body:
   Arc<[u8]>`, `fetched_at`, `freshness`, `validators`, `scope`, content-type,
   content-length, redirect count, `representation` (`Http` vs `BrowserDom`),
@@ -139,7 +173,10 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 - `DerivedCacheKey { scope, raw_content_hash, extraction_key }` where the hash
   is `xxh3_64(body)` (`build_raw_response_hash`) and `ExtractionCacheKey`
   covers `extract_mode`, exact `max_chars`, `include_links`, `pdf_pages`,
-  `pdf_ocr`, `include_media`, `renderer_version: 1`, and `sanitize_output`.
+  `pdf_ocr`, `include_media`, `renderer_version: 4`, and `sanitize_output`.
+  Version 3 isolates entries derived before PDF page classification stopped
+  depending on `include_media`; version 2 isolated entries written before
+  representation negotiation existed.
 - `DerivedDocumentCacheEntry` stores the extracted title/description/text,
   `raw_text`, links, truncation flags, the structured `FetchDocument` (blocks,
   outline, chunks), trust markers, and transport tag.
@@ -160,8 +197,9 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
   `vary`. `is_fresh` requires an explicit origin lifetime — entries without
   freshness headers are stale (no default TTL).
 - `should_cache_response` refuses `no-store`, non-2xx, `private` in anonymous
-  scope, any `Vary` token besides `Accept-Encoding`, and image/audio/video plus
-  `application/octet-stream` bodies.
+  scope, any `Vary` token besides `Accept-Encoding` and `Accept`, and image/audio/video plus
+  `application/octet-stream` bodies. `Accept` is supported because the request value is fixed
+  server policy carried in the cache key, not caller input.
 - Stale entries with validators revalidate with `If-None-Match` (preferred) or
   `If-Modified-Since` (`build_request_conditional_headers`); 304 merges only
   supplied fields per RFC 9111 §4.3.4 (`apply_304_headers`). `CacheStatus`
@@ -244,6 +282,13 @@ stripping, depth-capped recursion, non-UTF-8 lossy fallback with
 `SecurityAdvisory`, `Documentation` / `ApiReference`, `SameDomain`, or
 `External`, plus `same_domain` and `rel` fields.
 
+`extract_links_from_markdown` mirrors that contract for a negotiated Markdown
+representation: `pulldown-cmark` link events, the same resolution and
+classification rules, the same `MAX_LINKS` cap, and the same
+`(links, total_seen, truncated)` triple. Without it `include_links` would
+silently return an empty list on every origin that honours `Accept:
+text/markdown`.
+
 ---
 
 ## 6. Render Subsystem (`render/`, 8 files)
@@ -257,7 +302,7 @@ stripping, depth-capped recursion, non-UTF-8 lossy fallback with
 | `code.rs` | `render_code` / `render_diff` / `render_plaintext` — line-preserving renderers with 1-based line ranges |
 | `csv.rs` | `render_csv` — bounded table preview (100-row cap, column-count header) |
 | `notebook.rs` | `render_notebook` — Jupyter cells to `[cell N (type)]` blocks; never executes code, outputs skipped |
-| `markdown_source.rs` | `render_markdown_source` — pulldown-cmark parse of `.md` sources (tables, strikethrough) |
+| `markdown_source.rs` | `render_markdown_source` — pulldown-cmark parse of `.md` sources (tables, tight/loose list items, strikethrough); previously dropped table and list-item content entirely |
 
 `blocks::render_blocks(html, base_url, max_chars, markdown)` returns
 `(title, description, RenderedBlocks, warnings, non_utf8)`:
@@ -282,26 +327,51 @@ single `RawText` block for non-notebook JSON.
 
 ---
 
-## 7. PDF Gate (`pdf.rs`, feature `pdf`)
+## 7. PDF Gate (`pdf.rs` + `pdf_quality.rs`, feature `pdf`)
 
 Double-gated: the `pdf` Cargo feature must be compiled in **and**
 `FetchLimits::pdf_enabled` must be true, else `PdfNotCompiledIn` / `PdfDisabled`
-before any body bytes are retained. Detection combines Content-Type,
-`.pdf` URL extension, and `%PDF-` magic.
+before any body bytes are retained. `PdfNotCompiledIn` names the feature, the
+`docs/features.md#pdf-extraction` anchor, and `cargo build --features pdf`.
+
+Detection combines Content-Type, `.pdf` URL extension, and `%PDF-` magic. The
+first two also pick the body cap (`FetchLimits::body_cap` in `limits.rs`): such a
+response is read under `pdf_max_bytes` (default 16 MiB, validated to
+`1..=268_435_456`), everything else under `max_bytes`. A PDF recognised only by
+magic reaches the body read without either signal and therefore stays under
+`max_bytes`; the cap cannot be widened after bytes have been consumed. That
+asymmetry is deliberate and documented, not widened.
+
+Size is reported as size: a PDF refused by the `Content-Length` pre-check, or
+truncated at the effective cap, returns `FetchError::ContentTooLarge` naming the
+cap. A truncated body never reaches the parser, so a budget problem cannot be
+reported as `PdfParseError`.
+
+`detect.rs::classify` gained the `application/pdf` arm in the same change, so the
+document classifier and the fetch gate cannot disagree about a PDF.
 
 `extract_pdf_text(bytes, max_chars, PdfLimits, PdfExtractOptions)` via `lopdf`:
 
 - `PdfLimits { max_pages` (25), `max_chars_per_page` (12,000),
-  `max_total_chars` (50,000) `}` bound pages, per-page text, and the running
-  total (exceeding the total stops after the current page with a warning).
+  `max_total_chars` (50,000), `max_decompressed_bytes` (67,108,864) `}` bound
+  pages, per-page text, the running total (exceeding the total stops after the
+  current page with a warning), and the document's total stream expansion.
 - Page selection parses `1-3,5` specs (`parse_pdf_page_spec`:
   1-indexed, sorted, deduplicated, range and `max_pages` caps) and validates
   against the real page count (`PdfPageOutOfRange`, `PdfPageCapExceeded`,
   `PdfPageSpecInvalid`).
-- Encrypted documents require `password` (`RedactedString`) or fail with
-  `PdfEncrypted`; unparseable bytes fail with `PdfParseError`. OCR policies
-  `Auto` / `Always` fail closed with `PdfOcrUnavailable` — this build never
-  performs OCR.
+- Encrypted documents fail with `PdfEncrypted` before any page access,
+  whether or not `password` (`RedactedString`) is supplied; unparseable bytes
+  fail with `PdfParseError`.
+- `pdf_quality.rs` owns `classify_page_quality`, `count_cid_tokens`, and
+  `count_page_images`. Image presence is computed for every extracted page
+  regardless of `include_media`, so an image-only page classifies as
+  `ScannedOrImageOnly` (0.10) at default settings; `include_media` only decides
+  whether `image_count` is populated in page metadata.
+- OCR policy: `Never` and `Auto` both extract, and `Auto` adds a per-page
+  `PdfOcrUnavailable` structured warning for scanned pages. `Always` fails
+  closed with `PdfOcrUnavailable` because it demands a capability the build does
+  not have. No build performs OCR.
 - Output is page-indexed `Paragraph` blocks plus a `Page N` outline, legacy
   `--- Page N ---` text, Info-dictionary metadata, outline extraction, and
   per-page quality (`CleanText` 1.0 down to `Blank` 0.0) rolled into
@@ -309,6 +379,62 @@ before any body bytes are retained. Detection combines Content-Type,
   `PdfNoExtractableText`.
 - `MetadataOnly` extract mode skips text extraction and returns fetch metadata
   with an empty PDF document shell.
+
+`provider_status.pdf_capabilities` keeps its `{ compiled, configured, usable,
+layout, ocr }` shape: `usable` is `compiled && configured`. The budget is a
+limit, not a usability term, so it does not appear there.
+
+### Bounded stream scan (`pdf_stream.rs`)
+
+`scan_stream_budget(bytes, budget)` runs as the first statement of
+`extract_pdf_text`, before `Document::load_mem`, and refuses the document at the
+first breach. It is one forward pass over the raw buffer: no hash iteration, no
+second parser, and identical bytes with identical configuration produce the
+identical outcome.
+
+- It finds each `stream` keyword (excluding `endstream`), takes the dictionary
+  immediately before it, and reads `/Length`, `/Filter`, `/DecodeParms`,
+  `/Type`, and `/W` from that dictionary only.
+- The content region uses the declared `/Length` when it is a direct integer
+  and `endstream` follows; otherwise it falls back to the next `endstream`. An
+  indirect `/Length` is resolved first by locating its `N G obj` header and
+  reading the integer that follows it. If the reference resolves, the direct
+  rule applies; if it cannot be resolved, a filtered stream is still refused
+  instead of falling back, because `lopdf` resolves the reference and inflates
+  the full declared extent, which the `endstream` fallback can under-measure
+  when the compressed bytes contain that keyword.
+- `FlateDecode` is inflated through a reader capped at the stream's remaining
+  allowance plus one inflate block, including `lopdf`'s raw-deflate retry for a
+  zlib stream that produces nothing. `ASCII85Decode` is decoded under the same
+  cap. A filter name `lopdf` cannot decode stops the chain: when it is the
+  first stage the stream contributes nothing, because `decompressed_content`
+  returns `Unimplemented` and every caller then uses the raw, input-bounded
+  bytes; when it follows a decoded stage, the stages before it are still
+  counted because `lopdf` inflates them before returning that error.
+  `LZWDecode` cannot be measured without a second inflate implementation, so a
+  stream using it is refused.
+- The per-stream limit is `min(configured, remaining document allowance)`; the
+  per-document limit is the configured total, so no distribution across streams
+  can evade it.
+- Declared geometry is checked before it is allocated: an xref stream whose
+  `/W` field width exceeds eight bytes, or whose widest declared row exceeds
+  the remaining allowance, is refused, because `decode_xref_stream` allocates
+  `vec![0u8; width]` per field before reading an entry. A `/DecodeParms`
+  predictor row (`Predictor` 10–15) that exceeds the remaining allowance is
+  refused for the same reason.
+- A breach is `FetchError::PdfDecompressionBoundExceeded { measured, budget }`
+  with kind `pdf_decompression_bound_exceeded`. `measured` always exceeds
+  `budget`: it is the accounted bytes for a measurement breach, and
+  `budget + 1` for a structural refusal (an unmeasurable `LZWDecode` stream, an
+  unresolvable indirect `/Length` on a filtered stream, or a width beyond eight
+  bytes). No
+  page metadata, text, or blocks are produced.
+
+An `/Encrypt` document is refused before decryption is ever considered:
+`Document::authenticate_password` validated a password but never replaced
+ciphertext, and ciphertext cannot be measured by the scan. `pdf_password` stays
+in the tool schema for wire compatibility and is documented as unsupported.
+That outcome narrowing is why the derived cache `renderer_version` is 4.
 
 ---
 
@@ -337,9 +463,17 @@ DNS/refused/unreachable→Connection, TLS/protocol/other→Other).
 
 ## 9. Browser Rendering (`browser/`, 8 files, feature `browser`)
 
-Headless Chrome/Chromium over CDP. Without the feature, browser paths fail with
-`BrowserNotCompiledIn`; with the feature but `enabled = false`, with
-`BrowserDisabled`.
+Headless Chrome/Chromium over CDP. The `browser` feature is in the default set, so
+the capability is compiled into default binaries and `[fetch.browser].policy`
+defaults to `auto`; HTTP remains the hot path and rendering is escalation.
+An explicit `render = "browser"` or `browser_profile` request reports the stable
+codes `browser_not_compiled_in` (feature absent), `browser_disabled`
+(`enabled = false`), and `browser_unavailable` (no discovered executable)
+instead of silently performing an HTTP fetch. The tool-level codes are the
+agent contract; the fetch-layer error variants of the same names remain reserved
+for direct library use. `RenderPolicy::Auto` never errors:
+when escalation was warranted but unavailable, the call returns the HTTP document
+with the `browser_unavailable` structured warning and `browser_escalated: false`.
 
 | File | Responsibility |
 |------|---------------|
@@ -378,7 +512,25 @@ Headless Chrome/Chromium over CDP. Without the feature, browser paths fail with
   starts. `BrowserConfig` clamps timeouts (`startup` 10 s / max 60 s,
   `navigation` 20 s / max 120 s, `post_load` 1.5 s / max 30 s, `verification`
   10 s / max 60 s), `max_requests` (100 / 1000), `max_dom_bytes` (4 M / 50 M),
-  and global/per-origin concurrency (1 / 4).
+  and global/per-origin concurrency (1 / 4). `idle_timeout_ms` has a 90 s default
+  and a hard 5 s floor enforced by configuration validation, not by clamping.
+- **Shared bounded lifecycle**: one `BrowserLifecycle` per process, not one per
+  call. `begin_render` takes the read side of the render gate and counts the
+  overall render attempt. Only after `ensure_browser` succeeds is the attempt
+  counted against that browser session; therefore the cold-starting render is
+  request one, while a failed launch consumes no session capacity. `finish_render`
+  drops the gate, touches activity, and — once
+  `requests_this_session` reaches `max_requests` — takes the write side and
+  closes the session for `SessionCap`, so the next render relaunches. An idle
+  timer closes the browser and cancels its handler after
+  `[fetch.browser].idle_timeout_ms` with no render in flight, which returns the
+  process to its HTTP-only memory baseline instead of holding a browser for the
+  process lifetime. Teardown is safe against a concurrent render and never
+  disables the lifecycle.
+- **Observable counters**: `BrowserLifecycleStatus` reports `resident`,
+  `session_launches`, `renders`, `idle_teardowns`, and `session_cap_teardowns`
+  as `provider_status.browser_capabilities.lifecycle`; the object is `null` when
+  the feature is not compiled or `[fetch.browser].enabled = false`.
 
 ### Navigation with per-request SSRF
 
@@ -408,6 +560,34 @@ credentials, private-hostname/IP literal rejection (including IPv4-mapped and
 IPv4-compatible IPv6 via the shared `limits::classify_ip`), and a 3 s DNS
 resolution check rejecting private resolutions. It does not take
 `allow_localhost` / `allow_private_network` overrides.
+
+### Challenge pages on the HTTP path
+
+Plain HTTP responses are classified before they are returned. `src/fetch/challenge.rs` recognises
+Anubis (`anubis_challenge`, `anubis_version`, `anubis_base_prefix`, or the "could not load its
+JavaScript" message), ALTCHA (`captcha-wrap` and the challenge phrase), generic interactive walls
+(Turnstile, reCAPTCHA, hCaptcha markers), and verification interstitials. A detected page keeps its
+bounded body, `status`, and `fetched: true` — it is not a transport failure — but the response sets
+`manual_interaction_required: true` and carries one `fetch_challenge_page` structured warning naming
+the family. Detection adds no request, retry, or delay, and ordinary pages, markdown bodies, and
+PDFs are never marked. Under `render: "auto"` the same classification is an escalation trigger, so
+a detected Anubis or ALTCHA wall is rendered by the browser when one is available instead of being
+returned as a stub; `render: "http_only"` keeps the marked body.
+
+When `[search.challenge].enabled` is true, a detected Anubis page is not merely marked.
+`src/mcp/tools/web_fetch.rs` — the one module allowed to depend on both trees — solves the
+published challenge once through the shared solver in `src/meta/challenge/anubis.rs` under
+`max_difficulty`, `max_attempts`, `timeout_ms`, and the remaining call deadline, then replays the
+same request once with the cookie pairs the pass response issued, joined with `; `. The pair set is
+opaque — its names are whatever the deployment publishes (`spchal-auth`,
+`techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and it is sent on
+the first hop only, so a redirect cannot forward it to another origin. It is never stored: the
+response returned and cached is the replay's document, with `transport: "http"`,
+`manual_interaction_required: false`, and no `fetch_challenge_page` warning. Solving disabled, no
+parseable published challenge, a refusal at any ceiling, an error, an exhausted deadline, or a
+replay that is itself a challenge all leave today's marking exactly as it was, at most one solve and
+one replay per call. The browser path keeps priority: a successful `render: "auto"` render replaces
+the payload before the solver runs. `batch_fetch` does not solve (residual).
 
 ### Profiles: opaque IDs, origin-scoped logins
 
@@ -479,14 +659,15 @@ on `WebFetchResponse` and per-item `batch_fetch` payloads.
 
 ## 11. Errors (`types.rs`) and Safety Invariants
 
-`FetchError` (32 variants) with a payload-free `FetchErrorKind` mirror and
+`FetchError` (33 variants) with a payload-free `FetchErrorKind` mirror and
 `error_code()` strings for MCP mapping: URL/SSRF (5: `InvalidUrl`,
 `UnsupportedScheme`, `PrivateNetworkBlocked`, `UrlTooLong`,
 `EmbeddedCredentialsBlocked`), redirects (3: `RedirectLimitExceeded`,
 `RedirectTargetBlocked`, `InvalidRedirectLocation`), transport (6: `Timeout`,
 `HttpStatus`, `NetworkError`, `ContentTooLarge`, `UnsupportedContentType`,
-`ExtractError`), PDF (9 variants), browser (8 variants), and `Unknown` —
-5 + 3 + 6 + 9 + 8 + 1 = 32.
+`ExtractError`), PDF (10 variants), browser (8 variants), and `Unknown` —
+5 + 3 + 6 + 10 + 8 + 1 = 33. `pdf_decompression_bound_exceeded` is additive;
+`pdf_parse_error` and every other PDF or fetch string keep their meaning.
 
 Invariants that hold across the subsystem:
 
@@ -503,6 +684,11 @@ Invariants that hold across the subsystem:
   built here, so eggfetch keeps owning pooling, TLS/SNI, decompression,
   redirects, and deadlines. Enforced by the
   `no_direct_reqwest_in_production_source` static guard.
+- PDF inflation is bounded before parse: `scan_stream_budget` measures stream
+  expansion against `[fetch].pdf_max_decompressed_bytes`, and non-test
+  `src/fetch/pdf.rs` contains no `decompressed_content` or `.decompress(` call
+  (enforced by the `pdf_inflation_enters_only_through_the_bounded_scanner`
+  static guard).
 - All untrusted text passes `sanitize_field()`; stable IDs stay content-derived
   FNV-1a (`fetch_id`, `doc_id`); `CacheScope::Profile` uses opaque IDs; invalid
   explicit browser paths are `ExplicitPathInvalid` with no fallback.

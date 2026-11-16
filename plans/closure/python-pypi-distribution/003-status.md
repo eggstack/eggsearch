@@ -3,7 +3,7 @@
 Status: closed
 Candidate source: `1135608af5d625cd72db6704adf3bcabd1a58ab1`
 Package: `eggsearch==0.4.4`
-Implementation plan: `plans/implementation/python-pypi-distribution/003-first-pypi-release-and-provenance.md`
+Implementation plan: `plans/archive/implementation/python-pypi-distribution/003-first-pypi-release-and-provenance.md`
 Roadmap: `plans/subsystems/python-pypi-distribution-roadmap.md` M003
 Publication workflow run: `40742653291`
 Merged workflow commit: `2ac49f6e945f3d940218587f75c18a9c573abe9d` (PR #10)

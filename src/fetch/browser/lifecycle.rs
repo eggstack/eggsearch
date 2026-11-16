@@ -1,16 +1,32 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
-use super::types::{BrowserConfig, BrowserDiscovery};
+use super::types::{BrowserConfig, BrowserDiscovery, DEFAULT_IDLE_TIMEOUT_MS};
 
 #[derive(Clone, Debug)]
 enum BrowserExecutionMode {
     AnonymousEphemeral,
     PersistentProfile { user_data_dir: PathBuf },
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CloseReason {
+    Explicit,
+    Idle,
+    SessionCap,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BrowserLifecycleStatus {
+    pub resident: bool,
+    pub session_launches: u64,
+    pub renders: u64,
+    pub idle_teardowns: u64,
+    pub session_cap_teardowns: u64,
 }
 
 pub struct BrowserLifecycle {
@@ -21,6 +37,16 @@ pub struct BrowserLifecycle {
     handler_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
     restart_state: Mutex<RestartState>,
     user_data_dir: Mutex<Option<PathBuf>>,
+    idle_timeout: Duration,
+    last_activity: StdMutex<Instant>,
+    render_gate: RwLock<()>,
+    teardown_handle: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    resident: AtomicBool,
+    requests_this_session: AtomicUsize,
+    session_launches: AtomicU64,
+    renders: AtomicU64,
+    idle_teardowns: AtomicU64,
+    session_cap_teardowns: AtomicU64,
 }
 
 #[derive(Default)]
@@ -30,6 +56,7 @@ struct RestartState {
 }
 
 const MAX_RESTARTS: u32 = 1;
+const BROWSER_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 impl BrowserLifecycle {
     pub fn new(discovery: Option<BrowserDiscovery>, config: BrowserConfig) -> Self {
@@ -41,6 +68,16 @@ impl BrowserLifecycle {
             handler_handle: Mutex::new(None),
             restart_state: Mutex::new(RestartState::default()),
             user_data_dir: Mutex::new(None),
+            idle_timeout: Duration::from_millis(DEFAULT_IDLE_TIMEOUT_MS),
+            last_activity: StdMutex::new(Instant::now()),
+            render_gate: RwLock::new(()),
+            teardown_handle: Mutex::new(None),
+            resident: AtomicBool::new(false),
+            requests_this_session: AtomicUsize::new(0),
+            session_launches: AtomicU64::new(0),
+            renders: AtomicU64::new(0),
+            idle_teardowns: AtomicU64::new(0),
+            session_cap_teardowns: AtomicU64::new(0),
         }
     }
 
@@ -57,6 +94,63 @@ impl BrowserLifecycle {
             handler_handle: Mutex::new(None),
             restart_state: Mutex::new(RestartState::default()),
             user_data_dir: Mutex::new(None),
+            idle_timeout: Duration::from_millis(DEFAULT_IDLE_TIMEOUT_MS),
+            last_activity: StdMutex::new(Instant::now()),
+            render_gate: RwLock::new(()),
+            teardown_handle: Mutex::new(None),
+            resident: AtomicBool::new(false),
+            requests_this_session: AtomicUsize::new(0),
+            session_launches: AtomicU64::new(0),
+            renders: AtomicU64::new(0),
+            idle_teardowns: AtomicU64::new(0),
+            session_cap_teardowns: AtomicU64::new(0),
+        }
+    }
+
+    pub fn with_idle_timeout(mut self, idle_timeout: Duration) -> Self {
+        self.idle_timeout = idle_timeout;
+        self
+    }
+
+    pub fn status(&self) -> BrowserLifecycleStatus {
+        BrowserLifecycleStatus {
+            resident: self.resident.load(Ordering::Relaxed),
+            session_launches: self.session_launches.load(Ordering::Relaxed),
+            renders: self.renders.load(Ordering::Relaxed),
+            idle_teardowns: self.idle_teardowns.load(Ordering::Relaxed),
+            session_cap_teardowns: self.session_cap_teardowns.load(Ordering::Relaxed),
+        }
+    }
+
+    fn record_session_launch(&self) {
+        self.requests_this_session.store(0, Ordering::Relaxed);
+        self.session_launches.fetch_add(1, Ordering::Relaxed);
+        self.resident.store(true, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub(super) fn record_session_request(&self) {
+        self.requests_this_session.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub async fn begin_render(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
+        let guard = self.render_gate.read().await;
+        self.renders.fetch_add(1, Ordering::Relaxed);
+        guard
+    }
+
+    pub async fn finish_render(&self, guard: tokio::sync::RwLockReadGuard<'_, ()>) {
+        drop(guard);
+        self.touch();
+        if self.requests_this_session.load(Ordering::Relaxed) >= self.config.max_requests {
+            let _write = self.render_gate.write().await;
+            self.close_inner(CloseReason::SessionCap).await;
+        }
+    }
+
+    fn touch(&self) {
+        if let Ok(mut last) = self.last_activity.lock() {
+            *last = Instant::now();
         }
     }
 
@@ -169,6 +263,7 @@ impl BrowserLifecycle {
             if let Some(lifecycle) = self_weak.upgrade() {
                 let mut browser = lifecycle.browser.lock().await;
                 *browser = None;
+                lifecycle.resident.store(false, Ordering::Relaxed);
             }
         });
 
@@ -178,8 +273,52 @@ impl BrowserLifecycle {
         }
         let mut b = self.browser.lock().await;
         let browser = Arc::new(browser);
+        self.record_session_launch();
         *b = Some(Arc::clone(&browser));
+        drop(b);
+
+        self.start_watchdog().await;
+
         Ok(browser)
+    }
+
+    async fn start_watchdog(self: &Arc<Self>) {
+        let mut slot = self.teardown_handle.lock().await;
+        if slot.as_ref().is_some_and(|handle| !handle.is_finished()) {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        let idle = self.idle_timeout;
+        let tick = Duration::from_millis(
+            u64::try_from(idle.as_millis() / 4)
+                .unwrap_or(1)
+                .clamp(10, 5_000),
+        );
+        *slot = Some(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tick).await;
+                let Some(lifecycle) = weak.upgrade() else {
+                    return;
+                };
+                let write = lifecycle.render_gate.write().await;
+                let idle_elapsed = lifecycle
+                    .last_activity
+                    .lock()
+                    .map(|last| last.elapsed())
+                    .unwrap_or_default();
+                if lifecycle.resident.load(Ordering::Relaxed) && idle_elapsed >= idle {
+                    lifecycle.close_inner(CloseReason::Idle).await;
+                }
+                drop(write);
+            }
+        }));
+    }
+
+    async fn stop_watchdog(&self) {
+        let mut slot = self.teardown_handle.lock().await;
+        if let Some(handle) = Option::take(&mut *slot) {
+            handle.abort();
+        }
     }
 
     async fn create_user_data_dir(&self) -> Result<PathBuf, BrowserLaunchError> {
@@ -250,17 +389,44 @@ impl BrowserLifecycle {
     }
 
     pub async fn close(&self) {
-        let mut browser = self.browser.lock().await;
-        if let Some(b) = browser.take() {
-            if let Ok(mut inner) = Arc::try_unwrap(b) {
-                let _ = inner.close().await;
+        let _write = self.render_gate.write().await;
+        self.stop_watchdog().await;
+        self.close_inner(CloseReason::Explicit).await;
+    }
+
+    async fn close_inner(&self, reason: CloseReason) {
+        let taken = {
+            let mut browser = self.browser.lock().await;
+            browser.take()
+        };
+        if let Some(browser) = taken {
+            if let Ok(mut inner) = Arc::try_unwrap(browser) {
+                if tokio::time::timeout(BROWSER_CLOSE_TIMEOUT, inner.close())
+                    .await
+                    .is_err()
+                {
+                    tracing::warn!("browser close timed out; releasing the lifecycle anyway");
+                }
             }
         }
-        let mut handle = self.handler_handle.lock().await;
-        if let Some(h) = Option::take(&mut *handle) {
-            h.abort();
+        self.resident.store(false, Ordering::Relaxed);
+        self.requests_this_session.store(0, Ordering::Relaxed);
+        {
+            let mut handle = self.handler_handle.lock().await;
+            if let Some(h) = Option::take(&mut *handle) {
+                h.abort();
+            }
         }
         self.cleanup_user_data_dir().await;
+        match reason {
+            CloseReason::Explicit => {}
+            CloseReason::Idle => {
+                self.idle_teardowns.fetch_add(1, Ordering::Relaxed);
+            }
+            CloseReason::SessionCap => {
+                self.session_cap_teardowns.fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     async fn cleanup_user_data_dir(&self) {
@@ -300,6 +466,16 @@ impl Drop for BrowserLifecycle {
             }
             Err(_) => {
                 tracing::warn!("browser lifecycle drop: handler_handle mutex already locked");
+            }
+        }
+        match self.teardown_handle.try_lock() {
+            Ok(mut handle) => {
+                if let Some(h) = handle.take() {
+                    h.abort();
+                }
+            }
+            Err(_) => {
+                tracing::warn!("browser lifecycle drop: teardown_handle mutex already locked");
             }
         }
         if matches!(&self.mode, BrowserExecutionMode::AnonymousEphemeral) {
@@ -396,5 +572,148 @@ mod tests {
             lifecycle.ensure_browser().await,
             Err(BrowserLaunchError::RestartLimitReached)
         ));
+    }
+
+    #[tokio::test]
+    async fn status_starts_zeroed_and_explicit_close_does_not_count_as_teardown() {
+        let lifecycle = BrowserLifecycle::new(None, BrowserConfig::default());
+        assert_eq!(lifecycle.status(), BrowserLifecycleStatus::default());
+        lifecycle.close().await;
+        let status = lifecycle.status();
+        assert!(!status.resident);
+        assert_eq!(status.idle_teardowns, 0);
+        assert_eq!(status.session_cap_teardowns, 0);
+    }
+
+    #[tokio::test]
+    async fn teardown_gate_waits_for_an_in_flight_render() {
+        let lifecycle = Arc::new(BrowserLifecycle::new(None, BrowserConfig::default()));
+        let render = lifecycle.begin_render().await;
+        let waiter = {
+            let lifecycle = Arc::clone(&lifecycle);
+            tokio::spawn(async move {
+                let _write = lifecycle.render_gate.write().await;
+                true
+            })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !waiter.is_finished(),
+            "teardown must wait for the in-flight render"
+        );
+        drop(render);
+        assert!(waiter.await.expect("waiter task"));
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_closes_a_resident_session() {
+        let lifecycle = Arc::new(
+            BrowserLifecycle::new(None, BrowserConfig::default())
+                .with_idle_timeout(Duration::from_millis(40)),
+        );
+        lifecycle.resident.store(true, Ordering::Relaxed);
+        if let Ok(mut last) = lifecycle.last_activity.lock() {
+            *last = Instant::now() - Duration::from_secs(1);
+        }
+        lifecycle.start_watchdog().await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let status = lifecycle.status();
+        assert!(!status.resident, "watchdog must close the session");
+        assert_eq!(status.idle_teardowns, 1);
+        lifecycle.close().await;
+    }
+
+    #[tokio::test]
+    async fn idle_watchdog_leaves_recent_activity_alone() {
+        let lifecycle = Arc::new(
+            BrowserLifecycle::new(None, BrowserConfig::default())
+                .with_idle_timeout(Duration::from_millis(400)),
+        );
+        lifecycle.resident.store(true, Ordering::Relaxed);
+        lifecycle.start_watchdog().await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(lifecycle.status().resident);
+        assert_eq!(lifecycle.status().idle_teardowns, 0);
+        lifecycle.close().await;
+    }
+
+    #[tokio::test]
+    async fn cold_start_render_counts_toward_session_cap() {
+        let config = BrowserConfig {
+            max_requests: 1,
+            ..BrowserConfig::default()
+        };
+        let lifecycle = BrowserLifecycle::new(None, config);
+        let gate = lifecycle.begin_render().await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 0);
+        lifecycle.record_session_launch();
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 0);
+        lifecycle.record_session_request();
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 1);
+        lifecycle.finish_render(gate).await;
+        let status = lifecycle.status();
+        assert_eq!(status.renders, 1);
+        assert_eq!(status.session_launches, 1);
+        assert_eq!(status.session_cap_teardowns, 1);
+        assert!(!status.resident);
+    }
+
+    #[tokio::test]
+    async fn session_cap_counts_only_acquired_browser_requests_once() {
+        let config = BrowserConfig {
+            max_requests: 3,
+            ..BrowserConfig::default()
+        };
+        let lifecycle = BrowserLifecycle::new(None, config);
+
+        let first = lifecycle.begin_render().await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 0);
+        lifecycle.record_session_launch();
+        lifecycle.record_session_request();
+        lifecycle.finish_render(first).await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 1);
+        assert_eq!(lifecycle.status().session_cap_teardowns, 0);
+
+        let second = lifecycle.begin_render().await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 1);
+        lifecycle.record_session_request();
+        lifecycle.finish_render(second).await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 2);
+        assert_eq!(lifecycle.status().session_cap_teardowns, 0);
+
+        let third = lifecycle.begin_render().await;
+        lifecycle.record_session_request();
+        lifecycle.finish_render(third).await;
+        let status = lifecycle.status();
+        assert_eq!(status.renders, 3);
+        assert_eq!(status.session_cap_teardowns, 1);
+        assert!(!status.resident);
+    }
+
+    #[tokio::test]
+    async fn failed_browser_launch_does_not_consume_session_cap() {
+        let config = BrowserConfig {
+            max_requests: 1,
+            ..BrowserConfig::default()
+        };
+        let lifecycle = Arc::new(BrowserLifecycle::new(None, config));
+        let gate = lifecycle.begin_render().await;
+        assert!(matches!(
+            lifecycle.ensure_browser().await,
+            Err(BrowserLaunchError::NoBrowser)
+        ));
+        lifecycle.finish_render(gate).await;
+        let status = lifecycle.status();
+        assert_eq!(status.renders, 1);
+        assert_eq!(status.session_cap_teardowns, 0);
+        assert!(!status.resident);
+    }
+
+    #[tokio::test]
+    async fn teardown_is_idempotent() {
+        let lifecycle = BrowserLifecycle::new(None, BrowserConfig::default());
+        lifecycle.close().await;
+        lifecycle.close().await;
+        assert_eq!(lifecycle.status().idle_teardowns, 0);
     }
 }

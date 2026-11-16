@@ -50,13 +50,14 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/egress_qualify_contract.rs` | None | Egress qualification CI contract: exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage (`packaging/check-egress-qualify-contract.sh` enforces the same in `make packaging-check`) |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
-| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS) |
+| `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, excerpt economy) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
 | `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
-| `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls |
+| `tests/engine_parse_conformance.rs` | `mock` | Captured-fixture three-outcome contract for the five HTML scrapers plus seeded-drift `parse_error` |
+| `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls, markdown-first negotiation and fallback |
 | `tests/tool_surface_evaluation.rs` | None | 43-case tool-selection corpus (`tests/fixtures/tool_surface/cases.json`): top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |
-| `tests/retrieval_quality.rs` | `mock` (live observation ignored) | Synthetic retrieval relevance corpus (`tests/fixtures/retrieval_quality/cases.json`): precision/recall/MRR/nDCG, passage budget, source diversity, status correctness (`make eval-retrieval-quality`) |
+| `tests/retrieval_quality.rs` | `mock` (live observation and recorder ignored) | Synthetic retrieval relevance corpus (`tests/fixtures/retrieval_quality/cases.json`), candidate-snapshot replay through production selection (`candidate_snapshots.json`, tier-2 `recorded_snapshots.json`, tier-3 into `target/snapshots/`), seeded negative controls, derived-intent rollout gate (`make eval-retrieval-quality`) |
 | `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | None | Tool consolidation contracts: registry parity, schema budgets, structured errors, response projection |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
@@ -69,7 +70,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
-This table is representative, not exhaustive — 79 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 83 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -145,6 +146,7 @@ own. Move these in the same change as the code:
 |--------|------------------|
 | New/renamed test suite | `docs/test-inventory.md`, `architecture/testing.md`, the test table above |
 | New provider or engine | `KNOWN_PROVIDER_IDS`, `docs/provider-setup.md` (native-vs-local enforcement), `tests/provider_capability_contract.rs` |
+| New or changed HTML scraper parser | captured fixtures under `tests/fixtures/engines/<provider>/` (results, empty, blocked), conformance coverage, and `architecture/engines.md` § Scraper Fidelity |
 | New or changed MCP tool | `src/mcp/server.rs`, `docs/tool-matrix.md`, `docs/codegg-integration.md`; the count stays at 10 unless the matrix and `tests/docs_tool_names.rs` move too |
 | Release target, installer, or version fact | `packaging/release-targets.txt` + `release-inputs.txt` + release workflow + installers + updater + `docs/release.md` + `docs/installation.md` + `README.md` |
 | Milestone status | `plans/registry.md`, the owning `plans/subsystems/` roadmap, a `plans/closure/` record, and the `architecture/` section that states it — see the `eggsearch-planning` skill |
@@ -161,6 +163,10 @@ duplicated rules are what go stale.
 - **Forgetting `--features mock`** — integration/corpus tests won't compile
 - **Adding random UUIDs** to stable output types — use FNV-1a hashes via `src/core/identity.rs`
 - **Bypassing sanitization** — all untrusted text must flow through `sanitize.rs`
+- **Treating HTML scrapers as legacy or fragile** — ADR-0006 makes keyless HTML engines first-class; the shipped defaults are scrapers. A parser that returns empty rows because a selector stopped matching reports absence instead of failure, which is a correctness defect. `finalize_scrape()` in `src/meta/engines/mod.rs` enforces the four-outcome contract, `EngineError::Blocked` covers challenge pages, and `tests/engine_parse_conformance.rs` fails if a parser regresses to bare empty output. Bounded proof-of-work solving is permitted under ADR-0009 (opt-in, ceilinged, proof-of-work only) — do not restate the retired blanket ban, and do not extend it to interactive CAPTCHA, OCR, solving services, or proxy rotation, which stay prohibited. Add captured fixtures under `tests/fixtures/engines/<provider>/` and never propose an API fallback as a "reliability" fix.
+- **Caching a partial search fan-out** — any provider failure or deadline interruption must bypass the search cache and publish nothing to coalesced waiters; a hit must also skip health recording.
+- **Serving a markdown body for an HTML cache key** — `accept_policy` (`md1`/`html1`) is part of `RawCacheKey`; never collapse it, and never drop the `Vary: Accept` allowance without replacing the key dimension.
+- **Adding a required `intent` argument** — intent is derived deterministically when omitted and reported; explicit intent stays authoritative and suppresses the derived fields.
 - **Hardcoding provider lists** — use `resolve_providers()` which validates enabled/known status
 - **Changing deterministic IDs** — breaks regression corpus tests and cross-tool deduplication
 - **Missing `cargo fmt`** — CI will fail on `cargo fmt --check`

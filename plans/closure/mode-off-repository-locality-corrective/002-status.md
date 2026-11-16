@@ -5,7 +5,7 @@ Recommendation: closed
 Prepared candidate: `5e7b853e7eebf29c58f84959805c8774279d7ea4`
 Branch: `agent/mode-off-local-repo-zero-dispatch-20261013` (pushed)
 Closure evidence commit: the commit that updates this record
-Plan: `plans/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md`
+Plan: `plans/archive/implementation/mode-off-repository-locality-corrective/002-immutable-corrected-release-and-handoff.md`
 
 ## Completed preparation
 

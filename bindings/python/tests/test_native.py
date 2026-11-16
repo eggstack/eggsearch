@@ -136,7 +136,10 @@ def test_typed_requests_cover_canonical_rust_input_schemas():
     assert set(schemas) == EXPECTED_TOOLS
     for name, request_type in REQUEST_TYPES.items():
         properties = schemas[name].get("properties", {})
-        assert set(properties).issubset(request_type.__annotations__)
+        missing = set(properties) - set(request_type.__annotations__)
+        assert not missing, (
+            f"{name} request type is missing schema properties: {sorted(missing)}"
+        )
 
 
 def test_native_client_executes_all_operations_without_an_mcp_process(config_path):

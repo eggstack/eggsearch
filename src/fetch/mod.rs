@@ -3,21 +3,36 @@
 //! Fetches a single HTTP(S) URL, enforces size/time/content limits,
 //! extracts readable text/metadata, and returns bounded structured output.
 
+pub mod accept;
 #[cfg(feature = "browser")]
 #[allow(missing_docs)]
 pub mod browser;
+/// Extraction versus output character budgets for a single fetch.
+pub mod budget;
 #[allow(missing_docs)]
 pub mod cache;
+/// Anti-bot challenge detection for plain HTTP responses.
+pub mod challenge;
 pub mod client;
 pub mod detect;
 pub mod egress;
 pub mod extract;
 pub mod limits;
+mod negotiate;
 #[allow(missing_docs)]
 pub mod origin;
 /// PDF text extraction (requires the `pdf` Cargo feature).
 #[cfg(feature = "pdf")]
 pub mod pdf;
+/// PDF page-quality classification (requires the `pdf` Cargo feature).
+#[cfg(feature = "pdf")]
+mod pdf_quality;
+/// Bounded PDF stream-expansion scan (requires the `pdf` Cargo feature).
+/// Internal primitive exposed for the bound property tests; not part of
+/// the stable surface described in `lib.rs`.
+#[cfg(feature = "pdf")]
+pub mod pdf_stream;
+pub(crate) mod projection;
 /// HTML structural rendering (blocks, text, markdown).
 pub mod render;
 /// Symbol/span-aware block expansion for `repo_fetch`.
@@ -26,6 +41,7 @@ pub mod types;
 
 pub(crate) const MAX_TREE_WALK_DEPTH: usize = 256;
 
+pub use accept::{select_accept_policy, AcceptPolicy, HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
 #[cfg(feature = "browser")]
 pub use browser::{
     browser_capability_report, browser_fetch, browser_fetch_with_policy,

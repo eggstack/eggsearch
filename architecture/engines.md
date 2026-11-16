@@ -1,6 +1,6 @@
 # Search Engines Deep Dive
 
-**Location:** `src/meta/engines/` (49 files: 43 engine implementations plus 6 support modules)
+**Location:** `src/meta/engines/` (50 files: 43 engine implementations plus 7 support modules)
 **Purpose:** One self-contained implementation per upstream provider. Engines are internal to the
 metasearch adapter — engine types never leak past `MetadataSearchAdapter`; callers receive
 `crate::core::SourceCard` values. MCP tools call the adapter, never engines directly.
@@ -19,12 +19,13 @@ workspace backend (`src/meta/local_backend.rs`), not an engine file.
 | `request.rs` | `EngineSearchRequest` — provider-neutral structured request; `RepoScope` (`owner`/`repo`, never reparsed from free text) |
 | `models.rs` | `SearchResult`, `ResultMetadata` (issue/release/advisory/code-search merge), `AggregatedResult`, `EngineSearchBatch` / `EngineRetrievalMetadata` / `ScopeIndexStatus` |
 | `normalizer.rs` | URL canonicalization: fragment strip, tracking-param strip, query-param sort, locale-prefix strip, index-file strip, trailing-slash trim, scheme/host lowercase |
-| `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `NetworkError`, `Unsupported` |
+| `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `Blocked`, `NetworkError`, `Unsupported` |
+| `test_harness.rs` | `mock`-gated `parse_html(provider_id, html, max_results)` used by the captured-fixture conformance suite; absent from default builds |
 | `kev.rs` | Shared `KevClient`: fetches and caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
 | `<provider>.rs` × 43 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
 
-Verify the count with `ls src/meta/engines | wc -l` (49, including `mod.rs`, `request.rs`,
-`models.rs`, `normalizer.rs`, `error.rs`, `kev.rs`).
+Verify the count with `ls src/meta/engines | wc -l` (50, including `mod.rs`, `request.rs`,
+`models.rs`, `normalizer.rs`, `error.rs`, `kev.rs`, `test_harness.rs`).
 
 ---
 
@@ -144,6 +145,278 @@ in `engines/mod.rs`, and cloned into each engine struct. Consequences:
 
 ---
 
+## Scraper Fidelity
+
+Keyless HTML scraping is a first-class product capability, not a fallback awaiting an API
+(ADR-0006). The shipped defaults are HTML engines, and upstream markup changes are a normal
+maintenance cost of the design. Five engines parse HTML: `brave`, `duckduckgo`, `mojeek`,
+`startpage`, `yahoo`. `searxng` is a JSON API and is not part of this contract.
+
+Every HTML parser MUST distinguish four outcomes, because the retrieval ledger treats them
+differently:
+
+| Outcome | Return | Ledger effect |
+|---|---|---|
+| Results parsed | `Ok(rows)` | `SuccessWithResults` |
+| Documented empty-state marker matched | `Ok(vec![])` | `SuccessZeroResults` → evidence absence |
+| Neither results nor an empty marker | `Err(EngineError::ParseFailed { reason })` | provider failure → coverage indeterminate |
+| Block, consent wall, or challenge page | `Err(EngineError::Blocked { reason })` | provider failure, non-retryable |
+
+Returning `Ok(vec![])` because a selector stopped matching is a correctness defect: it converts a
+broken provider into a confident claim that no evidence exists, which is the one distinction the
+product exists to preserve. An empty-state marker is a literal string or container captured from
+real markup, never a guess.
+
+**Implementation.** `mod.rs` owns `ScrapeShape` (result container plus empty and blocked markers),
+`PageMarker` (a CSS selector or a literal run of rendered page text), and `finalize_scrape()`. Each
+scraper declares a `SHAPE` constant next to its parser and returns `finalize_scrape(...)`, so the
+four-outcome decision has exactly one implementation. Text markers are matched against rendered
+text with `<script>` and `<style>` content excluded, so a locale bundle cannot masquerade as an
+empty-state marker. Ordering: parsed rows win; then a blocked marker; then an empty marker; then
+`ParseFailed` with a reason that names the container (`missing` versus `produced no parseable
+results`).
+
+`EngineError::Blocked` classifies as `ErrorClass::Blocked` (`blocked`) and mirrors as
+`FailureClass::Blocked`; it is a provider failure with a rate-limit cooldown, never absence.
+`ParseFailed` maps to `parse_error` and to `parse_shape = shifted`.
+
+`provider_status` reports `parse_shape` (`ok`, `empty`, `shifted`) per provider, derived from the
+most recent classified outcome: `ok` when rows were returned, `empty` on success-with-zero-results,
+`shifted` on a structural parse failure. The field is omitted for providers with no observation, so
+operators see drift without reading logs.
+
+Requirements for any change to an HTML parser:
+
+- Captured fixtures under `tests/fixtures/engines/<provider>/`: `results.html`, `empty.html`, and
+  `blocked.html`. Redact cookies, tokens, and identifiers; keep files small. The fixture README
+  records which files are live-captured (with URL, UTC date, and status) and which are synthetic
+  reconstructions — never claim a capture that did not happen.
+- `tests/engine_parse_conformance.rs` is table-driven over all five scrapers and asserts parsed
+  rows, explicit empty state, block classification, and a seeded-drift case that renames the
+  result container and requires `ParseFailed`. A parser that reverts to bare empty output fails it.
+- Bounded computational challenge solving is permitted under ADR-0009 and must follow the rules in
+  § Challenge solving. Interactive CAPTCHA solving, OCR, third-party or human solving services,
+  credential bypass, proxy rotation, user-agent spoofing, and retry widening to conceal an outage
+  remain prohibited.
+
+## Challenge solving
+
+ADR-0009 permits in-process solving of published computational proof-of-work challenges and
+nothing else. The capability is off by default; when it is off or the budget is exhausted, the
+provider reports `blocked` exactly as it does today. Nothing in this section authorizes answering
+an interactive CAPTCHA, driving a browser, or contacting a solving service.
+
+Two upstreams in the engine set use this gate. Measured parameters on 2026-11-11:
+
+| Upstream | Scheme | What the server publishes | Cost model |
+|---|---|---|---|
+| `startpage` | Anubis `fast` (`script#anubis_challenge`) | `rules.difficulty`, `challenge.id`, `challenge.randomData`, `redir` | expected `16^difficulty` SHA-256 candidates; measured difficulty 6 at 23.07M candidates / 3.05 s single-core in a release build (debug builds are ~100× slower) |
+| `mojeek` | ALTCHA (`GET /captcha/challenge`) | `algorithm` (`PBKDF2/SHA-256`), `cost`, `keyLength`, `keyPrefix`, `salt`, `nonce` | up to `maxCounter` PBKDF2 derivations; measured `cost = 8000` solved at counter 291 in 0.42 s, worst case 1000 counters ≈ 1.4 s on one core |
+
+Anubis publishes the method in `challenge.method`, falling back to `rules.algorithm`. Five methods
+are covered; ADR-0010's registry, extended by ADR-0013's evaluation, is the permitted set rather
+than a hardcoded pair:
+
+| Method | Trigger | Answer | Difficulty unit |
+|---|---|---|---|
+| `fast` | `challenge.method == "fast"` | ascending nonce search over `randomData` until the digest carries `difficulty` leading hex zeros | hex nibbles: `16^difficulty` expected candidates |
+| `slow` | `challenge.method == "slow"` | deprecated alias of `fast`; identical scheme, submission, and cost | hex nibbles, as `fast` |
+| `preact` | `challenge.method == "preact"` (`script#preact_info`) | `sha256(challenge)` submitted as `GET {base}{redir}&result=<hex>` after the minimum elapsed time | hex nibbles, as the elapsed-time floor |
+| `metarefresh` | `challenge.method == "metarefresh"` | echo `challenge.randomData` at the pass-challenge target after the published wait; no hashing and no attempt consumed | none: the wait is time, not difficulty |
+| `sha256` | `challenge.method == "sha256"` (WASM family) | ascending `u32` nonce search over the hex-decoded `randomData` until the digest carries `difficulty` leading zero bits | bits: `2^bits` expected candidates, admitted when `ceil(bits / 4) <= max_difficulty` |
+
+A method string outside that evaluated set still fails closed as `unsupported scheme`; it never
+inherits permission from the list. `sha256` is the cheapest member of the v1.28 WASM family
+(ADR-0013): the data is the hex-decoded `randomData`, bounded before decoding, with invalid hex
+reported as `malformed parameters`, and the nonce is a `u32` searched from zero whose four bytes are
+little-endian when the last data byte is at least 128 and big-endian otherwise. The hash is
+`SHA-256(data || nonce_bytes)`, and the submission carries
+`id`, `response` (hex digest), `nonce`, `redir`, and `elapsedTime`. Difficulty is leading zero bits
+on the raw 32-byte digest, while `max_difficulty` stays measured in fast-equivalent nibbles: 4
+admits 16 bits and rejects 17, and 6 admits 24. Projection uses `2^bits`, and 128 bits or more is
+refused as unprojectable before hashing. `argon2id` and `hashx` are the memory-hard and
+ASIC-resistant siblings; both remain `unsupported scheme`, with no WASM runtime and no new
+dependency.
+
+`metarefresh` is a time challenge, not a proof-of-work: it submits only values the challenge itself
+published. The echo token is `challenge.randomData`; a legacy `challenge` field is accepted only when
+`randomData` is absent, and a page carrying both uses `randomData`. The presentation is optional: a
+`<meta http-equiv="refresh">` element or a `Refresh:` response header supplies the wait and target
+when present, a bounded JSON `wait` is accepted when neither exists, and otherwise the wait is
+`difficulty + 1` seconds. The target is
+`{origin}{base_prefix}/.within.website/x/cmd/anubis/api/pass-challenge?redir=<request URL>&challenge=<randomData>&id=<id>`,
+and a published target is used only when it resolves same-origin. The submission never appends
+`result=`.
+
+Five parse-time rules apply to every Anubis method, all before any hashing or request:
+
+- `script#anubis_base_prefix` is honoured. The payload is a JSON string (Anubis publishes `""`),
+  validated as a bounded path prefix: at most 256 bytes, leading `/`, no `//`, no scheme, query,
+  fragment, backslash, control or whitespace character, and no `..` segment. An unusable value is
+  `unsafe base prefix`, never silently ignored.
+- `challenge.spent == true` is refused as `already spent`; an absent field means unspent, and a
+  present non-boolean is malformed.
+- The cost is projected before hashing. Expected candidates are `16^difficulty` for the nibble
+  methods (`fast`, `slow`, `preact`) and `2^bits` for `sha256`; with the recorded release cost of
+  130 ns per candidate, a challenge that exceeds `max_attempts` or the remaining wall clock is
+  refused with the projection and the operative ceiling in the sentence. The projection is an
+  admission check: an admitted challenge still stops on the per-attempt ceiling.
+- A published `redir` is accepted only as a same-origin absolute URL or a single-slash root-relative
+  path with no `..` segment and no control characters. Anything else falls back to the request URL,
+  so no non-`http(s)` scheme reaches the query string and a `preact` submission can never carry the
+  challenge cookies to a foreign origin.
+- `challenge.extensions` is parsed and bounded. Absent, `null`, and `[]` are solvable; a present list
+  holds at most 8 names of 1–64 bytes each, drawn from ASCII alphanumerics, `-`, `_`, and `.`, and
+  anything else is `malformed parameters`. A non-empty list containing a name other than `css-load`
+  is refused before the difficulty ceiling, any wait, any hash, and any request, with the sentence
+  `anubis challenge declares unsupported extensions [<names>]` recorded under `unsupported scheme`.
+
+Anubis `css-load` is the one extension this build performs (ADR-0012), and only while
+`[search.challenge].enabled` is true. After parsing and before the difficulty ceiling it performs
+exactly one same-origin `GET` to
+`{origin}{base_prefix}/.within.website/x/cmd/anubis/ext/css-load/{uuid}`, built from the validated
+base prefix and challenge id, with no cookie, no authorization header, redirects disabled, the
+remaining solve deadline, and a 4 KiB body that is discarded. A 2xx continues to the method proof
+and the pass request; a non-2xx status, a transport error, a timeout, an unsafe id, or a cross-origin
+target refuses with `blocked` under `unsupported scheme` and a sentence such as
+`anubis css-load extension was not satisfied (status 404)`, with zero pass requests. `headless` and
+every unknown name keep the zero-request refusal above: the extension list is never an instruction
+channel, and no JavaScript, image, CSS-parsing, or rendering step is added.
+
+Implementation:
+
+- One shared module, `src/meta/challenge/` (`anubis.rs`, `altcha.rs`, and the budget/cache/cookie
+  plumbing in `mod.rs`). Engines call it and do not carry per-engine solver copies; each file stays
+  inside the ordinary-file limits in `architecture/maintenance.md`.
+- `sha2` is the Anubis primitive; ALTCHA uses the `pbkdf2` and `base64` crates. All three are
+  offline, pure-computation dependencies and no network, TLS, browser, or service dependency was
+  added. The verify POST hand-builds its `multipart/form-data` body with a fixed boundary because
+  the guard `eggfetch_feature_budget_stays_bounded` forbids the `multipart` eggfetch feature.
+- Every solve runs under four ceilings: a challenge-difficulty ceiling, a total candidate/iteration
+  ceiling, a wall-clock ceiling, and one solve per provider per cookie TTL. A solve that reaches a
+  ceiling fails; it never loops. The ceilings are configuration, not constants. The shipped
+  `max_attempts` default of 2,000,000 matches the shipped difficulty ceiling of 5, so raising
+  `max_difficulty` to 6 also requires raising `max_attempts`; otherwise the attempt ceiling binds
+  before the wall clock and the solve is refused for the wrong reason. The pre-flight projection
+  makes that relationship visible: it refuses a challenge whose expected candidates or projected
+  milliseconds cannot fit the configured ceilings, naming both numbers.
+- Configuration surface, consistent with existing `[search.*]` tables:
+
+  ```toml
+  [search.challenge]
+  enabled = false           # ADR-0009 default; operator opts in
+  max_difficulty = 5        # Anubis ceiling; difficulty 6 needs ~16.8M expected candidates
+  max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
+  timeout_ms = 2000         # wall-clock ceiling per solve; 6 needs >= 8000
+  cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
+  ```
+
+- The fetch path shares this solver rather than carrying a copy. With `[search.challenge].enabled`,
+  `web_fetch` classifies its bounded body with `src/fetch/challenge.rs`, solves a detected Anubis
+  challenge once via `anubis::solve_and_verify`, and replays once with the cookie pairs the pass
+  response issued, joined with `; `, on the first hop. `src/fetch/**` remains independent of
+  `src/meta/**`; only `src/mcp/tools/web_fetch.rs` orchestrates the solve. A fetch-side pass pair set
+  is never cached for reuse, so `cookie_ttl_seconds` still governs search upstreams only.
+- Pass-cookie identity is opaque, like the challenge id. The Anubis solver never looks for a fixed
+  name: it takes every non-deletion pair the pass-challenge response set (empty values and deletion
+  cookies dropped, duplicate names resolved by the last non-deletion value at the first position),
+  replays them joined with `; `, and derives the reuse window from the longest usable published
+  lifetime among them. `spchal-auth`, `techaro.lol-anubis-auth`, and dynamic-suffix names such as
+  `techaro.lol-anubis-auth-347ddb4a` all work without a source or configuration change. ALTCHA keeps
+  its published `chllg` name and emits `chllg=<value>` as the replayable pair; its `Max-Age=0` case
+  still performs one replay and stores nothing. No runtime replay path formats a fixed cookie name,
+  and there is no cookie-name knob. The pairs are secret-like: never log them, never serialize them
+  into `provider_status`, diagnostics, or fixtures.
+- Lifetime derivation: `src/meta/challenge/cookie.rs` owns pass-cookie lifetime parsing for both
+  schemes. The reuse window is the longest usable lifetime the upstream published across the
+  replayed pairs — `Max-Age` (which wins over `Expires`, RFC 6265 §5.3) or `Expires` as IMF-fixdate
+  — clamped by `cookie_ttl_seconds`. Neither attribute falls back to the previous fixed window; a
+  malformed attribute or an expiry at or before `now` stores nothing; an empty ceiling stores
+  nothing; an empty value or a deletion cookie never enters the pair set and never extends the
+  window. `SolveOutcome::Solved` carries the replayable `Cookie` header value and the reuse-relevant
+  published lifetime so an engine never re-parses headers, and its `Debug` prints the attribute kind
+  with every value redacted. The window can never exceed `cookie_ttl_seconds`, and a pair set the
+  upstream rejects on replay is evicted per provider (`PassCookieCache::remove`), so the next
+  request starts cold instead of replaying a dead token.
+- Egress binding: a pass token may be bound to the client's egress address, and the client observes
+  only the effect. eggsearch keeps using the cached cookie, never detects an address, never shortens
+  the window because a route exists, and never rotates exits; when the exit changes the upstream
+  re-challenges or rejects, the failing search still reports `blocked` with `pass cookie rejected`,
+  and the next search re-solves. `eggsearch doctor` warns when `[egress]` is routed and cookie reuse
+  is enabled.
+- Solving is attempted at most once per search request per provider. A solved request proceeds
+  through the normal parser and `finalize_scrape()`; a solved but unparseable page is still
+  `ParseFailed`, not `Blocked` and not empty.
+- Determinism: fixed constants for any client-chosen field the upstream does not verify (for
+  example ALTCHA's `solution.time`), so a recorded challenge always produces the same answer.
+- Tests: synthetic challenge fixtures with a known solution and a known-bad answer, budget
+  exhaustion for each ceiling, unsupported-method fail-closed, cookie replay against a mock
+  transport that issues a challenge and then serves a result page, and a negative control proving
+  a disabled solver still reports `blocked`. Live verification per provider is recorded in
+  `tests/fixtures/engines/README.md`.
+
+- Observability: `src/meta/challenge/ledger.rs` keeps a bounded, process-local `SolveLedger`
+  (four provider ids, `u64` saturating counters) and `provider_status` reports it on every call as a
+  top-level `challenge_solver` object, sibling of `providers`, `health`, and `search_cache`:
+
+  ```json
+  "challenge_solver": {
+    "enabled": true,
+    "untracked_providers": 0,
+    "providers": {
+      "mojeek": {
+        "solves_attempted": 3,
+        "solves_succeeded": 1,
+        "solves_errored": 0,
+        "refusals": {
+          "difficulty above ceiling": 0,
+          "attempts exhausted": 1,
+          "wall clock exhausted": 0,
+          "unsupported scheme": 0,
+          "malformed parameters": 0,
+          "pass cookie absent": 0,
+          "pass cookie rejected": 1,
+          "challenge expired": 0,
+          "already spent": 0,
+          "unsafe base prefix": 0
+        },
+        "cookie_hits": 4,
+        "cookie_misses": 3,
+        "last_candidates": 291,
+        "last_wall_clock_ms": 420
+      }
+    }
+  }
+  ```
+
+  `solves_attempted == solves_succeeded + refusals_total + solves_errored` holds by construction
+  because one recording call increments the attempt and exactly one outcome under one lock.
+  `last_candidates` is the budget attempts the most recent attempt consumed; `last_wall_clock_ms` is
+  its parse-to-decision time, excluding every HTTP request. Both are `0` when the attempt ended
+  before any computation. The refusal key set is fixed and always emitted in full, so a zero is
+  evidence that the bound never fired; `challenge expired` has no producer today, and
+  `unsafe base prefix` also carries the fail-closed cost-projection refusal, which keeps its dynamic
+  sentence while recording an attributable key. The block is emitted whether or not
+  `[search.challenge].enabled` is set — "the solver is disabled" is the most common answer to "why
+  is this provider blocked" — with `enabled` reflecting configuration and `providers` empty until the
+  first solve. Counters are process-lifetime totals that reset on restart, are not rates, and are
+  never persisted, exported, or projected; a provider id beyond the four-entry cap is not tracked and
+  increments `untracked_providers` once per dropped record. Nothing in the ledger stores a cookie,
+  nonce, salt, derived key, challenge id, or redirect target: every reported value is a number.
+
+Anubis difficulty is risk-scored per client rather than fixed: on 2026-11-11 the honest `eggsearch`
+user agent received difficulty 6 while a Chrome user agent received 4. Budget for the honest agent.
+
+Alignment with SearXNG does not by itself restore `startpage`. SearXNG caps Anubis at
+`max_difficulty = 4` and raises above it, so it refuses today's difficulty-6 wall as well; and its
+Startpage *result extraction* reads the embedded React payload
+(`React.createElement(UIStartpage.AppSerp<Categ>, {...})` → `render.presenter.regions.mainline[]`)
+rather than the `div.result` DOM this repo parses. Reachability for Startpage therefore needs both
+a raised difficulty ceiling and a JSON-payload parser, tracked as separate work; Mojeek needs only
+the ALTCHA solver and its existing `ul.results-standard` parser.
+
+---
+
 ## Engine Inventory
 
 IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilities quoted are the
@@ -155,9 +428,9 @@ IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilit
 |-------------|--------|------------------------|
 | `duckduckgo` | `DuckDuckGoEngine` | HTML scrape, keyless |
 | `brave` | `BraveEngine` | HTML scrape, keyless (distinct from `brave_api`) |
-| `startpage` | `StartpageEngine` | HTML scrape, keyless |
+| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). With `[search.challenge]` disabled or `max_difficulty` below the published difficulty the engine reports `blocked`; a permitted solve replays the pairs the pass response issued. Not in `default_providers` |
 | `yahoo` | `YahooEngine` | HTML scrape, keyless |
-| `mojeek` | `MojeekEngine` | HTML scrape, keyless |
+| `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. With `[search.challenge]` disabled the engine reports `blocked`; with it enabled the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs |
 | `searxng` | `SearxngEngine` | JSON API, self-hosted `base_url` required; skipped as `missing_searxng_config` otherwise; no native capability flags claimed |
 | `brave_api` | `BraveApiEngine` | JSON API, `BRAVE_API_KEY`; native safe-search, freshness/date-range, language, region, news, result timestamps |
 | `exa` | `ExaEngine` | JSON API (`POST /search`), `EXA_API_KEY`; native freshness/date-range, domain filters, result timestamps; highlights fetched only on excerpt demand |
@@ -361,7 +634,8 @@ Dispatch never silently omits an unsupported capability. For each `(subquery, pr
    request from `&EngineSearchRequest`, read via `read_bounded_body` (never bare `.text()` /
    `.bytes()`), sanitize untrusted text, and return `SearchResult` rows. Reuse the defaulted
    advisory methods unless the upstream serves advisories; leave unsupported constraints
-   unmapped (explicit, never silent).
+   unmapped (explicit, never silent). HTML parsers must implement the three-outcome contract in
+   § Scraper Fidelity from the start, with captured fixtures.
 2. Declare the module in `engines/mod.rs` and add the engine struct plus its `SearchEngine` impl
    (shared `Arc<eggfetch_core::Client>`; keyed engines take their key at construction).
 3. Add the ID to `KNOWN_PROVIDER_IDS` in `src/core/provider.rs` and declare its 24-flag
@@ -373,7 +647,8 @@ Dispatch never silently omits an unsupported capability. For each `(subquery, pr
 6. Document the native-vs-local enforcement in `docs/provider-setup.md` without inventing names.
 7. Extend `tests/provider_capability_contract.rs` with the new provider's capability assertions,
    add behavioral coverage in the relevant suite (`web_search` integration, `provider_routing`,
-   `provider_probe_conformance`, workflow suites), and keep the docs inventory tests green.
+   `provider_probe_conformance`, workflow suites), add captured parser fixtures for HTML
+   scrapers, and keep the docs inventory tests green.
 
 ---
 

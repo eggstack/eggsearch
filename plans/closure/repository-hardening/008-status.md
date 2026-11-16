@@ -9,7 +9,7 @@ Closure candidate: `44f38abc765cf7fc2edebc37ab0ac1bf3949cc42` (code-qualified ca
 
 Original milestone and plan under correction:
 
-- M008: `plans/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md`
+- M008: `plans/archive/implementation/repository-hardening/008-windows-startup-cross-target-portability-corrective.md`
 - Planning baseline: `a5f1b0dcd89d90d8ff4fb3bc264bdfcace7acb19`
 - Prior ownership: M004 `plans/closure/repository-hardening/004-status.md`, M007 `plans/closure/repository-hardening/007-status.md`
 

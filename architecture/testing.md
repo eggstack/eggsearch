@@ -9,19 +9,20 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 
 ## Suite count and layout
 
-`tests/*.rs` holds 79 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
+`tests/*.rs` holds 80 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
 
 | Location | Purpose |
 |----------|---------|
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
-| `tests/property_*.rs` (17 suites) | Pure-function `proptest` coverage |
+| `tests/property_*.rs` (18 suites) | Pure-function `proptest` coverage |
 | `tests/dispatch_fault_injection.rs` | Provider failure/timeout/concurrency/panic |
 | `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
-| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus + ignored live observation |
+| `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate, shipped-default-set routing gate and keyword-query admission predicate; ignored live observation and recorder |
+| `tests/pdf_fidelity.rs` + `tests/fixtures/pdf/` | Committed synthetic PDF extraction-fidelity corpus, per-class annotations, deterministic metrics, and the join-lines-and-strip-spaces negative control |
 | `tests/mcp_http.rs` | Loopback Streamable HTTP lifecycle and transport hardening |
 | `packaging/test-install.sh`, `packaging/test-install.ps1` | Installer behavior (not `tests/`) |
 | `src/**/mod.rs` unit tests | Private-function coverage at the bottom of the source file |
@@ -36,15 +37,15 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | Suite | Contract |
 |-------|----------|
 | `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs) |
-| `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds |
+| `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds, derived-intent reporting/applied reranking, search-result cache and coalescing equivalence |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
-| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, CodeGG parity qualification journeys |
+| `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |
 | `security_workflow` | Advisory retrieval, applicability assessment, safety handling |
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
-| `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls |
+| `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |
 | `batch_fetch_retrieval` | Mixed focused/unfocused batch, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
 | `provider_request_contract` | `EngineSearchRequest` fidelity, date/domain validation, wire compression behavior |
 | `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
@@ -54,7 +55,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `fetch_safety` | URL validation and SSRF prevention at the fetch boundary |
 | `forge_adapter` | Forge endpoint validation, redirect policy, URL construction from the resolved ref (`resolved_ref_name`) |
 | `local_workspace_integration`, `inventory_freshness`, `retrieval_attempt_ledger`, `evidence_bundle_handoff`, `evidence_integration` | Workspace, inventory lifecycle, ledger validation, bundle pipeline |
-| `config_validation`, `docs_config_snippets` | Config rules and doc snippet validity |
+| `config_validation`, `docs_config_snippets` | Config rules (including search-cache bounds) and doc snippet validity |
 | `exa`, `tavily`, `firecrawl_developer` | Provider-specific adapter behavior |
 | `security_applicability_regression`, `security_applicability_corpus`, `security_applicability_contract` | Applicability pipeline regression, corpus, and contract |
 | `research_evidence_corpus`, `research_semantic_roles` | Research evidence regression and role mapping |
@@ -64,6 +65,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `native_forge_smoke` | Maintainer-only native forge diagnostics (`live-smoke`-gated, ignored by default; never release evidence) |
 | `egress_routing`, `egress_qualify_contract` | Egress route behavior and egress qualification CI contract |
 | `dependency_fixtures` | Realistic minimized lockfile fixtures per ecosystem and version (`tests/fixtures/dependency_evidence/`) |
+| `pdf_fidelity` | Committed synthetic PDF corpus (`tests/fixtures/pdf/`, one case per document class): line-shape floors and ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification, running-head repetition, and outline count/depth; a join-lines-and-strip-spaces negative control that every declared metric must reject; ignored opt-in recorder into `target/pdf-corpus/` |
 | `bounded_command` | Bounded git command execution (caps, timeout, termination) |
 
 ### Where new tests go
@@ -136,7 +138,7 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored
 
 ## Property tests
 
-17 `proptest` suites cover pure functions only and run without network access:
+18 `proptest` suites cover pure functions only and run without network access:
 
 | Suite | Focus |
 |-------|-------|
@@ -148,6 +150,7 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored
 | `property_render_metadata` | `TrustMarkers` merge laws, outline-reference bounds |
 | `property_local_fs`, `property_local_fs_extended` | Path joining, traversal, symlinks, root containment |
 | `property_forge_url` | Forge URL builders and credential rejection |
+| `property_excerpt_economy` | Excerpt budget monotonicity, deterministic shingle suppression, counter identity, termination |
 | `property_conflict` | Entity-scoped conflict detectors |
 | `property_retrieval` | Attempt ledger, absence kinds, truncation evidence |
 | `property_dependency_parse` | Dependency-parse dispatch determinism, per-file budgets, identity/provenance invariants, line bounds |
@@ -237,6 +240,17 @@ requires explicit query/provider allowlists plus separate billing
 acknowledgement; methodology and limitations are in
 `docs/retrieval-quality-benchmark.md`.
 
+The same suite owns the candidate-snapshot lane: `candidate_snapshots.json`
+carries optional `provider_lists` that replay through
+`adapter/selection.rs::select()`, the production sequence, so a fusion, dedup,
+or rerank change produces a metric delta. `recorded_snapshots.json` is the small
+committed recorded tier, and an `#[ignore]`d recorder writes larger snapshots
+under `target/snapshots/` only. Three seeded negative controls (degenerate RRF
+constant, dedup disabled, truncate-before-rerank) must each degrade their
+asserted metric; a harness that cannot fail is rejected. The derived-intent
+rollout gate compares `intent=web` against derived intent over the same corpus
+and fails if the recorded decision and the switch disagree.
+
 ```bash
 cargo test --locked --features mock --test retrieval_quality
 make eval-retrieval-quality
@@ -263,6 +277,16 @@ Browser suites are gated by the `browser` feature:
 ```bash
 cargo test --locked --features browser --test browser_profiles
 cargo test --locked --features browser --test browser_transport
+```
+
+`tests/pdf_fidelity.rs` is gated on the `pdf` feature and needs no network or
+credentials. Its committed fixtures are synthetic PDFs built from the
+per-case construction recipes in `tests/fixtures/pdf/corpus.json`; the ignored
+recorder downloads the workstream reference documents into
+`target/pdf-corpus/` and prints the same per-case report.
+
+```bash
+cargo test --locked --features pdf --test pdf_fidelity -- --nocapture
 ```
 
 ## Hygiene and packaging contract

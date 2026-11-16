@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md`
+- `plans/archive/implementation/dependency-evidence-hardening/004-ruby-composer-lock-provenance.md`
 
 Source subsystem roadmap:
 

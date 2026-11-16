@@ -205,6 +205,18 @@ fn annotations_match_contract_hints() {
             "tool '{}' open_world_hint must match contract",
             tool.name
         );
+        assert_eq!(
+            annotations.destructive_hint,
+            Some(false),
+            "tool '{}' destructive_hint must be explicit and false",
+            tool.name
+        );
+        assert_eq!(
+            annotations.idempotent_hint,
+            Some(true),
+            "tool '{}' idempotent_hint must be explicit and true",
+            tool.name
+        );
         assert!(
             contract.read_only,
             "all stable tools are currently read-only: {}",
@@ -592,4 +604,329 @@ fn compact_profile_advertises_all_tools_with_smaller_stable_contract() {
             "compact schema domain must be accepted by runtime parser: {domain}"
         );
     }
+}
+
+fn preset_server(
+    preset: eggsearch::core::config::McpToolPreset,
+    profile: eggsearch::core::config::McpSchemaProfile,
+) -> eggsearch::mcp::EggsearchServer {
+    let mut config = AppConfig::default();
+    config.mcp.tool_preset = preset;
+    config.mcp.schema_profile = profile;
+    let state = Arc::new(eggsearch::mcp::ServerState::build(config).expect("preset state"));
+    eggsearch::mcp::EggsearchServer::new(state)
+}
+
+fn advertised_names(server: &eggsearch::mcp::EggsearchServer) -> Vec<String> {
+    server
+        .tool_definitions()
+        .iter()
+        .map(|tool| tool.name.to_string())
+        .collect()
+}
+
+#[test]
+fn advertisement_presets_select_exact_name_subsets() {
+    use eggsearch::core::config::McpToolPreset;
+
+    let expected = [
+        (
+            McpToolPreset::Research,
+            vec![
+                "batch_fetch",
+                "build_evidence_bundle",
+                "provider_status",
+                "repo_fetch",
+                "research_search",
+                "web_fetch",
+                "web_search",
+            ],
+        ),
+        (
+            McpToolPreset::Code,
+            vec![
+                "batch_fetch",
+                "build_evidence_bundle",
+                "provider_status",
+                "repo_fetch",
+                "repo_map",
+                "repo_search",
+                "web_fetch",
+                "web_search",
+            ],
+        ),
+        (
+            McpToolPreset::Minimal,
+            vec![
+                "batch_fetch",
+                "build_evidence_bundle",
+                "web_fetch",
+                "web_search",
+            ],
+        ),
+    ];
+    let canonical: HashSet<&str> = tool_contract::ALL_CONTRACTS
+        .iter()
+        .map(|c| c.name)
+        .collect();
+    for (preset, names) in expected {
+        let server = preset_server(preset, eggsearch::core::config::McpSchemaProfile::Full);
+        assert_eq!(server.tool_preset(), preset);
+        let advertised = advertised_names(&server);
+        assert_eq!(advertised, names, "{preset:?} advertisement");
+        let mut sorted = advertised.clone();
+        sorted.sort();
+        assert_eq!(advertised, sorted, "{preset:?} must stay name-sorted");
+        for name in &advertised {
+            assert!(canonical.contains(name.as_str()), "{preset:?}: {name}");
+        }
+        let routed = server.routed_tool_names();
+        assert_eq!(
+            routed.len(),
+            10,
+            "{preset:?} must keep all ten tools registered for dispatch: {routed:?}"
+        );
+        for name in &advertised {
+            assert!(
+                routed.contains(name),
+                "{preset:?} advertises unroutable tool {name}"
+            );
+        }
+    }
+    let full = preset_server(
+        McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Full,
+    );
+    assert_eq!(advertised_names(&full).len(), 10);
+}
+
+#[test]
+fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
+    let server = preset_server(
+        eggsearch::core::config::McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Full,
+    );
+    assert_eq!(
+        server.tool_fingerprint(),
+        "9dda33adb68596a9",
+        "the full+full advertisement fingerprint is pinned"
+    );
+    let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
+    assert_eq!(
+        bytes.len(),
+        75_119,
+        "the full+full advertised tools/list bytes are pinned"
+    );
+    let compact = preset_server(
+        eggsearch::core::config::McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Compact,
+    );
+    assert_eq!(compact.tool_fingerprint(), "c8890791e48b6607");
+    assert_eq!(
+        serde_json::to_string(&compact.tool_definitions())
+            .unwrap()
+            .len(),
+        20_656
+    );
+}
+
+#[test]
+fn presets_yield_distinct_stable_fingerprints() {
+    use eggsearch::core::config::{McpSchemaProfile, McpToolPreset};
+
+    let mut fingerprints = HashSet::new();
+    for preset in [
+        McpToolPreset::Full,
+        McpToolPreset::Research,
+        McpToolPreset::Code,
+        McpToolPreset::Minimal,
+    ] {
+        let first = preset_server(preset, McpSchemaProfile::Full);
+        let second = preset_server(preset, McpSchemaProfile::Full);
+        assert_eq!(
+            first.tool_fingerprint(),
+            second.tool_fingerprint(),
+            "{preset:?} fingerprint must be deterministic"
+        );
+        assert!(
+            fingerprints.insert(first.tool_fingerprint()),
+            "{preset:?} fingerprint must be distinct"
+        );
+    }
+    assert_eq!(fingerprints.len(), 4);
+}
+
+fn collect_keys_containing(
+    value: &serde_json::Value,
+    needle: &str,
+    path: &str,
+    out: &mut Vec<String>,
+) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, child) in object {
+                let child_path = format!("{path}/{key}");
+                if key.contains(needle) {
+                    out.push(child_path.clone());
+                }
+                collect_keys_containing(child, needle, &child_path, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, child) in items.iter().enumerate() {
+                collect_keys_containing(child, needle, &format!("{path}[{index}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn assert_no_replay_cursor_token(tool: &str, surface: &str, schema: &serde_json::Value) {
+    let serialized = serde_json::to_string(schema).expect("schema serializes");
+    for token in ["next_cursor", "cursor"] {
+        if serialized.contains(token) {
+            let mut keys = Vec::new();
+            collect_keys_containing(schema, token, "", &mut keys);
+            panic!(
+                "{surface} for tool '{tool}' advertises the retired replay token '{token}' (keys: {keys:?})"
+            );
+        }
+    }
+}
+
+#[test]
+fn advertised_schemas_carry_no_replay_cursor_tokens() {
+    use eggsearch::core::config::McpSchemaProfile;
+
+    let mut checked = 0usize;
+    for profile in [McpSchemaProfile::Full, McpSchemaProfile::Compact] {
+        let mut config = AppConfig::default();
+        config.mcp.schema_profile = profile;
+        let state = Arc::new(eggsearch::mcp::ServerState::build(config).expect("default state"));
+        let server = eggsearch::mcp::EggsearchServer::new(state);
+        for tool in server.tool_definitions() {
+            checked += 1;
+            let name = tool.name.to_string();
+            let input = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+            assert_no_replay_cursor_token(&name, &format!("{profile:?} input schema"), &input);
+            if matches!(
+                name.as_str(),
+                "web_fetch" | "batch_fetch" | "research_search"
+            ) {
+                let properties = tool
+                    .input_schema
+                    .get("properties")
+                    .and_then(serde_json::Value::as_object)
+                    .unwrap_or_else(|| panic!("tool '{name}' must advertise input properties"));
+                for key in ["offset", "limit"] {
+                    assert!(
+                        properties.contains_key(key),
+                        "tool '{name}' input schema must advertise optional `{key}`"
+                    );
+                }
+            }
+        }
+    }
+    assert_eq!(
+        checked, 20,
+        "both schema profiles must advertise all ten tools"
+    );
+
+    for name in tool_contract::tool_names() {
+        let schema = eggsearch::mcp::output_schema::output_schema_for(name)
+            .unwrap_or_else(|| panic!("tool '{name}' must advertise an output schema"));
+        let value = serde_json::Value::Object(schema.as_ref().clone());
+        assert_no_replay_cursor_token(name, "output schema", &value);
+    }
+}
+
+#[test]
+fn stable_error_codes_include_addressing_failures_and_drop_cursor_mismatch() {
+    use eggsearch::mcp::tools::ToolErrorCode;
+
+    assert_eq!(ToolErrorCode::PlanMismatch.as_str(), "plan_mismatch");
+    assert_eq!(
+        ToolErrorCode::DocumentUnavailable.as_str(),
+        "document_unavailable"
+    );
+    assert_eq!(
+        serde_json::to_value(ToolErrorCode::PlanMismatch).unwrap(),
+        serde_json::json!("plan_mismatch")
+    );
+    assert_eq!(
+        serde_json::to_value(ToolErrorCode::DocumentUnavailable).unwrap(),
+        serde_json::json!("document_unavailable")
+    );
+    let codes = [
+        ToolErrorCode::InvalidSemanticValue,
+        ToolErrorCode::ConflictingArguments,
+        ToolErrorCode::CapabilityUnavailable,
+        ToolErrorCode::ProviderUnavailable,
+        ToolErrorCode::PolicyDenied,
+        ToolErrorCode::BudgetInvalid,
+        ToolErrorCode::LocatorInvalid,
+        ToolErrorCode::ManualInteractionRequired,
+        ToolErrorCode::UpstreamFailed,
+        ToolErrorCode::InvalidRequest,
+        ToolErrorCode::PlanMismatch,
+        ToolErrorCode::DocumentUnavailable,
+        ToolErrorCode::Internal,
+    ];
+    let names: Vec<&str> = codes.iter().copied().map(ToolErrorCode::as_str).collect();
+    assert!(
+        names.contains(&"plan_mismatch"),
+        "plan_mismatch must stay registered: {names:?}"
+    );
+    assert!(
+        names.contains(&"document_unavailable"),
+        "document_unavailable must stay registered: {names:?}"
+    );
+    assert!(
+        !names.contains(&"cursor_mismatch"),
+        "cursor_mismatch is retired and must not stringify from any variant: {names:?}"
+    );
+    assert!(
+        serde_json::from_str::<ToolErrorCode>("\"cursor_mismatch\"").is_err(),
+        "cursor_mismatch must not deserialize into the stable error registry"
+    );
+}
+
+#[test]
+fn preset_advertisement_bytes_shrink_against_full() {
+    use eggsearch::core::config::{McpSchemaProfile, McpToolPreset};
+
+    let measure = |preset: McpToolPreset, profile: McpSchemaProfile| {
+        let server = preset_server(preset, profile);
+        serde_json::to_string(&server.tool_definitions())
+            .expect("tools serialize")
+            .len()
+    };
+    let mut full_compact = 0usize;
+    let mut minimal_compact = 0usize;
+    for profile in [McpSchemaProfile::Full, McpSchemaProfile::Compact] {
+        let full = measure(McpToolPreset::Full, profile);
+        let research = measure(McpToolPreset::Research, profile);
+        let code = measure(McpToolPreset::Code, profile);
+        let minimal = measure(McpToolPreset::Minimal, profile);
+        println!(
+            "preset-bytes schema_profile={:?} full={full} research={research} code={code} minimal={minimal}",
+            profile
+        );
+        assert!(
+            research < full && code < full && minimal < full,
+            "{profile:?}: every preset must shrink against full: {full} {research} {code} {minimal}"
+        );
+        assert!(
+            minimal < research && minimal < code,
+            "{profile:?}: minimal must be the smallest preset"
+        );
+        if profile == McpSchemaProfile::Compact {
+            full_compact = full;
+            minimal_compact = minimal;
+        }
+    }
+    println!(
+        "preset-bytes-ratio minimal_compact_percent_of_full_compact={}",
+        (minimal_compact * 100) / full_compact
+    );
 }

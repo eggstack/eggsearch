@@ -14,14 +14,17 @@ fn permissive_object_schema(
     properties: serde_json::Value,
     required: &[&str],
 ) -> Arc<JsonObject> {
-    schema_from_value(serde_json::json!({
+    let mut schema = serde_json::json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
-        "description": description,
         "properties": properties,
         "required": required,
         "additionalProperties": true,
-    }))
+    });
+    if !description.is_empty() {
+        schema["description"] = serde_json::Value::String(description.to_string());
+    }
+    schema_from_value(schema)
 }
 
 pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
@@ -35,6 +38,10 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
                 "warnings": {"type": "array"},
                 "structured_warnings": {"type": "array"},
                 "telemetry": {"type": "object"},
+                "item_from": {"type": "integer"},
+                "item_to": {"type": "integer"},
+                "item_total": {"type": "integer"},
+                "next_offset": {"type": "integer"},
             }),
             &["results"],
         )),
@@ -67,33 +74,41 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
             &[],
         )),
         "repo_search" => Some(permissive_object_schema(
-            "Structured repository evidence envelope with grouped bundles.",
+            "Repository evidence envelope with grouped bundles.",
             serde_json::json!({
                 "results": {"type": "array"},
                 "warnings": {"type": "array"},
                 "structured_warnings": {"type": "array"},
                 "next_actions": {"type": "array"},
                 "retrieval_summary": {"type": "object"},
+                "excerpt_economy": {"type": "object"},
             }),
             &[],
         )),
         "research_search" => Some(permissive_object_schema(
-            "Multi-source research evidence envelope with grouped bundles.",
+            "",
             serde_json::json!({
                 "results": {"type": "array"},
                 "warnings": {"type": "array"},
                 "structured_warnings": {"type": "array"},
                 "next_actions": {"type": "array"},
+                "excerpt_economy": {"type": "object"},
+                "group_from": {"type": "integer"},
+                "next_offset": {"type": "integer"},
+                "total_groups": {"type": "integer"},
+                "returned_groups": {"type": "integer"},
+                "aggregate_scope": {"type": "string"},
             }),
             &[],
         )),
         "security_search" => Some(permissive_object_schema(
-            "Vulnerability and advisory evidence envelope with applicability context.",
+            "Security evidence envelope with applicability context.",
             serde_json::json!({
                 "results": {"type": "array"},
                 "warnings": {"type": "array"},
                 "structured_warnings": {"type": "array"},
                 "next_actions": {"type": "array"},
+                "excerpt_economy": {"type": "object"},
             }),
             &[],
         )),
@@ -108,11 +123,17 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
                 "text": {"type": ["string", "null"]},
                 "warnings": {"type": "array"},
                 "structured_warnings": {"type": "array"},
+                "text_from": {"type": "integer"},
+                "text_to": {"type": "integer"},
+                "text_total": {"type": "integer"},
+                "next_offset": {"type": "integer"},
+                "doc_id": {"type": "string"},
+                "focus_scope": {"type": "string"},
             }),
             &["url", "final_url", "status", "fetched", "truncated"],
         )),
         "web_search" => Some(permissive_object_schema(
-            "Web source discovery envelope. Stable query/results envelope with permissive routing metadata.",
+            "Web source discovery envelope. Query/results with permissive routing metadata.",
             serde_json::json!({
                 "query": {"type": "string"},
                 "results": {"type": "array"},
@@ -120,6 +141,7 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
                 "warnings": {"type": "array"},
                 "structured_warnings": {"type": "array"},
                 "next_actions": {"type": "array"},
+                "excerpt_economy": {"type": "object"},
             }),
             &["query", "results"],
         )),
@@ -129,6 +151,7 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
                 "providers": {"type": "array"},
                 "mode": {"type": "string"},
                 "server_capabilities": {"type": "object"},
+                "challenge_solver": {"type": "object"},
                 "probe": {"type": "object"},
             }),
             &["providers"],

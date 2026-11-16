@@ -55,8 +55,9 @@ impl MetadataSearchAdapter {
         let mut responded: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
         // Record successes (at least one result = success)
-        for (index, (id, _)) in raw_results.iter().enumerate() {
-            self.health.record_success(id, result_latencies_ms[index]);
+        for (index, (id, results)) in raw_results.iter().enumerate() {
+            self.health
+                .record_success(id, result_latencies_ms[index], results.len());
             responded.insert(id.as_str());
         }
 

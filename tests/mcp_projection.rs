@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use eggsearch::mcp::projection::{project, ResponseDetail};
+use eggsearch::mcp::projection::{project, project_with_limits, ProjectionLimits, ResponseDetail};
 use serde_json::{json, Value};
 
 const RETRIEVAL_CASES: &str = include_str!("fixtures/retrieval_quality/cases.json");
@@ -56,6 +56,24 @@ fn card(id: &str, excerpts: usize, injection_hits: u64) -> Value {
         "excerpts": ex,
         "trust_markers": {"injection_hits": injection_hits}
     })
+}
+
+fn assert_addressing_keys_present(payload: &Value, keys: &[&str], context: &str) {
+    for key in keys {
+        assert!(
+            payload.get(*key).is_some(),
+            "{context} must retain addressing key `{key}`: {payload}"
+        );
+    }
+}
+
+fn assert_addressing_keys_absent(payload: &Value, keys: &[&str], context: &str) {
+    for key in keys {
+        assert!(
+            payload.get(*key).is_none(),
+            "{context} must not invent addressing key `{key}`: {payload}"
+        );
+    }
 }
 
 #[test]
@@ -544,6 +562,65 @@ fn compact_reports_conflicts_via_indicator() {
 }
 
 #[test]
+fn derived_intent_detail_levels_are_explicit() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let mut payload = web_payload(json!([card("a", 0, 0)]), json!([]), summary);
+    payload["derived_intent"] = json!("docs");
+    payload["derived_intent_reasons"] = json!(["docs_vocabulary"]);
+
+    let diagnostic = project("web_search", payload.clone(), ResponseDetail::Diagnostic);
+    assert_eq!(diagnostic["derived_intent"], "docs");
+    assert_eq!(
+        diagnostic["derived_intent_reasons"],
+        json!(["docs_vocabulary"])
+    );
+
+    let standard = project("web_search", payload.clone(), ResponseDetail::Standard);
+    assert_eq!(standard["derived_intent"], "docs");
+    assert_eq!(
+        standard["derived_intent_reasons"],
+        json!(["docs_vocabulary"])
+    );
+
+    let compact = project("web_search", payload.clone(), ResponseDetail::Compact);
+    assert_eq!(compact["derived_intent"], "docs");
+    assert!(
+        compact.get("derived_intent_reasons").is_none(),
+        "compact keeps the intent string only: {compact}"
+    );
+
+    let brief = project("web_search", payload, ResponseDetail::Brief);
+    assert_eq!(brief["query"], "rust async");
+    assert!(
+        brief.get("derived_intent").is_none(),
+        "brief is an allow-list surface and carries neither field: {brief}"
+    );
+    assert!(brief.get("derived_intent_reasons").is_none());
+}
+
+#[test]
+fn explicit_intent_payload_gains_no_derived_fields() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let payload = web_payload(json!([card("a", 0, 0)]), json!([]), summary);
+    for detail in [
+        ResponseDetail::Diagnostic,
+        ResponseDetail::Standard,
+        ResponseDetail::Compact,
+        ResponseDetail::Brief,
+    ] {
+        let projected = project("web_search", payload.clone(), detail);
+        assert!(
+            projected.get("derived_intent").is_none(),
+            "{detail:?} must not invent a derived intent: {projected}"
+        );
+        assert!(
+            projected.get("derived_intent_reasons").is_none(),
+            "{detail:?} must not invent derived reasons"
+        );
+    }
+}
+
+#[test]
 fn standard_preserves_specialist_fields() {
     let summary = json!({"has_failures": false, "has_absences": true, "has_truncation": false});
     let payload = web_payload(json!([card("a", 1, 0)]), json!([]), summary);
@@ -737,11 +814,29 @@ fn compact_reduces_bytes_for_representative_payloads() {
         "has_failures": false, "has_absences": false, "has_truncation": false,
         "dimensions": [{"evidence_role": "primary", "message": "ok"}]
     });
-    let web = web_payload(
+    let mut web = web_payload(
         json!([card("a", 3, 0), card("b", 3, 0)]),
         json!([{"id": "x", "error_class": "timeout", "message": "t"}]),
         summary.clone(),
     );
+    for (card_index, result) in web["results"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        for (excerpt_index, excerpt) in result["excerpts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .enumerate()
+        {
+            excerpt["text"] = json!(format!(
+                "card {card_index} excerpt {excerpt_index} {}",
+                "substantive provider passage text ".repeat(6)
+            ));
+        }
+    }
     let diag_bytes = bytes(&web);
     let compact_bytes = bytes(&project("web_search", web.clone(), ResponseDetail::Compact));
     let standard_bytes = bytes(&project(
@@ -956,5 +1051,620 @@ fn response_detail_param_defaults_to_diagnostic_and_roundtrips() {
         let parsed: ResponseDetail =
             serde_json::from_value(Value::String(raw.to_string())).unwrap();
         assert_eq!(parsed, expected);
+    }
+}
+
+fn framed(field: &str, id: &str, body: &str) -> String {
+    format!("<<<EXTERNAL_UNTRUSTED field={field} id={id}>>>\n{body}\n<<<END>>>")
+}
+
+fn limits(brief_max_chars: usize, excerpt_budget_chars: usize) -> ProjectionLimits {
+    ProjectionLimits {
+        brief_max_chars,
+        excerpt_budget_chars,
+    }
+}
+
+fn economy(value: &Value) -> &Value {
+    value
+        .get("excerpt_economy")
+        .unwrap_or_else(|| panic!("excerpt_economy must be present: {value}"))
+}
+
+fn economy_counter(value: &Value, key: &str) -> u64 {
+    economy(value)[key].as_u64().unwrap_or_else(|| {
+        panic!(
+            "excerpt_economy.{key} must be an integer: {}",
+            economy(value)
+        )
+    })
+}
+
+fn assert_economy_invariant(value: &Value, budget: usize) {
+    let admitted = economy_counter(value, "admitted_count");
+    let redundant = economy_counter(value, "redundant_count");
+    let over_budget = economy_counter(value, "over_budget_count");
+    assert_eq!(
+        admitted + redundant + over_budget,
+        economy_counter(value, "considered_count"),
+        "counter identity must hold: {value}"
+    );
+    assert_eq!(economy_counter(value, "budget_chars"), budget as u64);
+    assert!(economy_counter(value, "chars_after") <= economy_counter(value, "chars_before"));
+    assert!(admitted + redundant <= 256);
+}
+
+fn excerpt_chars(value: &Value) -> usize {
+    let mut total = 0usize;
+    let mut visit = |card: &Value| {
+        if let Some(snippet) = card.get("snippet").and_then(Value::as_str) {
+            total += snippet.chars().count();
+        }
+        if let Some(excerpts) = card.get("excerpts").and_then(Value::as_array) {
+            for excerpt in excerpts {
+                if let Some(text) = excerpt.get("text").and_then(Value::as_str) {
+                    total += text.chars().count();
+                }
+            }
+        }
+    };
+    if let Some(results) = value.get("results").and_then(Value::as_array) {
+        for card in results {
+            visit(card);
+        }
+    }
+    if let Some(groups) = value.get("groups").and_then(Value::as_array) {
+        for group in groups {
+            if let Some(results) = group.get("results").and_then(Value::as_array) {
+                for card in results {
+                    visit(card);
+                }
+            }
+        }
+    }
+    total
+}
+
+fn ids_and_order(value: &Value) -> Vec<(String, String)> {
+    let cards = value["results"].as_array().cloned().unwrap_or_else(|| {
+        value["groups"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|group| group["results"].as_array().cloned().unwrap_or_default())
+            .collect()
+    });
+    cards
+        .iter()
+        .map(|card| {
+            (
+                card["id"].as_str().unwrap_or_default().to_owned(),
+                card["stable_id"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+fn duplicate_passage_payload() -> Value {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let shared = "the quick brown fox jumps over the lazy dog near the river bank";
+    let mut first = card("a", 0, 0);
+    first["snippet"] = json!(framed("snippet", "src_a", shared));
+    let mut second = card("b", 0, 0);
+    second["snippet"] = json!(framed("snippet", "src_b", shared));
+    let mut third = card("c", 0, 0);
+    third["snippet"] = json!(framed(
+        "snippet",
+        "src_c",
+        "an entirely separate statement about async runtimes and workers",
+    ));
+    web_payload(json!([first, second, third]), json!([]), summary)
+}
+
+#[test]
+fn excerpt_economy_applies_only_to_reduced_modes() {
+    let payload = duplicate_passage_payload();
+    let diagnostic = project("web_search", payload.clone(), ResponseDetail::Diagnostic);
+    let standard = project("web_search", payload.clone(), ResponseDetail::Standard);
+    assert!(diagnostic.get("excerpt_economy").is_none());
+    assert!(standard.get("excerpt_economy").is_none());
+    assert_eq!(diagnostic, payload);
+    for (index, original) in payload["results"].as_array().unwrap().iter().enumerate() {
+        assert_eq!(&standard["results"][index]["snippet"], &original["snippet"]);
+        assert_eq!(
+            &standard["results"][index]["excerpts"],
+            &original["excerpts"]
+        );
+        assert!(standard["results"][index]
+            .get("excerpts_suppressed")
+            .is_none());
+    }
+    assert_eq!(standard["results"].as_array().unwrap().len(), 3);
+
+    let compact = project("web_search", payload.clone(), ResponseDetail::Compact);
+    assert!(compact.get("excerpt_economy").is_some());
+    assert_economy_invariant(&compact, 4_000);
+    assert_eq!(ids_and_order(&compact), ids_and_order(&diagnostic));
+
+    let brief = project("web_search", payload, ResponseDetail::Brief);
+    assert!(brief.get("excerpt_economy").is_some());
+    assert_economy_invariant(&brief, 4_000);
+    assert_eq!(brief["response_detail"], "brief");
+}
+
+#[test]
+fn compact_collapses_duplicate_passages_first_wins() {
+    let payload = duplicate_passage_payload();
+    let compact = project("web_search", payload, ResponseDetail::Compact);
+    let results = compact["results"].as_array().unwrap();
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[0]["stable_id"], "stable_a");
+    assert_eq!(
+        results[0]["snippet"],
+        framed(
+            "snippet",
+            "src_a",
+            "the quick brown fox jumps over the lazy dog near the river bank"
+        )
+    );
+    assert!(results[0].get("excerpts_suppressed").is_none());
+    assert!(results[1].get("snippet").is_none());
+    assert_eq!(results[1]["excerpts_suppressed"], 1);
+    assert_eq!(results[1]["stable_id"], "stable_b");
+    assert_eq!(results[1]["url"], "https://example.com/b");
+    assert!(results[2].get("snippet").is_some());
+    assert_eq!(economy_counter(&compact, "considered_count"), 3);
+    assert_eq!(economy_counter(&compact, "redundant_count"), 1);
+    assert_eq!(economy_counter(&compact, "admitted_count"), 2);
+    assert_eq!(economy_counter(&compact, "over_budget_count"), 0);
+    assert_eq!(economy_counter(&compact, "clipped_count"), 0);
+    assert!(economy_counter(&compact, "chars_after") < economy_counter(&compact, "chars_before"));
+}
+
+#[test]
+fn compact_budget_clips_and_drops_with_balanced_frames() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let long_body = "héllo wörld ünïcode evidence ".repeat(40);
+    let cards: Vec<Value> = (0..4)
+        .map(|index| {
+            let mut item = card(&format!("u{index}"), 0, 0);
+            item["snippet"] = json!(framed(
+                "snippet",
+                &format!("src_u{index}"),
+                &format!("{index} {long_body}")
+            ));
+            item
+        })
+        .collect();
+    let payload = web_payload(json!(cards), json!([]), summary);
+    let compact = project_with_limits(
+        "web_search",
+        payload,
+        ResponseDetail::Compact,
+        limits(8_000, 256),
+    );
+    assert_economy_invariant(&compact, 256);
+    assert!(
+        excerpt_chars(&compact) <= 256,
+        "{}",
+        excerpt_chars(&compact)
+    );
+    assert_eq!(economy_counter(&compact, "clipped_count"), 1);
+    assert!(economy_counter(&compact, "over_budget_count") >= 1);
+    assert_eq!(compact["results"].as_array().unwrap().len(), 4);
+    let clipped = compact["results"][0]["snippet"].as_str().expect("clipped");
+    assert!(clipped.starts_with("<<<EXTERNAL_UNTRUSTED"));
+    assert!(clipped.ends_with("<<<END>>>"));
+    assert_eq!(clipped.matches("<<<EXTERNAL_UNTRUSTED").count(), 1);
+    assert_eq!(clipped.matches("<<<END>>>").count(), 1);
+    assert!(clipped.chars().count() <= 256);
+    assert!(clipped.chars().count() >= 200);
+    assert!(compact["results"][1].get("snippet").is_none());
+    assert_eq!(compact["results"][1]["excerpts_suppressed"], 1);
+}
+
+#[test]
+fn brief_applies_the_excerpt_budget_before_its_own_fit() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let shared = "shared evidence sentence repeated across providers for the same page";
+    let mut first = card("a", 0, 0);
+    first["snippet"] = json!(framed("snippet", "src_a", shared));
+    let mut second = card("b", 0, 0);
+    second["snippet"] = json!(framed("snippet", "src_b", shared));
+    let payload = web_payload(json!([first, second]), json!([]), summary);
+    let brief = project_with_limits(
+        "web_search",
+        payload.clone(),
+        ResponseDetail::Brief,
+        limits(8_000, 4_000),
+    );
+    assert_eq!(brief["response_detail"], "brief");
+    assert_economy_invariant(&brief, 4_000);
+    assert!(economy_counter(&brief, "redundant_count") >= 1);
+    assert!(brief.get("excerpts_suppressed").is_none());
+
+    let tight = project_with_limits(
+        "web_search",
+        payload,
+        ResponseDetail::Brief,
+        limits(512, 4_000),
+    );
+    assert!(bytes(&tight) <= 512, "{}", bytes(&tight));
+    assert_eq!(tight["output_truncated"], true);
+}
+
+#[test]
+fn compact_retains_passages_differing_only_in_identifiers() {
+    let summary = json!({"has_failures": false, "has_absences": false, "has_truncation": false});
+    let mut first = card("cve_a", 0, 0);
+    first["snippet"] = json!(framed(
+        "snippet",
+        "src_cve_a",
+        "GHSA-2024-1111 affects libfoo before version 1.2.3"
+    ));
+    let mut second = card("cve_b", 0, 0);
+    second["snippet"] = json!(framed(
+        "snippet",
+        "src_cve_b",
+        "GHSA-2024-2222 affects libfoo before version 1.2.3"
+    ));
+    let payload = web_payload(json!([first, second]), json!([]), summary);
+    let compact = project("web_search", payload, ResponseDetail::Compact);
+    assert_eq!(economy_counter(&compact, "redundant_count"), 0);
+    assert!(compact["results"][0].get("snippet").is_some());
+    assert!(compact["results"][1].get("snippet").is_some());
+    assert_economy_invariant(&compact, 4_000);
+}
+
+#[test]
+fn excerpt_economy_counts_balance_across_the_retrieval_corpus() {
+    let corpus: Value = serde_json::from_str(RETRIEVAL_CASES).unwrap();
+    let mut chars_before = 0u64;
+    let mut chars_after = 0u64;
+    for case in corpus["cases"].as_array().unwrap() {
+        let results: Vec<Value> = case["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|result| {
+                let passages = result["passages"].as_array().cloned().unwrap_or_default();
+                json!({
+                    "id": result["id"],
+                    "stable_id": result["id"],
+                    "url": result["url"],
+                    "title": result["title"],
+                    "snippet": result["snippet"],
+                    "trust": "external_untrusted",
+                    "trust_markers": {"injection_hits": 0},
+                    "excerpts": passages.into_iter().map(|text| json!({"text": text, "provenance": "fixture"})).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let tool = match case["retrieval_scope"].as_str().unwrap() {
+            "repository" => "repo_search",
+            "advisory" | "advisory_and_package_metadata" => "security_search",
+            "multi_source" | "package_registry" => "research_search",
+            _ => "web_search",
+        };
+        let payload = if tool == "web_search" {
+            json!({
+                "query": case["query"],
+                "results": results,
+                "warnings": [],
+                "structured_warnings": []
+            })
+        } else {
+            json!({
+                "query": case["query"],
+                "groups": [{"group": "primary_sources", "results": results}],
+                "warnings": [],
+                "structured_warnings": []
+            })
+        };
+        let diagnostic = project(tool, payload.clone(), ResponseDetail::Diagnostic);
+        let compact = project(tool, payload, ResponseDetail::Compact);
+        assert_economy_invariant(&compact, 4_000);
+        assert!(excerpt_chars(&compact) <= 4_000);
+        assert_eq!(ids_and_order(&compact), ids_and_order(&diagnostic));
+        chars_before += economy_counter(&compact, "chars_before");
+        chars_after += economy_counter(&compact, "chars_after");
+    }
+    println!(
+        "excerpt-economy corpus cases={} chars_before={chars_before} chars_after={chars_after}",
+        corpus["cases"].as_array().unwrap().len()
+    );
+}
+
+#[test]
+fn excerpt_economy_projection_is_byte_identical_across_runs() {
+    let payload = duplicate_passage_payload();
+    let first = project("web_search", payload.clone(), ResponseDetail::Compact);
+    let second = project("web_search", payload, ResponseDetail::Compact);
+    assert_eq!(first, second);
+    assert_eq!(
+        serde_json::to_string(&first).unwrap(),
+        serde_json::to_string(&second).unwrap()
+    );
+}
+
+const WEB_FETCH_ADDRESSING_KEYS: &[&str] = &[
+    "text_from",
+    "text_to",
+    "text_total",
+    "next_offset",
+    "doc_id",
+    "focus_scope",
+];
+
+fn addressed_web_fetch_payload() -> Value {
+    json!({
+        "url": "https://example.com/guide",
+        "final_url": "https://example.com/guide",
+        "status": 200,
+        "content_type": "text/html",
+        "fetched": true,
+        "truncated": false,
+        "trust": "external_untrusted",
+        "text": "the addressed character window from the fetched document",
+        "focus": {"chunks": [{"text": "addressed passage", "line_start": 10, "line_end": 12}]},
+        "text_from": 40,
+        "text_to": 120,
+        "text_total": 500,
+        "next_offset": 120,
+        "doc_id": "doc_01",
+        "focus_scope": "document",
+        "warnings": [],
+        "structured_warnings": []
+    })
+}
+
+#[test]
+fn addressed_web_fetch_keeps_addressing_keys_under_brief_and_compact() {
+    let payload = addressed_web_fetch_payload();
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "web_fetch",
+            payload.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "web_fetch",
+            payload.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            let context = format!("web_fetch {detail:?}");
+            assert_addressing_keys_present(projected, WEB_FETCH_ADDRESSING_KEYS, &context);
+            assert_eq!(projected["text_from"], 40);
+            assert_eq!(projected["text_to"], 120);
+            assert_eq!(projected["text_total"], 500);
+            assert_eq!(projected["next_offset"], 120);
+            assert_eq!(projected["doc_id"], "doc_01");
+            assert_eq!(projected["focus_scope"], "document");
+        }
+    }
+
+    let mut without_focus = payload.clone();
+    for key in ["focus", "focus_scope"] {
+        without_focus.as_object_mut().unwrap().remove(key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let projected = project_with_limits(
+            "web_fetch",
+            without_focus.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        let context = format!("web_fetch {detail:?} without focus");
+        assert_addressing_keys_present(&projected, &WEB_FETCH_ADDRESSING_KEYS[..5], &context);
+        assert!(
+            projected.get("focus_scope").is_none(),
+            "{context} must not report a focus scope: {projected}"
+        );
+    }
+
+    let mut unaddressed = payload;
+    for key in WEB_FETCH_ADDRESSING_KEYS {
+        unaddressed.as_object_mut().unwrap().remove(*key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "web_fetch",
+            unaddressed.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "web_fetch",
+            unaddressed.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            assert_addressing_keys_absent(
+                projected,
+                WEB_FETCH_ADDRESSING_KEYS,
+                &format!("web_fetch unaddressed {detail:?}"),
+            );
+        }
+    }
+}
+
+const BATCH_FETCH_ADDRESSING_KEYS: &[&str] = &["item_from", "item_to", "item_total", "next_offset"];
+
+fn addressed_batch_fetch_payload() -> Value {
+    json!({
+        "fetched": 1,
+        "failed": 0,
+        "truncated": false,
+        "total_chars_returned": 5,
+        "results": [{
+            "index": 2,
+            "item_type": "web",
+            "stable_id": "s2",
+            "ok": true,
+            "error": null,
+            "response": {
+                "url": "https://example.com/a",
+                "final_url": "https://example.com/a",
+                "status": 200,
+                "fetched": true,
+                "truncated": false,
+                "text": "hello",
+                "warnings": [],
+                "structured_warnings": []
+            }
+        }],
+        "item_from": 2,
+        "item_to": 3,
+        "item_total": 5,
+        "next_offset": 3,
+        "warnings": [],
+        "structured_warnings": [],
+        "telemetry": {"items_requested": 5, "items_completed": 1, "items_failed": 0}
+    })
+}
+
+#[test]
+fn addressed_batch_fetch_keeps_item_window_under_brief_and_compact() {
+    let payload = addressed_batch_fetch_payload();
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "batch_fetch",
+            payload.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "batch_fetch",
+            payload.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            let context = format!("batch_fetch {detail:?}");
+            assert_addressing_keys_present(projected, BATCH_FETCH_ADDRESSING_KEYS, &context);
+            assert_eq!(projected["item_from"], 2);
+            assert_eq!(projected["item_to"], 3);
+            assert_eq!(projected["item_total"], 5);
+            assert_eq!(projected["next_offset"], 3);
+        }
+    }
+
+    let mut unaddressed = payload;
+    for key in BATCH_FETCH_ADDRESSING_KEYS {
+        unaddressed.as_object_mut().unwrap().remove(*key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "batch_fetch",
+            unaddressed.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "batch_fetch",
+            unaddressed.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            assert_addressing_keys_absent(
+                projected,
+                BATCH_FETCH_ADDRESSING_KEYS,
+                &format!("batch_fetch unaddressed {detail:?}"),
+            );
+        }
+    }
+}
+
+const RESEARCH_SEARCH_ADDRESSING_KEYS: &[&str] = &[
+    "group_from",
+    "next_offset",
+    "total_groups",
+    "returned_groups",
+    "aggregate_scope",
+];
+
+fn addressed_research_search_payload() -> Value {
+    json!({
+        "query": "distributed consensus",
+        "groups": [{
+            "group": "primary_sources",
+            "results": [{
+                "id": "r1",
+                "stable_id": "stable_r1",
+                "title": "Raft",
+                "url": "https://example.com/raft",
+                "trust": "external_untrusted",
+                "excerpts": [{"text": "leader election", "provenance": "content"}]
+            }]
+        }],
+        "group_from": 4,
+        "next_offset": 5,
+        "total_groups": 9,
+        "returned_groups": 1,
+        "aggregate_scope": "document",
+        "retrieval_summary": {"has_failures": false, "has_absences": false, "has_truncation": false},
+        "warnings": [],
+        "structured_warnings": [],
+        "conflict_metadata": [],
+        "next_actions": []
+    })
+}
+
+#[test]
+fn addressed_research_search_keeps_group_window_under_brief_and_compact() {
+    let payload = addressed_research_search_payload();
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "research_search",
+            payload.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "research_search",
+            payload.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            let context = format!("research_search {detail:?}");
+            assert_addressing_keys_present(projected, RESEARCH_SEARCH_ADDRESSING_KEYS, &context);
+            assert_eq!(projected["group_from"], 4);
+            assert_eq!(projected["next_offset"], 5);
+            assert_eq!(projected["total_groups"], 9);
+            assert_eq!(projected["returned_groups"], 1);
+            assert_eq!(projected["aggregate_scope"], "document");
+        }
+    }
+
+    let mut unaddressed = payload;
+    for key in RESEARCH_SEARCH_ADDRESSING_KEYS {
+        unaddressed.as_object_mut().unwrap().remove(*key);
+    }
+    for detail in [ResponseDetail::Brief, ResponseDetail::Compact] {
+        let budgeted = eggsearch::mcp::projection::project_with_budget(
+            "research_search",
+            unaddressed.clone(),
+            detail,
+            8_000,
+        );
+        let limited = project_with_limits(
+            "research_search",
+            unaddressed.clone(),
+            detail,
+            ProjectionLimits::default(),
+        );
+        for projected in [&budgeted, &limited] {
+            assert_addressing_keys_absent(
+                projected,
+                RESEARCH_SEARCH_ADDRESSING_KEYS,
+                &format!("research_search unaddressed {detail:?}"),
+            );
+        }
     }
 }

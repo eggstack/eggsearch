@@ -1,6 +1,14 @@
 # Configuration
 
-eggsearch reads `$XDG_CONFIG_HOME/eggsearch/config.toml` and falls back to defaults when the file is absent.
+The config file is optional. eggsearch reads it from a platform-specific
+location:
+
+- Linux: `$XDG_CONFIG_HOME/eggsearch/config.toml`, usually
+  `~/.config/eggsearch/config.toml`
+- macOS: `~/Library/Application Support/eggsearch/config.toml`
+- Windows: `%APPDATA%\eggsearch\config.toml`
+
+If no config file is found, built-in defaults apply.
 
 ## Minimal Default
 
@@ -11,11 +19,14 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
+cache_ttl_seconds = 300
+cache_max_entries = 128
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -45,6 +56,8 @@ config file:
 [mcp]
 schema_profile = "compact"
 brief_max_chars = 8000
+excerpt_budget_chars = 4000
+tool_preset = "full"
 ```
 
 Compact mode keeps all ten tool names and required inputs, trims optional
@@ -60,17 +73,53 @@ are also counted. The structured result and text fallback are both brief.
 Switch to `schema_profile = "full"` for complete
 schema guidance and the existing diagnostic-by-default response behavior.
 
+`tool_preset` selects how many tools `tools/list` advertises. It defaults to
+`full` and accepts `full`, `research`, `code`, or `minimal`; any other value is
+a parse error naming the four accepted values. Resolution order is fixed:
+contract metadata, then compact schema projection, then the preset filter.
+`tool_preset` does not change the `response_detail` default, which is controlled
+by `schema_profile`. The `full` preset with the full schema matches the
+pre-capability advertisement.
+
+| Preset | Tools advertised |
+|--------|------------------|
+| `full` | all ten |
+| `research` | `provider_status`, `web_search`, `web_fetch`, `research_search`, `repo_fetch`, `batch_fetch`, `build_evidence_bundle` |
+| `code` | `provider_status`, `web_search`, `web_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle` |
+| `minimal` | `web_search`, `web_fetch`, `batch_fetch`, `build_evidence_bundle` |
+
+Hidden tools are hidden from `tools/list` only. They still execute when called
+directly, their argument schemas are unchanged, and no tool is removed or
+renamed. `next_actions` are filtered to the active preset so a model is never
+pointed at a tool it cannot see; each drop is counted in `next_actions_omitted`
+rather than rewriting the suggestion. Compact presets reduce the advertised
+schema while preserving the required tool definitions.
+
+`excerpt_budget_chars` defaults to 4,000 and must be between 256 and 32,000.
+It is one response-wide ceiling on card passage text, including `snippet` and
+`excerpts[].text`. It is measured in serialized characters including the
+`<<<EXTERNAL_UNTRUSTED …>>>` framing, not per card or in tokens. It applies to
+`compact` and `brief` only; `standard` and `diagnostic`
+responses are unchanged. Within the budget, passages whose normalized token
+shingles overlap by at least 0.80 collapse to the earliest occurrence, so an
+identical snippet repeated across results is not paid for twice. The response
+reports the outcome in a top-level `excerpt_economy` object
+(`budget_chars`, `considered_count`, `admitted_count`, `redundant_count`,
+`over_budget_count`, `clipped_count`, `chars_before`, `chars_after`), and a
+card whose passages were removed carries `excerpts_suppressed`. Suppression
+never reorders results, changes a stable ID, or drops a whole result.
+
 ## Provider Requirements
 
 All 44 built-in providers:
 
 | Provider | Kind | Requires | Notes |
 |----------|------|----------|-------|
-| `duckduckgo` | html_scrape | — | Default generic provider |
-| `brave` | html_scrape | — | |
-| `startpage` | html_scrape | — | Default generic provider |
-| `yahoo` | html_scrape | — | Default generic provider |
-| `mojeek` | html_scrape | — | |
+| `duckduckgo` | html_scrape | none | Default generic provider |
+| `brave` | html_scrape | none | Default generic provider |
+| `startpage` | html_scrape | none | Selectable; the upstream Anubis proof-of-work wall is solved when `[search.challenge].enabled = true` |
+| `yahoo` | html_scrape | none | Default generic provider |
+| `mojeek` | html_scrape | none | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
 | `brave_api` | api_key | `BRAVE_API_KEY` | |
 | `exa` | api_key | `EXA_API_KEY` | Exa semantic search (native freshness/domain filters, highlights on excerpt demand) |
@@ -86,30 +135,30 @@ All 44 built-in providers:
 | `gitea_code` | api_key | custom env | Requires `base_url` in `[search.api.gitea_code]` |
 | `gitea_issues` | api_key | custom env | Requires `base_url` in `[search.api.gitea_issues]` |
 | `gitea_releases` | api_key | custom env | Requires `base_url` in `[search.api.gitea_releases]` |
-| `osv` | json_api | — | Security advisory search |
+| `osv` | json_api | none | Security advisory search |
 | `github_advisory` | api_key | `GITHUB_TOKEN` | GitHub Security Advisories |
-| `nvd` | json_api | — | NIST National Vulnerability Database |
-| `cisa_kev` | json_api | — | CISA Known Exploited Vulnerabilities |
-| `rustsec` | json_api | — | RustSec Advisory Database |
-| `crates_io` | json_api | — | crates.io package metadata |
-| `pypi` | json_api | — | PyPI package metadata |
-| `npm_registry` | json_api | — | npm package metadata |
-| `go_pkg` | json_api | — | Go Proxy module metadata |
-| `maven_central` | json_api | — | Maven Central artifact metadata |
-| `nuget` | json_api | — | NuGet package metadata |
-| `rubygems` | json_api | — | RubyGems gem metadata |
-| `packagist` | json_api | — | Packagist package metadata |
-| `openalex` | json_api | — | OpenAlex scholarly search |
-| `crossref` | json_api | — | Crossref scholarly search |
+| `nvd` | json_api | none | NIST National Vulnerability Database |
+| `cisa_kev` | json_api | none | CISA Known Exploited Vulnerabilities |
+| `rustsec` | json_api | none | RustSec Advisory Database |
+| `crates_io` | json_api | none | crates.io package metadata |
+| `pypi` | json_api | none | PyPI package metadata |
+| `npm_registry` | json_api | none | npm package metadata |
+| `go_pkg` | json_api | none | Go Proxy module metadata |
+| `maven_central` | json_api | none | Maven Central artifact metadata |
+| `nuget` | json_api | none | NuGet package metadata |
+| `rubygems` | json_api | none | RubyGems gem metadata |
+| `packagist` | json_api | none | Packagist package metadata |
+| `openalex` | json_api | none | OpenAlex scholarly search |
+| `crossref` | json_api | none | Crossref scholarly search |
 | `semantic_scholar` | api_key | `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar scholarly search |
 | `sourcegraph` | api_key | `SOURCEGRAPH_API_KEY` | Sourcegraph code search |
 | `firecrawl_developer` | json_api | optional `FIRECRAWL_API_KEY` | Firecrawl Developer Index (keyless-optional; enable in [search.providers]) |
-| `wikipedia` | json_api | — | MediaWiki Action API article search (enable in [search.providers]) |
-| `arxiv` | structured_api | — | arXiv Atom metadata API with shared request pacing (enable in [search.providers]) |
+| `wikipedia` | json_api | none | MediaWiki Action API article search (enable in [search.providers]) |
+| `arxiv` | structured_api | none | arXiv Atom metadata API with shared request pacing (enable in [search.providers]) |
 | `pubmed` | json_api | optional `NCBI_API_KEY` | NCBI E-utilities PubMed search (optional `NCBI_API_EMAIL` contact identity) |
-| `hn_algolia` | json_api | — | Hacker News story search with native freshness filters |
+| `hn_algolia` | json_api | none | Hacker News story search with native freshness filters |
 | `github_repositories` | json_api | optional `GITHUB_TOKEN` | GitHub repository discovery (not code search) |
-| `local_workspace` | local | — | Requires `[local]` config |
+| `local_workspace` | local | none | Requires `[local]` config |
 
 `provider_status` returns `routable: true` only when a provider is both enabled and fully configured. Non-routable providers include a `skip_reason` explaining why (e.g. "API key not configured", "SearXNG base_url not configured") and a machine-readable `skip_code` (e.g. `missing_api_key`, `missing_searxng_config`, `disabled_by_user`, `cooldown_active`).
 
@@ -120,7 +169,7 @@ The `Kind` column is the `provider_status` `kind` field. `structured_api` was ad
 The shipped generic search defaults require no API keys:
 
 - `duckduckgo`
-- `startpage`
+- `brave`
 - `yahoo`
 
 Other built-in providers can be enabled explicitly. Credentialed providers
@@ -135,10 +184,171 @@ credentials are absent.
 | `max_query_chars` | `512` |
 | `timeout_ms` | `8000` |
 | `sanitize_output` | `true` |
+| `cache_ttl_seconds` | `300` (`0` disables; max `86400`) |
+| `cache_max_entries` | `128` (`1`–`4096`) |
 
 Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`, and `research`. eggsearch skips unavailable providers and reports warnings instead of failing the request.
 
 `repo_search` canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) selects workflow coverage; `goal = "debug"` enables exact-error behavior. Legacy `mode = "exact_error"`, `profile`, `workflow`, and `include_*` booleans remain accepted for backward compatibility.
+
+## Intent-Aware Provider Routing
+
+`web_search` derives a retrieval intent from the query. Routing can add
+specialist providers to the default candidate set, such as `osv` for a security
+query or `github_code` for a code query. Routing only adds providers. It never
+removes or reorders explicitly requested, profile, or default providers.
+
+```toml
+[search.routing]
+intent_mode = "apply"     # "off" | "apply"
+max_extra_providers = 2   # 0..=4
+```
+
+| Setting | Default | Bounds | Meaning |
+|---------|---------|--------|---------|
+| `intent_mode` | `apply` | `off`, `apply` | `off` derives and reports the intent plus the routing decision but adds nothing. `apply` admits the intent's preferred providers. |
+| `max_extra_providers` | `2` | `0`–`4` | Cap on providers added by one routing decision. `0` reports without adding. |
+
+Precedence is fixed: an explicit `providers` argument wins, then a supplied
+`profile`, then the default path plus intent additions, then the existing
+cooldown and health filter.
+
+| Derived intent | Preferred providers, in order | Capability each must declare |
+|---|---|---|
+| `web`, `docs` | none | none |
+| `code` | `github_code`, `gitlab_code`, `gitea_code`, `sourcegraph` | declares code-search or repository-filter support |
+| `issues` | `github_issues`, `gitlab_issues`, `gitea_issues`, `firecrawl_developer` | declares issue-search support |
+| `releases` | `github_releases`, `gitlab_releases`, `gitea_releases` | declares release-search support |
+| `security` | `osv`, `github_advisory`, `nvd` | declares security-search support |
+| `news` | `tavily`, `brave_api` | declares news support |
+
+`rustsec` is deliberately absent from the `security` row: it serves advisory-ID lookup only, so a routed keyword query would always fail as an unsupported operation rather than return evidence.
+
+A candidate is admitted only when it is enabled in `[search.providers]`, was
+actually built into the engine set, is not cooling down, is admitted by the
+keyword-query allowlist, and satisfies the capability predicate for its table
+row. Each disposition is reported in `provider_status` as `added`,
+`already_selected`, `not_enabled`, `not_built`, `cooling_down`,
+`keyword_unsupported`, `capability_missing`, or `cap_exceeded`. A candidate
+excluded for capability reasons emits the `intent_routing_capability_excluded`
+warning rather than being silently dropped; `keyword_unsupported` names a
+provider that knows the subject but cannot answer a keyword query, such as
+`rustsec`.
+
+`intent_mode` defaults to `apply`, adding eligible specialists to the candidate
+set based on query intent. Set it to `off` to report the routing decision
+without adding providers. Explicit providers and profile choices keep precedence.
+
+## Offset Windows, Progress, and Tasks
+
+Long-running reads accept a random-access window instead of returning one
+truncated payload.
+
+```toml
+[mcp.tasks]
+enabled = false
+ttl_ms = 300000
+max_concurrent = 4
+poll_interval_ms = 1000
+```
+
+| Setting | Default | Bounds | Meaning |
+|---------|---------|--------|---------|
+| `enabled` | `false` | none | Exposes the MCP Tasks extension to clients that negotiate it. While off, every long call runs synchronously. |
+| `ttl_ms` | `300000` | `1000`–`3600000` | Lifetime of a task record held in process memory. |
+| `max_concurrent` | `4` | `1`–`16` | Concurrent task cap. Above it, a call silently falls back to the synchronous path instead of returning an error. |
+| `poll_interval_ms` | `1000` | `250`–`10000` | Suggested client polling interval reported with a task. |
+
+**Offset windows** are always available and need no configuration. `web_fetch`,
+`batch_fetch`, and `research_search` accept optional `offset` and `limit` for
+random access over what they address. A read is the original request
+re-specified with the window; nothing is stored server-side.
+
+| Tool | Unit | `offset` | `limit` default | `limit` ceiling |
+|------|------|----------|-----------------|-----------------|
+| `web_fetch` | characters of the joined chunk text | zero-based scalar offset | the effective `max_chars` | `[fetch].max_chars_cap` |
+| `batch_fetch` | items | zero-based item index | `max_items` | `[fetch].batch_max_items_cap` |
+| `research_search` | non-empty result groups | zero-based group index | the `max_groups`-derived page size | 14 (`RESEARCH_PAGE_GROUPS`) |
+
+`web_fetch` also accepts `start_index` for `offset`, `max_length` for
+`max_chars`, and `question` or `prompt` for `focus` as wire compatibility
+aliases; see the [tool matrix](tool-matrix.md#compatibility-aliases). Aliases
+do not change the window rules below.
+
+Ranges are half-open `[from, to)` in Unicode scalar values and clamp rather
+than error: an offset at or past the end returns an empty window with
+`from == to == total` (and `text == ""` for `web_fetch`). A response is
+addressed when at least one of `offset`/`limit` is supplied; addressed
+responses carry `text_from`/`text_to`/`text_total`/`doc_id` (`web_fetch`),
+`item_from`/`item_to`/`item_total` (`batch_fetch`), or `group_from` plus
+`aggregate_scope`/`total_groups`/`returned_groups` (`research_search`), and
+`next_offset` whenever more units remain. `web_fetch` also reports
+`focus_scope: "document"` when a non-null `focus` accompanies the read.
+
+`text_total` is the Unicode scalar count of every chunk text joined by a single
+`\n`, measured before control-character stripping and before trust framing;
+`document.text_chars_returned` stays window-scoped. `doc_id` is the deterministic
+`doc_<16hex(url, title, kind)>` document identity, not a content hash, so two
+different bodies at one URL under one title share it.
+
+`limit = 0` is `invalid_semantic_value` with `repair.field = "limit"`; a `limit`
+above the server maximum is clamped and reported in `structured_warnings` under
+`max_results_clamped`. An addressed request whose plan bound the server had to
+clamp is `plan_mismatch` (`focus_max_chars` above `[fetch].max_chars_cap`;
+`max_items` or `max_total_chars` above their `[fetch]` caps; `max_results` above
+`[search].max_results_cap` or `max_per_group` of 0). Reading by offset never
+widens a bound: the effective timeout is
+`min(caller timeout_ms, [fetch].timeout_ms)`, and no call exceeds its
+character, item, or group ceiling.
+
+**Progress** is emitted only when the client supplies a progress token. It is
+rate-limited to one notification per 250 ms, capped at 64 notifications and
+4 KiB per call, carries counts rather than content, and is sent without ever
+delaying the response.
+
+**Tasks** require the client to declare the extension; otherwise the call stays
+synchronous. Cancellation is cooperative. Task ids are transport state and never
+enter evidence identity.
+
+## Challenge Solving
+
+Some keyless upstreams answer a request with a computational proof-of-work
+challenge instead of results. ADR-0009 permits solving those in-process and
+permits nothing else: no interactive CAPTCHA, image puzzle, OCR, human or
+third-party solving service, credential bypass, proxy rotation, or
+user-agent spoofing. The capability is off by default.
+
+```toml
+[search.challenge]
+enabled = false           # operator opt-in
+max_difficulty = 5        # Anubis ceiling; difficulty 6 is ~16.8M candidates
+max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
+timeout_ms = 2000         # wall-clock ceiling per solve
+cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
+```
+
+| Setting | Default | Bounds | Meaning |
+|---------|---------|--------|---------|
+| `enabled` | `false` | none | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
+| `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
+| `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
+| `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
+| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider. `0` disables reuse, so every request re-solves. |
+
+Challenge solving is supported for bounded, non-interactive proof-of-work
+challenges from Mojeek and Startpage. If you raise `max_difficulty`, increase
+`max_attempts` and both solver and search timeouts as needed. Requests that hit a
+configured limit fail with a structured `blocked` outcome. The solver does not
+attempt interactive CAPTCHA, OCR, third-party solving services, or unsupported
+challenge methods.
+
+Search pass cookies are held in process memory only, bounded by
+`cookie_ttl_seconds`, and never written to disk or logs. On the HTTP path,
+`web_fetch` can solve one Anubis challenge when enabled. Set `render = "http_only"`
+to avoid automatic browser escalation for that request. Fetch-side pass cookies
+are used for one replay and not stored. `batch_fetch` does not solve challenges.
+See [Capabilities and Optional Features](features.md#bounded-challenge-solving)
+for the supported methods and safety limits.
 
 ## Provider Profiles
 
@@ -155,11 +365,12 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 sanitize_output = true
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -190,10 +401,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -213,10 +425,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["osv", "duckduckgo", "startpage"]
+default_providers = ["osv", "duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 osv = true
 ```
@@ -232,10 +445,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage"]
+default_providers = ["duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 ```
 
@@ -250,10 +464,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["github_code", "github_issues", "github_releases", "duckduckgo", "startpage"]
+default_providers = ["github_code", "github_issues", "github_releases", "duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = false
 mojeek = false
@@ -286,10 +501,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["osv", "duckduckgo", "startpage"]
+default_providers = ["osv", "duckduckgo", "brave"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 osv = true
 
@@ -298,9 +514,11 @@ enabled = true
 api_key_env = "GITHUB_TOKEN"
 ```
 
-### Enhanced Research
+### Add a SearXNG Instance
 
-Brave API, SearXNG, and Semantic Scholar are optional enhancements for richer scholarly search.
+To add a SearXNG instance as a search provider, replace the example URL with
+your instance address. The instance must allow JSON output; see [Provider
+Setup](provider-setup.md#searxng) for the required SearXNG setting:
 
 ```toml eggsearch-config
 [search]
@@ -309,18 +527,21 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["brave_api", "searxng", "duckduckgo", "startpage", "mojeek"]
+default_providers = ["duckduckgo", "brave", "yahoo", "searxng"]
 
 [search.providers]
 duckduckgo = true
-startpage = true
-mojeek = true
+brave = true
+yahoo = true
 searxng = true
 
 [search.searxng]
 enabled = true
 base_url = "https://search.example.org"
 ```
+
+Credentialed providers such as Brave Search API and Semantic Scholar need
+separate API-key configuration. See [Provider Setup](provider-setup.md).
 
 ### Developer Index (keyless-optional)
 
@@ -432,18 +653,41 @@ batch_concurrency = 2
 | `timeout_ms` | `8000` |
 | `max_bytes` | `2_000_000` |
 | `max_chars_default` | `12_000` |
-| `max_chars_cap` | `50_000` |
+| `max_chars_cap` | `50_000` (document/extraction budget and cost knob, not the returned-text ceiling; validation requires `max_chars_cap >= max_chars_default`) |
 | `redirect_limit` | `5` |
 | `allow_private_network` | `false` |
 | `allow_localhost` | `false` |
 | `include_links_default` | `false` |
 | `sanitize_output` | `true` |
-| `pdf_enabled` | `false` |
+| `pdf_enabled` | Compiled-in feature state. Enabled by default in current source builds, absent from published `v0.4.4` binaries, and disabled by `--no-default-features` |
 | `pdf_max_pages` | `25` |
 | `pdf_max_chars_per_page` | `12_000` |
 | `pdf_max_total_chars` | `50_000` |
+| `pdf_max_bytes` | `16_777_216` |
+| `pdf_max_decompressed_bytes` | `67_108_864` |
 
-The fetch side is bounded by both byte and character caps. The byte cap is a hard response limit; the character cap is an extraction limit.
+Fetch is bounded by byte and character budgets. The byte cap limits the
+response body. `max_chars_cap` limits how much text is extracted and made
+available in `document.blocks` and `document.chunks`; it is not the returned-text
+limit. `max_chars_default` and the caller's `max_chars` bound the returned
+`text` window, up to `max_chars_cap`. `document.document_truncated` marks an
+extraction limit; `document.text_truncated` marks a clipped return window.
+
+`max_bytes` is the body cap for everything except PDF documents. A response
+identified as PDF by `Content-Type: application/pdf` or by a `.pdf` URL path
+uses `pdf_max_bytes` instead, so an ordinary paper is not refused or truncated
+at the generic 2 MB cap. `pdf_max_bytes` must be between 1 and 268,435,456
+(256 MiB); the default is 16 MiB. A PDF that is recognised only by its
+`%PDF-` magic (no Content-Type, no `.pdf` path) is still read under
+`max_bytes`, because the body cap is fixed before the first bytes arrive.
+A PDF that exceeds the effective body cap returns `content_too_large`, not a
+parse error.
+
+`pdf_max_decompressed_bytes` limits total expanded stream data before parsing.
+It defaults to 64 MiB and accepts 1 MiB through 1 GiB. A document that exceeds
+this limit or cannot be bounded fails with `pdf_decompression_bound_exceeded`.
+Encrypted documents fail with `pdf_encrypted`; `pdf_password` remains in the
+schema for compatibility but is unsupported.
 
 `allow_private_network = true` and `allow_localhost = true` are operator escape hatches. Keep them off for general MCP exposure.
 
@@ -501,18 +745,23 @@ When enabled, local results use `local_trusted` trust labels and can be surfaced
 
 ## Browser Rendering
 
-The `[fetch.browser]` section configures optional headless Chrome/Chromium rendering. Browser rendering is disabled by default and requires the `browser` Cargo feature.
+The `[fetch.browser]` section configures headless Chrome/Chromium rendering.
+Current source builds enable the `browser` Cargo feature by default; published
+`v0.4.4` binaries do not include it. `enabled` follows the compiled-in feature
+state, and `policy` defaults to `auto`. Rendering requires an installed
+Chrome/Chromium. Eggsearch never downloads or installs a browser.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `false` | Enable browser rendering escalation |
-| `policy` | `"http_only"` | Render policy: `http_only`, `auto`, or `browser` |
-| `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails deterministically — it does not fall back to auto-discovery. |
+| `enabled` | `true` when compiled | Enables browser rendering. The feature is included by default in current source builds, but not in published `v0.4.4` binaries. |
+| `policy` | `"auto"` | Render policy used when the caller omits `render`: `http_only`, `auto`, or `browser`. A per-call `render` overrides it. |
+| `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails instead of falling back to auto-discovery. |
 | `startup_timeout_ms` | `10000` | Browser startup timeout |
 | `navigation_timeout_ms` | `20000` | Page navigation timeout |
 | `post_load_wait_ms` | `1500` | Wait after page load |
 | `verification_wait_ms` | `10000` | Wait for non-interactive verification |
-| `max_requests` | `100` | Maximum requests per browser session |
+| `max_requests` | `100` | Renders per browser session (1–1000). The bound is enforced: reaching it closes the session, and the next render relaunches. |
+| `idle_timeout_ms` | `90000` | Idle interval with no in-flight render after which the shared browser process is closed. Minimum `5000`; a lower value fails config validation. |
 | `max_dom_bytes` | `4000000` | Maximum DOM size |
 | `global_concurrency` | `1` | Global browser concurrency |
 | `per_origin_concurrency` | `1` | Per-origin browser render cap (combined with `origin_browser_concurrency` via `min`) |
@@ -529,9 +778,13 @@ The `[fetch.browser.persistent_profiles]` section configures named, origin-scope
 | `allowed_profiles` | empty (all allowed) | Allowlist of profile names |
 | `profile_process_timeout_ms` | `30000` | Timeout for profile-scoped browser processes |
 
-Profiles are created through CLI-only headed login (`eggsearch browser-login`). MCP callers select profiles by name via the `browser_profile` field on `web_fetch`. Profile metadata lives in `$XDG_DATA_HOME/eggsearch/browser-profiles/<opaque-id>/profile.toml` with Chrome data in a sibling `chrome-data/` directory.
-
-Profiles are disabled by default. When disabled, MCP callers cannot use `browser_profile`. Each profile is restricted to its recorded origin and uses opaque directory IDs for cache partitioning. `browser-login` waits for the operator to press Enter (or until the configured timeout), and uses the configured executable selected during discovery. Later profile-scoped MCP fetches launch against the same profile `chrome-data` directory using the browser's default context. Chrome manages cookies and storage within the profile directory — eggsearch never exports, logs, or serializes cookies. Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped).
+Profiles are disabled by default. Create them with the local CLI command
+`eggsearch browser-login`, which opens a headed browser for operator sign-in.
+MCP callers can select an enabled profile by name with `browser_profile` on
+`web_fetch`; each profile is restricted to its recorded origin. Chrome manages
+the profile's cookies and storage. Eggsearch never exports or logs them.
+Removing a profile does not invalidate the process-local cache until the server
+process exits.
 
 ## Provider Status
 
@@ -539,13 +792,13 @@ Profiles are disabled by default. When disabled, MCP callers cannot use `browser
 
 Each provider descriptor includes:
 
-- `id`, `display_name`, `kind` — identity
-- `enabled`, `default`, `configured` — config state
-- `requires_api_key` — whether an API key env var is needed
-- `routable` — whether the provider can actually be queried right now
-- `skip_reason` — human-readable explanation when `routable` is `false`
-- `skip_code` — machine-readable skip code when `routable` is `false`
-- `capabilities` — feature flags (code search, freshness, etc.)
+- `id`, `display_name`, `kind`: identity
+- `enabled`, `default`, `configured`: config state
+- `requires_api_key`: whether an API key env var is needed
+- `routable`: whether the provider can actually be queried right now
+- `skip_reason`: human-readable explanation when `routable` is `false`
+- `skip_code`: machine-readable skip code when `routable` is `false`
+- `capabilities`: feature flags (code search, freshness, etc.)
 
 Skip codes are stable snake_case strings: `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, `unknown`.
 

@@ -37,11 +37,14 @@ The binary is written to `target/release/eggsearch`.
 
 ## Configuration
 
-eggsearch reads `$XDG_CONFIG_HOME/eggsearch/config.toml`. On macOS this is typically `~/.config/eggsearch/config.toml`. The file is optional; eggsearch works with sensible defaults when it is absent.
+The config file is optional. eggsearch uses platform-specific locations:
+`$XDG_CONFIG_HOME/eggsearch/config.toml` on Linux (usually
+`~/.config/eggsearch/config.toml`), `~/Library/Application Support/eggsearch/config.toml`
+on macOS, and `%APPDATA%\eggsearch\config.toml` on Windows. It uses built-in defaults when no config file exists.
 
-If you do create one, note that every field of the `[search]` table is
-required once you include that table — a partial `[search]` block is rejected.
-[Configuration](config.md) is the full reference.
+If you add a `[search]` table, include all of its required fields. Partial
+`[search]` tables are rejected. See [Configuration](config.md) for the full
+reference.
 
 A minimal config:
 
@@ -52,10 +55,11 @@ default_max_results = 10
 max_results_cap = 50
 max_query_chars = 512
 timeout_ms = 8000
-default_providers = ["duckduckgo", "startpage", "yahoo"]
+default_providers = ["duckduckgo", "brave", "yahoo"]
 
 [search.providers]
 duckduckgo = true
+brave = true
 startpage = true
 yahoo = true
 
@@ -201,8 +205,8 @@ web_search({
 Returns a list of source cards with `next_actions` and `suggested_fetches`.
 Follow sanitized `next_actions` without another discovery round trip; ignore
 unknown tool names. Keep the immediate palette small (`web_search`,
-`repo_search`, optionally `web_fetch`) and hydrate specialists on demand — see
-[codegg-integration.md](codegg-integration.md#progressive-disclosure-integration).
+`repo_search`, optionally `web_fetch`) and load specialists only when needed.
+See [Progressive Disclosure](codegg-integration.md#progressive-disclosure-integration).
 
 ### 2. Fetch
 

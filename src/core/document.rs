@@ -130,6 +130,24 @@ pub struct FetchRenderMetadata {
     /// Detected programming language or content language, if known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detected_language: Option<String>,
+    /// Token estimate reported by the origin in the `x-markdown-tokens`
+    /// header. Only present when a negotiating origin sent a parseable
+    /// integer.
+    #[serde(
+        default,
+        rename = "x-markdown-tokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub markdown_tokens: Option<usize>,
+    /// Token estimate for the origin's original representation, from the
+    /// `x-original-tokens` header. Only present when a negotiating origin
+    /// sent a parseable integer.
+    #[serde(
+        default,
+        rename = "x-original-tokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub original_tokens: Option<usize>,
 }
 
 /// An entry in the document outline (table of contents).
@@ -209,13 +227,13 @@ pub fn build_document_chunks(
     doc_id: &str,
     outline: &[DocumentOutlineEntry],
     blocks: &[RenderedBlock],
-    max_chars: usize,
+    document_chars: usize,
 ) -> Vec<DocumentChunk> {
     if blocks.is_empty() {
         return Vec::new();
     }
 
-    let chunk_char_limit = max_chars.clamp(1, DEFAULT_CHUNK_CHAR_LIMIT);
+    let chunk_char_limit = document_chars.clamp(1, DEFAULT_CHUNK_CHAR_LIMIT);
     let chunk_block_limit = DEFAULT_CHUNK_BLOCK_LIMIT.max(1);
     let has_heading_blocks = blocks.iter().any(|block| block.kind == BlockKind::Heading);
     let mut heading_stack: Vec<(usize, String)> = if has_heading_blocks {
@@ -358,6 +376,10 @@ fn current_heading_path(stack: &[(usize, String)]) -> Vec<String> {
 /// for agents that want to inspect content more selectively.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct FetchDocument {
+    /// Deterministic document identity: `doc_<16 hex>`.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub doc_id: String,
     /// The kind of document that was fetched.
     pub kind: DocumentKind,
     /// The render format used for blocks and chunks.
@@ -371,6 +393,9 @@ pub struct FetchDocument {
     /// Whether the block list was truncated.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub block_truncated: bool,
+    /// Whether extraction stopped at the document budget.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub document_truncated: bool,
     /// Whether the link list was truncated.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub link_truncated: bool,

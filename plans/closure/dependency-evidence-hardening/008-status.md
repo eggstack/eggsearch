@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md`
+- `plans/archive/implementation/dependency-evidence-hardening/009-corrective-applicability-provenance-and-parse-status.md`
 
 Source subsystem roadmap:
 

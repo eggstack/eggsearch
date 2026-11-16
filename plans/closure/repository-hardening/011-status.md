@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/repository-hardening/011-macos-symlink-containment-and-test-portability.md`
+Source plan: `plans/archive/implementation/repository-hardening/011-macos-symlink-containment-and-test-portability.md`
 
 Roadmap: `plans/subsystems/repository-hardening-roadmap.md`
 

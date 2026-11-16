@@ -4,7 +4,7 @@ Status: closed
 
 Source implementation plan:
 
-- `plans/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md`
+- `plans/archive/implementation/dependency-evidence-hardening/002-core-ecosystem-and-dispatch-correctness.md`
 
 Source subsystem roadmap:
 

@@ -7,6 +7,210 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `web_fetch` accepts the field names used by the reference MCP fetch server and common
+  search/fetch servers as compatibility aliases: `max_length` for `max_chars`, `start_index` for
+  `offset`, and `question` or `prompt` for `focus`. Aliases are wire-level spellings, not separate
+  schema properties; each canonical field's description names its alias, and sending both spellings
+  is a duplicate-field invalid-arguments error rather than a silent precedence rule. Validation,
+  budgets, and response shape are unchanged.
+- Pass-cookie reuse now follows the lifetime each upstream publishes. `Max-Age` (which wins over
+  `Expires`) and `Expires` are parsed once by `src/meta/challenge/cookie.rs` and clamped by
+  `cookie_ttl_seconds`, so a short-lived cookie is no longer replayed after it died and a
+  long-lived one is still capped by the operator ceiling. A malformed attribute, `Max-Age=0`, or a
+  past expiry stores nothing, `cookie_ttl_seconds = 0` still disables reuse, and a cookie the
+  upstream rejects on replay is evicted so the next search re-solves. `eggsearch doctor` warns when
+  `[egress]` is routed and reuse is enabled, because a token bound to the client's egress address
+  is re-challenged when the exit address changes.
+- `provider_status` reports a `challenge_solver` block on every call: process-lifetime
+  per-provider solve and refusal counters (a fixed ten-key vocabulary including `already spent`
+  and `unsafe base prefix`), pass-cookie cache hits and misses, and the last attempt's candidate
+  count and bounded-computation milliseconds. The block is emitted when the solver is disabled
+  too, `enabled` reflects configuration, no cookie value or challenge parameter enters it, and the
+  counters reset on restart.
+- Intent-aware provider routing now ships `[search.routing].intent_mode = "apply"` on measured
+  tier-1 evidence: the snapshot lane covers the shipped default provider set for every intent with
+  a preference row, specialists enter the candidate set, and the security negative control detects
+  a forced distractor. Routing stays add-only and bounded by `max_extra_providers`; Mode Off is
+  unchanged. `rustsec` is never routed for a keyword query and is reported as
+  `keyword_unsupported` instead of as a capability gap.
+- Keyless HTML scrapers (`brave`, `duckduckgo`, `mojeek`, `startpage`, `yahoo`)
+  now distinguish parsed results, an explicit empty state, a structural break
+  (`parse_error`), and a block or challenge page (`error_class: blocked`)
+  instead of reporting every non-result as absence. Captured fixtures live under
+  `tests/fixtures/engines/`, and `provider_status` reports a per-provider
+  `parse_shape` (`ok`, `empty`, `shifted`).
+- `web_search` results are cached for `[search].cache_ttl_seconds` (default
+  300) with `[search].cache_max_entries` (default 128) and single-flight
+  coalescing. Partial or deadline-interrupted fan-outs are never cached, and a
+  cache hit records no provider health evidence. `provider_status` exposes a
+  `search_cache` counter block.
+- Fetches request `text/markdown` ahead of `text/html` by default and fall back
+  once to HTML on 406/415 or an empty Markdown body. The representation is a
+  cache dimension, `Vary: Accept` is honoured, and responses report
+  `representation` plus origin token headers when present.
+- `web_search` derives `intent` from the query when the caller omits it and
+  reports `derived_intent` / `derived_intent_reasons`. Query text sent to
+  providers is unchanged; an explicit `intent` remains authoritative.
+- Bounded, opt-in challenge solving (ADR-0009). `[search.challenge]` gates a
+  shared solver for published computational proof-of-work: ALTCHA
+  (`PBKDF2/SHA-256`) for `mojeek` and Anubis `fast`/`preact` for `startpage`.
+  Off by default; four ceilings apply (`max_difficulty`, `max_attempts`,
+  `timeout_ms`, `cookie_ttl_seconds`), one solve per provider per request, and
+  pass cookies stay in process memory. Interactive CAPTCHA, OCR, solving
+  services, proxy rotation, and user-agent spoofing remain prohibited.
+- `startpage` returns rows again: it reads the served React payload
+  (`render.presenter.regions.mainline[]`) first and keeps the `div.result`
+  selectors as a fallback. `mojeek` works again with challenge solving enabled.
+- Intent-aware provider routing under `[search.routing]`. Routing only adds
+  specialist providers for the derived intent (`code`, `issues`, `releases`,
+  `security`, `news`), never removing or reordering a caller's choice.
+  `intent_mode` ships `off` because the shipped default provider set is not yet
+  measured by the snapshot lane.
+- One response-level excerpt budget with deterministic redundancy suppression
+  for `compact` and `brief` responses: `[mcp].excerpt_budget_chars` (default
+  4000) plus additive `excerpt_economy` counts and per-card
+  `excerpts_suppressed`.
+- Advertisement presets: `[mcp].tool_preset` (`full`, `research`, `code`,
+  `minimal`) filters `tools/list` while every tool stays callable, and
+  `next_actions` are filtered to the active preset with drops counted in
+  `next_actions_omitted`.
+- Resumable pagination for `web_fetch`, `batch_fetch`, and `research_search`
+  via a self-describing 512-byte `next_cursor` with no server-side state.
+  Token-gated bounded progress reporting, and an opt-in `[mcp.tasks]` path for
+  the MCP Tasks extension.
+- **Anubis pass-cookie identity is opaque.** The solver no longer looks for `spchal-auth`: it takes
+  every non-deletion pair the pass-challenge response set, drops empty values and deletion cookies,
+  resolves duplicate names by the last value, replays the pairs joined with `; `, and derives the
+  reuse window from the longest usable published lifetime, clamped by `cookie_ttl_seconds`.
+  `spchal-auth` and `techaro.lol-anubis-auth` were observed live on 2026-11-13; both, and dynamic
+  suffixes such as `techaro.lol-anubis-auth-347ddb4a`, now work without a source change, ALTCHA
+  keeps its published `chllg` name in pair form (including the one-replay, no-cache `Max-Age=0`
+  case), and there is no cookie-name configuration knob.
+- **Anubis `metarefresh` no longer requires a `<meta>` element or a `challenge` field.** The echo
+  token is `challenge.randomData` (a legacy `challenge` field is accepted only when `randomData` is
+  absent), and the wait is the published meta-refresh or `Refresh:` header value, or
+  `difficulty + 1` seconds when neither exists. The submission synthesizes
+  `{origin}{base_prefix}/.within.website/x/cmd/anubis/api/pass-challenge?redir=<request URL>&challenge=<randomData>&id=<id>`,
+  uses a published target only when it resolves same-origin, and never appends `result=`. Both
+  presentations were observed on `anubis.techaro.lol` v1.28.3 on 2026-11-13: a `Refresh:` header
+  only on one capture and a `<meta http-equiv="refresh">` element on another.
+- **Anubis challenge extensions fail closed before any work.** `challenge.extensions` is parsed and
+  bounded: absent, `null`, and `[]` are solvable, and a present list holds at most 8 names of 1–64
+  bytes from ASCII alphanumerics, `-`, `_`, and `.`. A non-empty list naming anything this build
+  does not support is refused before the difficulty ceiling, any wait, any hash, and any request,
+  with `anubis challenge declares unsupported extensions [<names>]` recorded under the existing
+  `unsupported scheme` key. No ledger key, `provider_status` field, configuration key, or tool
+  changed, and `headless` or an unknown name performs zero requests.
+- **Anubis `css-load` extension support (ADR-0012).** With `[search.challenge].enabled = true`, a
+  challenge declaring `css-load` performs exactly one same-origin `GET` to
+  `{origin}{base_prefix}/.within.website/x/cmd/anubis/ext/css-load/{uuid}` before the pass request:
+  no cookie, no authorization header, redirects disabled, the remaining solve deadline, and a
+  discarded 4 KiB body. A 2xx continues to the proof, while a non-2xx status, transport error,
+  timeout, unsafe id, or cross-origin target refuses with `blocked` under `unsupported scheme` and
+  zero pass requests. No deployment publishing `css-load` was observed on 2026-11-13, so the
+  capability is synthetic-fixture verified only.
+- **Anubis WASM `sha256` method support (ADR-0013).** A `u32` nonce is searched from zero and
+  hashed as `SHA-256(data || nonce_bytes)` over the hex-decoded `randomData`, with the four nonce
+  bytes little-endian when the last data byte is at least 128 and big-endian otherwise. Difficulty
+  is leading zero **bits**, while `max_difficulty` stays measured in fast-equivalent nibbles: a
+  challenge is admitted when `ceil(bits / 4) <= max_difficulty` (4 admits 16 bits and rejects 17; 6
+  admits 24), projection uses `2^bits`, and 128 bits or more is refused before hashing. `argon2id`
+  and `hashx` remain `unsupported scheme`, no dependency or WASM runtime was added, and no live
+  `sha256` deployment was observed on 2026-11-13, so the method is synthetic-fixture verified only.
+
+### Changed
+
+- Every tool now advertises all four static MCP behavior hints: `readOnlyHint: true`,
+  `destructiveHint: false`, `idempotentHint: true`, and an accurate `openWorldHint` (`false` only
+  for `provider_status` and `build_evidence_bundle`). The hints are explicit rather than relying on
+  spec defaults and never vary by arguments.
+- `web_search`'s description states that it returns source cards, never a synthesized answer, so an
+  agent does not probe it for one.
+- The post-dispatch selection sequence (RRF, conversion, domain filter,
+  reranking, truncation) has one implementation in
+  `src/meta/adapter/selection.rs`, shared by production and the offline
+  candidate-snapshot benchmark. No ranking behaviour changed.
+- Derived-intent reranking is applied on measured candidate-snapshot evidence
+  (+0.136 recall@5, +0.176 nDCG@5, no regression).
+- `brave` HTML scraping is default-routed: the shipped `default_providers` are
+  `duckduckgo`, `brave`, and `yahoo`. `startpage` stays enabled and selectable
+  but is no longer default-routed, because its upstream answers every
+  non-browser request with an Anubis proof-of-work challenge.
+- Fetch extraction is document-scoped: the page is extracted at the
+  `[fetch].max_chars_cap` document budget and `max_chars` bounds only the
+  returned text window. `document.document_truncated` is new and reports
+  extraction stopping at the document budget; `document.text_truncated` now
+  reports window clipping only. The derived extraction cache key is
+  document-scoped for HTML, so callers with different windows share one entry
+  (`renderer_version` 5).
+- `web_fetch`, `batch_fetch`, and `research_search` replace the unreleased
+  replay cursor with offset windows. `cursor` is removed and `offset`/`limit`
+  select a half-open range over document characters, batch items, or non-empty
+  result groups; `limit` defaults to the tool's window size and clamps to its
+  ceiling. Addressed responses carry `text_from`/`text_to`/`text_total`/`doc_id`
+  (`web_fetch`), `item_from`/`item_to`/`item_total` (`batch_fetch`), or
+  `group_from` with `aggregate_scope`/`total_groups`/`returned_groups`
+  (`research_search`), plus `next_offset` when more units remain and
+  `focus_scope: "document"` for a focused addressed read. `next_cursor` and
+  `cursor_status` are gone; `cursor_mismatch` is removed and `plan_mismatch` and
+  `document_unavailable` are added.
+- **PDF extraction and browser rendering ship in default builds.**
+  `default = ["pdf", "browser"]`, so `[fetch].pdf_enabled` and
+  `[fetch.browser].enabled` now default from the compiled-in feature state
+  (`true` in a default build, `false` under `--no-default-features`) and
+  `[fetch.browser].policy` defaults to `auto`. The configured policy is applied
+  when the caller omits `render`; a per-call `render` overrides it. The default
+  dependency graph reaches `reqwest` only transitively through `chromiumoxide`
+  for loopback DevTools discovery; `src/` stays reqwest-free and `Cargo.toml`
+  declares no direct dependency on it.
+- **The shared browser has an enforced lifecycle.** `[fetch.browser].idle_timeout_ms`
+  (default `90000`, minimum `5000`) closes the shared browser process after that
+  idle interval with no render in flight, and `max_requests` (default `100`) is
+  now enforced per session: reaching it closes the session and the next render
+  relaunches. `provider_status.browser_capabilities.lifecycle` reports
+  `resident`, `session_launches`, `renders`, `idle_teardowns`, and
+  `session_cap_teardowns`, and is `null` when the feature is not compiled or
+  browser rendering is disabled.
+- **Browser failures are honest.** An explicit `render = "browser"` or
+  `browser_profile` request returns `browser_not_compiled_in` when the feature is
+  absent, `browser_disabled` when `[fetch.browser].enabled = false`, and
+  `browser_unavailable` when no Chrome/Chromium is discovered, instead of
+  silently performing an HTTP fetch. `render = "auto"` never errors: a page that
+  warranted escalation but could not get it returns the HTTP document with the
+  `browser_unavailable` structured warning and `browser_escalated: false`.
+- **The Python wheel stays PDF-only.** `bindings/python/Cargo.toml` builds the
+  crate with `default-features = false, features = ["pdf"]`, so the wheel carries
+  PDF extraction and no browser rendering. Binary release assets are unchanged:
+  seven binaries, seven checksums, and the same 19-file inventory.
+
+### Fixed
+
+- PDF pre-parse scanning resolves indirect `/Length` references from their object headers instead of refusing every filtered stream that uses them, so ordinary generated PDFs extract in default builds.
+- `web_fetch` `render = "auto"` classifies JavaScript shells from document text rather than the sanitized framing text or the HTML source length, so escalation actually triggers on empty mount-point pages.
+
+
+- `web_fetch` solves a published Anubis challenge when `[search.challenge]` is enabled and
+  replays the request once with the pass cookie, returning the real document instead of the wall.
+  Disabled, refused, or still-challenged pages keep the `fetch_challenge_page` marking.
+- The Anubis solver now follows the published method registry (ADR-0010):
+  `slow` is solved as the `fast` alias, `metarefresh` echoes the published
+  token after the published wait, a non-empty `anubis_base_prefix` is honoured,
+  an already-spent challenge is refused as `already spent`, and the expected
+  `16^difficulty` cost is projected against `max_attempts` and the wall clock
+  before any hashing. A published `redir` is accepted only when it is
+  same-origin or a single-slash path, so the `preact` submission cannot send
+  challenge cookies to a foreign origin.
+- `web_fetch` recognises anti-bot challenge pages on the plain HTTP path
+  (`fetch_challenge_page` plus `manual_interaction_required: true`) instead of
+  returning an Anubis or ALTCHA wall as a short ordinary document, and
+  `render: "auto"` now escalates those pages to the browser when one is
+  available.
+- `duckduckgo` skips sponsored containers (`result--ad`) instead of returning
+  paid placements as organic results, and `startpage` classifies the Anubis
+  challenge page (`#anubis_challenge`) as `blocked` instead of `parse_error`.
+
 ## [0.4.4] - 2026-10-19
 
 ### Added

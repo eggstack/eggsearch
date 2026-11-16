@@ -152,6 +152,8 @@ class WebFetchRequest(TypedDict, total=False):
     focus_max_chars: int | None
     render: str | None
     browser_profile: str | None
+    offset: int | None
+    limit: int | None
     response_detail: ResponseDetail | None
 
 
@@ -162,6 +164,8 @@ class BatchFetchRequest(TypedDict, total=False):
     max_total_chars: int | None
     timeout_ms: int | None
     continue_on_error: bool | None
+    offset: int | None
+    limit: int | None
     response_detail: ResponseDetail | None
 
 
@@ -297,6 +301,8 @@ class ResearchSearchRequest(TypedDict, total=False):
     compare_targets: list[str]
     constraints: list[str]
     known_context: str | None
+    offset: int | None
+    limit: int | None
     response_detail: ResponseDetail | None
 
 

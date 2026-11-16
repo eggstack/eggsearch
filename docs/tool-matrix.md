@@ -4,15 +4,15 @@ Compact reference for the ten stable MCP tools.
 
 | Tool | Purpose | Key Inputs | Output | Trust | When to Use |
 |------|---------|------------|--------|-------|-------------|
-| `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `date_range` (`YYYY-MM-DD` start/end, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (lowercase hostnames, max 32; natively enforced by `exa`/`tavily`, otherwise local enforcement), `language`/`region` (best-effort unless enforced; native on Brave API and Tavily when representable), `excerpt_count` (0-3, default 0), `max_results`. Advanced `providers`/`timeout_ms` remain accepted but are hidden from the ordinary schema | `Vec<SourceCard>` plus `next_actions` and `capability_enforcement` telemetry (`requested`/`enforced`/`approximated`/`not_enforced`). Cards carry `excerpts` (bounded source passages, only when requested) and `metadata.published_at` (RFC 3339, when a provider returned parseable timestamp evidence) | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
-| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars`, `include_links`, `pdf` (page selection, OCR policy), `focus` (query-focused chunk selection, max 512 chars), `focus_max_chunks` (1-5), `focus_max_chars`, `cache_policy` (`default`/`bypass`/`refresh`), `max_cache_age_seconds` (0-2592000, tightens only) | `WebFetchResponse` with optional `FetchDocument` and additive `focus` selection (`chunks`, `truncated`, `total_chars`) | `external_untrusted` | Inspect a selected page or document |
-| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators | `items`, optional `max_items`, `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error`. Web and repo items accept per-item `focus`/`focus_max_chunks` (1-5)/`focus_max_chars` (same validation as `web_fetch`; rejected with `metadata_only`); web items accept per-item `cache_policy`/`max_cache_age_seconds` | `BatchFetchResponse` with per-item results, aggregate `max_total_chars` budget (request-order/fair-share, explicit truncation), and `telemetry` (items, focused chunks/chars, budget exhausted, cache hit/revalidated/miss/bypassed/not_cacheable) | `external_untrusted` or `local_trusted` | Fetch several known targets in one call with per-item focus |
-| `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), `probe` (bool, bounded live liveness check) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health), `code_hosts`, `health` (snapshots), `probe` (`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes` | `local_trusted` | Diagnostics and troubleshooting only; not a normal research step. Hosts may inspect during bootstrap; agents call only when provider availability itself is relevant |
+| `web_search` | Live metasearch over configured providers | `query`, optional `intent`, `freshness`, `date_range` (`YYYY-MM-DD` start/end, mutually exclusive with `freshness`), `include_domains`/`exclude_domains` (lowercase hostnames, max 32; natively enforced by `exa`/`tavily`, otherwise local enforcement), `language`/`region` (best-effort unless enforced; native on Brave API and Tavily when representable), `excerpt_count` (0-3, default 0), `max_results`. Advanced `providers`/`timeout_ms` remain accepted but are hidden from the ordinary schema | `Vec<SourceCard>` plus `next_actions` and `capability_enforcement` telemetry (`requested`/`enforced`/`approximated`/`not_enforced`). When `intent` is omitted the response also carries `derived_intent` and `derived_intent_reasons` (deterministic lexical derivation; an explicit `intent` is authoritative and suppresses both; compact detail keeps the intent string only). Cards carry `excerpts` (bounded source passages, only when requested) and `metadata.published_at` (RFC 3339, when a provider returned parseable timestamp evidence). Source cards only; the tool never returns a synthesized answer | `external_untrusted` | General web research and source discovery. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
+| `web_fetch` | Bounded fetch of one explicit HTTP(S) URL | `url`, optional `extract_mode`, `max_chars` (also accepted as `max_length`), `offset`/`limit` (half-open character window over the document text; `offset` also accepted as `start_index`), `include_links`, `pdf` (page selection, OCR policy), `focus` (query-focused chunk selection, max 512 chars; also accepted as `question` or `prompt`), `focus_max_chunks` (1-5), `focus_max_chars`, `cache_policy` (`default`/`bypass`/`refresh`), `max_cache_age_seconds` (0-2592000, tightens only) | `WebFetchResponse` with optional `FetchDocument` and additive `focus` selection (`chunks`, `truncated`, `total_chars`) | `external_untrusted` | Inspect a selected page or document |
+| `batch_fetch` | Bounded batch fetch over explicit URLs or repo locators | `items`, optional `max_items`, `offset`/`limit` (half-open item-index window), `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error`. Web and repo items accept per-item `focus`/`focus_max_chunks` (1-5)/`focus_max_chars` (same validation as `web_fetch`; rejected with `metadata_only`); web items accept per-item `cache_policy`/`max_cache_age_seconds` | `BatchFetchResponse` with per-item results, aggregate `max_total_chars` budget (request-order/fair-share, explicit truncation), and `telemetry` (items, focused chunks/chars, budget exhausted, cache hit/revalidated/miss/bypassed/not_cacheable) | `external_untrusted` or `local_trusted` | Fetch several known targets in one call with per-item focus |
+| `provider_status` | Diagnostic report of provider config, health, capabilities, and workflow recipes | none required; optional `recipe_detail` (`none`, `summary`, `full`), `probe` (bool, bounded live liveness check) | Provider list with `routable`, `skip_reason`, and `skip_code` fields, `health_views` (per-provider health, including `parse_shape` = `ok`/`empty`/`shifted` for observed providers), `code_hosts`, `health` (snapshots), `probe` (`requested`/`implemented`/`started`/`succeeded`/`failed`/`skipped`/`outcomes`), `server_capabilities`, `tool_capabilities`, `quality_metadata`, `workflow_recipes`, and a diagnostic-only `search_cache { entries, hits, misses, coalesced, bypassed, evictions }` block when the process-local search cache is enabled | `local_trusted` | Diagnostics and troubleshooting only; not a normal research step. Hosts may inspect during bootstrap; agents call only when provider availability itself is relevant |
 | `repo_search` | Structured repository evidence discovery with grouped bundles | `query`, `goal` (understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change), `sources` (code, docs, registry, issues, pull_requests, releases, examples, changelog, migration_guides, security; omit for goal defaults), optional repo locator fields, package fields, `include_local`. Legacy `profile`/`mode`/`workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but are hidden from the ordinary schema | `RepoSearchResponse` with grouped `SourceCard` bundles and `next_actions` | `external_untrusted` or `local_trusted` | Find code, issues, releases, docs, and repo metadata. With search mode off, an enabled local workspace is searched under explicit no-remote-dispatch policy; absent or disabled local search is rejected. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. Local matches carry `symbol_provenance` (`structured`/`regex_fallback`), `enclosing_symbol`, and `is_exact_definition`; structured definitions score above lexical matches with `Exact` confidence. |
 | `repo_fetch` | Structured repository file fetch by locator | `host`, `owner`, `repo`, `path`, optional `ref_name`, `commit_sha`, `line_start`, `line_end`, `symbol` | `RepoFetchResponse` with content and trust markers | `external_untrusted` or `local_trusted` | Fetch a specific file or code span |
 | `repo_map` | Bounded repository-structure discovery | `host`, `owner`, `repo`, optional `ref_name`, `max_entries`, `max_depth` | `RepoMapResponse` with important files and directories plus additive `packages`, `language_distribution`, `modules`, `entrypoints`, `top_symbols`, `test_relationships`, `build_configs`, `structure_truncated` | `external_untrusted` or `local_trusted` | Understand repo layout before detailed search |
 | `security_search` | Security-oriented retrieval with normalized vulnerability metadata | `query`, optional `ecosystem`, `package`, `version`, `cve_id`, `ghsa_id`, `severity_min`, `assess_applicability`, `goal` (usually omit; defaults to security_review), `include` (kev, exploit_context, defensive_guidance, vendor_advisories). Legacy `workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but hidden | `SecuritySearchResponse` with advisories, applicability, and `next_actions` | `external_untrusted` | Vulnerability lookup and package security triage. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
-| `research_search` | Research-oriented multi-source evidence discovery | `query`, optional `research_domain` (alias `domain`), `desired_source_types` (aliases `sources`, `source_types`), `goal`, `depth`, `compare_targets`, `include` (counterpoints, primary_sources, recent_discussion, security_considerations). Legacy `workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but hidden | `ResearchSearchResponse` with grouped evidence, claims, gaps, and `next_actions` | `external_untrusted` | Architectural comparison and multi-source evidence gathering. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
+| `research_search` | Research-oriented multi-source evidence discovery | `query`, optional `research_domain` (alias `domain`), `desired_source_types` (aliases `sources`, `source_types`), `goal`, `depth`, `offset`/`limit` (half-open window over non-empty result groups), `compare_targets`, `include` (counterpoints, primary_sources, recent_discussion, security_considerations). Legacy `workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but hidden | `ResearchSearchResponse` with grouped evidence, claims, gaps, and `next_actions` | `external_untrusted` | Architectural comparison and multi-source evidence gathering. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
 | `build_evidence_bundle` | Package selected evidence into a deterministic container | `goal`, `sources`, `fetches` | `EvidenceBundle` with deterministic IDs, gap analysis, and trust summary | preserves input trust | Multi-agent handoff of gathered evidence |
 
 ## Recommended Workflow
@@ -33,6 +33,62 @@ The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
 
 Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
 
+## Annotations
+
+Every tool advertises all four static behavior hints: `readOnlyHint: true`,
+`destructiveHint: false`, `idempotentHint: true`, plus an accurate
+`openWorldHint` (`false` only for `provider_status` and
+`build_evidence_bundle`). The hints never vary by arguments.
+
+## Compatibility aliases
+
+`web_fetch` accepts the field names used by the reference MCP fetch server and
+common search/fetch servers, so an agent trained on those shapes can call it
+unchanged:
+
+| Accepted alias | Canonical field |
+|---|---|
+| `max_length` | `max_chars` |
+| `start_index` | `offset` |
+| `question`, `prompt` | `focus` |
+
+Aliases are accepted on the wire, not advertised as separate schema
+properties; each canonical field's description names its alias. Send one
+spelling per field: a canonical field together with its alias is a
+duplicate-field invalid-arguments error rather than a silent precedence rule.
+Validation, budgeting, and response shape are identical to the canonical
+field.
+
+## Advertisement presets
+
+`[mcp].tool_preset` filters what `tools/list` advertises. It is a server
+configuration knob, not a capability boundary: hidden tools still execute when
+called directly.
+
+| Preset | Tools advertised |
+|--------|------------------|
+| `full` (default) | all ten |
+| `research` | `provider_status`, `web_search`, `web_fetch`, `research_search`, `repo_fetch`, `batch_fetch`, `build_evidence_bundle` |
+| `code` | `provider_status`, `web_search`, `web_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle` |
+| `minimal` | `web_search`, `web_fetch`, `batch_fetch`, `build_evidence_bundle` |
+
+Resolution order is contract metadata, then compact schema projection, then the
+preset filter, so a preset composes with `schema_profile` instead of competing
+with it. Every non-`full` preset is closed under the contract's `next_tools`,
+which is enforced by test: a preset can never advertise a tool whose follow-up
+suggestions point at a hidden one.
+
+`next_actions` are filtered to the active preset at the single response seam.
+Dropped entries are counted in an additive `next_actions_omitted` field and are
+never rewritten into a different tool, so a model is never pointed at something
+it cannot see. `provider_status.mcp_advertisement` reports `tool_preset`,
+`schema_profile`, `advertised_count`, `advertised_tools`, and `hidden_tools`.
+There is deliberately no `tools/list._meta` signal.
+
+Measured advertisement size (full / compact serialized bytes): `full`
+74,422 / 20,196; `research` 66,821 / 17,083; `code` 69,318 / 17,220; `minimal`
+58,874 / 13,516.
+
 ## Progressive disclosure
 
 Keep the immediate palette small and hydrate specialists on demand:
@@ -52,11 +108,11 @@ by content fingerprint plus server version, never by count.
 
 Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema` (typed envelopes for seven tools, permissive stable envelopes for `web_search`/`web_fetch`/`provider_status`). `tools/list` is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
 
-Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
+Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, `plan_mismatch`, `document_unavailable`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
 
 ## Response projection and context budgets
 
-All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail` (`compact`/`standard`/`diagnostic`, default `diagnostic` for backward compatibility). `build_evidence_bundle` accepts it but returns identical canonical content in all modes.
+All search/fetch tools except diagnostic-only `provider_status` accept optional `response_detail`: `compact`, `standard`, `brief`, or `diagnostic`. When omitted, the full schema profile defaults to `diagnostic`; the compact schema profile defaults to `brief`. `build_evidence_bundle` accepts the field but returns identical canonical content in all modes.
 
 - `compact`: source cards/groups, stable IDs, trust + injection markers, bounded excerpts (1 per card), essential warnings, failure/absence state, `next_actions`, conflict indicators. Omits full routing/telemetry/document/link detail.
 - `standard`: compact plus full `retrieval_summary`, `conflict_metadata`, `workflow_coverage`, capability summaries, and fetch/cache metadata.
@@ -70,7 +126,7 @@ All tools work without API keys. The keyless baseline provides:
 
 | Tool | Keyless Path |
 |------|-------------|
-| `web_search` | DuckDuckGo, Startpage, Yahoo |
+| `web_search` | DuckDuckGo, Brave Search (HTML), Yahoo |
 | `web_fetch` | Direct HTTP(S) URL fetch |
 | `batch_fetch` | Direct HTTP(S) URL batch fetch |
 | `provider_status` | Reports all providers, routability, skip codes |
@@ -87,15 +143,17 @@ Optional credentialed adapters (GitHub, GitLab, Gitea, Sourcegraph, Brave API, S
 
 - `web_search`, `repo_search`, `security_search`, and `research_search` all emit `next_actions`.
 - `web_search` constraints: `date_range` uses ISO `YYYY-MM-DD` start/end and is mutually exclusive with non-`any` `freshness`. Domain entries must be lowercase hostnames (no schemes, ports, paths, or wildcards, max 32 per list); they are natively enforced by `exa`/`tavily` when selected (reported as `enforced` telemetry) and enforced locally otherwise (reported as `approximated`). `language`/`region` are conservative syntax (best-effort unless enforced). Brave Search API natively enforces `safe_search`, relative/exact `freshness`, `search_lang`, `country`, and `news` intent via dedicated endpoints/parameters; unsupported locales are omitted rather than guessed.
+- `provider_status` exposes `parse_shape` per provider so operator-visible scraper drift does not require log reading, and a `search_cache` counter block for the process-local `web_search` result cache. Its `challenge_solver` block keeps the fixed ten-key refusal vocabulary; an Anubis extension refusal is attributed to `unsupported scheme`, with the specific extension named in the sentence rather than in a new key.
 - `provider_status` is diagnostic only. When `probe = true` the response includes a bounded live-probe section (`requested`, `implemented: true`, `started`/`succeeded`/`failed`/`skipped` counts, and per-provider `outcomes` with `attempted`/`routable`/`success`/`failure_class`/`latency_ms`/`http_status`/`skip_code`/bounded `message`). Non-routable providers are reported as skipped with a stable `skip_code` rather than a network failure. The same core probe service backs `eggsearch doctor --probe` and the `live-smoke` test target.
 - Each provider in `provider_status` includes `routable` (bool), `skip_reason` (optional string), and `skip_code` (optional machine-readable code) indicating whether it can actually be queried. `skip_code` values include `unknown_provider`, `disabled_by_user`, `missing_api_key`, `missing_searxng_config`, `missing_base_url`, `invalid_base_url`, `missing_local_backend`, `credential_not_configured`, `credential_env_missing`, `credential_invalid`, `cooldown_active`, `not_built`, and `unknown`.
 - `repo_search` canonical `goal` values (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) map to workflow coverage models; `goal = "debug"` enables exact-error behavior. Legacy `mode = "exact_error"`, `profile`, `workflow`, and `include_*` booleans remain accepted. Conflicting canonical/legacy combinations return a repairable validation error. `sources` overrides goal defaults; omit it for the usual path.
 - `web_search` excerpts are opt-in (`excerpt_count` 0-3, default 0). Each card carries at most 3 excerpts, 500 chars each, 1,200 chars total; excerpt text is source-derived, sanitized, and counted in trust markers. Card stable IDs never include excerpt/timestamp evidence. Generic `published_at` timestamps (RFC 3339 or `YYYY-MM-DD` provider evidence only, never inferred from snippet text) feed freshness reranking before specialist issue/release metadata.
 - `web_fetch` supports `extract_mode = "metadata_only"` when you only need page metadata. `focus` is rejected with `metadata_only` because there are no document chunks to rank.
-- `web_fetch` supports `pdf.pages` for page selection (e.g., `"1,3,7-10"`) and `pdf.pdf_ocr` for OCR policy. PDF extraction requires the `pdf` feature and `[fetch].pdf_enabled = true`. Each page receives a quality classification; PDF layout/OCR is deferred; see [fetch architecture](../architecture/fetch.md) for details.
-- `web_fetch` supports `render` (`http_only`, `auto`, `browser`) for optional headless Chrome rendering. `auto` escalates at most once for JavaScript shells. Interactive challenges return structured error codes. An explicitly configured invalid browser path fails deterministically.
+- `web_fetch` supports `pdf.pages` for page selection (e.g., `"1,3,7-10"`) and `pdf.pdf_ocr` for OCR policy. The `pdf` feature is compiled into default builds and `[fetch].pdf_enabled` defaults to the compiled-in state. Each page receives a quality classification; PDF layout/OCR is deferred; see [fetch architecture](../architecture/fetch.md) for details.
+- `web_fetch` supports `render = "http_only"`, `"auto"`, or `"browser"`. Current source builds include the `browser` feature by default; published `v0.4.4` binaries do not. Omitting `render` uses `[fetch.browser].policy`, which defaults to `auto`. Auto mode tries HTTP first, then may escalate once for JavaScript shells, non-interactive verification, or recognized challenge pages. It does not escalate for authentication or rate-limited responses, and it never solves interactive challenges. If Chrome is unavailable, auto mode returns the HTTP response with a `browser_unavailable` warning. An explicit browser request reports `browser_not_compiled_in`, `browser_disabled`, or `browser_unavailable` as applicable. An invalid configured executable path fails instead of falling back to discovery.
+- On the HTTP-only path, `web_fetch` can solve one detected Anubis proof-of-work challenge when `[search.challenge].enabled = true`. Set `render = "http_only"` to select this path. The request is replayed once within the configured limits; pass cookies are not stored or exposed. Disabled, refused, or still-challenged pages remain marked challenge responses. Auto mode may escalate to the browser before this HTTP solver runs.
 - `web_fetch` supports `browser_profile` for persistent profiles created via `eggsearch browser-login`. Profiles require explicit headed local setup and are restricted to their recorded origin.
-- `web_fetch` and `batch_fetch` support deterministic query-focused reads via `focus`. Chunks are ranked lexically (token overlap, exact-phrase, heading, and code-symbol boosts with adjacency expansion) over the already-extracted document; no extra URL is traversed and no model is called. The `focus` selection (`chunks` in document order, `truncated`, `total_chars`) is additive — ordinary `text`/`document` fields are unchanged. Focus projection never enters the raw or derived cache keys. Batch repo items without a structured document fall back to deterministic line-window text projection; `focus` with `metadata_only` is rejected. Suggested fetches carry `batch_item`/`recommended_focus_query` for direct batch handoff, and `batch_fetch` reports focused/cache/budget telemetry.
+- `web_fetch` and `batch_fetch` support deterministic query-focused reads via `focus`. Chunks are ranked lexically (token overlap, exact-phrase, heading, and code-symbol boosts with adjacency expansion) over the already-extracted document; no extra URL is traversed and no model is called. The `focus` selection (`chunks` in document order, `truncated`, `total_chars`) is additive. Ordinary `text` and `document` fields are unchanged. Focus projection never enters the raw or derived cache keys. Batch repo items without a structured document fall back to deterministic line-window text projection; `focus` with `metadata_only` is rejected. Suggested fetches carry `batch_item`/`recommended_focus_query` for direct batch handoff, and `batch_fetch` reports focused/cache/budget telemetry.
 - `web_fetch` cache controls: `cache_policy` (`default` = serve fresh or revalidate; `bypass` = skip cache reads but still store unless the origin forbids it; `refresh` = revalidate with validators when available, else fetch) and `max_cache_age_seconds` (upper bound on acceptable entry age; `0` forces revalidation without disabling storage). Both only tighten origin freshness and never bypass SSRF, redirect, origin-concurrency, browser-profile, content, or sanitization policy. `cache_status` reports `hit`, `revalidated`, `miss` (fresh fetch, including after refresh), `bypassed`, or `not_cacheable`.
 
 ## Trust Semantics
@@ -115,10 +173,10 @@ See [Agent workflows](agent-workflows.md) for the recipe catalog and usage guida
 
 ## Evidence Roles and Coverage
 
-Every `SourceCard` includes an optional `evidence_role` field classifying its role in the workflow. Roles are deterministic and derived from existing metadata — no model inference. For `research_search`, evidence roles on subquery results are planner-derived via typed `intended_roles` on `PlannedSubquery`, not inferred from opaque `rq_*` labels.
+Every `SourceCard` includes an optional `evidence_role` field classifying its role in the workflow. Roles are deterministic and derived from existing metadata, with no model inference. For `research_search`, evidence roles on subquery results are planner-derived via typed `intended_roles` on `PlannedSubquery`, not inferred from opaque `rq_*` labels.
 
 Responses also include `retrieval_summary` when applicable, distinguishing evidence absence (`no_matching_evidence_found`) from retrieval failure (`provider_failed`, `deadline_prevented_completion`). Retrieval summaries include native security attempts (CVE/GHSA/OSV/RustSec/KEV lookups) alongside web-search provider results. This prevents agents from treating empty results as proof that evidence does not exist.
 
-Conflict metadata (`conflict_metadata`) appears when sources disagree on structured fields, with severity and resolution recommendations. Conflict source IDs are exact — they identify only the disagreeing cards, not entire entity groups.
+Conflict metadata (`conflict_metadata`) appears when sources disagree on structured fields, with severity and resolution recommendations. Conflict source IDs identify only the disagreeing cards, not entire entity groups.
 
 See [Agent workflows](agent-workflows.md) for the full evidence role taxonomy and workflow coverage models.

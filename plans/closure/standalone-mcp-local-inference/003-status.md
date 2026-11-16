@@ -3,7 +3,7 @@
 Status: closed at source candidate `772a073fd40e9f044017b26bae18a6efd0724b1d` (small-model tool use and context qualification completed; results are mixed; compact remains opt-in)
 
 Source implementation plan:
-`plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
+`plans/archive/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`
 
 Source subsystem roadmap:
 `plans/subsystems/standalone-mcp-local-inference-roadmap.md`
@@ -378,7 +378,7 @@ The original `mcp.json` bytes were restored after the test block and verified
 against SHA-256
 `b8cb90299d832914cba5f92dbb259684a084045cc503fd186fea4b4cee3fec7c`.
 Authentication and MCP permission settings were not changed. Corrective M006
-(`plans/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md`)
+(`plans/archive/implementation/standalone-mcp-local-inference/006-compact-direct-fetch-tool-choice-corrective.md`)
 is active to compare the compact description and test a minimal fix. The
 controlled baseline/candidate follow-up is recorded in §12. UI chat refresh
 and structured-content/text-fallback behavior are still not isolated.
@@ -477,7 +477,7 @@ both profiles can extract the requested browser page, though compact's brief
 result omits transport metadata and the model missed its `output_truncated`
 warning. Repeat research and browser tasks before a broader quality claim.
 M003 remains active, not blocked on the UI. The current acceptance objective and method are in
-`plans/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`.
+`plans/archive/implementation/standalone-mcp-local-inference/003-lm-studio-consumer-qualification-and-docs.md`.
 
 ### Gemma E2B paired security trial
 

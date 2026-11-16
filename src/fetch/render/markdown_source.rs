@@ -1,7 +1,7 @@
 //! Markdown source file renderer using pulldown-cmark.
 //!
 //! Parses Markdown content into structured blocks with headings,
-//! code blocks, lists, blockquotes, and paragraphs. Extracts
+//! code blocks, lists, tables, blockquotes, and paragraphs. Extracts
 //! headings into the document outline.
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
@@ -33,7 +33,6 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
     let budget = max_chars;
     let mut block_truncated = false;
 
-    // State for accumulating events into blocks
     let mut in_heading = false;
     let mut heading_level = 0;
     let mut heading_text = String::new();
@@ -41,16 +40,23 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
     let mut code_language = String::new();
     let mut code_text = String::new();
     let mut code_start_line = 1;
-    let mut current_line = 1;
     let mut in_paragraph = false;
     let mut paragraph_text = String::new();
     let mut paragraph_start_line = 1;
+    let mut in_item = false;
+    let mut item_text = String::new();
+    let mut item_start_line = 1;
+    let mut in_table = false;
+    let mut table_rows: Vec<Vec<String>> = Vec::new();
+    let mut table_row: Vec<String> = Vec::new();
+    let mut table_cell: Option<String> = None;
+    let mut table_start_line = 1;
+    let mut current_line = 1;
 
     let events: Vec<Event> = parser.collect();
-    let mut i = 0;
 
-    while i < events.len() {
-        match &events[i] {
+    for event in &events {
+        match event {
             Event::Start(Tag::Heading { level, .. }) => {
                 in_heading = true;
                 heading_level = *level as usize;
@@ -108,41 +114,101 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
                 in_code_block = false;
             }
             Event::Start(Tag::Paragraph) => {
-                in_paragraph = true;
-                paragraph_text.clear();
-                paragraph_start_line = current_line;
+                if in_item {
+                    if !item_text.is_empty() && !item_text.ends_with(' ') {
+                        item_text.push(' ');
+                    }
+                } else {
+                    in_paragraph = true;
+                    paragraph_text.clear();
+                    paragraph_start_line = current_line;
+                }
             }
             Event::End(TagEnd::Paragraph) => {
-                if !paragraph_text.trim().is_empty() {
+                if in_item {
+                    if !item_text.is_empty() && !item_text.ends_with(' ') {
+                        item_text.push(' ');
+                    }
+                } else {
+                    if !paragraph_text.trim().is_empty() {
+                        blocks.push(RenderedBlock {
+                            kind: BlockKind::Paragraph,
+                            text: paragraph_text.trim().to_string(),
+                            level: None,
+                            anchor: None,
+                            language: None,
+                            line_start: Some(paragraph_start_line),
+                            line_end: Some(current_line),
+                            page: None,
+                        });
+                    }
+                    in_paragraph = false;
+                }
+            }
+            Event::Start(Tag::List(_)) => {}
+            Event::End(TagEnd::List(_)) => {}
+            Event::Start(Tag::Item) => {
+                in_item = true;
+                item_text.clear();
+                item_start_line = current_line;
+            }
+            Event::End(TagEnd::Item) => {
+                if !item_text.trim().is_empty() {
                     blocks.push(RenderedBlock {
-                        kind: BlockKind::Paragraph,
-                        text: paragraph_text.trim().to_string(),
+                        kind: BlockKind::ListItem,
+                        text: item_text.split_whitespace().collect::<Vec<_>>().join(" "),
                         level: None,
                         anchor: None,
                         language: None,
-                        line_start: Some(paragraph_start_line),
+                        line_start: Some(item_start_line),
                         line_end: Some(current_line),
                         page: None,
                     });
                 }
-                in_paragraph = false;
+                in_item = false;
             }
-            Event::Start(Tag::BlockQuote(_)) => {
-                // Collect block quote content
+            Event::Start(Tag::Table(_)) => {
+                in_table = true;
+                table_rows.clear();
+                table_start_line = current_line;
             }
-            Event::End(TagEnd::BlockQuote(_)) => {
-                // Block quotes are rendered as paragraphs in the MVP
-            }
-            Event::Start(Tag::List(_)) => {}
-            Event::End(TagEnd::List(_)) => {}
-            Event::Start(Tag::Item) => {}
-            Event::End(TagEnd::Item) => {
-                // List items are rendered as paragraphs in the MVP
-            }
-            Event::Start(Tag::Table(_)) => {}
             Event::End(TagEnd::Table) => {
-                // Tables rendered as raw text in MVP
+                in_table = false;
+                if !table_rows.is_empty() {
+                    let rendered = render_table_rows(&table_rows);
+                    if !rendered.is_empty() {
+                        blocks.push(RenderedBlock {
+                            kind: BlockKind::Table,
+                            text: rendered,
+                            level: None,
+                            anchor: None,
+                            language: None,
+                            line_start: Some(table_start_line),
+                            line_end: Some(current_line),
+                            page: None,
+                        });
+                    }
+                }
+                table_rows.clear();
             }
+            Event::Start(Tag::TableHead) | Event::Start(Tag::TableRow) => {
+                table_row.clear();
+            }
+            Event::End(TagEnd::TableHead) | Event::End(TagEnd::TableRow) => {
+                if !table_row.is_empty() {
+                    table_rows.push(std::mem::take(&mut table_row));
+                }
+            }
+            Event::Start(Tag::TableCell) => {
+                table_cell = Some(String::new());
+            }
+            Event::End(TagEnd::TableCell) => {
+                if let Some(cell) = table_cell.take() {
+                    table_row.push(cell.trim().to_string());
+                }
+            }
+            Event::Start(Tag::BlockQuote(_)) => {}
+            Event::End(TagEnd::BlockQuote(_)) => {}
             Event::Start(Tag::HtmlBlock) => {}
             Event::End(TagEnd::HtmlBlock) => {}
             Event::Rule => {
@@ -162,43 +228,52 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
                     heading_text.push_str(text);
                 } else if in_code_block {
                     code_text.push_str(text);
+                } else if in_table {
+                    if let Some(cell) = table_cell.as_mut() {
+                        cell.push_str(text);
+                    }
+                } else if in_item {
+                    item_text.push_str(text);
                 } else if in_paragraph {
                     paragraph_text.push_str(text);
                 }
             }
             Event::Code(code) => {
-                if in_paragraph {
-                    paragraph_text.push('`');
-                    paragraph_text.push_str(code);
-                    paragraph_text.push('`');
+                let target = if in_table {
+                    table_cell.as_mut()
+                } else if in_item {
+                    Some(&mut item_text)
+                } else if in_paragraph {
+                    Some(&mut paragraph_text)
+                } else {
+                    None
+                };
+                if let Some(target) = target {
+                    target.push('`');
+                    target.push_str(code);
+                    target.push('`');
                 }
             }
             Event::SoftBreak => {
                 if in_paragraph {
                     paragraph_text.push(' ');
+                } else if in_item {
+                    item_text.push(' ');
                 }
                 current_line += 1;
             }
             Event::HardBreak => {
                 if in_paragraph {
                     paragraph_text.push('\n');
+                } else if in_item {
+                    item_text.push(' ');
                 }
                 current_line += 1;
             }
-            Event::Start(Tag::Emphasis) => {}
-            Event::End(TagEnd::Emphasis) => {}
-            Event::Start(Tag::Strong) => {}
-            Event::End(TagEnd::Strong) => {}
-            Event::Start(Tag::Link { .. }) => {}
-            Event::End(TagEnd::Link) => {}
-            Event::Start(Tag::Image { .. }) => {}
-            Event::End(TagEnd::Image) => {}
             _ => {}
         }
-        i += 1;
     }
 
-    // Flush any remaining paragraph
     if in_paragraph && !paragraph_text.trim().is_empty() {
         blocks.push(RenderedBlock {
             kind: BlockKind::Paragraph,
@@ -212,7 +287,6 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
         });
     }
 
-    // Apply char budget truncation
     let mut used_chars = 0;
     let mut truncated_at = blocks.len();
     let mut partial_text: Option<String> = None;
@@ -259,6 +333,30 @@ pub fn render_markdown_source(text: &str, max_chars: usize) -> RenderedMarkdown 
         text_truncated,
         block_truncated,
     }
+}
+
+fn render_table_rows(rows: &[Vec<String>]) -> String {
+    let max_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if max_cols == 0 {
+        return String::new();
+    }
+    let mut lines = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        let mut line = String::from("|");
+        for cell in row {
+            line.push(' ');
+            line.push_str(&cell.replace('|', "\\|"));
+            line.push_str(" |");
+        }
+        for _ in row.len()..max_cols {
+            line.push_str(" |");
+        }
+        lines.push(line);
+        if index == 0 {
+            lines.push(format!("|{}", " --- |".repeat(max_cols)));
+        }
+    }
+    lines.join("\n")
 }
 
 /// Generate a URL-safe slug from heading text.
@@ -329,7 +427,7 @@ mod tests {
     #[test]
     fn render_markdown_truncation() {
         let md = "# Title\n\n## Other\n\nText.";
-        let result = render_markdown_source(md, 5); // very small budget
+        let result = render_markdown_source(md, 5);
         assert!(result.text_truncated || result.block_truncated);
     }
 
@@ -347,5 +445,45 @@ mod tests {
             .blocks
             .iter()
             .any(|b| b.kind == BlockKind::HorizontalRule));
+    }
+
+    #[test]
+    fn render_markdown_table_preserves_cells() {
+        let md = "| Metric | Value |\n| --- | --- |\n| retries | 3 |\n| budget | 5s |";
+        let result = render_markdown_source(md, 10000);
+        let table = result
+            .blocks
+            .iter()
+            .find(|b| b.kind == BlockKind::Table)
+            .expect("table block");
+        assert!(table.text.contains("| Metric | Value |"), "{}", table.text);
+        assert!(table.text.contains("| retries | 3 |"), "{}", table.text);
+        assert!(table.text.contains("| budget | 5s |"), "{}", table.text);
+    }
+
+    #[test]
+    fn render_markdown_tight_list_items_are_kept() {
+        let md = "- first item\n- second item\n- third item";
+        let result = render_markdown_source(md, 10000);
+        let items: Vec<&str> = result
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::ListItem)
+            .map(|b| b.text.as_str())
+            .collect();
+        assert_eq!(items, vec!["first item", "second item", "third item"]);
+    }
+
+    #[test]
+    fn render_markdown_loose_list_items_are_kept() {
+        let md = "1. alpha\n\n2. beta";
+        let result = render_markdown_source(md, 10000);
+        let items: Vec<&str> = result
+            .blocks
+            .iter()
+            .filter(|b| b.kind == BlockKind::ListItem)
+            .map(|b| b.text.as_str())
+            .collect();
+        assert_eq!(items, vec!["alpha", "beta"]);
     }
 }

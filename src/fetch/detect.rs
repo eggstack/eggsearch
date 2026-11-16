@@ -77,6 +77,20 @@ pub fn classify(content_type: Option<&str>, url: &str, body: &[u8]) -> DetectedC
     }
 }
 
+/// Returns `true` when the Content-Type names a Markdown representation.
+pub fn is_markdown_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "text/markdown" | "text/x-markdown"
+    )
+}
+
 /// Detect document kind from Content-Type header.
 fn detect_from_content_type(ct: &str) -> Option<DocumentKind> {
     let ct_lower = ct.to_lowercase();
@@ -84,6 +98,7 @@ fn detect_from_content_type(ct: &str) -> Option<DocumentKind> {
 
     match ct_base {
         "text/markdown" | "text/x-markdown" => Some(DocumentKind::Markdown),
+        "application/pdf" => Some(DocumentKind::Pdf),
         "application/json" | "application/ld+json" => Some(DocumentKind::Json),
         _ if ct_base.ends_with("+json") => Some(DocumentKind::Json),
         "text/toml" | "application/toml" => Some(DocumentKind::Toml),
@@ -447,6 +462,25 @@ mod tests {
             b"Just some plain text notes here.",
         );
         assert_eq!(det.kind, DocumentKind::PlainText);
+        assert!(!det.line_preserving);
+    }
+
+    #[test]
+    fn detect_from_content_type_pdf_matches_fetch_gate() {
+        assert_eq!(
+            detect_from_content_type("application/pdf"),
+            Some(DocumentKind::Pdf)
+        );
+        assert_eq!(
+            detect_from_content_type("Application/PDF; charset=binary"),
+            Some(DocumentKind::Pdf)
+        );
+        let det = classify(
+            Some("application/pdf"),
+            "https://example.com/download",
+            b"%PDF-1.7",
+        );
+        assert_eq!(det.kind, DocumentKind::Pdf);
         assert!(!det.line_preserving);
     }
 

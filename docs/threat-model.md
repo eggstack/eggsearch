@@ -59,40 +59,18 @@ eggsearch does not enforce host-agent policy. It provides signals (trust markers
 
 ### Fetch Behavior
 
-- Accepts one explicit HTTP(S) URL per `web_fetch` call.
-- No crawling, no JavaScript execution, no form submission, no browser session or cookie state.
-- Bounded body bytes (default 2 MB), bounded extracted chars (default 12k, cap 50k).
-- Redirect limit (default 5), redirect-target revalidation against blocked address ranges.
-- DNS address validation and address pinning for the request attempt.
-- Code-host browser URL rewrite to raw URL followed by revalidation.
+- `web_fetch` accepts one explicit HTTP(S) URL. It does not crawl.
+- Ordinary HTTP fetch does not execute JavaScript or submit forms. Current source builds also enable browser rendering, which can execute page JavaScript. It is not a malware sandbox. Persistent browser profiles are opt-in and retain cookies and storage.
+- Bounded body bytes (default 2 MB) and extracted text (default 12k characters, cap 50k).
+- HTTP redirects are limited (default 5), and each target is revalidated against blocked address ranges.
+- The HTTP path classifies DNS results and pins approved addresses to the connection. The browser path validates observable requests but does not pin connections, leaving a DNS rebinding or split-horizon time-of-check/time-of-use risk.
+- Code-host source-file URLs are rewritten to raw fetch targets, then revalidated.
 
 ### Blocked Network Targets
 
-When `allow_private_network = false` (default) and `allow_localhost = false` (default), eggsearch blocks fetches to the following ranges. See [safety.md](safety.md#blocked-address-ranges) for the authoritative blocked-address table.
-
-**IPv4 blocked ranges:**
-
-| Range | RFC | Purpose |
-|-------|-----|---------|
-| `0.0.0.0/8` | RFC 1122 | "This" network |
-| `10.0.0.0/8` | RFC 1918 | Private (Class A) |
-| `100.64.0.0/10` | RFC 6598 | Shared address space (CGNAT) |
-| `127.0.0.0/8` | RFC 1122 | Loopback |
-| `169.254.0.0/16` | RFC 3927 | Link-local |
-| `172.16.0.0/12` | RFC 1918 | Private (Class B) |
-| `192.0.0.0/24` | RFC 6890 | IETF protocol assignments |
-| `192.0.2.0/24` | RFC 5737 | Documentation (TEST-NET-1) |
-| `192.88.99.0/24` | RFC 3068 | 6to4 relay (deprecated) |
-| `192.168.0.0/16` | RFC 1918 | Private (Class C) |
-| `198.18.0.0/15` | RFC 2544 | Benchmarking |
-| `198.51.100.0/24` | RFC 5737 | Documentation (TEST-NET-2) |
-| `203.0.113.0/24` | RFC 5737 | Documentation (TEST-NET-3) |
-| `224.0.0.0/4` | RFC 5771 | Multicast |
-| `240.0.0.0/4` | RFC 1112 | Reserved |
-
-**IPv6 blocked ranges:** loopback (`::1`), unspecified (`::`), unique-local (`fc00::/7`), link-local (`fe80::/10`), multicast (`ff00::/8`), documentation (`2001:db8::/32`), benchmarking (`2001:2::/48`), discard-only (`2001::/32`), deprecated 6to4 (`2002::/16`), and IPv4-mapped addresses targeting any blocked IPv4 range.
-
-Redirect targets are revalidated against these same ranges before being followed.
+By default, eggsearch blocks localhost and private or otherwise non-public
+addresses. See [safety.md](safety.md#blocked-address-ranges) for the
+current IPv4 and IPv6 ranges and the effect of each operator override.
 
 ### Redirect Safety
 
@@ -100,7 +78,7 @@ Each redirect is subject to:
 
 1. Redirect count limit (default 5).
 2. Target address revalidation against blocked ranges.
-3. Address re-pinning after DNS re-resolution.
+3. For HTTP fetches, approved addresses are pinned after DNS resolution. Browser connections use a separate path and are not pinned.
 4. Protocol downgrade check (HTTPS to HTTP is allowed but tracked).
 
 ---
@@ -114,7 +92,8 @@ The following configuration fields modify fetch safety behavior. Each is an oper
 | `fetch.allow_private_network` | `false` | Fetches to RFC 1918, CGNAT, link-local, multicast, reserved ranges | High -- exposes internal services | Local development against self-hosted services | Require approval for every private-network fetch |
 | `fetch.allow_localhost` | `false` | Fetches to loopback addresses | High -- exposes local developer services | Local development against localhost servers | Require approval; never enable in shared deployments |
 | `fetch.sanitize_output` | `true` | Disables framing and injection scanning when set to `false` | Medium -- removes trust-signal layer | Debugging extraction quality only | Prefer keeping enabled; never disable for untrusted content |
-| `fetch.pdf_enabled` | `false` | PDF text extraction via `lopdf` crate | Low -- bounded extraction, feature-gated | When PDF content is needed for research | Keep disabled unless PDF support is explicitly required |
+| `fetch.pdf_enabled` | Compiled-in feature state (`true` in current source builds; absent from published `v0.4.4` binaries) | Bounded PDF text extraction via `lopdf` | Low, bounded extraction | Current source builds enable it for research over PDFs | Set `pdf_enabled = false` to refuse PDFs |
+| `fetch.browser.enabled` | Compiled-in feature state (`true` in current source builds; absent from published `v0.4.4` binaries) | Launches system Chrome/Chromium to render untrusted pages | Medium, expands runtime surface; requests are bounded and public-network-only, but rendering is not a malware sandbox | Current source builds enable it for JavaScript-heavy pages | Set `browser.enabled = false` on hosts without Chrome or where child browser processes are not permitted |
 | `batch_max_items` | `8` | Number of URLs in a single batch fetch | Low -- bounded by `batch_max_items_cap` | Adjusted per throughput needs | Keep at or below `batch_max_items_cap` |
 | `batch_max_items_cap` | `20` | Maximum allowed batch item count | Low -- hard cap on batch size | Set on the host side | Operator sets the ceiling |
 | `batch_max_chars_per_item` | `12000` | Per-item extraction char limit | Low -- bounded per item | Adjusted for large documents | Keep at or below `batch_max_total_chars` |
@@ -285,8 +264,8 @@ Batch fetch enforces per-item and aggregate limits:
 
 eggsearch explicitly does not provide:
 
-- **Malware sandboxing.** Fetched content is not executed or isolated in a sandbox.
-- **Browser isolation.** No JavaScript execution, no DOM, no browser session state.
+- **Malware sandboxing.** Current source builds can render pages in an installed browser, which may execute JavaScript. This is not a malware sandbox and does not isolate malicious content from browser vulnerabilities.
+- **Private browser state.** Browser rendering uses a real browser. Explicitly configured persistent profiles retain cookies and storage; do not use a profile when that state should not be shared.
 - **Web crawling.** Each fetch is a single explicit URL. No link following, no autonomous discovery.
 - **Data-loss prevention.** eggsearch does not prevent agents from transmitting fetched content to external services.
 - **Host-agent policy enforcement.** eggsearch provides signals; host applications enforce policy.

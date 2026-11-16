@@ -1382,17 +1382,18 @@ fn orchestration_module_size_ratchet() {
         ("src/meta/package_resolver.rs", 1700, 60_000),
         ("src/meta/research_workflow.rs", 1900, 81_920),
         ("src/meta/adapter/tests.rs", 2700, 100_000),
+        ("src/meta/engines/startpage_tests.rs", 1800, 81_920),
+        ("src/meta/challenge/anubis_tests.rs", 1750, 81_920),
         // Over the ordinary 1600-line / 80 KB ceiling. Frozen here so the debt
         // is explicit and cannot grow; split when touched.
         ("src/core/security.rs", 3000, 115_000),
-        ("src/core/config.rs", 3000, 115_000),
+        ("src/core/config.rs", 1900, 76_000),
         ("src/core/provider.rs", 2800, 115_000),
         ("src/fetch/span.rs", 2750, 81_920),
         ("src/fetch/client.rs", 2600, 100_000),
         ("src/core/retrieval_status.rs", 2300, 95_000),
         ("src/fetch/pdf.rs", 2100, 70_000),
         ("src/startup.rs", 1800, 62_000),
-        ("src/fetch/cache.rs", 1750, 57_000),
         ("src/core/identity.rs", 1750, 60_000),
         ("src/core/repo_fetch.rs", 1650, 60_000),
     ];
@@ -1458,6 +1459,8 @@ fn ordinary_module_size_ceiling_enforced() {
         "src/meta/provider_diagnostics.rs",
         "src/meta/research_workflow.rs",
         "src/meta/adapter/tests.rs",
+        "src/meta/engines/startpage_tests.rs",
+        "src/meta/challenge/anubis_tests.rs",
         "src/core/security.rs",
         "src/core/config.rs",
         "src/core/provider.rs",
@@ -2210,7 +2213,7 @@ fn planning_status_consistency_no_closed_range_shorthand() {
         for (mid, want) in [
             ("M001", "closed"),
             ("M002", "closed"),
-            ("M006", "blocked"),
+            ("M006", "superseded"),
             ("M007", "closed"),
         ] {
             let row = text
@@ -2434,4 +2437,99 @@ fn repo_search_local_only_uses_explicit_remote_execution_authority() {
             && adapter_source.contains("Advisory lookup skipped by local-only execution policy"),
         "package advisory lookup must remain behind the same execution authority"
     );
+}
+
+fn pdf_inflation_violations(source: &str) -> Vec<&'static str> {
+    let non_test = strip_test_code(source);
+    let mut violations = Vec::new();
+    if non_test.contains("decompressed_content") {
+        violations.push("decompressed_content");
+    }
+    if non_test.contains(".decompress(") {
+        violations.push(".decompress(");
+    }
+    violations
+}
+
+#[test]
+fn pdf_inflation_enters_only_through_the_bounded_scanner() {
+    let source = read_source("src/fetch/pdf.rs");
+    let violations = pdf_inflation_violations(&source);
+    assert!(
+        violations.is_empty(),
+        "src/fetch/pdf.rs (non-test) contains unbounded inflation {violations:?}; inflation must enter through src/fetch/pdf_stream.rs::scan_stream_budget"
+    );
+    let non_test = strip_test_code(&source);
+    assert!(
+        non_test.contains("scan_stream_budget("),
+        "extract_pdf_text must run the bounded stream scan before parsing"
+    );
+
+    let scanner = read_source("src/fetch/pdf_stream.rs");
+    assert!(
+        scanner.contains("pub fn scan_stream_budget("),
+        "the bounded scanner must expose scan_stream_budget"
+    );
+
+    assert_eq!(
+        pdf_inflation_violations("fn f() { let _ = stream.decompressed_content(); }"),
+        vec!["decompressed_content"]
+    );
+    assert_eq!(
+        pdf_inflation_violations("fn f() { stream.decompress()?; }"),
+        vec![".decompress("]
+    );
+    assert!(pdf_inflation_violations(
+        "#[cfg(test)]\nmod tests {\n    fn f() { stream.decompress()?; }\n}\nfn g() {}\n"
+    )
+    .is_empty());
+    assert!(
+        pdf_inflation_violations("fn f() { let _ = scan_stream_budget(bytes, 1); }").is_empty()
+    );
+}
+
+#[test]
+fn no_retired_replay_cursor_in_mcp_tree_or_docs() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mcp_root = format!("{manifest}/src/mcp");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        if !path.to_string_lossy().starts_with(&mcp_root) {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(manifest)
+            .expect("under manifest")
+            .to_string_lossy()
+            .trim_start_matches('/')
+            .to_string();
+        let source = std::fs::read_to_string(&path).expect("readable");
+        assert!(
+            !source.contains("cursor"),
+            "{rel} still mentions the retired replay cursor"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked >= 20,
+        "the src/mcp walk must not be vacuous, checked {checked} files"
+    );
+
+    for file in [
+        "docs/config.md",
+        "docs/tool-matrix.md",
+        "docs/codegg-integration.md",
+        "architecture/mcp.md",
+        "architecture/codegg-contract.md",
+        "skills/eggsearch-mcp/SKILL.md",
+        "tests/fixtures/tool_surface/README.md",
+    ] {
+        let text = read_source(file);
+        for token in ["next_cursor", "cursor_status"] {
+            assert!(
+                !text.contains(token),
+                "{file} still documents the retired replay token `{token}`"
+            );
+        }
+    }
 }

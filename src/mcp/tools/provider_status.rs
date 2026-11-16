@@ -58,6 +58,11 @@ fn build_payload_without_probe(
         .map(|d| (d.id.clone(), health_registry.health_view(&d.id)))
         .collect();
 
+    #[cfg(feature = "browser")]
+    let browser_lifecycle = state
+        .browser_lifecycle
+        .as_ref()
+        .map(|lifecycle| lifecycle.status());
     let (browser_compiled, browser_configured, browser_discovered, browser_usable, browser_reason) = {
         #[cfg(feature = "browser")]
         {
@@ -93,6 +98,20 @@ fn build_payload_without_probe(
         }
     };
 
+    #[cfg(feature = "browser")]
+    let browser_lifecycle_json = match browser_lifecycle {
+        Some(status) => serde_json::json!({
+            "resident": status.resident,
+            "session_launches": status.session_launches,
+            "renders": status.renders,
+            "idle_teardowns": status.idle_teardowns,
+            "session_cap_teardowns": status.session_cap_teardowns,
+        }),
+        None => serde_json::Value::Null,
+    };
+    #[cfg(not(feature = "browser"))]
+    let browser_lifecycle_json = serde_json::Value::Null;
+
     let (profiles_compiled, profiles_configured, profiles_usable, profiles_reason) = {
         #[cfg(feature = "browser")]
         {
@@ -126,12 +145,36 @@ fn build_payload_without_probe(
         }
     };
 
+    let solve_snapshot = crate::meta::challenge::solve_ledger().snapshot();
     let mut payload = serde_json::json!({
         "providers": descriptors,
+        "challenge_solver": {
+            "enabled": state.config.search.challenge.enabled,
+            "untracked_providers": solve_snapshot.untracked_providers,
+            "providers": solve_snapshot.providers,
+        },
         "code_hosts": code_hosts,
         "health": health_snapshots,
         "health_views": health_views,
         "mode": mode_str(state.config.search.mode),
+        "mcp_advertisement": {
+            "tool_preset": state.config.mcp.tool_preset.as_str(),
+            "schema_profile": state.config.mcp.schema_profile.as_str(),
+            "advertised_count": crate::mcp::advertisement::tools_for(
+                state.config.mcp.tool_preset
+            )
+            .len(),
+            "advertised_tools": crate::mcp::advertisement::tools_for(
+                state.config.mcp.tool_preset
+            ),
+            "hidden_tools": crate::mcp::advertisement::hidden_tools(
+                state.config.mcp.tool_preset
+            ),
+        },
+        "routing": crate::meta::routing::disclosure(
+            state.config.search.routing.intent_mode,
+            state.config.search.routing.max_extra_providers,
+        ),
         "server_capabilities": {
             "generic_search": matches!(live_allowed(state.config.search.mode), Policy::Allow),
             "explicit_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
@@ -160,6 +203,7 @@ fn build_payload_without_probe(
             "discovered": browser_discovered,
             "usable": browser_usable,
             "reason": browser_reason,
+            "lifecycle": browser_lifecycle_json,
         },
         "persistent_browser_profiles_capabilities": {
             "compiled": profiles_compiled,
@@ -257,6 +301,34 @@ fn build_payload_without_probe(
             crate::core::workflow::RecipeDetail::None
         ) {
             map.remove("workflow_recipes");
+        }
+    }
+    if let Some(stats) = state.adapter.search_cache_stats() {
+        if let serde_json::Value::Object(map) = &mut payload {
+            map.insert(
+                "search_cache".to_string(),
+                serde_json::json!({
+                    "entries": stats.entries,
+                    "hits": stats.hits,
+                    "misses": stats.misses,
+                    "coalesced": stats.coalesced,
+                    "bypassed": stats.bypassed,
+                    "evictions": stats.evictions,
+                }),
+            );
+        }
+    }
+    if let Some(providers) = payload
+        .get_mut("providers")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for provider in providers {
+            let Some(id) = provider.get("id").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if let Some(shape) = health_registry.health_view(id).parse_shape {
+                provider["parse_shape"] = serde_json::json!(shape);
+            }
         }
     }
     payload

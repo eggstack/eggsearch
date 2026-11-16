@@ -258,6 +258,7 @@ pub async fn run_repo_search_with_host_scope(
             degraded: false,
             partial: false,
             reason: Some("local-only execution policy denies remote dispatch".to_string()),
+            intent_routing: None,
         }
     } else {
         crate::meta::provider_diagnostics::resolve_provider_routing(
@@ -267,6 +268,7 @@ pub async fn run_repo_search_with_host_scope(
             &state.config,
             state.adapter.health(),
             true,
+            None,
         )
         .map_err(|e| match e {
             crate::meta::provider_diagnostics::ProviderRoutingError::NoDefaultProviders(msg) => {
@@ -454,10 +456,13 @@ pub async fn run_repo_search_with_host_scope(
         args.response_detail,
         state.config.mcp.schema_profile,
     );
-    Ok(crate::mcp::projection::project_with_budget(
+    Ok(crate::mcp::projection::project_with_limits(
         "repo_search",
         value,
         detail,
-        state.config.mcp.brief_max_chars,
+        crate::mcp::projection::ProjectionLimits {
+            brief_max_chars: state.config.mcp.brief_max_chars,
+            excerpt_budget_chars: state.config.mcp.excerpt_budget_chars,
+        },
     ))
 }

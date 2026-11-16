@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent $PSScriptRoot
 $Installer = Get-Content -Raw (Join-Path $PSScriptRoot 'install.ps1')
+$Installer = $Installer.Replace("`r`n", "`n").Replace("`r", "`n")
 $TargetContract = Get-Content (Join-Path $PSScriptRoot 'release-targets.txt') | Where-Object { $_.Trim() }
 
 foreach ($Row in $TargetContract) {
@@ -9,7 +10,7 @@ foreach ($Row in $TargetContract) {
     if ($Fields.Count -ne 4) { throw "Invalid release target row: $Row" }
     if ($Fields[2] -ne 'windows') { continue }
     $Pair = "`$Target = '$($Fields[0])'`n        `$Asset = '$($Fields[1])'"
-    if ($Installer -notlike "*$Pair*") { throw "PowerShell installer mapping is missing: $Row" }
+    if (-not $Installer.Contains($Pair)) { throw "PowerShell installer mapping is missing: $Row" }
 }
 
 if ($Installer -notlike '*EGGSEARCH_INSTALL_TEST_BASE_URL*') { throw 'PowerShell test base URL hook is missing' }

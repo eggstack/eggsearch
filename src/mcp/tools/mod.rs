@@ -5,6 +5,7 @@
 //! The stable `crate::mcp::tools::X` paths are preserved via re-exports.
 
 mod batch_fetch;
+mod batch_fetch_item;
 pub mod canonical;
 mod common;
 mod evidence_bundle;
@@ -17,16 +18,18 @@ mod security_search;
 mod web_fetch;
 mod web_search;
 
-pub use batch_fetch::{run_batch_fetch, BatchFetchArgs};
+pub use batch_fetch::{run_batch_fetch, run_batch_fetch_with_progress, BatchFetchArgs};
 pub use common::{map_tool_result, RepairHint, ToolError, ToolErrorCode, ToolErrorExecution};
 pub use evidence_bundle::{run_build_evidence_bundle, EvidenceBundleArgs};
 pub use provider_status::{run_provider_status, run_provider_status_async, ProviderStatusArgs};
 pub use repo_fetch::{run_repo_fetch, run_repo_fetch_with_host_scope, RepoFetchArgs};
 pub use repo_map::{run_repo_map, run_repo_map_with_host_scope, RepoMapArgs};
 pub use repo_search::{run_repo_search, run_repo_search_with_host_scope, RepoSearchArgs};
-pub use research_search::{run_research_search, ResearchSearchArgs};
+pub use research_search::{
+    run_research_search, run_research_search_with_progress, ResearchSearchArgs,
+};
 pub use security_search::{run_security_search, SecuritySearchArgs};
-pub use web_fetch::{run_web_fetch, WebFetchArgs};
+pub use web_fetch::{run_web_fetch, run_web_fetch_with_progress, WebFetchArgs};
 pub use web_search::{run_web_search, WebSearchArgs};
 
 #[cfg(test)]

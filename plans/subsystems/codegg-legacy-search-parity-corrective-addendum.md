@@ -178,7 +178,7 @@ Status: closed at `e9103b4c50743037552dd0ad94eee003c7ea3d48`.
 
 Plan:
 
-- `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md`
 
 Closure:
 
@@ -195,7 +195,7 @@ Status: closed at `523331509936d72c9d3eb327e602b444048d6372`.
 
 Plan:
 
-- `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md`
 
 Closure:
 
@@ -222,7 +222,7 @@ closure record stands unchanged.
 
 Plan:
 
-- `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md`
 
 Closure:
 
@@ -270,7 +270,7 @@ closure record stands unchanged as the account of the 0.4.0 attest stop.
 
 Plan:
 
-- `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md`
 
 Closure:
 
@@ -295,7 +295,7 @@ Status: closed (closure
 
 Plan:
 
-- `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`
+- `plans/archive/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md`
 
 Closure:
 
@@ -377,8 +377,8 @@ by M005 carrying the identical parity surface.
 
 | Milestone | Status | Implementation plan | Blocker |
 |---|---|---|---|
-| M001 keyless/source-specific provider parity | closed | `plans/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
-| M002 credentialed provider parity | closed | `plans/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/002-status.md` at `5233315` |
-| M003 CodeGG retirement handoff + qualification | closed | `plans/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | sole publication condition cleared by the immutable 0.4.1 release carrying the parity surface; closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75`, reconciliation in `plans/closure/codegg-legacy-search-parity/005-status.md` |
-| M004 eggsearch 0.4.0 publication + downstream release handoff | closed | `plans/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md` | publication boundary satisfied by immutable 0.4.1 carrying the identical surface; `v0.4.0` stays crate+tag only; closure `plans/closure/codegg-legacy-search-parity/004-status.md`, reconciliation in `plans/closure/codegg-legacy-search-parity/005-status.md` |
-| M005 eggsearch 0.4.1 corrective publication + downstream release handoff | closed | `plans/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md` | fix-prep `32769d6`, qualify run `37070932877` green, crates.io 0.4.1, tag `v0.4.1` at `32769d6`, release run `37072825644` green incl. attest, immutable 16-asset release + provenance/install evidence; closure `plans/closure/codegg-legacy-search-parity/005-status.md` |
+| M001 keyless/source-specific provider parity | closed | `plans/archive/implementation/codegg-legacy-search-parity/001-keyless-source-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/001-status.md` |
+| M002 credentialed provider parity | closed | `plans/archive/implementation/codegg-legacy-search-parity/002-credentialed-provider-parity.md` | none; closure `plans/closure/codegg-legacy-search-parity/002-status.md` at `5233315` |
+| M003 CodeGG retirement handoff + qualification | closed | `plans/archive/implementation/codegg-legacy-search-parity/003-codegg-retirement-handoff-and-qualification.md` | sole publication condition cleared by the immutable 0.4.1 release carrying the parity surface; closure `plans/closure/codegg-legacy-search-parity/003-status.md` at `8e5ec75`, reconciliation in `plans/closure/codegg-legacy-search-parity/005-status.md` |
+| M004 eggsearch 0.4.0 publication + downstream release handoff | closed | `plans/archive/implementation/codegg-legacy-search-parity/004-v0.4.0-release-publication-and-downstream-handoff.md` | publication boundary satisfied by immutable 0.4.1 carrying the identical surface; `v0.4.0` stays crate+tag only; closure `plans/closure/codegg-legacy-search-parity/004-status.md`, reconciliation in `plans/closure/codegg-legacy-search-parity/005-status.md` |
+| M005 eggsearch 0.4.1 corrective publication + downstream release handoff | closed | `plans/archive/implementation/codegg-legacy-search-parity/005-v0.4.1-corrective-release.md` | fix-prep `32769d6`, qualify run `37070932877` green, crates.io 0.4.1, tag `v0.4.1` at `32769d6`, release run `37072825644` green incl. attest, immutable 16-asset release + provenance/install evidence; closure `plans/closure/codegg-legacy-search-parity/005-status.md` |

@@ -59,4 +59,10 @@ pub mod update;
 
 #[cfg(feature = "mock")]
 #[doc(hidden)]
+pub use meta::adapter::selection_test_harness as selection_test;
+#[cfg(feature = "mock")]
+#[doc(hidden)]
+pub use meta::engines::test_harness as engine_parse_test;
+#[cfg(feature = "mock")]
+#[doc(hidden)]
 pub use meta::local_inventory_cache::test_harness as bounded_command_test;

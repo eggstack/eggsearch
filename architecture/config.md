@@ -56,7 +56,7 @@ defaulted, but `[search]` still requires `mode`, `default_max_results`,
 | `max_results_cap` | `usize` | `50` | Hard cap on caller-requested `max_results` |
 | `max_query_chars` | `usize` | `512` | Maximum accepted query length |
 | `timeout_ms` | `u64` | `8000` | Per-request search timeout |
-| `default_providers` | `Vec<String>` | `["duckduckgo", "startpage", "yahoo"]` | Providers queried when the caller names none |
+| `default_providers` | `Vec<String>` | `["duckduckgo", "brave", "yahoo"]` | Providers queried when the caller names none |
 | `providers` | `BTreeMap<String, bool>` | 13 entries (see below) | Per-provider enable/disable flags |
 | `searxng` | `SearxngConfig` | disabled | Self-hosted SearXNG upstream (`enabled`, `base_url`) |
 | `api` | `BTreeMap<String, ApiProviderConfig>` | empty | API-key providers (`enabled`, `api_key_env`, `base_url`) |
@@ -66,6 +66,37 @@ defaulted, but `[search]` still requires `mode`, `default_max_results`,
 | `exact_error` | `ExactErrorConfig` | defaults | Compiler/runtime error search mode |
 | `multiquery_concurrency` | `usize` | `8` | Global in-flight `(subquery, provider)` dispatch cap |
 | `multiquery_provider_concurrency` | `usize` | `2` | Per-provider in-flight dispatch cap |
+| `cache_ttl_seconds` | `u64` | `300` | `web_search` result-cache TTL (`0` disables; max 86400). A freshness bound, not a correctness guarantee |
+| `cache_max_entries` | `usize` | `128` | Bounded LRU entry count (`1..=4096`); each entry is capped at 1024 rows and is not stored above that |
+
+### `[search.routing]` — `RoutingSection`
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `intent_mode` | `IntentMode` | `apply` | `off` derives and reports intent plus the routing decision but adds no provider; `apply` admits the intent's preferred providers. Unknown values are a parse error |
+| `max_extra_providers` | `usize` | `2` | Cap on providers added by one routing decision, bounded to 0–4. `0` reports without adding |
+
+Routing only adds. The precedence chain is explicit `providers`, then `profile`,
+then default providers plus intent additions, then the cooldown and health
+filter. Every table entry is admitted only when it is enabled, built, not
+cooling down, and satisfies the same capability predicate its warning uses, so
+routing cannot hide a real capability gap. `apply` is not the default: the
+tier-1 snapshot lane does not yet measure the shipped default provider set, so
+flipping the default would ship an unmeasured policy change.
+
+### `[search.challenge]` — `ChallengeSection`
+
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `enabled` | `bool` | `false` | Opt-in gate for bounded non-interactive proof-of-work solving (ADR-0009). While off, challenged providers behave exactly as before |
+| `max_difficulty` | `u8` | `5` | Refuses an Anubis challenge whose published `rules.difficulty` exceeds it; bounded to 1–10. Operator cost knob, not an engine constant |
+| `max_attempts` | `u64` | `2000000` | Candidate/derivation ceiling per solve, bounded to 1–100000000; reaching it fails the solve rather than looping |
+| `timeout_ms` | `u64` | `2000` | Wall-clock ceiling per solve, bounded to 100–30000; a difficulty-6 Anubis solve needs at least 8000 |
+| `cookie_ttl_seconds` | `u64` | `240` | Pass-cookie reuse window per provider, bounded to 0–3600; `0` re-solves every request |
+
+The section is serde-defaulted, so a config file without it keeps pre-ADR-0009
+behaviour exactly. Pass cookies live in process memory only and are never
+logged, persisted, or surfaced in `provider_status`.
 
 Default `providers` map: `duckduckgo = true`, `brave = true`,
 `startpage = true`, `yahoo = true`, `mojeek = false`,
@@ -83,18 +114,20 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `enabled` | `bool` | `true` | Whether fetch tools are available |
 | `timeout_ms` | `u64` | `8000` | Request timeout |
 | `max_bytes` | `usize` | `2_000_000` | Hard response body cap |
-| `max_chars_default` | `usize` | `12_000` | Default extraction limit |
-| `max_chars_cap` | `usize` | `50_000` | Hard extraction upper bound |
+| `max_chars_default` | `usize` | `12_000` | Default returned-text window when a caller omits `max_chars` |
+| `max_chars_cap` | `usize` | `50_000` | Document/extraction budget and the cost knob: how much of the page is extracted and addressable; caller `max_chars` windows clamp to it |
 | `redirect_limit` | `usize` | `5` | Redirect chain limit |
 | `allow_private_network` | `bool` | `false` | SSRF escape hatch: RFC 1918 / CGNAT / link-local |
 | `allow_localhost` | `bool` | `false` | SSRF escape hatch: loopback, independent of the above |
 | `include_links_default` | `bool` | `false` | Default link inclusion |
 | `user_agent` | `String` | `eggsearch/<version>` | HTTP user agent |
 | `sanitize_output` | `bool` | `true` | Tier 2 framing + Tier 3 marker scan on fetched text |
-| `pdf_enabled` | `bool` | `false` | PDF extraction (requires the `pdf` feature) |
+| `pdf_enabled` | `bool` | compiled-in (`true` with the `pdf` feature) | PDF text extraction; source builds without the feature resolve `false` |
 | `pdf_max_pages` | `usize` | `25` | PDF page budget |
 | `pdf_max_chars_per_page` | `usize` | `12_000` | Per-page extraction cap |
 | `pdf_max_total_chars` | `usize` | `50_000` | Total PDF extraction budget |
+| `pdf_max_bytes` | `usize` | `16_777_216` | Response body cap for PDF-identified fetches (`1..=268_435_456`); non-PDF keeps `max_bytes` |
+| `pdf_max_decompressed_bytes` | `usize` | `67_108_864` | Total PDF stream-expansion budget measured before parsing (`1_048_576..=1_073_741_824`) |
 | `batch_max_items` | `usize` | `8` | Default batch item count |
 | `batch_max_items_cap` | `usize` | `20` | Hard batch item cap |
 | `batch_max_chars_per_item` | `usize` | `12_000` | Per-item char cap |
@@ -109,7 +142,7 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 | `origin_circuit_failure_threshold` | `u8` | `3` | Retryable failures before the circuit opens |
 | `origin_circuit_duration_ms` | `u64` | `60_000` | Circuit open duration |
 | `cache` | `FetchCacheSection` | see below | In-memory fetch cache |
-| `browser` | `FetchBrowserSection` | disabled | Headless rendering escalation |
+| `browser` | `FetchBrowserSection` | enabled when compiled | Headless rendering escalation; HTTP remains the hot path |
 
 `[fetch.cache]`: `enabled = true`, `memory_max_entries = 256`,
 `memory_max_bytes = 67_108_864` (64 MB raw bodies),
@@ -117,12 +150,17 @@ Default `providers` map: `duckduckgo = true`, `brave = true`,
 (64 MB extracted documents, independent budget),
 `default_ttl_seconds = 900`.
 
-`[fetch.browser]`: `enabled = false`, `policy = "http_only"`,
-`executable = None` (auto-discovered; an explicit invalid path fails
+`[fetch.browser]`: `enabled` resolves from the compiled-in `browser` feature
+(`true` in default builds), `policy = "auto"` (HTTP first; escalate at most once
+for a JavaScript shell, a non-interactive verification page, or a detected
+challenge), `executable = None` (auto-discovered; an explicit invalid path fails
 deterministically with `ExplicitPathInvalid`, never falls back),
 `startup_timeout_ms = 10_000`, `navigation_timeout_ms = 20_000`,
 `post_load_wait_ms = 1_500`, `verification_wait_ms = 10_000`,
-`max_requests = 100`, `max_dom_bytes = 4_000_000`,
+`max_requests = 100` (enforced renders per browser session; reaching the cap
+closes the session and the next render relaunches), `idle_timeout_ms = 90_000`
+(minimum `5_000`; the shared browser closes after this idle interval),
+`max_dom_bytes = 4_000_000`,
 `global_concurrency = 1`, `per_origin_concurrency = 1`,
 `block_media = true`, plus `[fetch.browser.persistent_profiles]`:
 `enabled = false`, `profiles_dir = None` (platform default),
@@ -172,6 +210,9 @@ being silently ignored.
 |-------|------|---------|---------|
 | `schema_profile` | `McpSchemaProfile` | `full` | `full` advertises the existing complete schemas; `compact` keeps all ten tool names while shortening descriptions and input schemas for context-heavy direct MCP clients |
 | `brief_max_chars` | `usize` | `8000` | Maximum serialized character count for brief MCP responses, bounded to 512–32000 |
+| `excerpt_budget_chars` | `usize` | `4000` | One response-wide ceiling on card passage text (`snippet` plus `excerpts[].text`) for `compact` and `brief` responses, bounded to 256–32000. Measured in serialized characters including trust framing; deterministic shingle-overlap suppression runs inside it and reports `excerpt_economy` |
+| `tool_preset` | `McpToolPreset` | `full` | `full` advertises all ten tools; `research` (7), `code` (8) and `minimal` (4) filter `tools/list` only. Hidden tools still execute, and `next_actions` are filtered to the active preset. Resolution order is contract metadata, then compact projection, then the preset filter; unknown values are a parse error |
+| `tasks` | `McpTasksSection` | disabled | Nested `[mcp.tasks]`: `enabled` (default `false`), `ttl_ms` (default `300000`, 1000–3600000), `max_concurrent` (default `4`, 1–16), `poll_interval_ms` (default `1000`, 250–10000). Tasks are exposed only when enabled **and** the client declared the extension; above `max_concurrent` a call falls back to the synchronous path |
 
 The compact profile is process-wide presentation configuration, shared by
 stdio and loopback HTTP. It does not restrict tool execution or change
@@ -248,7 +289,9 @@ issues / releases adapters plus `brave_api`, `searxng`,
 `duckduckgo`, `startpage`; `security` lists `osv`,
 `github_issues`, `brave_api`, `duckduckgo`, `startpage`; `research`
 lists `brave_api`, `searxng`, `duckduckgo`, `startpage`, `mojeek`.
-Profiles never require API keys; missing credentials are
+`startpage` remains listed by the built-in profiles even though its
+upstream currently refuses every request with an Anubis proof-of-work
+wall. Profiles never require API keys; missing credentials are
 provider-scoped skips, never request failures.
 
 ---
@@ -257,7 +300,10 @@ provider-scoped skips, never request failures.
 
 `AppConfig::validate()` fails fast on the first violated invariant:
 
-- `[fetch]`: `max_chars_cap >= max_chars_default`; `max_bytes`,
+- `[fetch]`: `max_chars_cap >= max_chars_default`; `pdf_max_bytes` in
+  `1..=268_435_456` (it bounds a different body class from `max_bytes` and is
+  not required to be `>= max_bytes`); `pdf_max_decompressed_bytes` in
+  `1_048_576..=1_073_741_824`, with an error naming the key; `max_bytes`,
   `timeout_ms`, `batch_max_items`, `batch_max_items_cap`,
   `batch_max_total_chars`, `batch_concurrency`, `retry_max_attempts`,
   `origin_http_concurrency`, `origin_browser_concurrency`,
@@ -269,6 +315,7 @@ provider-scoped skips, never request failures.
   `retry_max_delay_ms >= retry_base_delay_ms`.
 - `[search]`: `default_max_results > 0`; `max_results_cap > 0` and
   `>= default_max_results`; `timeout_ms > 0`; `max_query_chars > 0`;
+  `cache_ttl_seconds <= 86400`; `cache_max_entries` in `1..=4096`;
   every `default_providers` entry and every `providers` map key must be
   a known provider id.
 - SearXNG: when enabled, `base_url` must be a valid `http`/`https` URL
@@ -292,8 +339,8 @@ provider-scoped skips, never request failures.
 ## Keyless Healthy Default
 
 `AppConfig::default()` with no file and no credential env vars must
-produce a useful server: `duckduckgo`, `brave`, `startpage`, `yahoo`,
-and `osv` route keyless. CI enforces this by blanking all credential
+produce a useful server: `duckduckgo`, `brave`, `yahoo`, and `osv`
+route keyless. CI enforces this by blanking all credential
 env vars; missing credentials surface as provider-scoped skips, never
 global failures.
 
