@@ -516,7 +516,10 @@ with the `browser_unavailable` structured warning and `browser_escalated: false`
   and a hard 5 s floor enforced by configuration validation, not by clamping.
 - **Shared bounded lifecycle**: one `BrowserLifecycle` per process, not one per
   call. `begin_render` takes the read side of the render gate and counts the
-  render; `finish_render` drops the gate, touches activity, and — once
+  overall render attempt. Only after `ensure_browser` succeeds is the attempt
+  counted against that browser session; therefore the cold-starting render is
+  request one, while a failed launch consumes no session capacity. `finish_render`
+  drops the gate, touches activity, and — once
   `requests_this_session` reaches `max_requests` — takes the write side and
   closes the session for `SessionCap`, so the next render relaunches. An idle
   timer closes the browser and cancels its handler after

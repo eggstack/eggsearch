@@ -1,22 +1,28 @@
 # B004 — M003 Qualification Corrective Pass
 
-Status: active (public-fixture qualification is blocked pending maintainer authorization)
+Status: active (corrective changes exercised; M003 remains blocked pending full exact-candidate requalification)
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M004
 Primary class: infrastructure and corrective evidence
 Baseline: `f76851324f917999152871f49d2302bef87d437d` (branch `feat/auto-20261110-0a674cdc`)
 References: `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/closure/browser-artifact-availability/003-status.md`; `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`; `plans/subsystems/python-pypi-distribution-roadmap.md` M003; `plans/closure/python-pypi-distribution/003-status.md`; `plans/subsystems/eggpack-release-adoption-roadmap.md` M001; `plans/closure/eggpack-release-adoption/001-status.md`.
-Dependencies: Interface: M003's unchanged ten-tool schemas and qualification contract. Operational: maintainer approval and an approved publicly reachable HTTPS origin for synthetic fixture pages. M003 remains blocked until every original acceptance condition is requalified on one exact candidate.
+Dependencies: Interface: M003's unchanged ten-tool schemas and qualification contract. Operational: the approved publicly reachable HTTPS origin for synthetic fixture pages, used during requalification. M003 remains blocked until every original acceptance condition is requalified on one exact candidate.
 
 ## Objective
 
 Correct the typed-request declarations that fail the installed-wheel smoke, replace unsupported macOS arm64 runner labels at their source, and obtain an authorized fixture route that can exercise browser rendering without weakening the existing private-target protections. This is a new corrective pass; it does not amend the original M003 plan or imply that M003 has closed.
 
-## Current evidence
+## Initial evidence
 
 - PR candidate `f76851324f917999152871f49d2302bef87d437d` ordinary CI passed in run `43804158099`; Eggpack drift and contract checks passed in run `43804158070`.
 - Python wheel, emulated ARMv7, and extracted-sdist smoke cells failed at `bindings/python/tests/test_native.py:139` in run `43804158035`. Direct comparison against the downloaded macOS arm64 wheel found exactly two missing fields in each of `BatchFetchRequest`, `WebFetchRequest`, and `ResearchSearchRequest`: `offset` and `limit`.
 - Egress qualification run `43804158039` was cancelled for macOS arm64 before steps because its `macos-14` runner configuration is unsupported. The same stale label appears in `release/eggpack/github-policy.json`, the generated release workflow, and the candidate-qualification and egress workflows.
-- The attempted local realistic-mix run is not evidence: browser interception rejects private/local targets even when the HTTP fetch config allows them. No public host or tunnel has been authorized or started.
+- The initial local realistic-mix run was not evidence: browser interception rejects private/local targets even when the HTTP fetch config allows them. At that time no public fixture origin had been authorized or started.
+
+## Follow-up exact-candidate evidence
+
+- Candidate `8faa0f15a40f336f361d523c9b45b3fe3b0106ad` passed hosted seven-target qualification (`43813413696`), the Python wheel/sdist matrix (`43808981282`), hosted CI (`43808981290`), egress qualification (`43808981328`), direct macOS arm64 install/release smoke, and live ten-tool MCP verification.
+- The approved public synthetic fixture origin was used without changing browser private-target protections. The 294-sample adjusted report observed 39 expected cold browser escalations, idle teardown, post-idle relaunch, and final process cleanup, but remained non-qualifying because `max_requests = 13` tore down only after render 14. M005 tracks the confirmed counter-reset defect.
+- `packaging/test-install.sh` remains blocked by the workstation's `mavis-trash: unsupported OS: Plan9` guard. PowerShell installer and release-smoke wrappers were not run because neither `pwsh` nor `powershell` is installed.
 
 ## Non-goals
 

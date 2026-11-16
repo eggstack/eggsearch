@@ -122,10 +122,20 @@ impl BrowserLifecycle {
         }
     }
 
+    fn record_session_launch(&self) {
+        self.requests_this_session.store(0, Ordering::Relaxed);
+        self.session_launches.fetch_add(1, Ordering::Relaxed);
+        self.resident.store(true, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub(super) fn record_session_request(&self) {
+        self.requests_this_session.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub async fn begin_render(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
         let guard = self.render_gate.read().await;
         self.renders.fetch_add(1, Ordering::Relaxed);
-        self.requests_this_session.fetch_add(1, Ordering::Relaxed);
         guard
     }
 
@@ -263,13 +273,10 @@ impl BrowserLifecycle {
         }
         let mut b = self.browser.lock().await;
         let browser = Arc::new(browser);
+        self.record_session_launch();
         *b = Some(Arc::clone(&browser));
         drop(b);
 
-        self.requests_this_session.store(0, Ordering::Relaxed);
-        self.session_launches.fetch_add(1, Ordering::Relaxed);
-        self.resident.store(true, Ordering::Relaxed);
-        self.touch();
         self.start_watchdog().await;
 
         Ok(browser)
@@ -631,17 +638,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn session_cap_closes_the_session_after_the_render() {
+    async fn cold_start_render_counts_toward_session_cap() {
         let config = BrowserConfig {
             max_requests: 1,
             ..BrowserConfig::default()
         };
         let lifecycle = BrowserLifecycle::new(None, config);
         let gate = lifecycle.begin_render().await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 0);
+        lifecycle.record_session_launch();
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 0);
+        lifecycle.record_session_request();
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 1);
         lifecycle.finish_render(gate).await;
         let status = lifecycle.status();
         assert_eq!(status.renders, 1);
+        assert_eq!(status.session_launches, 1);
         assert_eq!(status.session_cap_teardowns, 1);
+        assert!(!status.resident);
+    }
+
+    #[tokio::test]
+    async fn session_cap_counts_only_acquired_browser_requests_once() {
+        let config = BrowserConfig {
+            max_requests: 3,
+            ..BrowserConfig::default()
+        };
+        let lifecycle = BrowserLifecycle::new(None, config);
+
+        let first = lifecycle.begin_render().await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 0);
+        lifecycle.record_session_launch();
+        lifecycle.record_session_request();
+        lifecycle.finish_render(first).await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 1);
+        assert_eq!(lifecycle.status().session_cap_teardowns, 0);
+
+        let second = lifecycle.begin_render().await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 1);
+        lifecycle.record_session_request();
+        lifecycle.finish_render(second).await;
+        assert_eq!(lifecycle.requests_this_session.load(Ordering::Relaxed), 2);
+        assert_eq!(lifecycle.status().session_cap_teardowns, 0);
+
+        let third = lifecycle.begin_render().await;
+        lifecycle.record_session_request();
+        lifecycle.finish_render(third).await;
+        let status = lifecycle.status();
+        assert_eq!(status.renders, 3);
+        assert_eq!(status.session_cap_teardowns, 1);
+        assert!(!status.resident);
+    }
+
+    #[tokio::test]
+    async fn failed_browser_launch_does_not_consume_session_cap() {
+        let config = BrowserConfig {
+            max_requests: 1,
+            ..BrowserConfig::default()
+        };
+        let lifecycle = Arc::new(BrowserLifecycle::new(None, config));
+        let gate = lifecycle.begin_render().await;
+        assert!(matches!(
+            lifecycle.ensure_browser().await,
+            Err(BrowserLaunchError::NoBrowser)
+        ));
+        lifecycle.finish_render(gate).await;
+        let status = lifecycle.status();
+        assert_eq!(status.renders, 1);
+        assert_eq!(status.session_cap_teardowns, 0);
         assert!(!status.resident);
     }
 

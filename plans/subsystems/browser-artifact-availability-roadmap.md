@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: closing (M001/M002 closed; M003 blocked; M004 corrective pass active)
+Status: closing (M001/M002 closed; M003 blocked; M004 and M005 corrective passes active)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
@@ -65,31 +65,34 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
 - HTTP is the hot path. `auto` escalates only for JavaScript shells,
   non-interactive verification pages, or detected challenges.
 - The shared lifecycle enforces `max_requests`, tears down after 90 seconds idle,
-  and reports residency and teardown counters through `provider_status`. The live
-  probe observed zero Chrome descendants after teardown.
+  and reports residency and teardown counters through `provider_status`. The
+  M003 realistic-mix requalification exposed a first-render accounting defect;
+  the corrective work is tracked separately in M005.
 - Explicit render requests return actionable errors when browser support is
   unavailable or disabled. Unserved automatic escalation is reported as a
   structured warning.
 - M001 and M002 are closed. Their closure records capture implementation and
   live-tool evidence.
-- M003 remains blocked. The recorded distribution evidence is for candidate
-  `62387208ac8bc20efb545b68f0704f466bab7295`: its Python wheel builds and
-  dependency audit pass, but installed-wheel and sdist smoke fail at the
-  typed-request/schema assertion. A native macOS arm64 build and direct
-  `install.sh`/`release-smoke.sh` checks pass locally; the standard
-  installer/release-smoke wrappers remain unrun. Its hosted arm64 build job was
-  cancelled before steps because `macos-14-arm64-us-default` is unsupported.
-- Later PR candidate `f76851324f917999152871f49d2302bef87d437d` passed ordinary CI
-  in run `43804158099` and Eggpack drift/contract checks in run `43804158070`.
-  Python wheel, emulated ARMv7, and extracted-sdist smoke failed in run
-  `43804158035`; the exact missing declarations are `offset` and `limit` on
-  `BatchFetchRequest`, `WebFetchRequest`, and `ResearchSearchRequest`. Egress run
-  `43804158039` was cancelled before the macOS arm64 steps because `macos-14` is
-  unsupported. The producer input, generated release workflow, candidate
-  qualification workflow, and egress workflow require a source-owned runner fix.
-- The realistic-mix harness cannot escalate against its local fixture because
-  browser interception blocks private/local targets. No public fixture host or
-  tunnel is authorized. The exact-candidate live ten-tool run remains outstanding.
+- M003 remains blocked. Current exact candidate
+  `8faa0f15a40f336f361d523c9b45b3fe3b0106ad` passed the hosted seven-target
+  qualification (run `43813413696`), Python wheel/sdist matrix
+  (`43808981282`), hosted CI (`43808981290`), egress qualification
+  (`43808981328`), direct macOS arm64 install/release smoke, and live ten-tool
+  MCP verification. The seven-target run and all listed hosted gates are tied to
+  that exact SHA.
+- Its adjusted public synthetic fixture matrix recorded 294 samples and 39
+  expected cold browser escalations. HTTP routing for static/PDF cases, idle
+  teardown, post-idle relaunch, and final process cleanup were observed. The
+  diagnostic report remains non-qualifying: with `max_requests = 13`, the
+  browser was still resident after render 13 and closed only after render 14.
+  `src/fetch/browser/lifecycle.rs` resets the request counter after the cold
+  launch, discarding the first render; M005 tracks the correction. The report is
+  `target/m003-public-fixture/qualification-adjusted/evidence.json`.
+- The approved public fixture origin is retained and browser private-target
+  protections remain unchanged. `packaging/test-install.sh` is blocked on this
+  workstation by `mavis-trash: unsupported OS: Plan9`; PowerShell installer and
+  release-smoke wrappers remain unrun because neither `pwsh` nor `powershell` is
+  installed. The direct macOS arm64 installer and release smoke passed.
 
 ## 5. Dependency graph
 
@@ -161,13 +164,33 @@ Implementation plan: `plans/implementation/browser-artifact-availability/004-m00
 
 Correct the Python request-type schema coverage and unsupported macOS arm64 runner
 mapping found by M003 qualification. Preserve M003's blocked status and all
-existing tool and SSRF contracts. The realistic-mix fixture remains blocked until
-an approved, publicly reachable HTTPS origin is available; do not weaken the
-browser's private-target policy or start a host/tunnel without authorization.
+existing tool and SSRF contracts. A public HTTPS synthetic fixture origin was
+approved and used during requalification; do not weaken the browser's
+private-target policy. The newly exposed lifecycle accounting defect is tracked
+separately in M005.
 
 Exit condition: corrective contract and producer checks pass, and all original
 M003 acceptance criteria are then requalified on one exact candidate before M003
 can be considered for closure.
+
+### M005 — Session-cap initial render accounting (infrastructure correction) — active
+
+Implementation plan: `plans/implementation/browser-artifact-availability/005-session-cap-initial-render-accounting.md`.
+
+The M003 realistic-mix cap probe found that the baseline increments
+`requests_this_session` in `begin_render` before a cold browser launch, then the
+successful launch resets that counter. As a result, `max_requests` tears down one
+render later than configured on a cold session. Move per-session counting after
+successful browser acquisition while retaining overall render telemetry at entry;
+failed launches must not consume session capacity. Add deterministic regression
+coverage and requalify on a new exact candidate. Do not change the restart budget
+or M003's tool/security contracts.
+
+Exit condition: the cold-starting render counts as request one; a failed launch
+consumes no session capacity; the cap closes after exactly `max_requests` renders;
+the following render relaunches within the existing budget; lifecycle and browser
+transport regressions pass. M003 remains blocked until all its original acceptance
+criteria pass on one exact candidate.
 
 ## 7. User-visible exit conditions
 

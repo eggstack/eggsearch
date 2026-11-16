@@ -108,6 +108,7 @@ async fn render_once(
         .ensure_browser()
         .await
         .map_err(|e| BrowserFetchError::LaunchFailed(e.to_string()))?;
+    lifecycle.record_session_request();
 
     let start = Instant::now();
 
