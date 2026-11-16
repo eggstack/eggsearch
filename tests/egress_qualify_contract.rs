@@ -229,6 +229,31 @@ fn egress_route_symbols_are_covered() {
 }
 
 #[test]
+fn windows_candidate_validation_runs_installer_and_release_smoke_wrappers() {
+    let workflow = fs::read_to_string(".github/workflows/qualify-eggpack-candidate.yml")
+        .expect("read exact-SHA candidate workflow");
+    let start = workflow
+        .find("  validate_build_x86_64_pc_windows_msvc:\n")
+        .expect("find Windows x64 consumer-validation job");
+    let remaining = &workflow[start..];
+    let end = remaining
+        .find("\n  validate_build_x86_64_unknown_linux_gnu:\n")
+        .expect("find Windows x64 consumer-validation job boundary");
+    let job = &remaining[..end];
+    for required in [
+        "packaging/test-install.ps1",
+        "packaging/release-smoke.ps1",
+        "candidate-direct",
+        "eggpack-windows-wrapper-evidence-${{ inputs.candidate_sha }}",
+    ] {
+        assert!(
+            job.contains(required),
+            "Windows exact-SHA candidate job must include {required}"
+        );
+    }
+}
+
+#[test]
 fn macos_arm64_workflows_use_supported_runner_label() {
     let policy = fs::read_to_string("release/eggpack/github-policy.json")
         .expect("read Eggpack GitHub policy");

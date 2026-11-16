@@ -127,6 +127,67 @@ def render(source):
     output = output.replace("release_tag", "candidate_sha")
     output = output.replace("Eggpack candidate builds", "Eggpack exact-SHA candidate qualification")
 
+    windows_start = output.index("  validate_build_x86_64_pc_windows_msvc:\n")
+    _, job_matches = job_blocks(output)
+    windows_end = next(
+        (start for _, start in job_matches if start > windows_start), len(output)
+    )
+    windows_block = output[windows_start:windows_end]
+    wrapper_steps = """\
+      - name: Run Windows PowerShell installer and release-smoke wrappers
+        shell: pwsh
+        env:
+          EGGSEARCH_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $SourceRevision = $env:EGGSEARCH_CANDIDATE_SHA
+          $CandidateDirectory = 'eggpack-handoff/build_x86_64_pc_windows_msvc/candidates'
+          $CandidatePath = Join-Path $CandidateDirectory 'candidate-direct'
+          $HandoffPath = 'eggpack-handoff/build_x86_64_pc_windows_msvc/build-handoff.json'
+          $QualificationPath = 'eggpack-handoff/build_x86_64_pc_windows_msvc/evidence.json'
+          $Handoff = Get-Content -Raw -LiteralPath $HandoffPath | ConvertFrom-Json
+          $Qualification = Get-Content -Raw -LiteralPath $QualificationPath | ConvertFrom-Json
+          if ($Handoff.source_revision -ne $SourceRevision -or $Handoff.target -ne 'x86_64-pc-windows-msvc') { throw 'Candidate handoff identity mismatch' }
+          if ($Qualification.source_revision -ne $SourceRevision -or $Qualification.target -ne $Handoff.target) { throw 'Qualification evidence identity mismatch' }
+          if ($Handoff.release_id -notmatch '^v(?<version>[0-9]+[.][0-9]+[.][0-9]+)$') { throw 'Candidate release version is invalid' }
+          $CandidateVersion = $Matches.version
+          if (-not (Test-Path -LiteralPath $CandidatePath -PathType Leaf)) { throw 'Qualified Windows candidate is missing' }
+          $BinaryPath = Join-Path $env:RUNNER_TEMP 'eggsearch-x86_64-pc-windows-msvc.exe'
+          Copy-Item -LiteralPath $CandidatePath -Destination $BinaryPath -Force
+          $BinaryHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $BinaryPath).Hash.ToLowerInvariant()
+          $DirectCandidates = @($Qualification.candidates | Where-Object { $_.selector.kind -eq 'direct' })
+          if ($DirectCandidates.Count -ne 1 -or $BinaryHash -ne ([string]$DirectCandidates[0].sha256).ToLowerInvariant()) { throw 'Windows wrapper binary does not match qualified candidate' }
+          foreach ($RelativePath in @('packaging/install.ps1', 'packaging/test-install.ps1', 'packaging/release-smoke.ps1')) {
+            $Tokens = $null
+            $ParseErrors = $null
+            $ScriptPath = (Resolve-Path -LiteralPath $RelativePath).Path
+            [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$Tokens, [ref]$ParseErrors) | Out-Null
+            if ($ParseErrors.Count -gt 0) { $ParseErrors | ForEach-Object { Write-Error $_.Message }; throw ('PowerShell parse failed: ' + $RelativePath) }
+          }
+          & './packaging/test-install.ps1'
+          & './packaging/release-smoke.ps1' $BinaryPath $CandidateVersion
+          $EvidenceDirectory = 'eggpack-wrapper-evidence/build_x86_64_pc_windows_msvc'
+          New-Item -ItemType Directory -Path $EvidenceDirectory -Force | Out-Null
+          $WrapperEvidence = [ordered]@{ schema_version = 1; source_revision = $SourceRevision; target = $Handoff.target; release_id = $Handoff.release_id; binary_sha256 = $BinaryHash; powershell_version = $PSVersionTable.PSVersion.ToString(); test_install = 'passed'; release_smoke = 'passed' }
+          $WrapperEvidence | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $EvidenceDirectory 'wrapper-evidence.json') -Encoding utf8NoBOM
+          Write-Output 'PowerShell installer wrapper passed'
+          Write-Output 'PowerShell release-smoke wrapper passed'
+      - name: Upload Windows wrapper evidence
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          name: "eggpack-windows-wrapper-evidence-${{ inputs.candidate_sha }}"
+          path: "./eggpack-wrapper-evidence/build_x86_64_pc_windows_msvc/wrapper-evidence.json"
+          if-no-files-found: error
+          retention-days: 7
+"""
+    windows_block = replace_once(
+        windows_block,
+        "      - name: Upload consumer validation evidence\n",
+        wrapper_steps + "      - name: Upload consumer validation evidence\n",
+        "Windows PowerShell wrapper qualification",
+    )
+    output = output[:windows_start] + windows_block + output[windows_end:]
+
     if "contents: write" in output or "_stage-github-draft" in output:
         raise SystemExit("generated qualifier contains a release-writing path")
     if "secrets." in output or "gh release" in output or "cargo publish" in output or "git tag " in output:
