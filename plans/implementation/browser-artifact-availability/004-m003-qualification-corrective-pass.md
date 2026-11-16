@@ -1,15 +1,15 @@
 # B004 — M003 Qualification Corrective Pass
 
-Status: active (corrective changes exercised; M003 remains blocked pending full exact-candidate requalification)
+Status: closed (corrective criteria and full exact-candidate M003 requalification passed; closure evidence is in `plans/closure/browser-artifact-availability/003-status.md`)
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M004
 Primary class: infrastructure and corrective evidence
 Baseline: `f76851324f917999152871f49d2302bef87d437d` (branch `feat/auto-20261110-0a674cdc`)
 References: `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/closure/browser-artifact-availability/003-status.md`; `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`; `plans/subsystems/python-pypi-distribution-roadmap.md` M003; `plans/closure/python-pypi-distribution/003-status.md`; `plans/subsystems/eggpack-release-adoption-roadmap.md` M001; `plans/closure/eggpack-release-adoption/001-status.md`.
-Dependencies: Interface: M003's unchanged ten-tool schemas and qualification contract. Operational: the approved publicly reachable HTTPS origin for synthetic fixture pages, used during requalification. M003 remains blocked until every original acceptance condition is requalified on one exact candidate.
+Dependencies: Interface: M003's unchanged ten-tool schemas and qualification contract. Operational: the approved publicly reachable HTTPS origin for synthetic fixture pages, used during requalification. The full M003 acceptance suite is now requalified on exact candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`; evidence is in the M003 closure record.
 
 ## Objective
 
-Correct the typed-request declarations that fail the installed-wheel smoke, replace unsupported macOS arm64 runner labels at their source, and obtain an authorized fixture route that can exercise browser rendering without weakening the existing private-target protections. This is a new corrective pass; it does not amend the original M003 plan or imply that M003 has closed.
+Correct the typed-request declarations that fail the installed-wheel smoke, replace unsupported macOS arm64 runner labels at their source, and obtain an authorized fixture route that can exercise browser rendering without weakening the existing private-target protections. This new corrective pass did not amend the original M003 plan and was not sufficient by itself for M003 closure; the full exact-candidate acceptance evidence is recorded in the M003 closure record.
 
 ## Initial evidence
 
@@ -23,6 +23,12 @@ Correct the typed-request declarations that fail the installed-wheel smoke, repl
 - Candidate `8faa0f15a40f336f361d523c9b45b3fe3b0106ad` passed hosted seven-target qualification (`43813413696`), the Python wheel/sdist matrix (`43808981282`), hosted CI (`43808981290`), egress qualification (`43808981328`), direct macOS arm64 install/release smoke, and live ten-tool MCP verification.
 - The approved public synthetic fixture origin was used without changing browser private-target protections. The 294-sample adjusted report observed 39 expected cold browser escalations, idle teardown, post-idle relaunch, and final process cleanup, but remained non-qualifying because `max_requests = 13` tore down only after render 14. M005 tracks the confirmed counter-reset defect.
 - `packaging/test-install.sh` remains blocked by the workstation's `mavis-trash: unsupported OS: Plan9` guard. PowerShell installer and release-smoke wrappers were not run because neither `pwsh` nor `powershell` is installed.
+
+## Latest exact-candidate follow-up
+
+- Candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985` passes local realistic-mix qualification (294 samples, 39 expected cold browser escalations, request-13 cap teardown, request-14 relaunch), macOS arm64 installer/release smoke, and live ten-tool MCP checks. Local evidence paths are recorded in the M003 closure record.
+- The exact-SHA qualifier run `43888773102` on predecessor `cdc9445ae121d4f0e0508be9df1b94c3289621f0` failed in `packaging/test-install.ps1:12`: the mapping assertion was sensitive to CRLF checkout line endings. Commit `fb99a43` normalizes line endings before matching. In qualifier `43901942424`, Windows validation job `133432522588` passed the installer/release-smoke wrappers and uploaded SHA-keyed artifact `eggpack-windows-wrapper-evidence-fb99a43734bd4f2329bdfa2ba4315b403c2cd985`. Its evidence records `source_revision=fb99a43734bd4f2329bdfa2ba4315b403c2cd985`, target `x86_64-pc-windows-msvc`, `test_install=passed`, and `release_smoke=passed`.
+- On `fb99a43`, hosted CI (`43897293997`), egress (`43897294001`), and Eggpack drift (`43897293439`) passed. Qualifier `43901942424`, attempt 2, passed all seven builds, qualification stages, and consumer validations, including aarch64 macOS; Windows wrappers passed and uploaded evidence. `required_gate` job `133470803916` and `aggregate` job `133471719996` passed, with aggregate outcome `complete`; the exact-target size inventory is recorded in the M003 closure record. Python full-matrix run `43916322850`, attempt 4, completed successfully on the same SHA with all 34 jobs passing, including the dependency audit, ARMv7 and sdist smokes, and the full installed-wheel matrix. PR-associated run `43897293446`, attempt 7, also passed all 34 jobs and all displayed PR checks are green. PR #16 merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z. The corrections and original M003 acceptance criteria are complete on this exact candidate; evidence is in the M003 closure record.
 
 ## Non-goals
 
@@ -51,7 +57,7 @@ Correct the typed-request declarations that fail the installed-wheel smoke, repl
 
 The code corrective pass is acceptable only when the Python schema contract passes against the canonical Rust schemas, the supported runner mapping is used consistently by producer and qualification workflows, Eggpack regeneration has no drift, and the focused Rust and packaging checks pass. Record any known workstation-only wrapper stop without bypassing it.
 
-M003 remains blocked until the full original acceptance criteria pass on one exact candidate, including the authorized realistic-mix metrics, hosted seven-target run, complete wheel/sdist matrix, installer/release wrappers, live ten-tool MCP verification, and hosted CI. Stop without publishing fixtures if authorization or an approved reachable origin is absent. Stop if any schema or security invariant regresses.
+The full original M003 acceptance criteria—including the authorized realistic-mix metrics, hosted seven-target run, complete wheel/sdist matrix, installer/release wrappers, live ten-tool MCP verification, and hosted CI—passed on exact candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`; see the M003 closure record. No fixture was published outside the approved origin. This corrective pass is closed; PR-linked run `43897293446`, attempt 7, passed all 34 jobs. PR #16 merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z. Stop if any schema or security invariant regresses.
 
 ## Verification commands
 
