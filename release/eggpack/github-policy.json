@@ -4,7 +4,7 @@
     { "os": "linux", "arch": "x86_64", "label": "ubuntu-24.04", "cargo_zigbuild": true, "zig": true },
     { "os": "linux", "arch": "aarch64", "label": "ubuntu-24.04-arm", "cargo_zigbuild": true, "zig": true },
     { "os": "macos", "arch": "x86_64", "label": "macos-15-intel", "cargo_zigbuild": false, "zig": false },
-    { "os": "macos", "arch": "aarch64", "label": "macos-14", "cargo_zigbuild": false, "zig": false },
+    { "os": "macos", "arch": "aarch64", "label": "macos-15", "cargo_zigbuild": false, "zig": false },
     { "os": "windows", "arch": "x86_64", "label": "windows-latest", "cargo_zigbuild": false, "zig": false },
     { "os": "windows", "arch": "aarch64", "label": "windows-11-arm", "cargo_zigbuild": false, "zig": false }
   ],

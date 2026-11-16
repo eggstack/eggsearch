@@ -66,7 +66,7 @@ jobs:
           retention-days: 7
   build_aarch64_apple_darwin:
     needs: resolve
-    runs-on: "macos-14"
+    runs-on: "macos-15"
     permissions:
       contents: read
     timeout-minutes: 60
@@ -551,7 +551,7 @@ jobs:
           retention-days: 7
   qualify_build_aarch64_apple_darwin:
     needs: build_aarch64_apple_darwin
-    runs-on: "macos-14"
+    runs-on: "macos-15"
     permissions:
       contents: read
     timeout-minutes: 60
@@ -845,7 +845,7 @@ jobs:
           retention-days: 7
   validate_build_aarch64_apple_darwin:
     needs: qualify_build_aarch64_apple_darwin
-    runs-on: "macos-14"
+    runs-on: "macos-15"
     permissions:
       contents: read
     timeout-minutes: 60

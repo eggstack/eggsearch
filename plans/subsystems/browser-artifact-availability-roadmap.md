@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: closing (M001/M002 closed; M003 blocked)
+Status: closing (M001/M002 closed; M003 blocked; M004 corrective pass active)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
@@ -72,16 +72,24 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
   structured warning.
 - M001 and M002 are closed. Their closure records capture implementation and
   live-tool evidence.
-- M003 is blocked on exact candidate `62387208ac8bc20efb545b68f0704f466bab7295`.
-  Its Python wheel builds and dependency audit pass, but installed-wheel and sdist
-  smoke fail at the typed-request/schema assertion. A native macOS arm64 build and
-  direct `install.sh`/`release-smoke.sh` checks pass locally; the standard
-  installer/release-smoke wrappers remain unrun. The hosted arm64 build job was
-  cancelled before steps because `macos-14-arm64-us-default` is unsupported (the
-  generated release workflow uses the same `macos-14` label). The realistic-mix
-  harness cannot escalate against its local fixture because browser interception
-  blocks private/local targets. Hosted CI passed on this exact candidate; the
-  exact-candidate live ten-tool run remains outstanding.
+- M003 remains blocked. The recorded distribution evidence is for candidate
+  `62387208ac8bc20efb545b68f0704f466bab7295`: its Python wheel builds and
+  dependency audit pass, but installed-wheel and sdist smoke fail at the
+  typed-request/schema assertion. A native macOS arm64 build and direct
+  `install.sh`/`release-smoke.sh` checks pass locally; the standard
+  installer/release-smoke wrappers remain unrun. Its hosted arm64 build job was
+  cancelled before steps because `macos-14-arm64-us-default` is unsupported.
+- Later PR candidate `f76851324f917999152871f49d2302bef87d437d` passed ordinary CI
+  in run `43804158099` and Eggpack drift/contract checks in run `43804158070`.
+  Python wheel, emulated ARMv7, and extracted-sdist smoke failed in run
+  `43804158035`; the exact missing declarations are `offset` and `limit` on
+  `BatchFetchRequest`, `WebFetchRequest`, and `ResearchSearchRequest`. Egress run
+  `43804158039` was cancelled before the macOS arm64 steps because `macos-14` is
+  unsupported. The producer input, generated release workflow, candidate
+  qualification workflow, and egress workflow require a source-owned runner fix.
+- The realistic-mix harness cannot escalate against its local fixture because
+  browser interception blocks private/local targets. No public fixture host or
+  tunnel is authorized. The exact-candidate live ten-tool run remains outstanding.
 
 ## 5. Dependency graph
 
@@ -146,6 +154,20 @@ PDF fetch and one escalated render.
 Exit condition: the qualification record is written against the exact candidate,
 the wheel carries PDF and not browser, the release inventory is unchanged, and the
 live tool-surface verification is recorded in the closure record.
+
+### M004 — M003 qualification corrective pass (infrastructure/evidence) — active
+
+Implementation plan: `plans/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`.
+
+Correct the Python request-type schema coverage and unsupported macOS arm64 runner
+mapping found by M003 qualification. Preserve M003's blocked status and all
+existing tool and SSRF contracts. The realistic-mix fixture remains blocked until
+an approved, publicly reachable HTTPS origin is available; do not weaken the
+browser's private-target policy or start a host/tunnel without authorization.
+
+Exit condition: corrective contract and producer checks pass, and all original
+M003 acceptance criteria are then requalified on one exact candidate before M003
+can be considered for closure.
 
 ## 7. User-visible exit conditions
 

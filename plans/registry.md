@@ -29,7 +29,7 @@ Closed or superseded implementation plans are archived under
 | Retrieval quality evidence extension | closing (M007) | `plans/subsystems/retrieval-quality-evidence-extension-roadmap.md` | Local evidence is complete; hosted Linux, macOS, and Windows CI is required on the merged candidate. |
 | Agentic retrieval integrity and context economy | active; M014 conditionally closed | `plans/subsystems/agentic-retrieval-integrity-roadmap.md` | M014's solve-count comparison remains unrun. M006–M012 are dependency-ready without plans; M008/M009 remain proposed. |
 | PDF ingestion and extraction fidelity | closing | `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` | M001/M002/M007 are implemented with closure records; M006 qualification remains open; M003–M005/M008 are ready. |
-| Browser artifact availability and render bounds | closing (M001/M002 closed; M003 blocked) | `plans/subsystems/browser-artifact-availability-roadmap.md` | Candidate `62387208ac8bc20efb545b68f0704f466bab7295`: Python wheel smoke fails, realistic mix is unqualified, and the hosted arm64 runner config is unsupported. See the closure record. |
+| Browser artifact availability and render bounds | closing (M001/M002 closed; M003 blocked; M004 corrective pass active) | `plans/subsystems/browser-artifact-availability-roadmap.md` | M003 remains blocked: Python wheel schema smoke fails, realistic mix is unqualified, and hosted arm64 runner mapping is unsupported. M004 corrective plan is registered; public fixture hosting still needs authorization. See the closure record and M004 plan. |
 
 ## Active and dependency-ready implementation plans
 
@@ -50,6 +50,7 @@ Closed or superseded implementation plans are archived under
 | PDF ingestion | M007 hostile-input and memory bounds | closing | `plans/implementation/pdf-ingestion-fidelity/007-hostile-input-and-memory-bounds.md` | Closure record is present. |
 | PDF ingestion | M008 local workspace and batch ingestion | ready | `plans/implementation/pdf-ingestion-fidelity/008-local-workspace-and-batch-ingestion.md` | Hard dependency: M001; soft dependency: M005. |
 | Browser artifact availability | M003 distribution and live qualification | blocked | `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md` | Wheel smoke fails; realistic mix and exact-candidate live check are unqualified; arm64 runner is unsupported; wrapper smoke remains. See closure. |
+| Browser artifact availability | M004 M003 qualification corrective pass | active | `plans/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md` | Correct the Python schema typing and arm64 runner source; public fixture hosting requires authorization. M003 remains blocked. |
 
 ## Closure rule
 

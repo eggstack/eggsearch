@@ -227,3 +227,29 @@ fn egress_route_symbols_are_covered() {
         );
     }
 }
+
+#[test]
+fn macos_arm64_workflows_use_supported_runner_label() {
+    let policy = fs::read_to_string("release/eggpack/github-policy.json")
+        .expect("read Eggpack GitHub policy");
+    assert!(
+        policy.contains("\"arch\": \"aarch64\", \"label\": \"macos-15\""),
+        "Eggpack macOS arm64 runner must use macos-15"
+    );
+
+    for path in [
+        ".github/workflows/release-eggpack.yml",
+        ".github/workflows/qualify-eggpack-candidate.yml",
+        ".github/workflows/egress-feature-qualify.yml",
+    ] {
+        let workflow = fs::read_to_string(path).expect("read macOS arm64 workflow");
+        assert!(
+            !workflow.contains("macos-14"),
+            "unsupported macOS runner label remains in {path}"
+        );
+        assert!(
+            workflow.contains("macos-15"),
+            "supported macOS arm64 runner label is absent from {path}"
+        );
+    }
+}
