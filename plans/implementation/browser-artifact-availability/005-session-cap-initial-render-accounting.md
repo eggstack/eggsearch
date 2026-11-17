@@ -1,11 +1,11 @@
 # B005 — Session-Cap Initial Render Accounting
 
-Status: active
+Status: closed (corrective criteria and full exact-candidate M003 requalification passed; closure evidence is in `plans/closure/browser-artifact-availability/003-status.md`)
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M005
 Primary class: infrastructure correctness
 Baseline: `8faa0f15a40f336f361d523c9b45b3fe3b0106ad` (branch `feat/auto-20261110-0a674cdc`)
 References: `plans/implementation/browser-artifact-availability/001-render-lifecycle-bounds.md` (archived); `plans/closure/browser-artifact-availability/001-status.md`; `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`; ADR-0014 § Decision 7 and § Verification.
-Dependencies: Interface: M001's `max_requests` session-cap contract. Operational: M003 exact-candidate requalification after this correction; M003 remains blocked until all its acceptance criteria pass.
+Dependencies: Interface: M001's `max_requests` session-cap contract. Operational: M003 exact-candidate requalification after this correction; the full M003 acceptance suite is now complete on `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`, with evidence in the M003 closure record.
 
 ## Objective
 
@@ -37,14 +37,21 @@ transferable.
 - The adjusted report is non-qualifying only because of this cap-probe
   expectation; it remains diagnostic evidence, not M003 closure evidence.
 
+## Latest exact-candidate follow-up
+
+- The approved public fixture on `fb99a43734bd4f2329bdfa2ba4315b403c2cd985` passed with 294 samples and 39 expected cold browser escalations. The separate `max_requests = 13` probe observed 13 requests before cap teardown, then a successful relaunch on request 14; idle teardown and final process cleanup also passed.
+- The evidence is `target/m003-public-fixture/evidence-candidate-fb99a43/evidence.json`; sampled peak descendant RSS was 1,180,352 KiB on the macOS arm64 host.
+- This confirms the local cap-accounting correction on the current candidate only. On the same SHA, hosted CI (`43897293997`), egress (`43897294001`), and Eggpack drift (`43897293439`) passed. Qualifier `43901942424`, attempt 2, passed all seven builds, qualification stages, and consumer validations, including aarch64 macOS; Windows wrappers passed and their evidence was uploaded. `required_gate` job `133470803916` and `aggregate` job `133471719996` passed, with aggregate outcome `complete`. Python full-matrix run `43916322850`, attempt 4, completed successfully on the same exact SHA with all 34 jobs passing. PR-associated run `43897293446`, attempt 7, also passed all 34 jobs and all displayed PR checks are green. PR #16 merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z. The corrective criteria and original M003 gates are satisfied on this exact candidate; evidence is in the M003 closure record.
+
 ## Non-goals
 
 - No MCP tool, argument, schema, response shape, cache, identity, or CLI change.
 - No relaxation or bypass of SSRF, private-address, DNS, browser interception,
   or challenge-handling protections.
 - No change to `MAX_RESTARTS`, the restart budget, or the meaning of idle teardown.
-- No claim that M003 is closed; this correction does not replace its exact-SHA
-  wheel, hosted, installer, live-MCP, or other acceptance gates.
+- This correction alone does not establish M003 closure; the full exact-SHA
+  wheel, hosted, installer, live-MCP, and other acceptance evidence is recorded in
+  `plans/closure/browser-artifact-availability/003-status.md`.
 - No edits to generated release workflows or Eggpack inputs.
 
 ## Invariants
@@ -118,8 +125,8 @@ wrapper stop.
 
 Stop if the change needs an MCP contract change, weakens a security boundary,
 changes restart-budget semantics, or fails the lifecycle/browser transport
-regressions. M003 remains blocked until its complete original acceptance suite
-passes on one exact candidate.
+regressions. M003's complete original acceptance suite now passes on exact
+candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`; see the closure record.
 
 ## Required closure evidence
 

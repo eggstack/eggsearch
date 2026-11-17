@@ -1,6 +1,6 @@
 # B003 — Distribution and Live Qualification
 
-Status: blocked
+Status: closed
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M003
 Primary class: infrastructure and evidence
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
@@ -9,7 +9,7 @@ Dependencies: hard B002 (default artifact availability). Interface: PDF roadmap 
 
 ## Current disposition
 
-The qualification attempt against `62387208ac8bc20efb545b68f0704f466bab7295` is blocked. The Python native wheel smoke fails its typed-request/schema contract assertion, and the prescribed local realistic-mix fixture cannot reach browser rendering because browser interception blocks private/local targets. The hosted Eggpack arm64 job is cancelled because `macos-14-arm64-us-default` is unsupported; the generated release workflow uses the same `macos-14` label, so this returns to its producer owner. Per the stop conditions below, do not change production behavior or generated release workflow in this plan; record the failure and return fixes to their owning workstreams. Exact evidence is in `plans/closure/browser-artifact-availability/003-status.md`.
+The exact candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985` satisfies the full M003 acceptance suite. Local requalification passed the approved 294-sample realistic mix (including request-13 cap teardown and request-14 relaunch), macOS arm64 installer/release smoke, and live ten-tool MCP checks. The hosted qualification run `43888773102` was on predecessor `cdc9445` and failed its Windows wrapper assertion because the test compared LF text against CRLF checkout content; `fb99a43` normalizes line endings. On the current candidate, hosted CI (`43897293997`), egress (`43897294001`), and Eggpack drift (`43897293439`) passed. Qualifier run `43901942424`, attempt 2, passed all seven builds, qualification stages, and consumer validations, including aarch64 macOS; Windows wrappers passed. `required_gate` job `133470803916` and `aggregate` job `133471719996` passed, with aggregate outcome `complete`; the seven-target size inventory is recorded in the M003 closure record. Python full-matrix run `43916322850`, attempt 4, completed successfully on this exact SHA with all 34 jobs passing; wheel sizes and dependency-audit evidence are recorded in the closure record. PR-associated Python run `43897293446`, attempt 7, also passed all 34 jobs on this SHA, and all displayed PR checks pass. PR #16 merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z. Earlier-SHA results do not transfer. Exact evidence is in `plans/closure/browser-artifact-availability/003-status.md`.
 
 ## Objective
 

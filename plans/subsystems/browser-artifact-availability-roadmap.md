@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: closing (M001/M002 closed; M003 blocked; M004 and M005 corrective passes active)
+Status: closing (M001–M005 acceptance complete; PR #16 merged as `aea34ee`)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
@@ -73,26 +73,43 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
   structured warning.
 - M001 and M002 are closed. Their closure records capture implementation and
   live-tool evidence.
-- M003 remains blocked. Current exact candidate
-  `8faa0f15a40f336f361d523c9b45b3fe3b0106ad` passed the hosted seven-target
-  qualification (run `43813413696`), Python wheel/sdist matrix
-  (`43808981282`), hosted CI (`43808981290`), egress qualification
-  (`43808981328`), direct macOS arm64 install/release smoke, and live ten-tool
-  MCP verification. The seven-target run and all listed hosted gates are tied to
-  that exact SHA.
-- Its adjusted public synthetic fixture matrix recorded 294 samples and 39
-  expected cold browser escalations. HTTP routing for static/PDF cases, idle
-  teardown, post-idle relaunch, and final process cleanup were observed. The
-  diagnostic report remains non-qualifying: with `max_requests = 13`, the
-  browser was still resident after render 13 and closed only after render 14.
-  `src/fetch/browser/lifecycle.rs` resets the request counter after the cold
-  launch, discarding the first render; M005 tracks the correction. The report is
-  `target/m003-public-fixture/qualification-adjusted/evidence.json`.
+- M003 acceptance is complete on exact candidate
+  `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`; PR-associated run `43897293446`,
+  attempt 7, passed all 34 jobs and all displayed PR checks are green. PR #16
+  merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z.
+  The approved 294-sample public fixture requalification passed locally: 39 expected cold browser escalations,
+  HTTP routing for static/PDF cases, idle teardown, request-13 cap teardown,
+  request-14 relaunch, and final process cleanup. Evidence is in
+  `target/m003-public-fixture/evidence-candidate-fb99a43/evidence.json`; sampled
+  peak descendant RSS was 1,180,352 KiB.
+- On the same candidate, the macOS arm64 installer/release smoke passed with
+  binary SHA-256 `f6dcee6b3bce92c96d7dc0d89c56e3bc7bd5e8f5abe26beb20cbbfb926a43ac3`,
+  and the live ten-tool MCP smoke passed with PDF fetch, JavaScript browser
+  escalation, aliases, duplicate-alias rejection, four behavior hints, and the
+  canonical-only advertised schema. Evidence is under
+  `target/m003-installer-smoke/evidence-candidate-fb99a43/` and
+  `target/m003-live-mcp/evidence-candidate-fb99a43.json`.
+- Hosted CI (`43897293997`), egress (`43897294001`), and Eggpack drift
+  (`43897293439`) passed on `fb99a43`. Exact-SHA qualifier `43901942424`, attempt 2,
+  passed all seven builds, qualification stages, and consumer validations,
+  including aarch64 macOS; Windows wrappers passed and their evidence was uploaded.
+  `required_gate` (`133470803916`) and `aggregate` (`133471719996`) passed, with
+  aggregate outcome `complete`. The exact seven-target size inventory is recorded
+  in the M003 closure record. Python full-matrix run `43916322850`, attempt 4,
+  passed all 34 jobs on this SHA, including all 25 installed-wheel smoke cells,
+  ARMv7 build/smoke, sdist rebuild/smoke, and dependency audit. Exact wheel sizes
+  and the dependency delta are in the closure record. Earlier attempts had two
+  aarch64 macOS consumer jobs cancelled before runner assignment; targeted retries
+  on the same SHA completed them. The PR-associated run `43897293446`, attempt 7,
+  passed all 34 jobs and all displayed PR checks are green. PR #16 merged as
+  `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z.
+  Earlier green results on `cdc9445` do not transfer. That candidate's Windows
+  wrapper step failed because its mapping assertion was sensitive to CRLF checkout;
+  `fb99a43` normalizes line endings.
 - The approved public fixture origin is retained and browser private-target
   protections remain unchanged. `packaging/test-install.sh` is blocked on this
-  workstation by `mavis-trash: unsupported OS: Plan9`; PowerShell installer and
-  release-smoke wrappers remain unrun because neither `pwsh` nor `powershell` is
-  installed. The direct macOS arm64 installer and release smoke passed.
+  workstation by `mavis-trash: unsupported OS: Plan9`; neither `pwsh` nor
+  `powershell` is installed locally. Do not bypass the guard.
 
 ## 5. Dependency graph
 
@@ -145,9 +162,9 @@ configuration, a source build without the feature returns `browser_not_compiled_
 for an explicit request, `enabled = false` returns `browser_disabled`, and the
 dependency guard still rejects any other reqwest root in either graph.
 
-### M003 — Distribution and live qualification (infrastructure/evidence) — blocked
+### M003 — Distribution and live qualification (infrastructure/evidence) — closed
 
-Closure: `plans/closure/browser-artifact-availability/003-status.md`. Exact-candidate run `43738031441` passed build/qualification/consumer validation for six targets; macOS arm64 hosted execution was blocked by an unsupported runner configuration, although native local build/size/installer evidence passed. The Python wheel smoke failed; realistic-mix and exact-candidate live ten-tool runs remain unqualified.
+Closure: `plans/closure/browser-artifact-availability/003-status.md`. Exact candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985` passes the local realistic-mix, macOS arm64 installer/release-smoke, live ten-tool MCP checks, hosted CI (`43897293997`), egress (`43897294001`), and Eggpack drift (`43897293439`). Exact-SHA Eggpack qualification (`43901942424`, attempt 2) passed all seven builds, qualification stages, and consumer validations, including aarch64 macOS; `required_gate` and aggregate passed, and the seven-target size inventory is in the closure record. Python full-matrix run `43916322850`, attempt 4, passed all 34 jobs on this SHA; the wheel inventory and dependency delta are recorded in the closure record. PR-linked Python run `43897293446`, attempt 7, passed all 34 jobs and all displayed PR checks are green. PR #16 merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z. See the closure record.
 
 Measure and record the exact candidate: per-target size delta, realistic-mix
 qualification with idle teardown, installer smoke, wheel decoupling and matrix,
@@ -158,7 +175,7 @@ Exit condition: the qualification record is written against the exact candidate,
 the wheel carries PDF and not browser, the release inventory is unchanged, and the
 live tool-surface verification is recorded in the closure record.
 
-### M004 — M003 qualification corrective pass (infrastructure/evidence) — active
+### M004 — M003 qualification corrective pass (infrastructure/evidence) — closed
 
 Implementation plan: `plans/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`.
 
@@ -173,7 +190,7 @@ Exit condition: corrective contract and producer checks pass, and all original
 M003 acceptance criteria are then requalified on one exact candidate before M003
 can be considered for closure.
 
-### M005 — Session-cap initial render accounting (infrastructure correction) — active
+### M005 — Session-cap initial render accounting (infrastructure correction) — closed
 
 Implementation plan: `plans/implementation/browser-artifact-availability/005-session-cap-initial-render-accounting.md`.
 
@@ -189,8 +206,13 @@ or M003's tool/security contracts.
 Exit condition: the cold-starting render counts as request one; a failed launch
 consumes no session capacity; the cap closes after exactly `max_requests` renders;
 the following render relaunches within the existing budget; lifecycle and browser
-transport regressions pass. M003 remains blocked until all its original acceptance
-criteria pass on one exact candidate.
+transport regressions pass. The full M003 acceptance criteria have now also passed
+on exact candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`; see its closure record.
+
+The local exact-candidate fixture on `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`
+confirmed cap teardown after render 13 and relaunch on render 14, along with idle
+teardown and final process cleanup. The hosted Python matrix, Eggpack qualifier,
+CI, egress, and drift gates all pass on this SHA; see the M003 closure record.
 
 ## 7. User-visible exit conditions
 
