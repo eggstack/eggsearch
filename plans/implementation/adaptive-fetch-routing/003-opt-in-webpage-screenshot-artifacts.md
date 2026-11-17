@@ -1,17 +1,17 @@
 # M003 — Opt-In Webpage Screenshot Artifacts
 
-Status: proposed
+Status: ready
 Source: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M003
 Primary class: capability
 Baseline: `b7f7497` (`feat/auto-20261117-044c4885`)
 References: accepted `plans/adrs/ADR-0015-opt-in-webpage-screenshot-artifacts.md`; accepted ADR-0001 and ADR-0014; `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`; `plans/subsystems/adaptive-fetch-routing-roadmap.md`; `plans/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md`; `architecture/fetch.md`; `architecture/mcp.md`; `src/mcp/tools/common.rs`; `src/mcp/server.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch_item.rs`.
-Dependencies: hard: M002 closed. Interface: ADR-0014 browser behavior. ADR-0015 is accepted and authorizes the narrow request/result contract and numeric caps. The completed feasibility preflight was static only; serializer/transport and browser-fidelity evidence remain implementation gates. This plan remains proposed and MUST NOT add production capture or public schema until M002 is closed.
+Dependencies: M002 is closed (`plans/closure/adaptive-fetch-routing/002-status.md`, candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`). Interface: ADR-0014 browser behavior. ADR-0015 is accepted and authorizes the narrow request/result contract and numeric caps. The completed feasibility preflight was static only; serializer/transport and browser-fidelity evidence remain implementation gates. Production capture and public schema may be added only with that evidence.
 
 ## Objective
 
 Add an explicitly requested, bounded screenshot artifact to `web_fetch` and each applicable `batch_fetch` web item, delivered through native MCP image content while preserving the existing structured fetch result. The screenshot is a webpage artifact from browser rendering, not part of PDF extraction. Calls without the opt-in field, or with it false, retain existing response behavior.
 
-The accepted contract is specified in ADR-0015. Implement only after M002 closes, and confirm serializer/transport behavior and browser fidelity on the exact candidate.
+The accepted contract is specified in ADR-0015. M002 is closed; implement against that candidate and confirm serializer/transport behavior and browser fidelity on the exact M003 candidate.
 
 ## Non-goals
 

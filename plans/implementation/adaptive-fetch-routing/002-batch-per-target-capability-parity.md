@@ -1,6 +1,7 @@
 # M002 — Batch Per-Target Capability Parity
 
-Status: active
+Status: closed
+Closure: `plans/closure/adaptive-fetch-routing/002-status.md`
 Source: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M002
 Primary class: capability
 Baseline: `b7f7497` (`feat/auto-20261117-044c4885`)
@@ -29,7 +30,7 @@ Parity in this milestone means parity for target resolution and extraction/sourc
 - `src/mcp/tools/batch_fetch_item.rs` routes web items through the shared web-fetch handler and repo items through `run_repo_fetch_with_host_scope`; cache, profile, PDF, span, and response semantics remain owned by those handlers.
 - `src/mcp/server.rs` carries `codegg/host-local-scope` into synchronous and offloaded batch execution. Repo items receive the same scope used by `repo_fetch`; the local-workspace resolver remains the authorization and safe-read owner.
 - `src/core/fetch_locator.rs` maps workspace repo items to a root name and relative path. Batch preflight uses typed target resolution and validates per-target options before item I/O.
-- Focused batch/repo/browser/no-default suites and MCP/static/documentation contract checks pass; the current focused matrix also exercised PDF M008 local extraction and batch page selection on this uncommitted integrated worktree. Independent review caught and the follow-up fixed a target-specific validation mismatch: blank `repo` is valid for a workspace target when `path` is set, but remains invalid for remote targets; direct/batch workspace parity now covers the blank value. The all-features library suite passes serially (3,887 passed); the default-parallel run fails in `meta::engines::startpage::tests::css_load_challenge_fetches_the_extension_then_replays` (3,886 passed, 1 failed), while the isolated test passes. M002's host-scope environment tests share a lock. After fixing a `clippy::needless_return` diagnostic, formatting, all-target clippy, no-default compilation, and docs checks pass. `make check` remains blocked by the parallel Startpage test; `make hygiene` passes, while dependency policy fails on RustSec `RUSTSEC-2026-0543` for unmaintained chrono (the advisory states no safe upgrade) and `make packaging-check` stops in the fake-Plan9 fixture (`mavis-trash: unsupported OS: Plan9`). Exact-candidate qualification and same-commit closure artifacts remain outstanding; no closure record is written.
+- Focused batch/repo/browser/no-default suites and MCP/static/documentation contract checks pass, including PDF M008 local extraction and batch page selection through the shared handler. Independent review caught and the follow-up fixed a target-specific validation mismatch: blank `repo` is valid for a workspace target when `path` is set, but remains invalid for remote targets; direct/batch workspace parity covers the blank value. `make check` (85 suites, 6,347 passed, 0 failed, 28 ignored), `make docs-check`, formatting, all-target clippy, and no-default compilation pass on candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`. The earlier default-parallel Startpage failure was a test-isolation defect: each engine test module now removes only its own pass-cookie entry. Qualification also added the review-dated `RUSTSEC-2026-0543` waiver for unmaintained chrono (no safe upgrade; also reached through pinned `rmcp`/`schemars`) and a hermetic PATH for the fake-Plan9 installer fixture. Exact commands and outcomes are in `plans/closure/adaptive-fetch-routing/002-status.md`.
 
 ## Invariants that cannot regress
 
