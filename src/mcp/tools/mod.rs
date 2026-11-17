@@ -18,6 +18,7 @@ mod security_search;
 mod web_fetch;
 mod web_search;
 
+pub(crate) use batch_fetch::run_batch_fetch_with_host_scope_and_progress;
 pub use batch_fetch::{run_batch_fetch, run_batch_fetch_with_progress, BatchFetchArgs};
 pub use common::{map_tool_result, RepairHint, ToolError, ToolErrorCode, ToolErrorExecution};
 pub use evidence_bundle::{run_build_evidence_bundle, EvidenceBundleArgs};

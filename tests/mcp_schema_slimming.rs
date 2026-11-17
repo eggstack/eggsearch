@@ -61,6 +61,21 @@ fn has_prop(schema: &serde_json::Value, prop: &str) -> bool {
     schema.get("properties").and_then(|p| p.get(prop)).is_some()
 }
 
+fn batch_variant<'a>(schema: &'a serde_json::Value, kind: &str) -> &'a serde_json::Value {
+    schema
+        .pointer("/$defs/BatchFetchItem/oneOf")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|variants| {
+            variants.iter().find(|variant| {
+                variant
+                    .pointer("/properties/type/const")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(kind)
+            })
+        })
+        .unwrap_or_else(|| panic!("batch_fetch schema has no {kind} variant"))
+}
+
 fn collect_unresolved_local_refs(
     value: &serde_json::Value,
     root: &serde_json::Value,
@@ -130,8 +145,8 @@ fn search_four_schema_bytes_stay_slim() {
         })
         .sum();
     assert!(
-        total <= 75_200,
-        "all tool definitions total {total} bytes exceeds 75200 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver; +632 for explicit behavior hints on all ten tools and the web_search evidence-only sentence)"
+        total <= 78_250,
+        "all tool definitions total {total} bytes exceeds 78250 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver; +632 for explicit behavior hints on all ten tools and the web_search evidence-only sentence; +2,532 for M002 documented per-target batch controls)"
     );
 }
 
@@ -208,6 +223,49 @@ fn compact_web_fetch_explains_user_urls_and_bounded_extraction() {
     assert!(description.contains("bounded extracted text"));
     assert!(description.contains("batch_fetch"));
     assert!(description.contains("do not search or crawl"));
+}
+
+#[test]
+fn batch_fetch_advertises_per_target_controls_in_full_and_compact_schemas() {
+    let full = schema_for("batch_fetch");
+    let compact = compact_schema_for("batch_fetch");
+
+    for schema in [&full, &compact] {
+        let web = batch_variant(schema, "web");
+        for property in ["pdf", "render", "browser_profile"] {
+            assert!(
+                web.pointer(&format!("/properties/{property}")).is_some(),
+                "web batch items must advertise {property}"
+            );
+        }
+        assert!(
+            web.get("description")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|description| description.contains("web_fetch")),
+            "web batch controls must point to web_fetch"
+        );
+
+        let repo = batch_variant(schema, "repo");
+        for property in [
+            "symbol",
+            "symbol_kind",
+            "match_text",
+            "expand_to_block",
+            "max_block_lines",
+            "prefer_local",
+        ] {
+            assert!(
+                repo.pointer(&format!("/properties/{property}")).is_some(),
+                "repo batch items must advertise {property}"
+            );
+        }
+        assert!(
+            repo.get("description")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|description| description.contains("repo_fetch")),
+            "repo batch controls must point to repo_fetch"
+        );
+    }
 }
 
 #[test]

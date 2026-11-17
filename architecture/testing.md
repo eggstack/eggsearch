@@ -46,7 +46,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `security_workflow` | Advisory retrieval, applicability assessment, safety handling |
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |
-| `batch_fetch_retrieval` | Mixed focused/unfocused batch, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
+| `batch_fetch_retrieval` | Mixed web/repo/workspace target parity, per-target PDF/render/profile and source-selection controls, host-local-scope authorization, preflight, order/budget, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
 | `provider_request_contract` | `EngineSearchRequest` fidelity, date/domain validation, wire compression behavior |
 | `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
 | `provider_workstream_regression` | Provider inventory, capability descriptors, URL dedup with stable IDs |

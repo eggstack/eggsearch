@@ -2032,6 +2032,70 @@ async fn repo_fetch_symbol_not_found_warns() {
     );
 }
 
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn repo_fetch_remote_pdf_retains_document_outcome() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pdf_body = include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf");
+    server.mock(|when, then| {
+        when.method(GET).path("/docs/guide.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .body(pdf_body.as_slice());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("repo_fetch state"));
+
+    let response = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "example".into(),
+            repo: "docs".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "docs/guide.pdf".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/docs/guide.pdf")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("remote PDF fetch should retain its document outcome");
+
+    assert_eq!(response["content_type"], "application/pdf");
+    assert_eq!(response["document"]["kind"], "pdf");
+    let block_text = response["document"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(block_text.contains("Clean text sample"));
+    assert!(response["language"].is_null());
+    assert!(response["selected_span"].is_null());
+    assert!(response["code_span"].is_null());
+}
+
 #[cfg(feature = "mock")]
 #[tokio::test]
 async fn repo_fetch_prefer_local_redirects_to_workspace() {
@@ -2095,16 +2159,16 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         max_chars: None,
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
+        symbol: Some("add".to_string()),
+        symbol_kind: Some("function".to_string()),
         match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
+        expand_to_block: Some(true),
+        max_block_lines: Some(10),
         prefer_local: Some(true),
         response_detail: None,
     };
 
-    let v = run_repo_fetch(state, args)
+    let v = run_repo_fetch(state.clone(), args)
         .await
         .expect("prefer_local repo_fetch should succeed");
 
@@ -2117,6 +2181,48 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         text.contains("pub fn add"),
         "fetched text should contain the function: {text}"
     );
+
+    let batch = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
+                host: Some("github".to_string()),
+                owner: "test-owner".to_string(),
+                repo: "test-repo".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
+                symbol: Some("add".to_string()),
+                symbol_kind: Some("function".to_string()),
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: Some(10),
+                prefer_local: Some(true),
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+            offset: None,
+            limit: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("prefer_local batch fetch should succeed");
+    let batched = &batch["results"][0]["response"];
+    assert_eq!(batched["trust"], "local_trusted");
+    assert_eq!(batched["text"], v["text"]);
+    assert_eq!(batched["selected_span"], v["selected_span"]);
 }
 
 #[tokio::test]

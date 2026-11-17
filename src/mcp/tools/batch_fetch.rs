@@ -1,4 +1,4 @@
-use super::batch_fetch_item::make_batch_fetch_future;
+use super::batch_fetch_item::{make_batch_fetch_future, BatchFetchItemContext};
 use super::common::*;
 use crate::fetch::FetchClient;
 use crate::mcp::policy::{fetch_allowed, web_fetch_denied_message, Policy};
@@ -8,31 +8,30 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BatchFetchArgs {
-    /// Items to fetch. Must be non-empty.
+    /// Non-empty list of URL or repository targets.
     pub items: Vec<crate::core::batch_fetch::BatchFetchItem>,
-    /// Maximum number of items to process. Defaults to server config.
+    /// Item limit; defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_items: Option<usize>,
-    /// Per-item character extraction cap. Defaults to server config.
+    /// Per-item character cap; defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_chars_per_item: Option<usize>,
-    /// Total character budget across all items. Defaults to server config.
+    /// Total character cap; defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_total_chars: Option<usize>,
-    /// Timeout in milliseconds. Defaults to server config.
+    /// Timeout; defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Whether to continue fetching remaining items after a failure.
-    /// Defaults to `true`.
+    /// Continue after item failure; defaults to true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continue_on_error: Option<bool>,
-    /// Zero-based index of the first item to process.
+    /// Zero-based first item index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<usize>,
-    /// Max items from `offset`; clamped to the server maximum.
+    /// Items from offset; clamped to server maximum.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
-    /// Response detail: brief, compact, standard, or diagnostic.
+    /// Response detail: brief, compact, standard, diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
@@ -47,59 +46,6 @@ pub(crate) fn prepare_batch_fetch_client(
         )?)),
         None => Ok(client),
     }
-}
-
-/// Inject deterministic web focus projection into a batch payload.
-pub(crate) fn inject_web_focus_into_payload(
-    mut payload: serde_json::Value,
-    focus_query: Option<&str>,
-    focus_max_chunks: Option<usize>,
-    focus_max_chars: Option<usize>,
-    typed_document: Option<&crate::core::document::FetchDocument>,
-    effective_max_chars: usize,
-    max_chars_cap: usize,
-) -> serde_json::Value {
-    let Some(query) = focus_query else {
-        if let Some(obj) = payload.as_object_mut() {
-            obj.insert("focus".to_string(), serde_json::Value::Null);
-        }
-        return payload;
-    };
-    let document_from_payload = if typed_document.is_none() {
-        payload
-            .get("document")
-            .and_then(|d| serde_json::from_value(d.clone()).ok())
-    } else {
-        None
-    };
-    let document = typed_document.or(document_from_payload.as_ref());
-    let fetched = payload
-        .get("fetched")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    let selection = crate::core::fetch_policy::apply_focus_to_document(
-        document,
-        fetched,
-        Some(query),
-        focus_max_chunks,
-        focus_max_chars,
-        effective_max_chars,
-        max_chars_cap,
-    );
-    if let Some(obj) = payload.as_object_mut() {
-        match selection {
-            Some(sel) => {
-                obj.insert(
-                    "focus".to_string(),
-                    serde_json::to_value(&sel).unwrap_or(serde_json::Value::Null),
-                );
-            }
-            None => {
-                obj.insert("focus".to_string(), serde_json::Value::Null);
-            }
-        }
-    }
-    payload
 }
 
 /// Inject deterministic repo focus projection into a batch payload.
@@ -201,6 +147,15 @@ fn batch_fetch_plan_key_over(
 pub async fn run_batch_fetch_with_progress(
     state: Arc<ServerState>,
     args: BatchFetchArgs,
+    progress: &mut crate::mcp::progress::ProgressSink,
+) -> Result<serde_json::Value, ToolError> {
+    run_batch_fetch_with_host_scope_and_progress(state, args, None, progress).await
+}
+
+pub async fn run_batch_fetch_with_host_scope_and_progress(
+    state: Arc<ServerState>,
+    args: BatchFetchArgs,
+    host_local_scope: Option<serde_json::Value>,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::batch_fetch::{
@@ -326,10 +281,21 @@ pub async fn run_batch_fetch_with_progress(
         ));
     }
 
+    let local_view = if effective_items
+        .iter()
+        .any(|item| matches!(item, BatchFetchItem::Repo { .. }))
+    {
+        Some(
+            state
+                .local_workspace_view(host_local_scope.as_ref())
+                .map_err(ToolError::Validation)?,
+        )
+    } else {
+        None
+    };
+
     // Pre-validate all items before launching any fetches.
-    // Locator checks use the shared fetch-locator helpers so batch,
-    // repo_fetch, and suggested-fetch conversions share host/ref/path
-    // semantics. Focus checks reuse the exact web_fetch validation.
+    // Locator checks use shared fetch-locator and repo-request validators.
     for (i, item) in effective_items.iter().enumerate() {
         let focus_q = item.focus_query();
         let focus_chunks = item.focus_max_chunks();
@@ -348,17 +314,43 @@ pub async fn run_batch_fetch_with_progress(
                 url,
                 max_chars,
                 extract_mode,
+                max_cache_age_seconds,
+                pdf,
+                render,
+                browser_profile,
                 ..
             } => {
-                if let Err(e) = crate::core::fetch_locator::validate_web_url(url) {
-                    return Err(ToolError::Validation(format!("item {i}: {e}")));
-                }
+                let target = crate::core::fetch_locator::resolve_fetch_target(
+                    crate::core::fetch_locator::FetchTarget::WebUrl(url),
+                )
+                .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                let crate::core::fetch_locator::FetchLocator::WebUrl(resolved_url) = target else {
+                    return Err(ToolError::internal(
+                        "web batch item resolved to a non-web target",
+                    ));
+                };
                 if let Some(mc) = max_chars {
                     if *mc == 0 {
                         return Err(ToolError::Validation(format!(
                             "item {i}: max_chars must be > 0"
                         )));
                     }
+                }
+                crate::core::fetch_policy::validate_cache_age(*max_cache_age_seconds)
+                    .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                super::web_fetch::validate_batch_route_options(
+                    &state,
+                    &resolved_url,
+                    render.as_deref(),
+                    browser_profile.as_deref(),
+                )
+                .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                #[cfg(not(feature = "pdf"))]
+                let _ = pdf;
+                #[cfg(feature = "pdf")]
+                if let Some(spec) = pdf.as_ref().and_then(|options| options.pages.as_deref()) {
+                    crate::fetch::pdf::parse_pdf_page_spec(spec, state.config.fetch.pdf_max_pages)
+                        .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
                 }
                 let mode = extract_mode.unwrap_or(crate::core::fetch::ExtractMode::Text);
                 if let Err(e) =
@@ -372,30 +364,152 @@ pub async fn run_batch_fetch_with_progress(
                 repo,
                 path,
                 host,
+                ref_name,
+                commit_sha,
+                line_start,
+                line_end,
+                context_before,
+                context_after,
                 max_chars,
+                symbol,
+                symbol_kind,
+                match_text,
+                expand_to_block,
+                max_block_lines,
+                prefer_local,
                 ..
             } => {
-                if owner.trim().is_empty() {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: owner must not be empty"
-                    )));
+                let locator = crate::core::fetch_locator::batch_repo_item_to_locator(
+                    host.as_deref(),
+                    owner,
+                    repo,
+                    ref_name.as_deref(),
+                    commit_sha.as_deref(),
+                    path,
+                )
+                .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                let effective_max = max_chars.unwrap_or(per_item_cap).min(per_item_cap);
+                let parsed_symbol_kind =
+                    super::common::parse_symbol_kind_arg(symbol_kind.as_deref())
+                        .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                let workspace_target =
+                    matches!(locator, crate::core::fetch_locator::FetchLocator::Local(_));
+                let request = match &locator {
+                    crate::core::fetch_locator::FetchLocator::Local(local) => {
+                        crate::core::repo_fetch::RepoFetchRequest {
+                            host: None,
+                            owner: local.root.clone(),
+                            repo: local.path.clone(),
+                            ref_name: None,
+                            commit_sha: None,
+                            path: local.path.clone(),
+                            line_start: *line_start,
+                            line_end: *line_end,
+                            context_before: *context_before,
+                            context_after: *context_after,
+                            max_chars: Some(effective_max),
+                            timeout_ms: args.timeout_ms,
+                            symbol: symbol.clone(),
+                            symbol_kind: parsed_symbol_kind,
+                            match_text: match_text.clone(),
+                            expand_to_block: *expand_to_block,
+                            max_block_lines: *max_block_lines,
+                            prefer_local: None,
+                        }
+                    }
+                    crate::core::fetch_locator::FetchLocator::Repo(remote) => {
+                        crate::core::repo_fetch::RepoFetchRequest {
+                            host: remote.host,
+                            owner: remote.owner.clone().unwrap_or_default(),
+                            repo: remote.repo.clone().unwrap_or_default(),
+                            ref_name: remote.ref_name.clone(),
+                            commit_sha: remote.commit_sha.clone(),
+                            path: remote.path.clone(),
+                            line_start: *line_start,
+                            line_end: *line_end,
+                            context_before: *context_before,
+                            context_after: *context_after,
+                            max_chars: Some(effective_max),
+                            timeout_ms: args.timeout_ms,
+                            symbol: symbol.clone(),
+                            symbol_kind: parsed_symbol_kind,
+                            match_text: match_text.clone(),
+                            expand_to_block: *expand_to_block,
+                            max_block_lines: *max_block_lines,
+                            prefer_local: *prefer_local,
+                        }
+                    }
+                    crate::core::fetch_locator::FetchLocator::WebUrl(_) => {
+                        return Err(ToolError::internal(
+                            "repo batch item resolved to a web target",
+                        ));
+                    }
+                };
+                request
+                    .validate(state.config.fetch.max_chars_cap)
+                    .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+
+                let view = local_view
+                    .as_ref()
+                    .expect("repo items resolve a local view");
+                if let crate::core::fetch_locator::FetchLocator::Local(local) = &locator {
+                    let backend = view
+                        .backend()
+                        .filter(|backend| backend.is_enabled())
+                        .ok_or_else(|| {
+                            ToolError::Validation(
+                                "local workspace search is not enabled".to_string(),
+                            )
+                        })?;
+                    let roots = backend.roots();
+                    let root_entry = roots.iter().find(|(_, root)| {
+                        root.file_name()
+                            .and_then(|name| name.to_str())
+                            .is_some_and(|name| name == local.root)
+                    });
+                    let (_, root_path) = root_entry.ok_or_else(|| {
+                        ToolError::Validation(format!(
+                            "unknown workspace root '{}'; available roots: {}",
+                            local.root,
+                            roots
+                                .iter()
+                                .filter_map(|(_, root)| root
+                                    .file_name()
+                                    .and_then(|name| name.to_str()))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ))
+                    })?;
+                    super::repo_fetch::validate_workspace_fetch_path(
+                        root_path,
+                        &local.path,
+                        backend.config(),
+                    )
+                    .await
+                    .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
                 }
-                if repo.trim().is_empty() {
-                    return Err(ToolError::Validation(format!(
-                        "item {i}: repo must not be empty"
-                    )));
-                }
-                if let Err(e) = crate::core::fetch_locator::validate_repo_path(path) {
-                    return Err(ToolError::Validation(format!("item {i}: {e}")));
-                }
-                if let Err(e) = crate::core::fetch_locator::parse_batch_repo_host(host.as_deref()) {
-                    return Err(ToolError::Validation(format!("item {i}: {e}")));
-                }
-                if let Some(mc) = max_chars {
-                    if *mc == 0 {
-                        return Err(ToolError::Validation(format!(
-                            "item {i}: max_chars must be > 0"
-                        )));
+
+                if !workspace_target && prefer_local.unwrap_or(false) && host_local_scope.is_some()
+                {
+                    if !view.is_enabled() {
+                        return Err(ToolError::Validation(
+                            "local repository fetch was requested, but the authorized host scope has no local workspace".to_string(),
+                        ));
+                    }
+                    let inventory = view.inventory().await;
+                    let parsed_host = super::common::parse_code_host_arg(host.as_deref())
+                        .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                    if crate::meta::local_inventory::match_local_repo(
+                        &inventory,
+                        parsed_host.as_ref(),
+                        owner,
+                        repo,
+                    )
+                    .is_none()
+                    {
+                        return Err(ToolError::Validation(
+                            "local repository fetch was requested, but no matching repository exists in the authorized workspace".to_string(),
+                        ));
                     }
                 }
             }
@@ -511,17 +625,17 @@ pub async fn run_batch_fetch_with_progress(
             wave_indices.push(i);
             spawned_in_wave += 1;
 
-            let fetch_future = make_batch_fetch_future(
-                window.from + i,
+            let fetch_future = make_batch_fetch_future(BatchFetchItemContext {
+                index: window.from + i,
                 item,
-                item_budget_cap,
-                state.clone(),
-                client.clone(),
-                semaphore.clone(),
-                item.label(),
-                args.timeout_ms,
-                state.config.fetch.include_links_default,
-            );
+                item_max_chars: item_budget_cap,
+                state: state.clone(),
+                client: client.clone(),
+                semaphore: semaphore.clone(),
+                label: item.label(),
+                timeout_ms: args.timeout_ms,
+                host_local_scope: host_local_scope.clone(),
+            });
 
             join_set.spawn(fetch_future);
         }

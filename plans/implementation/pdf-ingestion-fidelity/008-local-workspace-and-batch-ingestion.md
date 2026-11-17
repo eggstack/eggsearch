@@ -1,6 +1,6 @@
 # M008 — Local Workspace and Batch Ingestion
 
-Status: ready
+Status: active
 Source: `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` M008
 Primary class: capability
 Baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731`
@@ -32,8 +32,8 @@ Make the two ingestion surfaces that already accept explicit targets reach PDFs.
 - `web_fetch` exposes `pdf: Option<PdfFetchOptions>` with `pages`, `pdf_password`, `include_media`, and `pdf_ocr`, and feeds `pdf_pages` into the derived cache key. The page spec is parsed inside `FetchClient::derive_from_raw` after the body is read, so `web_fetch` has no pre-I/O page validation to copy.
 - `BatchFetchItem::Web` carries `url`, `extract_mode`, `include_links`, `max_chars`, `cache_policy`, `max_cache_age_seconds`, `focus`, `focus_max_chunks`, and `focus_max_chars`, all optional with serde defaults; `Repo` has no URL, and `parse_batch_repo_host` maps `workspace` to the local handler.
 - Batch pre-validates every effective item before it builds a client or spawns a wave; validation errors abort the call with an `item {i}` prefix, while per-item failures land in `results[index]` with `ok = false`. Results and telemetry are index-based, and `batch_fetch_id(label, index)` is independent of content.
-- Every batch `build_derived_key` call passes `None, None, false` for `pdf_pages`, `pdf_ocr`, and `include_media`; without threading the item's options, a page-selected item would store or hit the default-extraction entry.
-- `renderer_version` is the literal `2` inside `build_derived_key`, and `web_fetch` already keys on page selection. Local reads consult no cache at all.
+- The current M002 branch adds the optional `pdf` field to batch web items and routes each item through the shared `web_fetch` handler. That handler already threads page, OCR, and media options through every derived-cache path; M008 verifies page-selection parity and cache isolation rather than adding a second cache route.
+- The current `renderer_version` is `5` inside `build_derived_key`; `web_fetch` already keys on page selection. Local reads consult no cache at all, so M008 does not change the renderer version.
 - Docs that would go stale: `docs/tool-matrix.md` batch and `web_fetch` rows, `architecture/mcp.md` § The 10 Tools, `docs/features.md` § PDF Extraction, `docs/config.md` § Fetch Defaults and § Local Workspace Defaults, and `architecture/local-workspace.md` § Configuration.
 
 ## Invariants that cannot regress
@@ -44,7 +44,7 @@ Make the two ingestion surfaces that already accept explicit targets reach PDFs.
 - Extracted PDF text passes through `strip_control_chars` and `scan_injection_markers`, is returned as `FetchTrust::LocalTrusted`, and gets no external-untrusted framing, identical to other local content.
 - `FetchErrorKind` wire strings are unchanged; the four outcomes reuse `pdf_not_compiled_in`, `pdf_disabled`, `pdf_parse_error`/`pdf_encrypted`, and `pdf_no_extractable_text`.
 - Batch input order, `index`, `label`, `stable_id`, `chars_returned`, and telemetry counters keep their meaning; page selection never enters `batch_fetch_id`.
-- `renderer_version` stays 2, and identical bytes still produce identical extraction, IDs, and ordering.
+- `renderer_version` stays at the current value 5, and identical bytes still produce identical extraction, IDs, and ordering.
 
 ## Expected production changes
 
@@ -52,7 +52,7 @@ Make the two ingestion surfaces that already accept explicit targets reach PDFs.
 2. **Local size budget.** Add `[local].pdf_max_file_bytes` with `serde(default)`, default 16,777,216 bytes, and a validation range of 1..=268,435,456 in `Config::validate`'s `[local]` block. Align the default with M001's proposed `[fetch].pdf_max_bytes`; if M001 lands a different value, follow it rather than diverging. The effective cap is this value for PDF paths and `max_file_bytes` otherwise, applied by both the path check and `safe_read_file`. Documentation owner: `docs/config.md` § Local Workspace Defaults; architecture owner: `architecture/local-workspace.md` § Configuration.
 3. **Local extraction and document.** Read bytes, then under `#[cfg(feature = "pdf")]` call `extract_pdf_text` with the resolved output budget (`max_chars` argument or `fetch.max_chars_default`, already capped by `max_chars_cap`), `PdfLimits` from `Config::fetch_limits()`, and options with no selected pages, no password, `include_media: false`, and OCR `Never`. Build the response with `content_type: Some("application/pdf")`, `document: Some(result.document)`, `text` and `lines` derived from the extracted text under the existing line-range and `max_chars` clamping, `language: None`, and `code_context: None`. Append the extractor's warnings, including page-classification strings; add no response field.
 4. **Honest unavailability.** A build without the feature returns `ToolError::capability_unavailable(...)`, which renders the `capability_unavailable` code with the `pdf_not_compiled_in` message, the feature name, and `docs/features.md` § PDF Extraction; a feature-enabled build with `[fetch].pdf_enabled = false` returns `pdf_disabled`. Neither falls through to UTF-8 decoding. `PdfNoExtractableText` is mapped to an explicit-empty response with a warning naming the outcome rather than a hard failure; parse and encryption failures name their existing kind. No "failed to read file" misdiagnosis.
-5. **Batch per-item shape.** Add one field to `BatchFetchItem::Web`, last and mirroring `web_fetch`: `#[serde(default, skip_serializing_if = "Option::is_none")] pdf: Option<PdfFetchOptions>`. `Repo` is unchanged. Absent `pdf` deserializes to today's behaviour; present, it accepts `{"pages": "1,3,7-10"}` plus the three existing sub-fields with unchanged semantics.
+5. **Batch per-item shape.** The active M002 branch already adds the optional `pdf: Option<PdfFetchOptions>` field to `BatchFetchItem::Web`, with serde defaults and omission when absent. Reconcile and verify that field rather than adding a duplicate. `Repo` is unchanged. Absent `pdf` deserializes to today's behavior; present, it accepts `{"pages": "1,3,7-10"}` plus the three existing sub-fields with unchanged semantics.
 6. **Pre-I/O validation.** In the batch pre-validation loop, for a web item with `pdf.pages`, call `parse_pdf_page_spec(spec, state.config.fetch.pdf_max_pages)` under the feature and reject with the `item {i}` prefix. This is stricter than `web_fetch`, which parses after the body; `web_fetch` is not changed. Out-of-range needs the document page count, so it is necessarily post-download and fails only that item with `pdf_page_out_of_range`.
 7. **Cache and telemetry threading.** Pass the item's `pdf.pages`, `pdf.pdf_ocr`, and `pdf.include_media` into the fetch options and into every batch `build_derived_key` call site so page-selected items get distinct keys and hit only their own entries. Add no counters; page selection affects `chars_returned` only through the returned text.
 
@@ -60,7 +60,7 @@ Make the two ingestion surfaces that already accept explicit targets reach PDFs.
 
 - One additive `[local]` key with a default and range, and one additive optional object on the `batch_fetch` web item; existing configs resolve the key from its default, and `skip_serializing_if` keeps existing serialized payloads unchanged.
 - `repo_fetch` returns a `document` for local PDFs that previously errored; no field is added or renamed, and `lines`/`text` remain populated.
-- `renderer_version` is **not** bumped. Verified: local reads are not cached at all, and the batch keys this adds either already exist in `web_fetch`'s key space or only create new entries, so no stored document changes for an existing key. Caching local documents would change that and requires an explicit bump, not a silent one here.
+- `renderer_version` remains **5**; it is not bumped. Local reads are not cached, and batch web items use the shared `web_fetch` cache path with the same PDF-option dimensions. Caching local documents would change that and requires an explicit bump, not a silent one here.
 - The internal Rust source break is confined to this crate: `BatchFetchItem::Web` has named fields and no `#[non_exhaustive]`, so every struct literal in `src/` and the test suites gains `pdf: None`; the MCP wire schema only gains an optional property.
 
 ## Ordered work packages
@@ -69,7 +69,7 @@ Make the two ingestion surfaces that already accept explicit targets reach PDFs.
 2. Exempt PDF from the path-level binary rejection and select the effective cap; update the `src/core/local.rs` unit tests, including the uppercase case.
 3. Add the local PDF read and extraction path with the compiled-out and disabled branches, leaving the text path unchanged.
 4. Map extraction outcomes into `repo_fetch` results and warnings; assert local trust, control-character stripping, and the injection scan.
-5. Add `pdf: Option<PdfFetchOptions>` to `BatchFetchItem::Web`, update every struct literal for the variant, and add serde round-trip tests with and without `pdf`.
+5. Reconcile the existing M002 `pdf: Option<PdfFetchOptions>` field on `BatchFetchItem::Web`, keep all struct literals compatible, and retain serde round-trip tests with and without `pdf`.
 6. Add batch pre-I/O page validation, then thread the options into the fetch call and all derived-key sites.
 7. Extend `tests/local_workspace_integration.rs` and `tests/batch_fetch_retrieval.rs` with the closure matrices, update the owning docs and `docs/test-inventory.md` counts, and append the `CHANGELOG.md` entry.
 

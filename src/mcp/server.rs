@@ -20,7 +20,7 @@ use crate::mcp::tasks::{
     complete_response, is_eligible, run_cancellable, task_response, TaskRuntime,
 };
 use crate::mcp::tools::{
-    map_tool_result, run_batch_fetch_with_progress, run_build_evidence_bundle,
+    map_tool_result, run_batch_fetch_with_host_scope_and_progress, run_build_evidence_bundle,
     run_provider_status_async, run_repo_fetch_with_host_scope, run_repo_map_with_host_scope,
     run_repo_search_with_host_scope, run_research_search_with_progress, run_security_search,
     run_web_fetch_with_progress, run_web_search, BatchFetchArgs, EvidenceBundleArgs,
@@ -660,18 +660,29 @@ impl EggsearchServer {
     ) -> Result<CallToolResponse, McpError> {
         let item_count = args.items.len();
         let eligible = is_eligible("batch_fetch", None, item_count);
+        let host_scope = context.meta.0 .0.get("codegg/host-local-scope").cloned();
         let task_args = args.clone();
+        let task_host_scope = host_scope.clone();
         if let Some(offloaded) = self.spawn_task(eligible, move |state| {
             Box::pin(async move {
                 let mut sink = ProgressSink::disabled();
-                run_batch_fetch_with_progress(state, task_args, &mut sink).await
+                run_batch_fetch_with_host_scope_and_progress(
+                    state,
+                    task_args,
+                    task_host_scope,
+                    &mut sink,
+                )
+                .await
             })
         }) {
             return task_response(offloaded);
         }
         let state = self.state.clone();
         let mut progress = ProgressSink::from_context(&context);
-        self.respond_response(run_batch_fetch_with_progress(state, args, &mut progress).await)
+        self.respond_response(
+            run_batch_fetch_with_host_scope_and_progress(state, args, host_scope, &mut progress)
+                .await,
+        )
     }
 
     #[tool(

@@ -12,7 +12,7 @@ use crate::core::fetch::ExtractMode;
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BatchFetchItem {
-    /// Fetch an explicit HTTP(S) URL.
+    /// Fetch an explicit HTTP(S) URL; controls match `web_fetch`.
     Web {
         /// The URL to fetch. Must be a valid HTTP(S) URL.
         url: String,
@@ -44,8 +44,17 @@ pub enum BatchFetchItem {
         /// effective per-item `max_chars` budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
+        /// PDF options for this item; same fields and validation as `web_fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pdf: Option<crate::core::fetch::PdfFetchOptions>,
+        /// Render policy: `http_only`, `auto`, or `browser`; same as `web_fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render: Option<String>,
+        /// Named browser profile; same authorization as `web_fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        browser_profile: Option<String>,
     },
-    /// Fetch a repository file by structured locator.
+    /// Fetch a repository file by structured locator; controls match `repo_fetch`.
     Repo {
         /// Code host. Accepted values: `github` (alias `gh`), `gitlab` (alias `gl`),
         /// `codeberg` (alias `cb`), `gitea`, `forgejo`, or `workspace`.
@@ -90,6 +99,24 @@ pub enum BatchFetchItem {
         /// effective per-item `max_chars` budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
+        /// Symbol name to select; same semantics as `repo_fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        symbol: Option<String>,
+        /// Symbol kind filter applied with `symbol`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        symbol_kind: Option<String>,
+        /// Select the span containing this text; same as `repo_fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        match_text: Option<String>,
+        /// Expand the selected line or span to its enclosing block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expand_to_block: Option<bool>,
+        /// Maximum lines returned when expanding to a block.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_block_lines: Option<usize>,
+        /// Prefer the local workspace copy when one exists.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        prefer_local: Option<bool>,
     },
 }
 
@@ -280,6 +307,9 @@ mod tests {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
         };
         let v = serde_json::to_value(&web).unwrap();
         assert_eq!(v["type"], "web");
@@ -300,6 +330,12 @@ mod tests {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
         };
         let v = serde_json::to_value(&repo).unwrap();
         assert_eq!(v["type"], "repo");
@@ -318,6 +354,9 @@ mod tests {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
         };
         assert_eq!(web.label(), "https://example.com");
 
@@ -336,8 +375,90 @@ mod tests {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
         };
         assert_eq!(repo.label(), "github:tokio-rs/axum/src/lib.rs");
+    }
+
+    #[test]
+    fn batch_fetch_target_options_default_and_round_trip() {
+        let legacy_web = serde_json::json!({
+            "type": "web",
+            "url": "https://example.com"
+        });
+        let parsed_web: BatchFetchItem = serde_json::from_value(legacy_web.clone()).unwrap();
+        match &parsed_web {
+            BatchFetchItem::Web {
+                pdf,
+                render,
+                browser_profile,
+                ..
+            } => {
+                assert!(pdf.is_none());
+                assert!(render.is_none());
+                assert!(browser_profile.is_none());
+            }
+            _ => panic!("expected web item"),
+        }
+        assert_eq!(serde_json::to_value(parsed_web).unwrap(), legacy_web);
+
+        let configured_web = serde_json::json!({
+            "type": "web",
+            "url": "https://example.com",
+            "pdf": {"pages": "1-2"},
+            "render": "auto",
+            "browser_profile": "docs"
+        });
+        let parsed_web: BatchFetchItem = serde_json::from_value(configured_web.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed_web).unwrap(), configured_web);
+
+        let legacy_repo = serde_json::json!({
+            "type": "repo",
+            "owner": "tokio-rs",
+            "repo": "axum",
+            "path": "src/lib.rs"
+        });
+        let parsed_repo: BatchFetchItem = serde_json::from_value(legacy_repo.clone()).unwrap();
+        match &parsed_repo {
+            BatchFetchItem::Repo {
+                symbol,
+                symbol_kind,
+                match_text,
+                expand_to_block,
+                max_block_lines,
+                prefer_local,
+                ..
+            } => {
+                assert!(symbol.is_none());
+                assert!(symbol_kind.is_none());
+                assert!(match_text.is_none());
+                assert!(expand_to_block.is_none());
+                assert!(max_block_lines.is_none());
+                assert!(prefer_local.is_none());
+            }
+            _ => panic!("expected repo item"),
+        }
+        assert_eq!(serde_json::to_value(parsed_repo).unwrap(), legacy_repo);
+
+        let configured_repo = serde_json::json!({
+            "type": "repo",
+            "owner": "tokio-rs",
+            "repo": "axum",
+            "path": "src/lib.rs",
+            "symbol": "Router",
+            "symbol_kind": "struct",
+            "match_text": "pub struct Router",
+            "expand_to_block": true,
+            "max_block_lines": 80,
+            "prefer_local": true
+        });
+        let parsed_repo: BatchFetchItem = serde_json::from_value(configured_repo.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed_repo).unwrap(), configured_repo);
     }
 
     #[test]

@@ -411,6 +411,9 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
         }
     };
     let run = |items: Vec<eggsearch::core::batch_fetch::BatchFetchItem>| {
@@ -451,16 +454,21 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        pdf: None,
+        render: None,
+        browser_profile: None,
     };
-    let v = run(vec![bad]).await.expect("batch runs with item error");
-    assert_eq!(v["results"][0]["ok"], false);
+    let error = run(vec![bad])
+        .await
+        .expect_err("batch preflight rejects oversized max-age");
     assert!(
-        v["results"][0]["error"]
-            .as_str()
-            .unwrap_or("")
-            .contains("max_cache_age_seconds"),
-        "oversized batch max-age must be an item error: {}",
-        v["results"][0]
+        format!("{error:?}").contains("max_cache_age_seconds"),
+        "oversized batch max-age must be rejected during preflight: {error:?}"
+    );
+    assert_eq!(
+        mock.hits(),
+        2,
+        "invalid items must not trigger another fetch"
     );
 }
 

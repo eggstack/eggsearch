@@ -119,6 +119,9 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -710,4 +713,116 @@ fn research_search_full_options_deserializes() {
     assert_eq!(args.max_results, Some(32));
     assert_eq!(args.max_groups, Some(10));
     assert_eq!(args.max_per_group, Some(5));
+}
+
+#[tokio::test]
+async fn batch_workspace_fetch_honors_host_local_scope_without_widening() {
+    struct TokenRestore(Option<std::ffi::OsString>);
+    impl Drop for TokenRestore {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => std::env::set_var("CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN", value),
+                None => std::env::remove_var("CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN"),
+            }
+        }
+    }
+
+    let _lock = crate::mcp::state::HOST_LOCAL_SCOPE_TEST_LOCK.lock().await;
+    let previous = std::env::var_os("CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN");
+    let _restore = TokenRestore(previous);
+    let token = "batch-scope-test-token";
+    std::env::set_var("CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN", token);
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let authorized_root = dir.path().join("authorized");
+    let configured_root = dir.path().join("configured");
+    std::fs::create_dir_all(&authorized_root).expect("authorized root");
+    std::fs::create_dir_all(&configured_root).expect("configured root");
+    std::fs::write(authorized_root.join("lib.rs"), "pub fn authorized() {}\n")
+        .expect("authorized source");
+    std::fs::write(configured_root.join("lib.rs"), "pub fn configured() {}\n")
+        .expect("configured source");
+    let authorized_name = authorized_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("authorized root name")
+        .to_string();
+    let configured_name = configured_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("configured root name")
+        .to_string();
+    let mut config = AppConfig::default();
+    config.local.enabled = true;
+    config.local.roots = vec![configured_root];
+    let state = Arc::new(ServerState::build(config).expect("state builds"));
+    let scope = serde_json::json!({
+        "root": authorized_root.to_string_lossy(),
+        "token": token
+    });
+    let args_for_root = |root: String| BatchFetchArgs {
+        items: vec![crate::core::batch_fetch::BatchFetchItem::Repo {
+            host: Some("workspace".to_string()),
+            owner: root,
+            repo: "lib.rs".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        }],
+        max_items: None,
+        max_chars_per_item: None,
+        max_total_chars: None,
+        timeout_ms: None,
+        continue_on_error: None,
+        offset: None,
+        limit: None,
+        response_detail: None,
+    };
+
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    let authorized = run_batch_fetch_with_host_scope_and_progress(
+        state.clone(),
+        args_for_root(authorized_name),
+        Some(scope.clone()),
+        &mut progress,
+    )
+    .await
+    .expect("authorized batch workspace fetch");
+    assert!(authorized["results"][0]["response"]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("authorized"));
+
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    let rejected = run_batch_fetch_with_host_scope_and_progress(
+        state.clone(),
+        args_for_root(configured_name.clone()),
+        Some(scope),
+        &mut progress,
+    )
+    .await
+    .expect_err("out-of-scope root must be rejected");
+    assert!(rejected.to_string().contains("unknown workspace root"));
+
+    let configured = run_batch_fetch(state, args_for_root(configured_name))
+        .await
+        .expect("internal unscoped calls retain configured roots");
+    assert!(configured["results"][0]["response"]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("configured"));
 }

@@ -98,7 +98,7 @@ pub async fn run_repo_fetch(
 
 pub async fn run_repo_fetch_with_host_scope(
     state: Arc<ServerState>,
-    args: RepoFetchArgs,
+    mut args: RepoFetchArgs,
     host_local_scope: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_evidence::infer_source_role;
@@ -108,7 +108,7 @@ pub async fn run_repo_fetch_with_host_scope(
         apply_line_range, clamp_lines_to_max_chars, codeberg_browser_url, codeberg_raw_url,
         gitea_browser_url, gitea_raw_url, github_browser_url, github_permalink_url,
         github_raw_permalink_url, github_raw_url, gitlab_browser_url, gitlab_raw_url, FetchTrust,
-        RepoFetchRequest, RepoFetchResponse, RepoLocator,
+        RepoFetchRequest, RepoFetchResponse,
     };
 
     let local_view = state
@@ -116,21 +116,42 @@ pub async fn run_repo_fetch_with_host_scope(
         .map_err(ToolError::Validation)?;
 
     // --- workspace:// local file fetch (bypasses fetch policy) ---
-    if let Some(ref h) = args.host {
-        if h.to_lowercase() == "workspace" {
-            let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
-                args.response_detail,
-                state.config.mcp.schema_profile,
-            );
-            let max_chars = state.config.mcp.brief_max_chars;
-            let value = run_workspace_fetch(state, args, local_view).await?;
-            return Ok(crate::mcp::projection::project_with_budget(
-                "repo_fetch",
-                value,
-                detail,
-                max_chars,
+    if args
+        .host
+        .as_deref()
+        .is_some_and(|host| host.trim().eq_ignore_ascii_case("workspace"))
+    {
+        let path = workspace_relative_path_arg(&args)?;
+        let target = crate::core::fetch_locator::resolve_fetch_target(
+            crate::core::fetch_locator::FetchTarget::Repo {
+                host: crate::core::fetch_locator::BatchRepoHost::Workspace,
+                owner: &args.owner,
+                repo: &args.repo,
+                ref_name: args.ref_name.as_deref(),
+                commit_sha: args.commit_sha.as_deref(),
+                path: &path,
+            },
+        )
+        .map_err(ToolError::Validation)?;
+        let crate::core::fetch_locator::FetchLocator::Local(locator) = target else {
+            return Err(ToolError::internal(
+                "workspace fetch resolved to a non-local target",
             ));
-        }
+        };
+        args.owner = locator.root;
+        args.path = locator.path;
+        let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
+            args.response_detail,
+            state.config.mcp.schema_profile,
+        );
+        let max_chars = state.config.mcp.brief_max_chars;
+        let value = run_workspace_fetch(state, args, local_view).await?;
+        return Ok(crate::mcp::projection::project_with_budget(
+            "repo_fetch",
+            value,
+            detail,
+            max_chars,
+        ));
     }
 
     // --- prefer_local: resolve to local workspace when enabled ---
@@ -206,8 +227,62 @@ pub async fn run_repo_fetch_with_host_scope(
     // Determine effective host: infer from owner/repo if not explicit.
     // For now we require an explicit host or default to GitHub.
     let effective_host = host.unwrap_or(CodeHost::Github);
+    let ref_name = args.ref_name.clone().unwrap_or_else(|| "main".to_string());
+    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
 
-    let ref_name = args.ref_name.unwrap_or_else(|| "main".to_string());
+    let req = RepoFetchRequest {
+        host: Some(effective_host),
+        owner: args.owner.clone(),
+        repo: args.repo.clone(),
+        ref_name: Some(ref_name.clone()),
+        commit_sha: args.commit_sha.clone(),
+        path: args.path.clone(),
+        line_start: args.line_start,
+        line_end: args.line_end,
+        context_before: args.context_before,
+        context_after: args.context_after,
+        max_chars: args.max_chars,
+        timeout_ms: args.timeout_ms,
+        symbol: args.symbol.clone(),
+        symbol_kind: parsed_symbol_kind,
+        match_text: args.match_text.clone(),
+        expand_to_block: args.expand_to_block,
+        max_block_lines: args.max_block_lines,
+        prefer_local: args.prefer_local,
+    };
+
+    req.validate(state.config.fetch.max_chars_cap)
+        .map_err(ToolError::Validation)?;
+
+    let target = crate::core::fetch_locator::resolve_fetch_target(
+        crate::core::fetch_locator::FetchTarget::Repo {
+            host: crate::core::fetch_locator::BatchRepoHost::Remote(effective_host),
+            owner: &req.owner,
+            repo: &req.repo,
+            ref_name: req.ref_name.as_deref(),
+            commit_sha: req.commit_sha.as_deref(),
+            path: &req.path,
+        },
+    )
+    .map_err(ToolError::Validation)?;
+    let crate::core::fetch_locator::FetchLocator::Repo(locator) = target else {
+        return Err(ToolError::internal(
+            "remote repo fetch resolved to a non-repository target",
+        ));
+    };
+    let effective_host = locator
+        .host
+        .ok_or_else(|| ToolError::internal("remote repo locator has no code host"))?;
+    let owner = locator
+        .owner
+        .as_deref()
+        .ok_or_else(|| ToolError::internal("remote repo locator has no owner"))?;
+    let repo = locator
+        .repo
+        .as_deref()
+        .ok_or_else(|| ToolError::internal("remote repo locator has no repository"))?;
+    let path = locator.path.as_str();
+    let rn = locator.ref_name.as_deref().unwrap_or("main");
 
     // Resolve a Gitea/Forgejo base URL from configured API providers.
     // Reused for normal URLs, browser permalinks, and raw permalinks so
@@ -236,37 +311,6 @@ pub async fn run_repo_fetch_with_host_scope(
                     .and_then(|(_, c)| c.base_url.clone())
             })
     };
-
-    let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
-
-    let req = RepoFetchRequest {
-        host: Some(effective_host),
-        owner: args.owner.clone(),
-        repo: args.repo.clone(),
-        ref_name: Some(ref_name.clone()),
-        commit_sha: args.commit_sha.clone(),
-        path: args.path.clone(),
-        line_start: args.line_start,
-        line_end: args.line_end,
-        context_before: args.context_before,
-        context_after: args.context_after,
-        max_chars: args.max_chars,
-        timeout_ms: args.timeout_ms,
-        symbol: args.symbol.clone(),
-        symbol_kind: parsed_symbol_kind,
-        match_text: args.match_text.clone(),
-        expand_to_block: args.expand_to_block,
-        max_block_lines: args.max_block_lines,
-        prefer_local: args.prefer_local,
-    };
-
-    req.validate(state.config.fetch.max_chars_cap)
-        .map_err(ToolError::Validation)?;
-
-    let owner = &req.owner;
-    let repo = &req.repo;
-    let path = &req.path;
-    let rn = req.ref_name.as_deref().unwrap_or("main");
 
     // Build URLs based on host.
     let (browser_url, raw_url) = match effective_host {
@@ -353,16 +397,7 @@ pub async fn run_repo_fetch_with_host_scope(
         }
     });
 
-    let locator = RepoLocator {
-        kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
-        host: Some(effective_host),
-        owner: Some(owner.to_string()),
-        repo: Some(repo.to_string()),
-        ref_name: Some(rn.to_string()),
-        commit_sha: req.commit_sha.clone(),
-        path: path.to_string(),
-        workspace_root: None,
-    };
+    let locator = locator.clone();
 
     let language = crate::core::code_metadata::language_from_extension(path).map(String::from);
     let source_role = infer_source_role(path);
@@ -637,18 +672,51 @@ pub async fn run_repo_fetch_with_host_scope(
     }
 }
 
-/// Handle `repo_fetch` for `workspace://` local files.
-///
-/// When `host = "workspace"`, `owner` is the root name and `repo` is
-/// the root-relative file path. The file is read directly from the
-/// local filesystem via the workspace backend.
+pub(crate) async fn validate_workspace_fetch_path(
+    root_path: &std::path::Path,
+    relative_path: &str,
+    local_config: &crate::core::local::LocalConfig,
+) -> Result<Option<u64>, ToolError> {
+    crate::core::local::validate_local_fetch_path_structure(root_path, relative_path, local_config)
+        .map_err(|error| ToolError::Validation(error.to_string()))?;
+
+    let probe_root = root_path.to_path_buf();
+    let probe_relative_path = relative_path.to_string();
+    let probe_config = local_config.clone();
+    let (prefix, file_size) = tokio::task::spawn_blocking(move || {
+        crate::meta::safe_open::safe_read_file_prefix(
+            &probe_root,
+            &probe_relative_path,
+            &probe_config,
+            usize::MAX,
+            5,
+        )
+    })
+    .await
+    .map_err(|error| ToolError::internal(format!("failed to join file inspection task: {error}")))?
+    .map_err(|error| ToolError::internal(format!("failed to inspect file: {error}")))?;
+
+    if crate::core::local::is_pdf_extension(relative_path) || prefix.starts_with(b"%PDF-") {
+        let max_file_bytes = local_config.pdf_max_file_bytes;
+        if file_size > max_file_bytes as u64 {
+            return Err(ToolError::Validation(format!(
+                "file size {file_size} exceeds max {max_file_bytes}"
+            )));
+        }
+        return Ok(Some(file_size));
+    }
+
+    crate::core::local::validate_local_fetch_path(root_path, relative_path, local_config)
+        .map_err(|error| ToolError::Validation(error.to_string()))?;
+    Ok(None)
+}
+
 async fn run_workspace_fetch(
     state: Arc<ServerState>,
     args: RepoFetchArgs,
     local_view: Arc<crate::mcp::state::LocalWorkspaceView>,
 ) -> Result<serde_json::Value, ToolError> {
     use crate::core::code_evidence::infer_source_role;
-    use crate::core::local::validate_local_fetch_path;
     use crate::core::repo_fetch::{
         apply_line_range, clamp_lines_to_max_chars, FetchTrust, RepoFetchRequest, RepoFetchResponse,
     };
@@ -716,13 +784,23 @@ async fn run_workspace_fetch(
         ))
     })?;
 
-    // Use centralized path validation for traversal, binary, symlink, and containment checks
-    validate_local_fetch_path(root_path, &relative_path, backend.config())
-        .map_err(|e| ToolError::Validation(e.to_string()))?;
-
     let root_path = root_path.clone();
-    let relative_path_for_read = relative_path.clone();
     let local_config = backend.config().clone();
+    if let Some(file_size) =
+        validate_workspace_fetch_path(&root_path, &relative_path, &local_config).await?
+    {
+        return run_workspace_pdf_fetch(
+            state,
+            args,
+            root_path,
+            relative_path,
+            local_config,
+            file_size,
+        )
+        .await;
+    }
+
+    let relative_path_for_read = relative_path.clone();
     let max_file_bytes = local_config.max_file_bytes;
     let content = tokio::task::spawn_blocking(move || {
         let bytes = crate::meta::safe_open::safe_read_file(
@@ -954,4 +1032,243 @@ async fn run_workspace_fetch(
     let value = serde_json::to_value(&fetch_response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
     Ok(value)
+}
+
+async fn run_workspace_pdf_fetch(
+    state: Arc<ServerState>,
+    args: RepoFetchArgs,
+    root_path: std::path::PathBuf,
+    relative_path: String,
+    local_config: crate::core::local::LocalConfig,
+    file_size: u64,
+) -> Result<serde_json::Value, ToolError> {
+    let max_file_bytes = local_config.pdf_max_file_bytes;
+    if file_size > max_file_bytes as u64 {
+        return Err(ToolError::Validation(format!(
+            "file size {file_size} exceeds max {max_file_bytes}"
+        )));
+    }
+
+    #[cfg(feature = "pdf")]
+    {
+        if !state.config.fetch.pdf_enabled {
+            return Err(ToolError::capability_unavailable(
+                "pdf_disabled: set [fetch].pdf_enabled = true; see docs/features.md#pdf-extraction",
+            ));
+        }
+
+        let mut read_config = local_config.clone();
+        read_config.max_file_bytes = max_file_bytes;
+        let read_root = root_path.clone();
+        let read_relative_path = relative_path.clone();
+        let bytes = tokio::task::spawn_blocking(move || {
+            crate::meta::safe_open::safe_read_file(
+                &read_root,
+                &read_relative_path,
+                &read_config,
+                max_file_bytes,
+            )
+        })
+        .await
+        .map_err(|e| ToolError::internal(format!("failed to join PDF read task: {e}")))?
+        .map_err(|error| match error {
+            crate::meta::safe_open::SafeOpenError::FileTooLarge(size, max) => {
+                ToolError::Validation(format!("file size {size} exceeds max {max}"))
+            }
+            crate::meta::safe_open::SafeOpenError::FileContentLimitExceeded(max, observed) => {
+                ToolError::Validation(format!(
+                    "file content exceeds max {max} bytes (observed {observed})"
+                ))
+            }
+            other => ToolError::internal(format!("failed to read local PDF: {other}")),
+        })?;
+
+        let output_max_chars = args
+            .max_chars
+            .unwrap_or(state.config.fetch.max_chars_default)
+            .min(state.config.fetch.max_chars_cap);
+        let fetch_limits = state.config.fetch_limits();
+        let pdf_limits = crate::fetch::pdf::PdfLimits {
+            max_pages: fetch_limits.pdf_max_pages,
+            max_chars_per_page: fetch_limits.pdf_max_chars_per_page,
+            max_total_chars: fetch_limits.pdf_max_total_chars,
+            max_decompressed_bytes: fetch_limits.pdf_max_decompressed_bytes,
+        };
+        let options = crate::fetch::pdf::PdfExtractOptions {
+            selected_pages: None,
+            password: None,
+            include_media: false,
+            ocr_policy: crate::fetch::pdf::PdfOcrPolicy::Never,
+        };
+        let (
+            content,
+            document,
+            mut warnings,
+            mut structured_warnings,
+            pdf_text_truncated,
+            extractor_warning_count,
+        ) = match crate::fetch::pdf::extract_pdf_text(
+            &bytes,
+            output_max_chars,
+            &pdf_limits,
+            Some(&options),
+        ) {
+            Ok(result) => {
+                let warning_count = result.warnings.len();
+                (
+                    result.text,
+                    Some(result.document),
+                    result.warnings,
+                    result.structured_warnings,
+                    result.text_truncated,
+                    warning_count,
+                )
+            }
+            Err(crate::fetch::FetchError::PdfNoExtractableText) => (
+                String::new(),
+                None,
+                vec!["pdf_no_extractable_text: PDF has no extractable text".to_string()],
+                Vec::new(),
+                false,
+                0,
+            ),
+            Err(error) => {
+                return Err(ToolError::document_unavailable(format!(
+                    "{}: {error}",
+                    error.error_code()
+                )))
+            }
+        };
+
+        let all_lines: Vec<String> = content.lines().map(String::from).collect();
+        let total_lines = if all_lines.is_empty() {
+            None
+        } else {
+            Some(u32::try_from(all_lines.len()).unwrap_or(u32::MAX))
+        };
+        let (sliced_lines, _, _, _, line_warning) = crate::core::repo_fetch::apply_line_range(
+            &all_lines,
+            args.line_start,
+            args.line_end,
+            args.context_before.unwrap_or(0),
+            args.context_after.unwrap_or(0),
+        );
+        let (mut clamped_lines, _, char_truncated) =
+            crate::core::repo_fetch::clamp_lines_to_max_chars(
+                &sliced_lines,
+                Some(output_max_chars),
+            );
+
+        if let Some(warning) = line_warning {
+            warnings.push(warning);
+        }
+        if char_truncated {
+            warnings.push("workspace_fetch_truncated_by_max_chars".to_string());
+        }
+        if args.symbol.is_some() || args.match_text.is_some() {
+            warnings.push(
+                "span_selection: PDF text does not support source-span selection".to_string(),
+            );
+        }
+
+        let mut trust_markers = crate::core::sanitize::TrustMarkers::default();
+        let mut total_control_removed = 0usize;
+        for line in &mut clamped_lines {
+            let (cleaned, removed) = crate::core::sanitize::strip_control_chars(&line.text);
+            total_control_removed += removed;
+            line.text = cleaned;
+        }
+        trust_markers.control_chars_removed = total_control_removed;
+        if total_control_removed > 0 {
+            trust_markers.text_sanitized = true;
+        }
+        let sliced_text = if clamped_lines.is_empty() {
+            None
+        } else {
+            Some(
+                clamped_lines
+                    .iter()
+                    .map(|line| line.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        };
+        if state.config.fetch.sanitize_output {
+            if let Some(text) = sliced_text.as_deref() {
+                let hits = crate::core::sanitize::scan_injection_markers(text);
+                trust_markers.injection_hits = hits.len();
+                if !hits.is_empty() {
+                    warnings.push(format!(
+                        "local_content_marker_warning: possible prompt injection markers detected in local workspace content ({} hits)",
+                        hits.len()
+                    ));
+                }
+            }
+        }
+        structured_warnings.extend(crate::core::warning::convert_fetch_warnings(
+            &warnings[extractor_warning_count..],
+        ));
+
+        let source_role = crate::core::code_evidence::infer_source_role(&relative_path);
+        let root_name = args.owner.clone();
+        let pseudo_url = format!("workspace://{root_name}/{relative_path}");
+        let locator = crate::core::repo_fetch::RepoLocator {
+            kind: crate::core::repo_fetch::RepoLocatorKind::Workspace,
+            host: None,
+            owner: None,
+            repo: None,
+            ref_name: None,
+            commit_sha: None,
+            path: relative_path,
+            workspace_root: Some(root_name),
+        };
+        let fetch_response = crate::core::repo_fetch::RepoFetchResponse {
+            locator: locator.clone(),
+            stable_id: Some(crate::core::identity::fetch_id(
+                None,
+                Some(&locator),
+                clamped_lines.first().map(|line| line.number),
+                clamped_lines.last().map(|line| line.number),
+                sliced_text.as_deref(),
+            )),
+            source_id: None,
+            fetched: true,
+            status: None,
+            content_type: Some("application/pdf".to_string()),
+            language: None,
+            source_role: Some(source_role),
+            browser_url: pseudo_url.clone(),
+            raw_url: pseudo_url,
+            permalink_url: None,
+            raw_permalink_url: None,
+            fetched_url: None,
+            ref_resolved: None,
+            line_start: args.line_start,
+            line_end: args.line_end,
+            returned_line_start: clamped_lines.first().map(|line| line.number),
+            returned_line_end: clamped_lines.last().map(|line| line.number),
+            total_lines,
+            text: sliced_text,
+            lines: clamped_lines,
+            document,
+            truncated: char_truncated || pdf_text_truncated,
+            structured_warnings,
+            warnings,
+            trust: crate::core::repo_fetch::FetchTrust::LocalTrusted,
+            trust_markers,
+            selected_span: None,
+            code_span: None,
+            code_context: None,
+        };
+        serde_json::to_value(&fetch_response)
+            .map_err(|e| ToolError::internal(format!("serialization error: {e}")))
+    }
+
+    #[cfg(not(feature = "pdf"))]
+    {
+        let _ = (state, args, root_path, relative_path);
+        Err(ToolError::capability_unavailable(
+            "pdf_not_compiled_in: enable the `pdf` Cargo feature; see docs/features.md#pdf-extraction; build with `cargo build --features pdf`",
+        ))
+    }
 }

@@ -941,6 +941,9 @@ mod pagination {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
             })
             .collect()
     }

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `batch_fetch` web items accept the same PDF page-selection options as `web_fetch`, with page syntax prevalidated before item fetching. `repo_fetch` extracts explicitly named PDFs under configured local workspace roots by extension or `%PDF-` prefix, under `[local].pdf_max_file_bytes` and the existing PDF feature/config gates; PDFs remain excluded from local indexing and repo maps.
+- `batch_fetch` web items accept `pdf`, `render`, and `browser_profile` with the same routing and cache semantics as `web_fetch`; repo items accept `symbol`, `symbol_kind`, `match_text`, `expand_to_block`, `max_block_lines`, and `prefer_local`. Host-local scope metadata now restricts batch workspace items to the same authorized view as `repo_fetch`. Item order, per-item failures, stable IDs, budgets, and telemetry are unchanged.
 - `web_fetch` accepts the field names used by the reference MCP fetch server and common
   search/fetch servers as compatibility aliases: `max_length` for `max_chars`, `start_index` for
   `offset`, and `question` or `prompt` for `focus`. Aliases are wire-level spellings, not separate

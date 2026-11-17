@@ -1,6 +1,6 @@
 # PDF Ingestion and Extraction Fidelity Roadmap
 
-Status: closing (M001, M002, and M007 implemented; M006 qualification remains open; M003–M005 and M008 ready)
+Status: closing (M001, M002, and M007 implemented; M006 qualification remains open; M008 active; M003–M005 ready)
 Planning baseline: `9d4d16fc32500196a1b88554b898cd8eddc84731` (branch `feat/auto-20261110-0a674cdc`, 2026-11-11 UTC)
 
 References: `plans/000-long-term-specification.md` §5, 7, 8; `plans/001-terminology-and-domain-model.md`; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0002, ADR-0006, ADR-0007, ADR-0008.
@@ -112,7 +112,7 @@ Deferred without a plan: OCR and rasterization, image and attachment extraction,
 
 ## 9. Closure and status
 
-The roadmap was approved for execution on 2026-11-11. M001, M002, and M007 are implemented with closure records and remain `closing` pending SHA and status reconciliation. M006's production change landed at `5605cc2` with the browser default work and remains `closing` pending macOS arm64 size/native qualification, installer smoke beyond Linux x86_64, realistic-mix qualification, and the wheel matrix. M003, M004, M005, and M008 remain `ready`, subject to their hard dependencies.
+The roadmap was approved for execution on 2026-11-11. M001, M002, and M007 are implemented with closure records and remain `closing` pending SHA and status reconciliation. M006's production change landed at `5605cc2` with the browser default work and remains `closing` pending macOS arm64 size/native qualification, installer smoke beyond Linux x86_64, realistic-mix qualification, and the wheel matrix. M008 is active by user approval and is being implemented against the existing M001 code while M001's exact-candidate status reconciliation remains outstanding; M003, M004, and M005 remain `ready`, subject to their hard dependencies.
 
 Each milestone needs its own `plans/closure/pdf-ingestion-fidelity/NNN-status.md` recording the implementation candidate, the corpus measurement before and after, tests and guards run with outcomes, unchanged safety evidence, failures and unrun verification, and residual risk. The roadmap may only mark a milestone closed when its closure record exists and the registry row is updated in the same commit. No milestone is pre-closed. M001 and M005 are corrective: each must record the defect observed at baseline and why the existing verification did not catch it.
 

@@ -885,33 +885,6 @@ pub(crate) fn project_cached_response(
     document.text_truncated = truncated;
 }
 
-pub(crate) fn project_cached_document(
-    document: &mut crate::fetch::cache::CachedExtractedDocument,
-    final_url: &str,
-    window_chars: usize,
-    sanitize_output: bool,
-) {
-    let Some(structured) = document.document.as_mut() else {
-        return;
-    };
-    if structured.kind != crate::core::document::DocumentKind::Html || structured.blocks.is_empty()
-    {
-        return;
-    }
-    let markdown = structured.text_format == "markdown";
-    let (projected, truncated) =
-        crate::fetch::projection::project_document_text(&structured.blocks, window_chars, markdown);
-    let chars = projected.chars().count();
-    let text = if sanitize_output {
-        crate::core::sanitize::frame(&projected, "text", final_url)
-    } else {
-        projected
-    };
-    document.text = Some(text);
-    structured.text_chars_returned = chars;
-    structured.text_truncated = truncated;
-}
-
 pub(crate) fn cached_document_response(
     requested_url: &str,
     raw: &crate::fetch::cache::RawFetchCacheEntry,

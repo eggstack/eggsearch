@@ -53,6 +53,9 @@ impl std::fmt::Debug for HostLocalScope {
 }
 
 const HOST_LOCAL_SCOPE_TOKEN_ENV: &str = "CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN";
+#[cfg(test)]
+pub(crate) static HOST_LOCAL_SCOPE_TEST_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
 const HOST_LOCAL_BACKEND_CACHE_CAPACITY: usize = 8;
 
 /// Request-local view over a local backend and its root-specific inventory
@@ -671,12 +674,24 @@ mod tests {
 
     #[test]
     fn host_scopes_authenticate_and_cache_distinct_roots() {
+        let _lock = HOST_LOCAL_SCOPE_TEST_LOCK.blocking_lock();
+        struct TokenRestore(Option<std::ffi::OsString>);
+        impl Drop for TokenRestore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, value),
+                    None => std::env::remove_var(HOST_LOCAL_SCOPE_TOKEN_ENV),
+                }
+            }
+        }
+
+        let previous_token = std::env::var_os(HOST_LOCAL_SCOPE_TOKEN_ENV);
+        let _restore = TokenRestore(previous_token);
         let first = tempfile::tempdir().expect("first root");
         let second = tempfile::tempdir().expect("second root");
         let first_canonical = first.path().canonicalize().expect("canonical first root");
         let second_canonical = second.path().canonicalize().expect("canonical second root");
         let token = format!("test-{}", std::process::id());
-        let previous_token = std::env::var_os(HOST_LOCAL_SCOPE_TOKEN_ENV);
         std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, &token);
         let mut config = AppConfig::default();
         config.local.enabled = true;
@@ -729,9 +744,6 @@ mod tests {
                 .is_err(),
             "missing process token must reject host metadata"
         );
-        if let Some(previous_token) = previous_token {
-            std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, previous_token);
-        }
     }
 
     #[test]

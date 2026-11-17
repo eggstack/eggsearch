@@ -730,6 +730,7 @@ Local workspace search is disabled by default.
 | `enabled` | `false` |
 | `roots` | empty |
 | `max_file_bytes` | `1_048_576` |
+| `pdf_max_file_bytes` | `16_777_216` (1–268_435_456) |
 | `max_indexed_files` | `50_000` |
 | `include_hidden` | `false` |
 | `respect_gitignore` | `true` |
@@ -740,6 +741,13 @@ Local workspace search is disabled by default.
 | `max_structured_files` | `200` |
 | `max_total_symbols` | `5_000` |
 | `repo_map_structure_cap` | `500` |
+
+`repo_fetch` extracts an explicitly named workspace PDF when its path ends in
+`.pdf` (case-insensitive) or its first bytes contain `%PDF-`. Local PDFs use
+`pdf_max_file_bytes`; other files keep `max_file_bytes`. The PDF feature and
+`[fetch].pdf_enabled` gates still apply. PDFs remain excluded from local search,
+symbol parsing, and repo-map indexing. `repo_fetch` does not accept PDF page
+selection.
 
 When enabled, local results use `local_trusted` trust labels and can be surfaced through `repo_search`, `repo_fetch`, and `repo_map`. They remain provenance-trusted, not instruction-trusted.
 

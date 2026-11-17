@@ -465,6 +465,7 @@ fn default_config_has_expected_values() {
     assert_eq!(cfg.fetch.pdf_max_decompressed_bytes, 67_108_864);
     assert!(!cfg.local.enabled);
     assert!(cfg.local.roots.is_empty());
+    assert_eq!(cfg.local.pdf_max_file_bytes, 16_777_216);
 }
 
 #[test]
@@ -520,6 +521,10 @@ fn round_trip_preserves_all_fields() {
     assert_eq!(parsed.fetch.pdf_enabled, cfg.fetch.pdf_enabled);
     assert_eq!(parsed.fetch.pdf_max_bytes, cfg.fetch.pdf_max_bytes);
     assert_eq!(parsed.local.enabled, cfg.local.enabled);
+    assert_eq!(
+        parsed.local.pdf_max_file_bytes,
+        cfg.local.pdf_max_file_bytes
+    );
 }
 
 #[test]
@@ -577,6 +582,29 @@ pdf_max_bytes = 33554432
     assert_eq!(cfg.fetch.pdf_max_chars_per_page, 24_000);
     assert_eq!(cfg.fetch.pdf_max_total_chars, 100_000);
     assert_eq!(cfg.fetch.pdf_max_bytes, 33_554_432);
+}
+
+#[test]
+fn toml_absent_local_pdf_max_file_bytes_uses_default() {
+    let cfg: AppConfig = toml::from_str("[local]\nenabled = false\n").unwrap();
+    assert_eq!(cfg.local.pdf_max_file_bytes, 16_777_216);
+}
+
+#[test]
+fn validate_rejects_local_pdf_max_file_bytes_out_of_range() {
+    let mut cfg = default_config();
+    cfg.local.pdf_max_file_bytes = 0;
+    let err = cfg.validate().unwrap_err();
+    assert!(err.to_string().contains("pdf_max_file_bytes"));
+
+    let mut cfg = default_config();
+    cfg.local.pdf_max_file_bytes = 268_435_457;
+    let err = cfg.validate().unwrap_err();
+    assert!(err.to_string().contains("pdf_max_file_bytes"));
+
+    let mut cfg = default_config();
+    cfg.local.pdf_max_file_bytes = 268_435_456;
+    assert!(cfg.validate().is_ok());
 }
 
 #[test]

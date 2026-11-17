@@ -8,8 +8,9 @@
 ## Overview
 
 CodeGG-managed Eggsearch 0.4.4+ can receive an authenticated private request
-scope over stdio. For each repository tool call, CodeGG supplies one
-authorized workspace root or an explicit `root: null` local-disabled scope.
+scope over stdio. For repository-oriented calls, including repo items in
+`batch_fetch`, CodeGG supplies one authorized workspace root or an explicit
+`root: null` local-disabled scope.
 Eggsearch authenticates that metadata with the per-process
 `CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN`; missing or invalid authentication is an
 error and never falls back to configured roots. The selected backend and
@@ -38,7 +39,8 @@ and no native plugins are loaded.
 startup):
 
 - `enabled`, `roots`
-- `max_file_bytes` (default 1_048_576) — per-file read cap
+- `max_file_bytes` (default 1_048_576) — per-file read cap for non-PDF workspace fetches
+- `pdf_max_file_bytes` (default 16_777_216, range 1..=268_435_456) — separate cap for local PDF reads
 - `max_indexed_files` (default 50_000) — bounded scan
 - `include_hidden` (default false), `respect_gitignore` (default true),
   `follow_symlinks` (default false)
@@ -229,8 +231,13 @@ the `[local]` budgets; the scan never executes workspace code.
 
 Local `repo_fetch` validates the requested path, then reads it with
 `safe_read_file()` relative to the selected workspace root; it never reopens
-the canonicalized pathname. Local `repo_map` structure enrichment uses the
-same bounded opener for manifest, source, and test contents. Its structural
+the canonicalized pathname. It identifies PDFs by case-insensitive `.pdf`
+extension or a safely read `%PDF-` prefix. PDF bytes use `pdf_max_file_bytes`
+and the existing PDF feature plus `[fetch].pdf_enabled` gates, then flow through
+the shared byte-slice extractor. `repo_fetch` and batch repo items do not accept
+PDF page selection. PDF remains in `BINARY_EXTENSIONS`, so local indexing and
+repo-map filtering are unchanged. Local `repo_map` structure enrichment uses
+the same bounded opener for manifest, source, and test contents. Its structural
 walk skips symlink entries even when local search permits following symlinks,
 so map enrichment does not enumerate or read a linked tree outside the
 workspace.

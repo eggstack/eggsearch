@@ -44,7 +44,17 @@ no browser rendering. See the [Python library guide](python-library.md).
 
 ### Page Selection
 
-The `pages` field supports `1`, `1,3,5`, `1-5`, and `1,3,7-10` syntax (one-indexed).
+The `pages` field on `web_fetch` and each `batch_fetch` web item supports `1`,
+`1,3,5`, `1-5`, and `1,3,7-10` syntax (one-indexed). Batch items validate
+syntax before fetching; page numbers beyond the fetched document fail only that
+item. Non-PDF URLs and `metadata_only` follow the same behavior as `web_fetch`.
+
+An explicitly named PDF under an enabled `[local]` root is also extracted by
+`repo_fetch` with `host = "workspace"`. Detection uses a case-insensitive `.pdf`
+extension or `%PDF-` prefix. Local reads use `[local].pdf_max_file_bytes`
+(default 16 MiB, range 1 byte to 256 MiB) and the same PDF feature and
+`[fetch].pdf_enabled` gates. Page selection is not available on `repo_fetch` or
+batch repo items; local PDFs remain excluded from local indexing and repo maps.
 
 ### Limits
 

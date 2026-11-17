@@ -84,6 +84,6 @@ mkdir -p "$temp_dir/unsupported-home"
 printf '%s\n' '#!/usr/bin/env bash' 'case "$1" in -s) echo Plan9;; -m) echo weird;; *) exit 1;; esac' > "$fake_bin/uname"
 chmod 0755 "$fake_bin/uname"
 : > "$cargo_log"
-HOME="$temp_dir/unsupported-home" PATH="$fake_bin:$PATH" MOCK_BIN="$good_bin" MOCK_CARGO_LOG="$cargo_log" "$root/packaging/install.sh" --version 0.3.8 >/dev/null
+HOME="$temp_dir/unsupported-home" PATH="$fake_bin:/usr/bin:/bin:/usr/sbin:/sbin" MOCK_BIN="$good_bin" MOCK_CARGO_LOG="$cargo_log" "$root/packaging/install.sh" --version 0.3.8 >/dev/null
 test -x "$temp_dir/unsupported-home/.local/bin/eggsearch"
 grep -F cargo "$cargo_log" >/dev/null

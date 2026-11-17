@@ -26,6 +26,9 @@ pub struct LocalConfig {
     /// are skipped. Default: 1 MB.
     #[serde(default = "default_max_file_bytes")]
     pub max_file_bytes: usize,
+    #[serde(default = "default_pdf_max_file_bytes")]
+    #[allow(missing_docs)]
+    pub pdf_max_file_bytes: usize,
     /// Maximum number of files to index per search. Bounded scan
     /// prevents unbounded traversal. Default: 50000.
     #[serde(default = "default_max_indexed_files")]
@@ -67,6 +70,7 @@ impl Default for LocalConfig {
             enabled: false,
             roots: Vec::new(),
             max_file_bytes: default_max_file_bytes(),
+            pdf_max_file_bytes: default_pdf_max_file_bytes(),
             max_indexed_files: default_max_indexed_files(),
             include_hidden: false,
             respect_gitignore: default_true(),
@@ -83,6 +87,9 @@ impl Default for LocalConfig {
 
 fn default_max_file_bytes() -> usize {
     1_048_576
+}
+fn default_pdf_max_file_bytes() -> usize {
+    16_777_216
 }
 fn default_max_parse_bytes() -> usize {
     262_144
@@ -533,27 +540,43 @@ pub fn validate_local_fetch_path(
     requested_relative_path: &str,
     cfg: &LocalConfig,
 ) -> Result<PathBuf, LocalFetchPathError> {
-    // 1. Empty check
+    if is_binary_extension(requested_relative_path) && !is_pdf_extension(requested_relative_path) {
+        return Err(LocalFetchPathError::BinaryFile(
+            requested_relative_path.to_string(),
+        ));
+    }
+
+    let canonical = validate_local_fetch_path_structure(root, requested_relative_path, cfg)?;
+    let max_bytes = if is_pdf_extension(requested_relative_path) {
+        cfg.pdf_max_file_bytes
+    } else {
+        cfg.max_file_bytes
+    };
+    if let Ok(meta) = std::fs::metadata(&canonical) {
+        if meta.len() > max_bytes as u64 {
+            return Err(LocalFetchPathError::FileTooLarge(meta.len(), max_bytes));
+        }
+    }
+    Ok(canonical)
+}
+
+pub(crate) fn validate_local_fetch_path_structure(
+    root: &Path,
+    requested_relative_path: &str,
+    cfg: &LocalConfig,
+) -> Result<PathBuf, LocalFetchPathError> {
     if requested_relative_path.trim().is_empty() {
         return Err(LocalFetchPathError::Empty);
     }
 
     let requested_path = Path::new(requested_relative_path);
-
-    // 2. Absolute/prefix path rejection
     if is_absolute_or_prefixed(requested_path) {
         return Err(LocalFetchPathError::AbsolutePath);
     }
-
-    // 3. Path traversal rejection (component-aware: only reject ParentDir)
     if has_parent_dir_component(requested_path) {
         return Err(LocalFetchPathError::PathTraversal);
     }
 
-    // 3a. Mirror local-search policy: reject hidden components when
-    // `include_hidden` is false, and always reject SKIP_DIRS components,
-    // so direct workspace fetch cannot retrieve files that `repo_search`
-    // intentionally hides (.git/config, target/..., node_modules/...).
     for component in requested_path.components() {
         if let Component::Normal(os) = component {
             if let Some(name) = os.to_str() {
@@ -567,23 +590,11 @@ pub fn validate_local_fetch_path(
         }
     }
 
-    // 4. Binary extension rejection
-    if is_binary_extension(requested_relative_path) {
-        return Err(LocalFetchPathError::BinaryFile(
-            requested_relative_path.to_string(),
-        ));
-    }
-
-    // 5. Build the candidate path
     let candidate = root.join(requested_relative_path);
-
-    // 6. Verify it exists and is a regular file (before canonicalize, which fails on missing paths)
     if !candidate.exists() {
         return Err(LocalFetchPathError::NotFound);
     }
 
-    // 7. Check symlink semantics: when follow_symlinks is disabled,
-    // reject any component (intermediate or final) that is a symlink.
     if !cfg.follow_symlinks {
         let mut accumulated = root.to_path_buf();
         for component in requested_path.components() {
@@ -596,37 +607,27 @@ pub fn validate_local_fetch_path(
         }
     }
 
-    // 8. Canonicalize (follows symlinks) and validate containment
     let canonical = candidate
         .canonicalize()
         .map_err(|e| LocalFetchPathError::CanonicalizeFailed(e.to_string()))?;
-
-    // Canonicalize root too (macOS /var → /private/var symlinks)
     let root_canonical = root
         .canonicalize()
         .map_err(|e| LocalFetchPathError::CanonicalizeFailed(e.to_string()))?;
-
     if !canonical.starts_with(&root_canonical) {
         return Err(LocalFetchPathError::EscapesRoot);
     }
-
-    // 9. Verify it's a regular file (redundant after exists(), but safe)
     if !canonical.is_file() {
         return Err(LocalFetchPathError::NotFound);
     }
 
-    // 10. Enforce the configured max_file_bytes bound so callers cannot
-    // bypass the operator-configured local file-size limit via direct fetch.
-    if let Ok(meta) = std::fs::metadata(&canonical) {
-        if meta.len() > cfg.max_file_bytes as u64 {
-            return Err(LocalFetchPathError::FileTooLarge(
-                meta.len(),
-                cfg.max_file_bytes,
-            ));
-        }
-    }
-
     Ok(canonical)
+}
+
+pub(crate) fn is_pdf_extension(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
 }
 
 #[cfg(test)]
@@ -639,6 +640,7 @@ mod tests {
         assert!(!cfg.enabled);
         assert!(cfg.roots.is_empty());
         assert_eq!(cfg.max_file_bytes, 1_048_576);
+        assert_eq!(cfg.pdf_max_file_bytes, 16_777_216);
         assert_eq!(cfg.max_indexed_files, 50_000);
         assert!(!cfg.include_hidden);
         assert!(cfg.respect_gitignore);
@@ -656,6 +658,7 @@ mod tests {
         let parsed: LocalConfig = serde_json::from_str(&json).unwrap();
         assert!(parsed.enabled);
         assert_eq!(parsed.roots.len(), 1);
+        assert_eq!(parsed.pdf_max_file_bytes, cfg.pdf_max_file_bytes);
     }
 
     #[test]
@@ -988,13 +991,33 @@ mod tests {
     fn validate_local_fetch_path_uppercase_binary_rejected() {
         let root = std::env::temp_dir();
         let cfg = LocalConfig::default();
-        let err = validate_local_fetch_path(&root, "report.PDF", &cfg).unwrap_err();
+        let err = validate_local_fetch_path(&root, "report.PNG", &cfg).unwrap_err();
         assert!(
             matches!(err, LocalFetchPathError::BinaryFile(_)),
             "uppercase binary extension should be rejected, got: {err:?}"
         );
         let err = validate_local_fetch_path(&root, "image.PNG", &cfg).unwrap_err();
         assert!(matches!(err, LocalFetchPathError::BinaryFile(_)));
+    }
+
+    #[test]
+    fn validate_local_fetch_path_pdf_uses_pdf_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("paper.PDF"), b"%PDF-").unwrap();
+        let cfg = LocalConfig {
+            max_file_bytes: 4,
+            pdf_max_file_bytes: 5,
+            ..LocalConfig::default()
+        };
+        assert!(validate_local_fetch_path(dir.path(), "paper.PDF", &cfg).is_ok());
+        let cfg = LocalConfig {
+            pdf_max_file_bytes: 4,
+            ..cfg
+        };
+        assert!(matches!(
+            validate_local_fetch_path(dir.path(), "paper.PDF", &cfg),
+            Err(LocalFetchPathError::FileTooLarge(5, 4))
+        ));
     }
 
     #[test]

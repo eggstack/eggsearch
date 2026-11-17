@@ -23,6 +23,84 @@ fn parse_render_request(raw: Option<&str>) -> Result<RenderRequest, ToolError> {
     }
 }
 
+pub(crate) fn validate_batch_route_options(
+    state: &ServerState,
+    url: &str,
+    render: Option<&str>,
+    browser_profile: Option<&str>,
+) -> Result<(), ToolError> {
+    #[cfg(not(feature = "browser"))]
+    let _ = url;
+
+    let configured_render = if state.config.fetch.browser.enabled {
+        match state.config.fetch.browser.policy.as_str() {
+            "http_only" | "auto" | "browser" => state.config.fetch.browser.policy.as_str(),
+            _ => "http_only",
+        }
+    } else {
+        "http_only"
+    };
+    let render_request = parse_render_request(Some(render.unwrap_or(configured_render)))?;
+
+    #[cfg(not(feature = "browser"))]
+    {
+        if matches!(render_request, RenderRequest::Browser) || browser_profile.is_some() {
+            return Err(browser_not_compiled_error());
+        }
+    }
+
+    #[cfg(feature = "browser")]
+    {
+        use crate::fetch::browser::RenderPolicy;
+        let render_policy = match render_request {
+            RenderRequest::HttpOnly => RenderPolicy::HttpOnly,
+            RenderRequest::Auto => RenderPolicy::Auto,
+            RenderRequest::Browser => RenderPolicy::Browser,
+        };
+        if matches!(render_policy, RenderPolicy::HttpOnly) && browser_profile.is_some() {
+            return Err(ToolError::Validation(
+                "browser_profile is not valid with render=http_only".to_string(),
+            ));
+        }
+        let explicit_browser =
+            matches!(render_policy, RenderPolicy::Browser) || browser_profile.is_some();
+        match state.browser_lifecycle() {
+            None if explicit_browser => return Err(browser_disabled_error()),
+            Some(lifecycle) if !lifecycle.is_available() && explicit_browser => {
+                return Err(browser_unavailable_error(
+                    "browser rendering is enabled but no Chrome/Chromium executable was found; \
+                     set [fetch.browser].executable or install Chrome/Chromium",
+                ));
+            }
+            _ => {}
+        }
+        if let Some(profile_name) = browser_profile {
+            let mgr = state.profile_manager.as_ref().ok_or_else(|| {
+                ToolError::Validation(
+                    "browser profiles are not enabled; \
+                     set [fetch.browser].persistent_profiles_enabled = true"
+                        .to_string(),
+                )
+            })?;
+            let parsed_url = url::Url::parse(url)
+                .map_err(|error| ToolError::Validation(format!("invalid URL: {error}")))?;
+            let request_origin = format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
+            mgr.resolve_for_origin(profile_name, &request_origin)
+                .map_err(|error| match error {
+                    crate::fetch::browser::ProfileError::ProfileNotFound(message) => {
+                        ToolError::Validation(format!("browser_profile: {message}"))
+                    }
+                    crate::fetch::browser::ProfileError::ProfilesDisabled => {
+                        ToolError::Validation("browser profiles are not enabled".to_string())
+                    }
+                    other => ToolError::internal(format!("browser_profile: {other}")),
+                })?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
@@ -104,6 +182,26 @@ pub async fn run_web_fetch_with_progress(
     args: WebFetchArgs,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<serde_json::Value, ToolError> {
+    run_web_fetch_inner(state, args, progress, None, None).await
+}
+
+pub(crate) async fn run_web_fetch_with_prepared_client(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+    client: Arc<FetchClient>,
+    budget_ms: u64,
+) -> Result<serde_json::Value, ToolError> {
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    run_web_fetch_inner(state, args, &mut progress, Some(client), Some(budget_ms)).await
+}
+
+async fn run_web_fetch_inner(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+    progress: &mut crate::mcp::progress::ProgressSink,
+    prepared_client: Option<Arc<FetchClient>>,
+    prepared_budget_ms: Option<u64>,
+) -> Result<serde_json::Value, ToolError> {
     use crate::core::fetch::ExtractMode;
     use crate::fetch::accept::select_accept_policy;
     use crate::fetch::cache::{
@@ -116,18 +214,16 @@ pub async fn run_web_fetch_with_progress(
         return Err(ToolError::Validation(web_fetch_denied_message()));
     }
 
-    if args.url.trim().is_empty() {
-        return Err(ToolError::Validation("url must not be empty".into()));
-    }
-
-    let trimmed_url = args.url.trim();
-    let lower = trimmed_url.to_ascii_lowercase();
-    if !lower.starts_with("http://") && !lower.starts_with("https://") {
-        return Err(ToolError::Validation(format!(
-            "url scheme must be http or https, got: {}",
-            trimmed_url.chars().take(20).collect::<String>()
-        )));
-    }
+    let target = crate::core::fetch_locator::resolve_fetch_target(
+        crate::core::fetch_locator::FetchTarget::WebUrl(&args.url),
+    )
+    .map_err(ToolError::Validation)?;
+    let crate::core::fetch_locator::FetchLocator::WebUrl(resolved_url) = &target else {
+        return Err(ToolError::internal(
+            "web fetch resolved to a non-web target",
+        ));
+    };
+    let trimmed_url = resolved_url.as_str();
 
     if let Some(0) = args.max_chars {
         return Err(ToolError::Validation("max_chars must be > 0".to_string()));
@@ -163,22 +259,28 @@ pub async fn run_web_fetch_with_progress(
     let effective_timeout_ms = args
         .timeout_ms
         .filter(|ms| *ms < state.config.fetch.timeout_ms);
-    let budget_ms = effective_timeout_ms.unwrap_or(state.config.fetch.timeout_ms);
+    let budget_ms = prepared_budget_ms
+        .unwrap_or_else(|| effective_timeout_ms.unwrap_or(state.config.fetch.timeout_ms));
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
 
-    let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
-        ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
-    })?;
-
-    let client =
-        if let Some(ms) = effective_timeout_ms {
-            Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
-                ToolError::internal(format!("failed to create timeout override: {e}"))
-            })?)
-        } else {
-            base_client
-        };
+    let client: Arc<FetchClient> = match prepared_client {
+        Some(client) => client,
+        None => {
+            let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+                ToolError::internal(
+                    "fetch client unavailable; is [fetch].enabled = true?".to_string(),
+                )
+            })?;
+            if let Some(ms) = effective_timeout_ms {
+                Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
+                    ToolError::internal(format!("failed to create timeout override: {e}"))
+                })?)
+            } else {
+                base_client
+            }
+        }
+    };
 
     let include_links = args
         .include_links

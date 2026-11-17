@@ -16,7 +16,7 @@ when at least one listed license applies.
 
 These exact RustSec notices are temporarily ignored. Each exception is limited
 to one notice, names its dependency path and capability context, and must be
-reviewed by 2026-11-27.
+reviewed by the date recorded for it.
 
 | Advisory | Dependency path and context | Reason | Review by |
 |---|---|---|---|
@@ -24,6 +24,7 @@ reviewed by 2026-11-27.
 | RUSTSEC-2025-0057 | `eggsearch` -> `scraper` -> `selectors` -> `fxhash`; default runtime | `scraper` owns this transitive dependency. Replacing the parser or maintaining a fork would enlarge this bounded hardening change; track scraper upstream and review an upgrade path by the stated date. | 2026-11-27 |
 | RUSTSEC-2026-0192 | `eggsearch` optional `pdf` feature -> `lopdf` -> `ttf-parser`; absent from published `v0.4.4` binaries, enabled by default in current source builds | Removing `lopdf` would remove supported PDF extraction, and no patched `ttf-parser` release exists. Track the upstream `ttf-parser` issue and review the dependency path by the stated date. | 2026-11-27 |
 | RUSTSEC-2026-0441 | `eggsearch` dev dependency -> `httpmock` -> `async-std` -> `pin-utils`; tests only | The upstream repository was archived after 0.1.1 and no safe upgrade exists. `pin-utils` is reached only through the test-only `httpmock` harness, so no shipped binary includes this path. Track `httpmock`/`async-std` for a replacement and review by the stated date. | 2026-12-31 |
+| RUSTSEC-2026-0543 | `eggsearch` direct dependency and `rmcp` -> `chrono`, `schemars` -> `chrono`; every feature graph | chrono is unmaintained upstream and the advisory states no safe upgrade exists. The pinned MCP and schema stack still requires it, so no local dependency change removes the path. Track `rmcp`/`schemars` for a chrono-free release and review by the stated date. | 2026-12-31 |
 
 The waiver guard in `packaging/check-dependency-policy.py` requires every
 ignored advisory to appear here with a future review date no more than 60 days

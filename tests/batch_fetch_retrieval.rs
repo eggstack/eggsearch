@@ -23,7 +23,9 @@ use eggsearch::core::batch_fetch::BatchFetchItem;
 use eggsearch::core::config::AppConfig;
 use eggsearch::core::fetch::ExtractMode;
 use eggsearch::mcp::state::ServerState;
-use eggsearch::mcp::tools::{run_batch_fetch, BatchFetchArgs};
+use eggsearch::mcp::tools::{
+    run_batch_fetch, run_repo_fetch, run_web_fetch, BatchFetchArgs, RepoFetchArgs, WebFetchArgs,
+};
 use eggsearch::meta::mock::{mock_engines, MockEngine};
 use eggsearch::meta::MetadataSearchAdapter;
 
@@ -49,6 +51,9 @@ fn web_item(url: String) -> BatchFetchItem {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        pdf: None,
+        render: None,
+        browser_profile: None,
     }
 }
 
@@ -63,6 +68,9 @@ fn focused_web_item(url: String, focus: &str) -> BatchFetchItem {
         focus: Some(focus.to_string()),
         focus_max_chunks: Some(2),
         focus_max_chars: Some(500),
+        pdf: None,
+        render: None,
+        browser_profile: None,
     }
 }
 
@@ -199,6 +207,9 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         focus: Some("   ".to_string()),
         focus_max_chunks: None,
         focus_max_chars: None,
+        pdf: None,
+        render: None,
+        browser_profile: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![bad_empty]))
         .await
@@ -215,6 +226,9 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         focus: Some("tokio".to_string()),
         focus_max_chunks: Some(99),
         focus_max_chars: None,
+        pdf: None,
+        render: None,
+        browser_profile: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![bad_chunks]))
         .await
@@ -231,11 +245,73 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         focus: Some("tokio".to_string()),
         focus_max_chunks: None,
         focus_max_chars: Some(0),
+        pdf: None,
+        render: None,
+        browser_profile: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![bad_chars]))
         .await
         .expect_err("zero focus chars must fail");
     assert!(err.to_string().contains("focus_max_chars"));
+}
+
+#[tokio::test]
+async fn batch_prevalidates_target_options_before_fetching_any_item() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/must-not-fetch");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("should not be fetched");
+    });
+    let state = localhost_state();
+    let mut invalid_render = web_item(server.url("/must-not-fetch"));
+    if let BatchFetchItem::Web { ref mut render, .. } = invalid_render {
+        *render = Some("invalid".to_string());
+    }
+    let error = run_batch_fetch(
+        state.clone(),
+        batch_args(vec![
+            web_item(server.url("/must-not-fetch")),
+            invalid_render,
+        ]),
+    )
+    .await
+    .expect_err("invalid render must fail batch prevalidation");
+    assert!(error.to_string().contains("render policy"));
+    assert_eq!(mock.hits(), 0);
+
+    let invalid_repo = BatchFetchItem::Repo {
+        host: Some("github".to_string()),
+        owner: "owner".to_string(),
+        repo: "repo".to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: "src/lib.rs".to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
+        symbol: Some("Thing".to_string()),
+        symbol_kind: Some("constructor".to_string()),
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+    };
+    let error = run_batch_fetch(
+        state,
+        batch_args(vec![web_item(server.url("/must-not-fetch")), invalid_repo]),
+    )
+    .await
+    .expect_err("invalid repo selector must fail batch prevalidation");
+    assert!(error.to_string().contains("symbol_kind"));
+    assert_eq!(mock.hits(), 0);
 }
 
 #[tokio::test]
@@ -251,6 +327,9 @@ async fn batch_focus_rejected_for_metadata_only() {
         focus: Some("tokio".to_string()),
         focus_max_chunks: None,
         focus_max_chars: None,
+        pdf: None,
+        render: None,
+        browser_profile: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![item]))
         .await
@@ -375,6 +454,9 @@ async fn batch_focus_with_cache_hit() {
                     focus,
                     focus_max_chunks: Some(2),
                     focus_max_chars: Some(500),
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
                 }]),
             )
             .await
@@ -443,6 +525,12 @@ async fn batch_locator_safety_preserved() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![traversal]))
         .await
@@ -464,6 +552,12 @@ async fn batch_locator_safety_preserved() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![absolute]))
         .await
@@ -485,6 +579,12 @@ async fn batch_locator_safety_preserved() {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![bad_host]))
         .await
@@ -549,6 +649,12 @@ async fn batch_web_and_workspace_repo_in_one_batch() {
                 focus: Some("tokio_runtime".to_string()),
                 focus_max_chunks: Some(3),
                 focus_max_chars: Some(1000),
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
             },
         ]),
     )
@@ -564,6 +670,498 @@ async fn batch_web_and_workspace_repo_in_one_batch() {
             .unwrap_or(0)
             > 0
     );
+}
+
+#[tokio::test]
+async fn batch_web_target_options_match_web_fetch() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/parity");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(article_body());
+    });
+    let state = localhost_state();
+    let url = server.url("/parity");
+    let direct = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: url.clone(),
+            max_chars: Some(5000),
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::Markdown),
+            include_links: Some(true),
+            pdf: None,
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
+            max_cache_age_seconds: None,
+            focus: Some("tokio runtime scheduler".to_string()),
+            focus_max_chunks: Some(2),
+            focus_max_chars: Some(500),
+            render: Some("http_only".to_string()),
+            browser_profile: None,
+            offset: None,
+            limit: None,
+            response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic),
+        },
+    )
+    .await
+    .expect("direct web fetch works");
+    let batch = run_batch_fetch(
+        state,
+        batch_args(vec![BatchFetchItem::Web {
+            url,
+            extract_mode: Some(ExtractMode::Markdown),
+            include_links: Some(true),
+            max_chars: Some(5000),
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
+            max_cache_age_seconds: None,
+            focus: Some("tokio runtime scheduler".to_string()),
+            focus_max_chunks: Some(2),
+            focus_max_chars: Some(500),
+            pdf: None,
+            render: Some("http_only".to_string()),
+            browser_profile: None,
+        }]),
+    )
+    .await
+    .expect("batch web fetch works");
+    let batched = &batch["results"][0]["response"];
+    for key in [
+        "url",
+        "final_url",
+        "status",
+        "fetched",
+        "text",
+        "document",
+        "focus",
+        "trust",
+        "trust_markers",
+        "warnings",
+        "structured_warnings",
+        "cache_status",
+        "representation",
+    ] {
+        assert_eq!(direct[key], batched[key], "field {key} differs");
+    }
+    assert_eq!(mock.hits(), 2);
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let body = include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf");
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/pages.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .header("cache-control", "max-age=300")
+            .body(body.as_slice());
+    });
+    let state = localhost_state();
+    let url = server.url("/pages.pdf");
+    let direct_page_one = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: url.clone(),
+            max_chars: Some(5000),
+            timeout_ms: None,
+            extract_mode: None,
+            include_links: None,
+            pdf: Some(eggsearch::core::fetch::PdfFetchOptions {
+                pages: Some("1".to_string()),
+                pdf_password: None,
+                include_media: None,
+                pdf_ocr: None,
+            }),
+            cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            render: Some("http_only".to_string()),
+            browser_profile: None,
+            offset: None,
+            limit: None,
+            response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic),
+        },
+    )
+    .await
+    .expect("page one fetch works");
+    let page_two = run_batch_fetch(
+        state.clone(),
+        batch_args(vec![BatchFetchItem::Web {
+            url: url.clone(),
+            extract_mode: None,
+            include_links: None,
+            max_chars: Some(5000),
+            cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            pdf: Some(eggsearch::core::fetch::PdfFetchOptions {
+                pages: Some("2".to_string()),
+                pdf_password: None,
+                include_media: None,
+                pdf_ocr: None,
+            }),
+            render: Some("http_only".to_string()),
+            browser_profile: None,
+        }]),
+    )
+    .await
+    .expect("page two batch fetch works");
+    let page_one_text = direct_page_one["text"].as_str().expect("page one text");
+    let page_two_response = &page_two["results"][0]["response"];
+    let page_two_text = page_two_response["text"].as_str().expect("page two text");
+    assert!(page_one_text.contains("Clean text sample"));
+    assert_ne!(page_one_text, page_two_text);
+    assert!(page_two_response["document"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|block| block["page"] == 2));
+    assert_eq!(page_two_response["cache_status"], "hit");
+    assert_eq!(mock.hits(), 1, "raw PDF bytes should be reused");
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn batch_pdf_invalid_page_syntax_fails_before_any_fetch() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/invalid.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .body(include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf").as_slice());
+    });
+    let mut item = web_item(server.url("/invalid.pdf"));
+    if let BatchFetchItem::Web { pdf, .. } = &mut item {
+        *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
+            pages: Some("0".to_string()),
+            pdf_password: None,
+            include_media: None,
+            pdf_ocr: None,
+        });
+    }
+    let error = run_batch_fetch(localhost_state(), batch_args(vec![item]))
+        .await
+        .expect_err("invalid PDF page syntax must fail preflight");
+    assert!(error.to_string().contains("item 0"));
+    assert_eq!(mock.hits(), 0);
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn batch_pdf_out_of_range_is_item_local_and_preserves_mixed_order() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/out-of-range.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .body(include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf").as_slice());
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/html");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(article_body());
+    });
+    let mut pdf_item = web_item(server.url("/out-of-range.pdf"));
+    if let BatchFetchItem::Web { pdf, .. } = &mut pdf_item {
+        *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
+            pages: Some("99".to_string()),
+            pdf_password: None,
+            include_media: None,
+            pdf_ocr: None,
+        });
+    }
+    let batch = run_batch_fetch(
+        localhost_state(),
+        batch_args(vec![pdf_item, web_item(server.url("/html"))]),
+    )
+    .await
+    .expect("out-of-range page selection stays item-local");
+    assert_eq!(batch["results"][0]["index"], 0);
+    assert_eq!(batch["results"][1]["index"], 1);
+    assert_eq!(batch["results"][0]["ok"], false);
+    assert!(batch["results"][0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("pdf_page_out_of_range"));
+    assert_eq!(batch["results"][1]["ok"], true);
+    assert!(batch["results"][1]["response"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Tokio"));
+    assert_eq!(batch["telemetry"]["items_completed"], 1);
+    assert_eq!(batch["telemetry"]["items_failed"], 1);
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn batch_pdf_options_are_ignored_for_html_and_metadata_only_matches_web_fetch() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/html");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(article_body());
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/document.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .body(include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf").as_slice());
+    });
+    let state = localhost_state();
+    let url = server.url("/document.pdf");
+    let direct = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: url.clone(),
+            max_chars: Some(5000),
+            timeout_ms: None,
+            extract_mode: Some(ExtractMode::MetadataOnly),
+            include_links: None,
+            pdf: Some(eggsearch::core::fetch::PdfFetchOptions {
+                pages: Some("1".to_string()),
+                pdf_password: None,
+                include_media: None,
+                pdf_ocr: None,
+            }),
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            render: Some("http_only".to_string()),
+            browser_profile: None,
+            offset: None,
+            limit: None,
+            response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic),
+        },
+    )
+    .await
+    .expect("metadata-only web fetch");
+    let mut html_item = web_item(server.url("/html"));
+    if let BatchFetchItem::Web {
+        pdf, cache_policy, ..
+    } = &mut html_item
+    {
+        *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
+            pages: Some("1".to_string()),
+            pdf_password: None,
+            include_media: None,
+            pdf_ocr: None,
+        });
+        *cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::Bypass);
+    }
+    let mut metadata_item = web_item(url);
+    if let BatchFetchItem::Web {
+        extract_mode,
+        pdf,
+        cache_policy,
+        ..
+    } = &mut metadata_item
+    {
+        *extract_mode = Some(ExtractMode::MetadataOnly);
+        *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
+            pages: Some("1".to_string()),
+            pdf_password: None,
+            include_media: None,
+            pdf_ocr: None,
+        });
+        *cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::Bypass);
+    }
+    let batch = run_batch_fetch(state, batch_args(vec![html_item, metadata_item]))
+        .await
+        .expect("batch web items ignore irrelevant PDF options");
+    let html = &batch["results"][0]["response"];
+    assert!(html["text"].as_str().unwrap().contains("Tokio"));
+    let metadata_only = &batch["results"][1]["response"];
+    for key in ["title", "description", "text", "document", "warnings"] {
+        assert_eq!(direct[key], metadata_only[key], "field {key} differs");
+    }
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn batch_workspace_pdf_matches_repo_fetch() {
+    let root = tempfile::tempdir().expect("workspace root");
+    let path = "paper.pdf";
+    std::fs::write(
+        root.path().join(path),
+        include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf"),
+    )
+    .expect("write workspace PDF");
+    let root_name = root
+        .path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("root name")
+        .to_string();
+    let mut config = AppConfig::default();
+    config.local.enabled = true;
+    config.local.roots = vec![root.path().to_path_buf()];
+    let state = Arc::new(ServerState::build(config).expect("server state"));
+    let args = RepoFetchArgs {
+        host: Some("workspace".to_string()),
+        owner: root_name.clone(),
+        repo: path.to_string(),
+        ref_name: None,
+        commit_sha: None,
+        path: path.to_string(),
+        line_start: None,
+        line_end: None,
+        context_before: None,
+        context_after: None,
+        max_chars: Some(5000),
+        timeout_ms: None,
+        test_fetch_url: None,
+        symbol: None,
+        symbol_kind: None,
+        match_text: None,
+        expand_to_block: None,
+        max_block_lines: None,
+        prefer_local: None,
+        response_detail: None,
+    };
+    let direct = run_repo_fetch(state.clone(), args)
+        .await
+        .expect("direct workspace PDF");
+    let batch = run_batch_fetch(
+        state,
+        batch_args(vec![BatchFetchItem::Repo {
+            host: Some("workspace".to_string()),
+            owner: root_name,
+            repo: path.to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: path.to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: Some(5000),
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        }]),
+    )
+    .await
+    .expect("batch workspace PDF");
+    let batched = &batch["results"][0]["response"];
+    for key in ["content_type", "document", "text", "trust", "warnings"] {
+        assert_eq!(direct[key], batched[key], "field {key} differs");
+    }
+}
+
+#[tokio::test]
+async fn batch_repo_span_options_match_workspace_repo_fetch() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root_name = dir
+        .path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("root name")
+        .to_string();
+    let source = "pub struct Router {\n    pub enabled: bool,\n}\n\npub fn unrelated() {}\n";
+    std::fs::write(dir.path().join("lib.rs"), source).expect("write source");
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let adapter =
+        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![dir.path().to_path_buf()];
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
+        .expect("backend");
+    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
+    state.local_backend = Some(Arc::new(backend));
+    let state = Arc::new(state);
+    let direct = run_repo_fetch(
+        state.clone(),
+        RepoFetchArgs {
+            host: Some("workspace".to_string()),
+            owner: root_name.clone(),
+            repo: "".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: Some(3000),
+            timeout_ms: None,
+            test_fetch_url: None,
+            symbol: Some("Router".to_string()),
+            symbol_kind: Some("struct".to_string()),
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: Some(20),
+            prefer_local: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("direct workspace repo fetch works");
+    let batch = run_batch_fetch(
+        state,
+        batch_args(vec![BatchFetchItem::Repo {
+            host: Some("workspace".to_string()),
+            owner: root_name,
+            repo: "".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: Some(3000),
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            symbol: Some("Router".to_string()),
+            symbol_kind: Some("struct".to_string()),
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: Some(20),
+            prefer_local: None,
+        }]),
+    )
+    .await
+    .expect("batch workspace repo fetch works");
+    let batched = &batch["results"][0]["response"];
+    for key in [
+        "fetched",
+        "document",
+        "text",
+        "lines",
+        "selected_span",
+        "code_span",
+        "trust",
+        "trust_markers",
+        "warnings",
+        "structured_warnings",
+    ] {
+        assert_eq!(direct[key], batched[key], "field {key} differs");
+    }
+    assert_eq!(batched["trust"], "local_trusted");
 }
 
 #[test]

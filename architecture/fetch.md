@@ -23,6 +23,29 @@ validate_fetch_target (SSRF)
   -> sanitize (core/sanitize.rs, three tiers)
 ```
 
+### Typed target routing
+
+The MCP tools keep their distinct request and response contracts. Their shared
+internal `FetchLocator` resolution distinguishes the route before handing work
+to its owning handler:
+
+| Locator | Owning path | Boundary |
+|---|---|---|
+| `WebUrl` | `web_fetch` or a batch web item through the bounded fetch path | HTTP(S) validation, `FetchClient` SSRF/redirect policy, content detection, and existing PDF/HTML/browser behavior remain authoritative. |
+| `Repo` | `repo_fetch` remote-source path | Structured host/owner/repo/ref/path and source-span semantics remain authoritative; a detected PDF retains the fetch document outcome and is not decoded as source code. |
+| `Local` | `repo_fetch` workspace path | Root name and relative path only; authorized workspace resolution and `safe_read_file` remain the read boundary. Local PDF extraction belongs to PDF M008. |
+
+Resolution is classification, not a transport shortcut: it cannot bypass the
+owning handler's validation or security policy, and it does not expose a generic
+MCP fetch schema. Batch preflight uses the same typed resolution before any
+fetch starts. Web items carry `pdf`, `render`, and `browser_profile` controls
+through the shared web-fetch path, alongside per-item cache and focus options;
+repo items carry source selection through the repo-fetch handler. The trusted
+`codegg/host-local-scope` metadata is forwarded unchanged to repo items, so
+workspace reads retain the same authorized root and root-relative path boundary
+as `repo_fetch`. Batch order, per-item failures, and aggregate budgets remain
+owned by the batch envelope.
+
 1. **Validate.** `limits::validate_url` (sync shape check) runs first;
    `limits::validate_fetch_target` / `validate_fetch_target_with_resolved_addrs`
    (async full check + DNS) runs per attempt and per redirect hop.
@@ -173,10 +196,11 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 - `DerivedCacheKey { scope, raw_content_hash, extraction_key }` where the hash
   is `xxh3_64(body)` (`build_raw_response_hash`) and `ExtractionCacheKey`
   covers `extract_mode`, exact `max_chars`, `include_links`, `pdf_pages`,
-  `pdf_ocr`, `include_media`, `renderer_version: 4`, and `sanitize_output`.
-  Version 3 isolates entries derived before PDF page classification stopped
-  depending on `include_media`; version 2 isolated entries written before
-  representation negotiation existed.
+  `pdf_ocr`, `include_media`, `renderer_version: 5`, and `sanitize_output`.
+  Version 5 isolates document-scoped extraction; version 4 isolates the
+  encrypted-PDF refusal behavior; version 3 isolates entries derived before
+  PDF page classification stopped depending on `include_media`; version 2
+  isolated entries written before representation negotiation existed.
 - `DerivedDocumentCacheEntry` stores the extracted title/description/text,
   `raw_text`, links, truncation flags, the structured `FetchDocument` (blocks,
   outline, chunks), trust markers, and transport tag.
@@ -434,7 +458,7 @@ An `/Encrypt` document is refused before decryption is ever considered:
 `Document::authenticate_password` validated a password but never replaced
 ciphertext, and ciphertext cannot be measured by the scan. `pdf_password` stays
 in the tool schema for wire compatibility and is documented as unsupported.
-That outcome narrowing is why the derived cache `renderer_version` is 4.
+That outcome narrowing advanced the derived-cache renderer version to 4; the current version is 5 after document-scoped extraction.
 
 ---
 
