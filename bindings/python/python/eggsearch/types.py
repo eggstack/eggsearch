@@ -152,6 +152,7 @@ class WebFetchRequest(TypedDict, total=False):
     focus_max_chars: int | None
     render: str | None
     browser_profile: str | None
+    include_screenshot: bool | None
     offset: int | None
     limit: int | None
     response_detail: ResponseDetail | None
