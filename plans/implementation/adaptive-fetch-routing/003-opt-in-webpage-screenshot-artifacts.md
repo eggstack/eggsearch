@@ -1,11 +1,12 @@
 # M003 — Opt-In Webpage Screenshot Artifacts
 
-Status: ready
+Status: closed
+Closure: `plans/closure/adaptive-fetch-routing/003-status.md`
 Source: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M003
 Primary class: capability
 Baseline: `b7f7497` (`feat/auto-20261117-044c4885`)
 References: accepted `plans/adrs/ADR-0015-opt-in-webpage-screenshot-artifacts.md`; accepted ADR-0001 and ADR-0014; `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`; `plans/subsystems/adaptive-fetch-routing-roadmap.md`; `plans/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md`; `plans/closure/adaptive-fetch-routing/002-status.md`; `architecture/fetch.md`; `architecture/mcp.md`; `src/mcp/tools/common.rs`; `src/mcp/server.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch_item.rs`.
-Dependencies: M002 is closed (`plans/closure/adaptive-fetch-routing/002-status.md`, candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`). Interface: ADR-0014 browser behavior. ADR-0015 is accepted and authorizes the narrow request/result contract and numeric caps. The feasibility preflight was static only; serializer/transport and browser-fidelity evidence remain implementation gates.
+Dependencies: M002 is closed (`plans/closure/adaptive-fetch-routing/002-status.md`, candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`). Interface: ADR-0014 browser behavior. ADR-0015 is accepted and authorizes the narrow request/result contract and numeric caps. The feasibility preflight was static only; deterministic in-process image serialization is covered by the implementation tests, and live browser fidelity remains unrun as recorded in the closure.
 
 ## Objective
 
@@ -23,7 +24,7 @@ Add an explicitly requested, bounded screenshot artifact to `web_fetch` and each
 
 ## Current implementation evidence
 
-- No screenshot capture implementation or screenshot result path exists in `src/`.
+- At the planning baseline `b7f7497`, no screenshot capture implementation or screenshot result path existed in `src/`.
 - `WebFetchArgs` exposes `render` and `browser_profile`; capability checks are centralized in `validate_batch_route_options` (`src/mcp/tools/web_fetch.rs:23`), which both `web_fetch` and batch items call.
 - `run_browser_fetch` (`src/mcp/tools/common.rs:794`) holds the global browser semaphore and per-origin browser permit, then calls `browser_fetch_with_policy`. `render_once` (`src/fetch/browser/navigate.rs:108`) creates a 1280×720 page, navigates, extracts, and closes it.
 - The common success conversion is `map_tool_result` (`src/mcp/tools/common.rs:461`); it accepts only `serde_json::Value`. `respond` and `respond_response` (`src/mcp/server.rs:118-130`) are the only server result seams.
@@ -250,7 +251,7 @@ Deterministic mocks and fixtures are mandatory. Live browser smoke is optional o
 
 ## Risks and mitigations
 
-- **Target activation:** `Page::screenshot` calls `Target.activateTarget`; if it fails in headless multi-context use, the request fails explicitly. Live smoke confirms real-browser behavior.
+- **Target activation:** `Page::screenshot` calls `Target.activateTarget`; if it fails in headless multi-context use, the request fails explicitly. Live browser smoke remains unrun and is recorded as a limitation.
 - **Memory and payload:** the browser materializes the encoded PNG before validation; the 4 MiB cap bounds the artifact and the ~5.6 MiB base64 string. The plan keeps validation immediately after capture and before assembly.
 - **Mock masking production wiring:** the override replaces only the transport call; concept capture, validation, association, and assembly stay on the production path. Live smoke remains required operational evidence.
 - **Content-type detection:** non-webpage skip relies on the captured main-response content type; if the event is unavailable, current code defaults to `text/html` and capture proceeds. Record this as a known limitation rather than adding a second request.
@@ -258,4 +259,4 @@ Deterministic mocks and fixtures are mandatory. Live browser smoke is optional o
 
 ## Closure evidence
 
-Write `plans/closure/adaptive-fetch-routing/003-status.md` with the candidate SHA, accepted ADR reference, exact format/dimension/byte caps, capability matrix (feature off, disabled, unavailable), single and batch association/order evidence, capture-failure and non-webpage cases, cache/log/diagnostic non-persistence evidence, tool inventory and schema pins, focused and broad checks, documentation, and every known limitation or unrun operational gate including live browser smoke.
+Recorded in `plans/closure/adaptive-fetch-routing/003-status.md` with the exact candidate SHA, accepted ADR, screenshot bounds, capability and behavior evidence, schema pins, checks, documentation, and unrun operational gates.

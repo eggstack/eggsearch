@@ -1,6 +1,6 @@
 # Adaptive Fetch Target Routing and Artifact Roadmap
 
-Status: active (M001 active; M002 closed; M003 ready; ADR-0015 accepted)
+Status: active (M001 active; M002 and M003 closed; ADR-0015 accepted)
 Planning baseline: `b7f7497` (`feat/auto-20261117-044c4885`, after rebase onto `origin/main`)
 Owner: fetch/extraction and MCP orchestration
 
@@ -28,7 +28,7 @@ The screenshot capability is a separate, gated milestone because it changes MCP 
 - `src/mcp/tools/batch_fetch_item.rs` routes repo items through `run_repo_fetch_with_host_scope`; the server wrapper forwards the same private `codegg/host-local-scope` metadata used by `repo_fetch`. Batch preflight validates target-specific controls before item execution.
 - `src/core/fetch_locator.rs` defines `FetchLocator::{WebUrl, Repo, Local}` and maps workspace repo items to a root name plus relative path. It does not create a public generic tool.
 - `repo_fetch` handles `host: "workspace"` by resolving an enabled authorized root, validating a relative path, and using `safe_read_file`. PDF M008 is already registered and ready; it owns local PDF extraction and batch web page selection. It explicitly leaves PDF files in the binary/indexing exclusion set and does not authorize absolute paths or `file://` URLs.
-- No webpage screenshot capture or MCP image-content assembly exists in `src/`. The common MCP result conversion currently produces structured JSON.
+- M003 adds opt-in webpage screenshot capture and native MCP image-content assembly; the exact-candidate implementation and evidence are recorded in `plans/closure/adaptive-fetch-routing/003-status.md`.
 
 ## 4. Invariants and non-goals
 
@@ -39,7 +39,7 @@ The screenshot capability is a separate, gated milestone because it changes MCP 
 - Local targets are workspace-root-relative locators resolved under the same authorization, containment, symlink, hidden-file, and byte-cap rules as repo workspace fetches. No arbitrary absolute path or `file://` input.
 - Keep PDFs out of code indexing, symbol parsing, and repo maps.
 - No recursive crawling, OCR, page-image extraction, browser interaction, challenge solving, or new binary SKU.
-- Screenshots remain opt-in and web-only. M003 is not ready until M002 closes; accepted ADR-0015 may not silently override ADR-0008 or ADR-0014.
+- Screenshots remain opt-in and web-only. M003 depended on M002 closure and accepted ADR-0015; ADR-0008 and ADR-0014 continue to constrain all other behavior.
 
 ## 5. Target and handler contract
 
@@ -66,9 +66,9 @@ ADR-0014 accepted browser contract ── interface ──> M001, M003
 |---|---|---|---|---|---|
 | M001 — Target-aware fetch routing | capability | active | `plans/implementation/adaptive-fetch-routing/001-target-aware-fetch-routing.md` | Interface: PDF M001 budget/outcome contract and ADR-0014. Soft integration dependency: PDF M008 for local-PDF end-to-end coverage. Implementation is committed on candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`; its closure record remains outstanding. | A URL or typed repo/workspace target reaches the correct existing bounded handler; PDF, HTML, and browser outcomes are explicit and do not cross target boundaries. |
 | M002 — Batch per-target capability parity | capability | closed | `plans/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md` | Interface: M001 target contract and PDF M008 batch/local-PDF contract. Closed on candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`; `make check` passed with 6,347 tests and the closure record is `plans/closure/adaptive-fetch-routing/002-status.md`. | Applicable URL and repo/workspace target controls work per item, with single-target semantics and preserved batch order, errors, IDs, budgets, and telemetry. |
-| M003 — Opt-in webpage screenshots | capability | ready | `plans/implementation/adaptive-fetch-routing/003-opt-in-webpage-screenshot-artifacts.md` | M002 is closed and ADR-0015 is accepted. Serializer/transport and browser-fidelity validation remain implementation gates; the seam and fixture research is recorded in the plan. Interface: ADR-0014 browser contract. | An explicit request returns a bounded webpage screenshot as MCP image content; absent/false preserves the existing response. |
+| M003 — Opt-in webpage screenshots | capability | closed | `plans/implementation/adaptive-fetch-routing/003-opt-in-webpage-screenshot-artifacts.md` | Closed on candidate `b63f1c69971627a5d67dd4fb7330becdf2427863`; `make check` and `make docs-check` passed. See `plans/closure/adaptive-fetch-routing/003-status.md`. Live browser smoke remains unrun. | An explicit request returns a bounded webpage screenshot as MCP image content; absent/false preserves the existing response. |
 
-M008 remains the implementation owner for local PDF extraction and `batch_fetch` per-URL PDF page selection. This roadmap consumes its stable interface and must not amend or duplicate that scope. M002 is closed, so M003 is ready; accepted ADR-0015 fixes the result contract and narrow ADR supersession, and M003 implementation research is recorded in its plan.
+M008 remains the implementation owner for local PDF extraction and `batch_fetch` per-URL PDF page selection. This roadmap consumes its stable interface and must not amend or duplicate that scope. M002 is closed, and M003 is closed on candidate `b63f1c69971627a5d67dd4fb7330becdf2427863` under accepted ADR-0015; see its closure record.
 
 ## 7. Cross-cutting concerns
 
@@ -82,12 +82,12 @@ M008 remains the implementation owner for local PDF extraction and `batch_fetch`
 
 The main correctness risk is divergence between the single-fetch and batch implementations, especially cache keys, profile scope, and PDF options. The common resolver and direct-vs-batch equivalence tests are the mitigation. The local PDF path has an existing planned owner (PDF M008); if its contract changes, this roadmap must reconcile before integration rather than implementing another path.
 
-Static API feasibility is established, but screenshot capture, serializer/transport behavior, and client association remain untested until M003 implementation. Screenshot capture adds substantial browser cost and can expose authenticated page content; the explicit per-call opt-in, current profile-origin checks, accepted strict bounds, and no caching/logging are required. If image content cannot be represented and associated with batch items in the pinned MCP implementation, stop M003 and return for a new contract decision.
+M003 implementation and in-process MCP image/structured-content association are covered by deterministic tests. Live Chromium visual fidelity remains untested. Screenshot capture adds substantial browser cost and can expose authenticated page content; the explicit per-call opt-in, current profile-origin checks, accepted strict bounds, and no caching/logging remain required. Any future incompatible transport change requires a new plan and contract decision.
 
 Deferred: new MCP tools, target discovery/crawling, PDF rasterization/OCR, screenshot caching, full-page screenshots, image analysis, browser interaction, and changing the browser default or escalation policy.
 
 ## 9. Closure and status
 
-M002 is closed on `24f045729f8409dadc96b4c2455253d8a9c7b6ec`: `make check` passed with 85 suites and 6,347 tests, `make docs-check` passed, and the closure record records the acceptance matrix, commands, qualifications, and limitations. M001 remains active on the same implementation because its own closure record has not been written. The earlier default-parallel Startpage failure was a test-isolation defect now fixed; the `RUSTSEC-2026-0543` chrono notice carries a scoped review-dated waiver; and the fake-Plan9 installer fixture now uses a hermetic PATH. M003 is ready: ADR-0015 is accepted, and its implementation plan is handoff-ready with the result-assembly seam, capture point, bounds enforcement, deterministic test seam, batch-offload rule, render-conflict rule, and non-webpage behavior resolved. No hosted CI, push, or live-browser qualification ran on this candidate.
+M002 is closed on `24f045729f8409dadc96b4c2455253d8a9c7b6ec`: `make check` passed with 85 suites and 6,347 tests, `make docs-check` passed, and the closure record records the acceptance matrix, commands, qualifications, and limitations. M001 remains active on the same implementation because its own closure record has not been written. The earlier default-parallel Startpage failure was a test-isolation defect now fixed; the `RUSTSEC-2026-0543` chrono notice carries a scoped review-dated waiver; and the fake-Plan9 installer fixture now uses a hermetic PATH. M003 is closed on exact candidate `b63f1c69971627a5d67dd4fb7330becdf2427863`; `make check` and `make docs-check` passed, and the closure record documents bounds, capability behavior, image association, cache isolation, schema pins, and limitations. Hosted PR checks will be reported separately; live browser smoke remains unrun.
 
 Each milestone requires `plans/closure/adaptive-fetch-routing/NNN-status.md` with candidate SHA, target-to-handler matrix, direct-vs-batch parity evidence, focused and broad checks, unchanged safety/cache/tool-surface evidence, documentation, limitations, and unrun gates. M003 additionally records MCP image association, numeric image bounds, cache behavior, and explicit ADR compliance.
