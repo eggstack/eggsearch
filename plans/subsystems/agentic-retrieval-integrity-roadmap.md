@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M014 conditionally closed; M001–M028 otherwise closed; M029 closing)
+Status: active (M014 conditionally closed; M001–M028 otherwise closed; M029 closed; M030 proposed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -98,6 +98,7 @@ M026 unsupported-extension refusal  (independent)
 M026 + ADR-0012 ──> M027 css-load extension
 ADR-0013 ──> M028 wasm sha256 method
 ADR-0016 ──> M029 unified fetch discovery and legacy aliases
+M014 conditionally closed ──> M030 solve-count acceptance reconciliation (proposed; decision-gated)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -134,6 +135,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M027 — `css-load` extension | capability | `plans/archive/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md` | hard ADR-0012 acceptance; hard M026 | A `css-load` challenge is satisfied with one bounded same-origin GET; unknown and `headless` stay refused |
 | M028 — WASM `sha256` method | capability | `plans/archive/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md` | hard ADR-0013 acceptance; M026 | A `sha256` challenge solves under the fast-equivalent ceiling; `argon2id`/`hashx` stay refused |
 | M029 — unified fetch tool and legacy aliases | capability | `plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md` | interface ADR-0016 accepted | One canonical nine-tool inventory advertises `fetch` for one or many web/repo items; `web_fetch` and `batch_fetch` remain callable with legacy behavior but are absent from discovery and `next_actions`; full and compact schemas are smaller than baseline |
+| M030 — M014 solve-count acceptance reconciliation | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` | operational: explicit user choice; M014 remains conditional until resolved | The accepted M014 exit criterion distinguishes expiry safety from solve-count reduction; no stale-token avoidance is misreported as fewer solves |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -178,10 +180,8 @@ exposed M011's mandatory-`redir` defect.
   reuse. A live 21-minute run re-solved after the published expiry instead of replaying a dead
   token; that is stale-token avoidance, not evidence of reduced solve counts. The required two-arm
   solve-count comparison remains unrun. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.
-- M029 is `closing`: the nine-tool schema, legacy MCP aliases, mixed web/workspace HTTP execution,
-  schema-size reduction, full local repository gate, docs gate, and an installed Python wheel test
-  pass on the current working tree. Formal closure remains pending final exact-candidate SHA evidence
-  and the required closure commit. Evidence: `plans/closure/agentic-retrieval-integrity/029-status.md`.
+- M029 is `closed` on implementation candidate `3416da6231702dcabc22b2c8e32e94dd88cb20e4`: the nine-tool schema, legacy MCP aliases, mixed web/workspace HTTP execution, schema reduction, pinned Rust 1.89 `make check`, `make docs-check`, and installed-wheel tests pass. The exact-SHA evidence, plan, roadmap, and registry status updates landed in the closure commit. Evidence: `plans/closure/agentic-retrieval-integrity/029-status.md`.
+- M030 is `proposed`: it presents the M014 acceptance-path decision, records why the current TTL rule cannot establish fewer solves than the fixed-ceiling baseline, and keeps M014 conditionally closed until a path is chosen. Evidence: `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.

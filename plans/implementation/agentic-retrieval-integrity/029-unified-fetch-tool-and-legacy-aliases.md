@@ -1,6 +1,6 @@
 # M029 — Unified Fetch Tool and Legacy Alias Compatibility
 
-Status: closing
+Status: closed
 
 Class: capability
 
