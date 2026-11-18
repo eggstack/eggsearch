@@ -2,7 +2,7 @@
 
 Status: closed
 Recommendation: closed; the accepted M003 criteria pass on the exact implementation candidate.
-Implementation candidate: `b63f1c69971627a5d67dd4fb7330becdf2427863`
+Implementation candidate: `59ff64ad00940573ee520ecf19d7b5c0abcb1c87`
 Baseline: `b7f74971c09017ad139084db7ddbfa0508d1871a`
 Plan: `plans/implementation/adaptive-fetch-routing/003-opt-in-webpage-screenshot-artifacts.md`
 Roadmap: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M003
@@ -10,7 +10,7 @@ Accepted decision: `plans/adrs/ADR-0015-opt-in-webpage-screenshot-artifacts.md`
 
 ## Candidate disposition
 
-The implementation candidate was tested after commit `b63f1c69971627a5d67dd4fb7330becdf2427863`. `make check` and `make docs-check` both passed on that exact SHA. This closure record and the corresponding plan, roadmap, and registry status updates are committed immediately after the implementation candidate. The candidate was local and unpushed when these local gates ran; hosted PR checks are reported separately. No source changes were made after the candidate commit.
+The implementation candidate was tested after commit `59ff64ad00940573ee520ecf19d7b5c0abcb1c87`. `make check` and `make docs-check` both passed on that exact SHA. The focused Python installed-wheel schema-parity test also passed on this candidate (1 passed). This closure record and the corresponding plan, roadmap, and registry status updates are committed immediately after the implementation candidate. The candidate was local and unpushed when these local gates ran; hosted PR checks are reported separately. No source changes were made after the candidate commit.
 
 ## Acceptance matrix
 
@@ -25,12 +25,13 @@ The implementation candidate was tested after commit `b63f1c69971627a5d67dd4fb73
 | Batch association, ordering, failures, and offload | `screenshot_batch_associations_follow_successful_input_order` verifies image pairs for original indices 0 and 3, while a plain item and failed item emit no image. `src/mcp/server.rs` excludes screenshot-bearing batches from task offload. | pass |
 | Tool count, schema pins, and docs | The MCP inventory remains ten tools. Full fingerprint `dd42e0167785cf24` (78,072 bytes); compact fingerprint `c82cd0797c239e12` (22,540 bytes). Documentation and test inventory are updated. | pass |
 
-## Verification on `b63f1c69971627a5d67dd4fb7330becdf2427863`
+## Verification on `59ff64ad00940573ee520ecf19d7b5c0abcb1c87`
 
 | Command | Outcome |
 |---|---|
 | `make check` | pass: formatting, clippy, no-default-features check, all-features tests, hygiene, dependency policy, and packaging checks; all-features tests: 6,359 passed, 28 ignored |
 | `make docs-check` | pass |
+| Python installed-wheel schema parity (`test_typed_requests_cover_canonical_rust_input_schemas`) | pass: 1 passed on the exact candidate |
 | `cargo test --locked --all-features --lib screenshot_` | pass |
 | `cargo test --locked --no-default-features --features mock --lib screenshot_capability_error_when_browser_feature_is_absent` | pass |
 | Full and compact schema, tool-contract, static-guard, and docs-tool tests | pass; pinned advertisements match the values above |
@@ -45,5 +46,5 @@ The implementation candidate was tested after commit `b63f1c69971627a5d67dd4fb73
 ## Limitations and unrun gates
 
 - Live browser smoke was not run. Deterministic browser overrides prove capture/result wiring and bounds, but do not establish real Chromium visual fidelity or live transport behavior.
-- Hosted CI was not available on the unpushed implementation candidate; PR checks are verified separately on the pushed PR head.
+- The initial hosted PR run `44324947570` was on the older head `c17403c4cad959df2edc6b1f2a60be2da0f96792`; its Python sdist, ARMv7, and installed-wheel smoke failures all reported the missing `include_screenshot` property on `WebFetchRequest`. The type fix is included in candidate `59ff64ad00940573ee520ecf19d7b5c0abcb1c87`, and hosted checks must be rerun after push; this stale-head run is not acceptance evidence.
 - No dedicated runtime log/diagnostic capture test was added. Static review confirms PNG bytes are carried only in the ephemeral out-of-band result path and are not passed to cache, logging, or diagnostic persistence code.
