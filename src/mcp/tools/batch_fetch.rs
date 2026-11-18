@@ -36,6 +36,12 @@ pub struct BatchFetchArgs {
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ItemDocumentWindow {
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+}
+
 pub(crate) fn prepare_batch_fetch_client(
     client: Arc<FetchClient>,
     timeout_ms: Option<u64>,
@@ -160,6 +166,23 @@ pub(crate) async fn run_batch_fetch_with_host_scope_and_progress(
     host_local_scope: Option<serde_json::Value>,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<ToolOutcome, ToolError> {
+    run_batch_fetch_with_item_windows_and_progress(
+        state,
+        args,
+        Vec::new(),
+        host_local_scope,
+        progress,
+    )
+    .await
+}
+
+pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
+    state: Arc<ServerState>,
+    args: BatchFetchArgs,
+    item_document_windows: Vec<Option<ItemDocumentWindow>>,
+    host_local_scope: Option<serde_json::Value>,
+    progress: &mut crate::mcp::progress::ProgressSink,
+) -> Result<ToolOutcome, ToolError> {
     use crate::core::batch_fetch::{
         BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult,
     };
@@ -281,6 +304,30 @@ pub(crate) async fn run_batch_fetch_with_host_scope_and_progress(
             window.from,
             batch_max_items
         ));
+    }
+
+    if !item_document_windows.is_empty() && item_document_windows.len() != args.items.len() {
+        return Err(ToolError::internal(
+            "document window count does not match fetch item count",
+        ));
+    }
+    for (index, document_window) in item_document_windows.iter().enumerate() {
+        let Some(document_window) = document_window else {
+            continue;
+        };
+        if document_window.limit == Some(0) {
+            return Err(ToolError::execution_with_repair(
+                ToolErrorCode::InvalidSemanticValue,
+                "web item limit must be > 0; a document window is a half-open character range"
+                    .to_string(),
+                RepairHint::new(Some("items.limit"), &[], None),
+            ));
+        }
+        if !matches!(&args.items[index], BatchFetchItem::Web { .. }) {
+            return Err(ToolError::Validation(
+                "document offset and limit apply only to web items".to_string(),
+            ));
+        }
     }
 
     let local_view = if effective_items
@@ -642,6 +689,10 @@ pub(crate) async fn run_batch_fetch_with_host_scope_and_progress(
                 label: item.label(),
                 timeout_ms: args.timeout_ms,
                 host_local_scope: host_local_scope.clone(),
+                document_window: item_document_windows
+                    .get(window.from + i)
+                    .copied()
+                    .flatten(),
             });
 
             join_set.spawn(fetch_future);

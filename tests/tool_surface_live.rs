@@ -79,7 +79,7 @@ fn live_report(model: &str, surface: &str) -> serde_json::Value {
 
 #[test]
 fn tool_surface_live_report_contract() {
-    let report = live_report("none/deterministic-baseline", "baseline-full");
+    let report = live_report("none/deterministic-baseline", "candidate-full");
     for key in [
         "schema_version",
         "commit_sha",
@@ -94,9 +94,15 @@ fn tool_surface_live_report_contract() {
         assert!(report.get(key).is_some(), "live report must carry `{key}`");
     }
     let deltas = &report["token_byte_deltas_from_baseline"];
-    assert!(
-        deltas["total_definition_bytes"].as_i64() == Some(0),
-        "offline baseline run must report zero byte delta: {deltas}"
+    assert_eq!(
+        deltas["total_definition_bytes"].as_i64(),
+        Some(-8_176),
+        "candidate tool definitions must record the measured M029 byte reduction: {deltas}"
+    );
+    assert_eq!(
+        deltas["estimated_tokens"].as_i64(),
+        Some(-2_044),
+        "candidate tool definitions must record the measured M029 token reduction: {deltas}"
     );
 }
 
@@ -105,7 +111,7 @@ fn tool_surface_live_report_contract() {
 fn tool_surface_live_model_comparison() {
     let model = std::env::var("EGGSEARCH_EVAL_MODEL").unwrap_or_else(|_| "unconfigured".into());
     let surface =
-        std::env::var("EGGSEARCH_EVAL_SURFACE").unwrap_or_else(|_| "baseline-full".into());
+        std::env::var("EGGSEARCH_EVAL_SURFACE").unwrap_or_else(|_| "candidate-full".into());
     if model == "unconfigured" {
         println!("tool-surface-live skipped: set EGGSEARCH_EVAL_MODEL=vendor/model/version");
         return;

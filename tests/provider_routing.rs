@@ -1742,13 +1742,12 @@ fn workflow_recipe_steps_use_real_tools() {
         .expect("workflow_recipes is array");
     let known_tools = [
         "web_search",
-        "web_fetch",
+        "fetch",
         "repo_search",
         "repo_fetch",
         "repo_map",
         "security_search",
         "research_search",
-        "batch_fetch",
         "provider_status",
         "build_evidence_bundle",
     ];

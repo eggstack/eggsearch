@@ -109,7 +109,7 @@ pub fn project_with_limits(
                 "web_fetch" => project_web_fetch(value, true),
                 "repo_fetch" => project_repo_fetch(value, true),
                 "repo_map" => project_repo_map(value, true),
-                "batch_fetch" => project_batch_fetch(value, true),
+                "fetch" | "batch_fetch" => project_batch_fetch(value, true),
                 "build_evidence_bundle" => value,
                 _ => value,
             },
@@ -123,7 +123,7 @@ pub fn project_with_limits(
             "web_fetch" => project_web_fetch(value, false),
             "repo_fetch" => project_repo_fetch(value, false),
             "repo_map" => project_repo_map(value, false),
-            "batch_fetch" => project_batch_fetch(value, false),
+            "fetch" | "batch_fetch" => project_batch_fetch(value, false),
             "build_evidence_bundle" => value,
             _ => value,
         },
@@ -198,7 +198,7 @@ fn project_brief(
                 .iter()
                 .rposition(|item| !brief_record_is_failure(item));
             let Some(index) = removable else {
-                if tool == "batch_fetch" {
+                if matches!(tool, "fetch" | "batch_fetch") {
                     let removed_failure = projected
                         .get_mut(key)
                         .and_then(serde_json::Value::as_array_mut)

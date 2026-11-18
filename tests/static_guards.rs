@@ -1183,6 +1183,7 @@ fn stable_tool_registration_count_and_names() {
     let source = read_source("src/mcp/server.rs");
     let expected = [
         "web_search",
+        "fetch",
         "web_fetch",
         "batch_fetch",
         "provider_status",
@@ -1202,7 +1203,7 @@ fn stable_tool_registration_count_and_names() {
     assert_eq!(
         source.matches("name = \"").count(),
         expected.len(),
-        "server.rs must register exactly ten stable tools"
+        "server.rs must register exactly nine canonical tools and two compatibility aliases"
     );
     assert!(
         !source.contains("local_search"),

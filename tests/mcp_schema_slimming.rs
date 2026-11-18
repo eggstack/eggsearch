@@ -74,19 +74,129 @@ fn accepts_boolean(schema: &serde_json::Value) -> bool {
             .any(accepts_boolean)
 }
 
+fn find_target_variant<'a>(
+    value: &'a serde_json::Value,
+    root: &'a serde_json::Value,
+    kind: &str,
+    active_refs: &mut Vec<String>,
+) -> Option<&'a serde_json::Value> {
+    match value {
+        serde_json::Value::Object(object) => {
+            if value
+                .pointer("/properties/type/const")
+                .and_then(serde_json::Value::as_str)
+                == Some(kind)
+            {
+                if let Some(reference) = value.get("$ref").and_then(serde_json::Value::as_str) {
+                    if let Some(pointer) = reference.strip_prefix('#') {
+                        return root.pointer(pointer).or(Some(value));
+                    }
+                }
+                return Some(value);
+            }
+            if let Some(reference) = value.get("$ref").and_then(serde_json::Value::as_str) {
+                if let Some(pointer) = reference.strip_prefix('#') {
+                    if !active_refs.iter().any(|active| active == reference) {
+                        active_refs.push(reference.to_string());
+                        let result = root.pointer(pointer).and_then(|target| {
+                            find_target_variant(target, root, kind, active_refs)
+                        });
+                        active_refs.pop();
+                        if result.is_some() {
+                            return result;
+                        }
+                    }
+                }
+            }
+            object
+                .values()
+                .find_map(|child| find_target_variant(child, root, kind, active_refs))
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .find_map(|child| find_target_variant(child, root, kind, active_refs)),
+        _ => None,
+    }
+}
+
 fn batch_variant<'a>(schema: &'a serde_json::Value, kind: &str) -> &'a serde_json::Value {
-    schema
-        .pointer("/$defs/BatchFetchItem/oneOf")
-        .and_then(serde_json::Value::as_array)
-        .and_then(|variants| {
-            variants.iter().find(|variant| {
-                variant
-                    .pointer("/properties/type/const")
-                    .and_then(serde_json::Value::as_str)
-                    == Some(kind)
-            })
-        })
-        .unwrap_or_else(|| panic!("batch_fetch schema has no {kind} variant"))
+    find_target_variant(schema, schema, kind, &mut Vec::new())
+        .unwrap_or_else(|| panic!("fetch schema has no {kind} variant"))
+}
+
+fn has_nonempty_array(
+    value: &serde_json::Value,
+    root: &serde_json::Value,
+    active_refs: &mut Vec<String>,
+) -> bool {
+    match value {
+        serde_json::Value::Object(object) => {
+            if value.get("type").and_then(serde_json::Value::as_str) == Some("array")
+                && value.get("minItems").and_then(serde_json::Value::as_u64) == Some(1)
+            {
+                return true;
+            }
+            if let Some(reference) = value.get("$ref").and_then(serde_json::Value::as_str) {
+                if let Some(pointer) = reference.strip_prefix('#') {
+                    if !active_refs.iter().any(|active| active == reference) {
+                        active_refs.push(reference.to_string());
+                        let found = root
+                            .pointer(pointer)
+                            .is_some_and(|target| has_nonempty_array(target, root, active_refs));
+                        active_refs.pop();
+                        if found {
+                            return true;
+                        }
+                    }
+                }
+            }
+            object
+                .iter()
+                .filter(|(key, _)| key.as_str() != "$ref")
+                .any(|(_, child)| has_nonempty_array(child, root, active_refs))
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .any(|child| has_nonempty_array(child, root, active_refs)),
+        _ => false,
+    }
+}
+
+fn collect_enum_strings(value: &serde_json::Value, output: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(object) => {
+            if let Some(values) = object.get("enum").and_then(serde_json::Value::as_array) {
+                output.extend(
+                    values
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_owned),
+                );
+            }
+            for child in object.values() {
+                collect_enum_strings(child, output);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for child in values {
+                collect_enum_strings(child, output);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn contains_string(value: &serde_json::Value, needle: &str) -> bool {
+    match value {
+        serde_json::Value::String(text) => text.contains(needle),
+        serde_json::Value::Object(object) => {
+            object.values().any(|child| contains_string(child, needle))
+        }
+        serde_json::Value::Array(values) => {
+            values.iter().any(|child| contains_string(child, needle))
+        }
+        _ => false,
+    }
 }
 
 fn collect_unresolved_local_refs(
@@ -120,7 +230,7 @@ fn collect_unresolved_local_refs(
 #[test]
 fn every_compact_schema_resolves_local_references() {
     let tools = compact_tool_definitions();
-    assert_eq!(tools.len(), 10);
+    assert_eq!(tools.len(), 9);
     for tool in tools {
         let schema = serde_json::to_value(tool.input_schema).expect("schema serializes");
         let mut unresolved = Vec::new();
@@ -131,6 +241,82 @@ fn every_compact_schema_resolves_local_references() {
             tool.name
         );
     }
+}
+
+#[test]
+fn fetch_schema_advertises_single_and_nonempty_multi_target_inputs() {
+    let full = schema_for("fetch");
+    let compact = compact_schema_for("fetch");
+    for schema in [&full, &compact] {
+        assert!(has_prop(schema, "items"));
+        for property in [
+            "max_items",
+            "max_chars_per_item",
+            "max_total_chars",
+            "timeout_ms",
+            "continue_on_error",
+            "offset",
+            "limit",
+            "response_detail",
+        ] {
+            assert!(
+                has_prop(schema, property),
+                "fetch must advertise {property}"
+            );
+        }
+        let items = schema.pointer("/properties/items").expect("items schema");
+        assert!(
+            has_nonempty_array(items, schema, &mut Vec::new()),
+            "items must accept a non-empty array: {items}"
+        );
+        let web = batch_variant(schema, "web");
+        for property in ["offset", "limit"] {
+            assert!(
+                web.pointer(&format!("/properties/{property}")).is_some(),
+                "document window must be scoped to each web fetch item: {web}"
+            );
+        }
+        for property in [
+            "url",
+            "pdf",
+            "render",
+            "browser_profile",
+            "include_screenshot",
+        ] {
+            assert!(
+                web.pointer(&format!("/properties/{property}")).is_some(),
+                "web fetch item must advertise {property}"
+            );
+        }
+        let repo = batch_variant(schema, "repo");
+        assert!(repo.pointer("/properties/offset").is_none());
+        assert!(repo.pointer("/properties/limit").is_none());
+        for property in ["owner", "repo", "path", "symbol", "prefer_local"] {
+            assert!(
+                repo.pointer(&format!("/properties/{property}")).is_some(),
+                "repo fetch item must advertise {property}"
+            );
+        }
+        assert!(!contains_string(schema, "web_fetch"));
+        assert!(!contains_string(schema, "batch_fetch"));
+    }
+}
+
+#[test]
+fn full_and_compact_advertisements_are_smaller_than_the_ten_tool_baseline() {
+    let full_bytes = serde_json::to_string(&tool_definitions()).unwrap().len();
+    let compact_bytes = serde_json::to_string(&compact_tool_definitions())
+        .unwrap()
+        .len();
+    println!("m029-advertisement-bytes full={full_bytes} compact={compact_bytes} baseline_full=78072 baseline_compact=22540");
+    assert!(
+        full_bytes < 78_072,
+        "full tools/list {full_bytes} must be below the exact ten-tool baseline 78072"
+    );
+    assert!(
+        compact_bytes < 22_540,
+        "compact tools/list {compact_bytes} must be below the exact ten-tool baseline 22540"
+    );
 }
 
 #[test]
@@ -210,48 +396,47 @@ fn web_search_hides_infrastructure_controls() {
 }
 
 #[test]
-fn compact_web_fetch_preserves_browser_render_modes() {
-    let full = schema_for("web_fetch");
-    let schema = compact_schema_for("web_fetch");
-    for (name, current) in [("full", &full), ("compact", &schema)] {
-        let screenshot = current
+fn compact_fetch_preserves_browser_render_modes() {
+    let full = schema_for("fetch");
+    let compact = compact_schema_for("fetch");
+    for (name, schema) in [("full", &full), ("compact", &compact)] {
+        let web = batch_variant(schema, "web");
+        let screenshot = web
             .pointer("/properties/include_screenshot")
-            .unwrap_or_else(|| panic!("{name} web_fetch exposes include_screenshot"));
+            .unwrap_or_else(|| panic!("{name} fetch web items expose include_screenshot"));
         assert!(
             accepts_boolean(screenshot),
             "{name} screenshot field must accept boolean: {screenshot}"
         );
     }
-    let render = schema
-        .pointer("/properties/render")
-        .expect("compact web_fetch exposes render");
-    let values = render
-        .get("enum")
-        .and_then(serde_json::Value::as_array)
-        .unwrap_or_else(|| panic!("compact render modes are not constrained: {render}"));
-    let values = values
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .collect::<Vec<_>>();
+    let web = batch_variant(&compact, "web");
+    assert!(
+        web.pointer("/properties/render").is_some(),
+        "compact fetch web items expose render"
+    );
+    let render_policy = compact
+        .pointer("/$defs/RenderPolicy")
+        .or_else(|| compact.pointer("/definitions/RenderPolicy"))
+        .expect("render policy enum schema");
+    let mut values = Vec::new();
+    collect_enum_strings(render_policy, &mut values);
     assert_eq!(values, ["http_only", "auto", "browser"]);
 }
 
 #[test]
-fn compact_web_fetch_explains_user_urls_and_bounded_extraction() {
-    let description = compact_tool_for("web_fetch")
+fn compact_fetch_explains_bounded_web_and_repo_targets() {
+    let description = compact_tool_for("fetch")
         .description
-        .expect("compact web_fetch description")
+        .expect("compact fetch description")
         .to_string();
-    assert!(description.contains("search results or user input"));
-    assert!(description.contains("bounded extracted text"));
-    assert!(description.contains("batch_fetch"));
+    assert!(description.contains("bounded results"));
     assert!(description.contains("do not search or crawl"));
 }
 
 #[test]
-fn batch_fetch_advertises_per_target_controls_in_full_and_compact_schemas() {
-    let full = schema_for("batch_fetch");
-    let compact = compact_schema_for("batch_fetch");
+fn fetch_advertises_per_target_controls_in_full_and_compact_schemas() {
+    let full = schema_for("fetch");
+    let compact = compact_schema_for("fetch");
 
     for schema in [&full, &compact] {
         let web = batch_variant(schema, "web");
@@ -265,13 +450,6 @@ fn batch_fetch_advertises_per_target_controls_in_full_and_compact_schemas() {
                 );
             }
         }
-        assert!(
-            web.get("description")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|description| description.contains("web_fetch")),
-            "web batch controls must point to web_fetch"
-        );
-
         let repo = batch_variant(schema, "repo");
         for property in [
             "symbol",
@@ -283,15 +461,10 @@ fn batch_fetch_advertises_per_target_controls_in_full_and_compact_schemas() {
         ] {
             assert!(
                 repo.pointer(&format!("/properties/{property}")).is_some(),
-                "repo batch items must advertise {property}"
+                "repo fetch items must advertise {property}"
             );
         }
-        assert!(
-            repo.get("description")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|description| description.contains("repo_fetch")),
-            "repo batch controls must point to repo_fetch"
-        );
+        assert!(!contains_string(schema, "batch_fetch"));
     }
 }
 

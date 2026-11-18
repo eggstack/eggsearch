@@ -9,6 +9,7 @@ mod batch_fetch_item;
 pub mod canonical;
 mod common;
 mod evidence_bundle;
+mod fetch;
 mod provider_status;
 mod repo_fetch;
 mod repo_map;
@@ -23,6 +24,7 @@ pub use batch_fetch::{run_batch_fetch, run_batch_fetch_with_progress, BatchFetch
 pub(crate) use common::{map_tool_outcome, ToolOutcome};
 pub use common::{map_tool_result, RepairHint, ToolError, ToolErrorCode, ToolErrorExecution};
 pub use evidence_bundle::{run_build_evidence_bundle, EvidenceBundleArgs};
+pub(crate) use fetch::{run_fetch, run_fetch_with_host_scope_and_progress, FetchArgs};
 pub use provider_status::{run_provider_status, run_provider_status_async, ProviderStatusArgs};
 pub use repo_fetch::{run_repo_fetch, run_repo_fetch_with_host_scope, RepoFetchArgs};
 pub use repo_map::{run_repo_map, run_repo_map_with_host_scope, RepoMapArgs};

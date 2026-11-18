@@ -15,6 +15,7 @@ pub(crate) struct BatchFetchItemContext<'a> {
     pub(super) label: String,
     pub(super) timeout_ms: Option<u64>,
     pub(super) host_local_scope: Option<serde_json::Value>,
+    pub(super) document_window: Option<super::batch_fetch::ItemDocumentWindow>,
 }
 
 type BatchFetchItemFuture = std::pin::Pin<
@@ -45,6 +46,7 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
         label,
         timeout_ms,
         host_local_scope,
+        document_window,
     } = context;
 
     match item {
@@ -83,8 +85,8 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                 render: render.clone(),
                 browser_profile: browser_profile.clone(),
                 include_screenshot: *include_screenshot,
-                offset: None,
-                limit: None,
+                offset: document_window.and_then(|window| window.offset),
+                limit: document_window.and_then(|window| window.limit),
                 response_detail: Some(crate::mcp::projection::ResponseDetail::Diagnostic),
             };
             let budget_ms = timeout_ms

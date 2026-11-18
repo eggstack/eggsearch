@@ -24,6 +24,7 @@ fn tool_names_from_server() -> Vec<String> {
     }
     names.sort();
     names.dedup();
+    names.retain(|name| !matches!(name.as_str(), "web_fetch" | "batch_fetch"));
     names
 }
 
@@ -43,8 +44,8 @@ fn tool_names_in_docs() {
     let tools = tool_names_from_server();
     assert_eq!(
         tools.len(),
-        10,
-        "server.rs must register exactly ten stable tools, got: {tools:?}"
+        9,
+        "server.rs must expose exactly nine canonical tools, got: {tools:?}"
     );
     let text = read_all_docs();
     let mut missing = Vec::new();
@@ -81,7 +82,10 @@ fn no_phantom_tool_names_in_docs() {
             || token == "build_evidence_bundle";
         if is_tool_like
             && !tools.iter().any(|t| t == token)
-            && !matches!(token, "generic_search" | "safe_search")
+            && !matches!(
+                token,
+                "generic_search" | "safe_search" | "web_fetch" | "batch_fetch"
+            )
         {
             phantom.push(token.to_string());
         }

@@ -137,12 +137,12 @@ fn mcp_server_get_info() {
     );
     // Instructions must not suggest crawling is conditionally allowed.
     assert!(
-        instructions.contains("Do not use web_fetch as a crawler"),
+        instructions.contains("never use it as a crawler"),
         "instructions should contain anti-crawling wording: {instructions}"
     );
     assert!(
-        instructions.contains("one explicit HTTP(S) URL"),
-        "instructions should mention one explicit URL: {instructions}"
+        instructions.contains("one or more explicitly selected web URLs or repository targets"),
+        "instructions should describe the single-or-array fetch input: {instructions}"
     );
     assert!(
         !instructions.contains("unless the user explicitly asks for research"),
@@ -151,7 +151,7 @@ fn mcp_server_get_info() {
 }
 
 #[test]
-fn mcp_server_lists_three_tools() {
+fn mcp_server_lists_canonical_tools() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
@@ -160,7 +160,9 @@ fn mcp_server_lists_three_tools() {
         names.contains(&"web_search".to_string()),
         "tools: {names:?}"
     );
-    assert!(names.contains(&"web_fetch".to_string()), "tools: {names:?}");
+    assert!(names.contains(&"fetch".to_string()), "tools: {names:?}");
+    assert!(!names.contains(&"web_fetch".to_string()));
+    assert!(!names.contains(&"batch_fetch".to_string()));
     assert!(
         names.contains(&"provider_status".to_string()),
         "tools: {names:?}"
@@ -176,20 +178,20 @@ fn mcp_server_lists_three_tools() {
 
 #[cfg(feature = "mock")]
 #[tokio::test]
-async fn web_fetch_tool_listed() {
+async fn fetch_tool_listed() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let tool_names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     assert!(
-        tool_names.contains(&"web_fetch".to_string()),
-        "web_fetch should be in tools list: {tool_names:?}"
+        tool_names.contains(&"fetch".to_string()),
+        "fetch should be in tools list: {tool_names:?}"
     );
 }
 
 #[tokio::test]
 #[cfg(feature = "mock")]
-async fn all_ten_stable_tools_registered() {
+async fn all_nine_canonical_tools_advertised() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
@@ -197,8 +199,7 @@ async fn all_ten_stable_tools_registered() {
 
     let expected = [
         "web_search",
-        "web_fetch",
-        "batch_fetch",
+        "fetch",
         "provider_status",
         "repo_search",
         "repo_fetch",
@@ -211,13 +212,13 @@ async fn all_ten_stable_tools_registered() {
     for name in &expected {
         assert!(
             names.contains(&name.to_string()),
-            "stable tool `{name}` not found in tool_definitions(); registered tools: {names:?}"
+            "canonical tool `{name}` not found in tool_definitions(); advertised tools: {names:?}"
         );
     }
     assert_eq!(
         names.len(),
         expected.len(),
-        "expected exactly {} stable tools, got {}: {names:?}",
+        "expected exactly {} canonical tools, got {}: {names:?}",
         expected.len(),
         names.len()
     );
@@ -231,21 +232,25 @@ fn fetch_disabled_state() -> Arc<ServerState> {
 
 #[cfg(feature = "mock")]
 #[test]
-fn mcp_tool_surface_all_ten_tools_with_mock_state() {
+fn mcp_tool_surface_all_nine_canonical_tools_with_mock_state() {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
 
-    assert_eq!(names.len(), 10, "expected exactly 10 tools, got: {names:?}");
+    assert_eq!(
+        names.len(),
+        9,
+        "expected exactly nine canonical tools, got: {names:?}"
+    );
     assert!(
         names.contains(&"web_search".to_string()),
         "missing web_search: {names:?}"
     );
     assert!(
-        names.contains(&"web_fetch".to_string()),
-        "missing web_fetch: {names:?}"
+        names.contains(&"fetch".to_string()),
+        "missing fetch: {names:?}"
     );
     assert!(
         names.contains(&"provider_status".to_string()),
@@ -271,10 +276,8 @@ fn mcp_tool_surface_all_ten_tools_with_mock_state() {
         names.contains(&"research_search".to_string()),
         "missing research_search: {names:?}"
     );
-    assert!(
-        names.contains(&"batch_fetch".to_string()),
-        "missing batch_fetch: {names:?}"
-    );
+    assert!(!names.contains(&"web_fetch".to_string()));
+    assert!(!names.contains(&"batch_fetch".to_string()));
     assert!(
         names.contains(&"build_evidence_bundle".to_string()),
         "missing build_evidence_bundle: {names:?}"
@@ -486,14 +489,10 @@ fn provider_status_pdf_capabilities_track_feature_and_config() {
 #[test]
 fn provider_status_reports_active_mcp_advertisement() {
     let cases = [
-        (
-            eggsearch::core::config::McpToolPreset::Full,
-            10usize,
-            0usize,
-        ),
-        (eggsearch::core::config::McpToolPreset::Research, 7, 3),
-        (eggsearch::core::config::McpToolPreset::Code, 8, 2),
-        (eggsearch::core::config::McpToolPreset::Minimal, 4, 6),
+        (eggsearch::core::config::McpToolPreset::Full, 9usize, 0usize),
+        (eggsearch::core::config::McpToolPreset::Research, 6, 3),
+        (eggsearch::core::config::McpToolPreset::Code, 7, 2),
+        (eggsearch::core::config::McpToolPreset::Minimal, 3, 6),
     ];
     for (preset, advertised, hidden) in cases {
         let mut cfg = AppConfig::default();

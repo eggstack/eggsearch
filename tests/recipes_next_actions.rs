@@ -7,11 +7,10 @@ use eggsearch::meta::recipe_catalog::{
 
 const KNOWN_MCP_TOOLS: &[&str] = &[
     "web_search",
-    "web_fetch",
+    "fetch",
     "repo_search",
     "repo_fetch",
     "repo_map",
-    "batch_fetch",
     "security_search",
     "research_search",
     "provider_status",
@@ -332,13 +331,17 @@ use std::collections::HashMap;
 
 const VALID_TEMPLATE_KEYS: &[(&str, &[&str])] = &[
     (
-        "web_fetch",
+        "fetch",
         &[
-            "url",
-            "max_chars",
+            "items",
+            "max_items",
+            "max_chars_per_item",
+            "max_total_chars",
             "timeout_ms",
-            "extract_mode",
-            "include_links",
+            "continue_on_error",
+            "offset",
+            "limit",
+            "response_detail",
         ],
     ),
     (
@@ -356,17 +359,6 @@ const VALID_TEMPLATE_KEYS: &[(&str, &[&str])] = &[
             "context_after",
             "max_chars",
             "timeout_ms",
-        ],
-    ),
-    (
-        "batch_fetch",
-        &[
-            "items",
-            "max_items",
-            "max_chars_per_item",
-            "max_total_chars",
-            "timeout_ms",
-            "continue_on_error",
         ],
     ),
     (

@@ -95,7 +95,7 @@ impl TaskRuntime {
 pub fn is_eligible(tool: &str, depth: Option<&str>, item_count: usize) -> bool {
     match tool {
         "research_search" => matches!(depth, Some("deep")),
-        "batch_fetch" => item_count > MAX_TASK_ELIGIBLE_BATCH_ITEMS,
+        "batch_fetch" | "fetch" => item_count > MAX_TASK_ELIGIBLE_BATCH_ITEMS,
         _ => false,
     }
 }
@@ -168,6 +168,8 @@ mod tests {
         assert!(!is_eligible("research_search", None, 0));
         assert!(is_eligible("batch_fetch", None, 9));
         assert!(!is_eligible("batch_fetch", None, 8));
+        assert!(is_eligible("fetch", None, 9));
+        assert!(!is_eligible("fetch", None, 8));
         assert!(!is_eligible("web_fetch", None, 100));
     }
 

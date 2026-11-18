@@ -137,15 +137,14 @@ pub const MAX_NEXT_ACTIONS: usize = 5;
 /// Single owner for harness-side `next_actions` filtering. Unknown or
 /// malicious target names must be ignored and never widen authority.
 pub const STABLE_TOOL_NAMES: &[&str] = &[
-    "batch_fetch",
     "build_evidence_bundle",
+    "fetch",
     "provider_status",
     "repo_fetch",
     "repo_map",
     "repo_search",
     "research_search",
     "security_search",
-    "web_fetch",
     "web_search",
 ];
 
@@ -269,7 +268,7 @@ mod tests {
     #[test]
     fn next_action_serde_roundtrip() {
         let action = AgentNextAction::new(
-            "web_fetch",
+            "fetch",
             "inspect_source",
             1,
             serde_json::json!({"url": "https://example.com"}),
@@ -280,7 +279,7 @@ mod tests {
         .with_rationale("Fetch the top source to verify the claim");
         let json = serde_json::to_string(&action).unwrap();
         let parsed: AgentNextAction = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.tool, "web_fetch");
+        assert_eq!(parsed.tool, "fetch");
         assert_eq!(parsed.priority, 1);
         assert_eq!(
             parsed.evidence_gap.as_deref(),
@@ -294,23 +293,11 @@ mod tests {
 
     #[test]
     fn next_action_priority_clamped() {
-        let action = AgentNextAction::new(
-            "web_fetch",
-            "test",
-            99,
-            serde_json::json!(null),
-            vec![],
-            None,
-        );
+        let action =
+            AgentNextAction::new("fetch", "test", 99, serde_json::json!(null), vec![], None);
         assert_eq!(action.priority, 5);
-        let action = AgentNextAction::new(
-            "web_fetch",
-            "test",
-            0,
-            serde_json::json!(null),
-            vec![],
-            None,
-        );
+        let action =
+            AgentNextAction::new("fetch", "test", 0, serde_json::json!(null), vec![], None);
         assert_eq!(action.priority, 1);
     }
 
@@ -384,7 +371,7 @@ mod tests {
                 },
                 AgentWorkflowStep {
                     order: 2,
-                    tool: "web_fetch".into(),
+                    tool: "fetch".into(),
                     purpose: "Fetch".into(),
                     input_hints: vec![],
                     inspect_fields: vec![],
@@ -403,7 +390,7 @@ mod tests {
         assert_eq!(summary["support"], "available");
         assert_eq!(
             summary["step_tools"],
-            serde_json::json!(["web_search", "web_fetch"])
+            serde_json::json!(["web_search", "fetch"])
         );
         // Should NOT contain steps, fallbacks, trust_notes
         assert!(summary.get("steps").is_none());

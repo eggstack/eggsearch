@@ -624,7 +624,7 @@ pub struct RepoSuggestedFetch {
     /// Whether this fetch comes from a stable/pinned source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable: Option<bool>,
-    /// Recommended tool for this fetch (e.g. "repo_fetch", "web_fetch").
+    /// Recommended tool for this fetch (e.g. "repo_fetch", "fetch").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_tool: Option<String>,
     /// Recommended focus query for bounded batch retrieval. Additive;

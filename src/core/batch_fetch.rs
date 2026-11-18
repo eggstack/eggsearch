@@ -1,4 +1,4 @@
-//! Batch fetch request/response types for the `batch_fetch` tool.
+//! Fetch request/response types for the canonical fetch tool.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -16,7 +16,7 @@ fn is_none_or_false(value: &Option<bool>) -> bool {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BatchFetchItem {
-    /// Fetch an explicit HTTP(S) URL; controls match `web_fetch`.
+    /// Fetch an explicit HTTP(S) URL; controls match `fetch`.
     Web {
         /// The URL to fetch. Must be a valid HTTP(S) URL.
         url: String,
@@ -38,7 +38,7 @@ pub enum BatchFetchItem {
         max_cache_age_seconds: Option<u64>,
         /// Optional focus query for deterministic query-focused chunk
         /// selection over the extracted document. Same validation as
-        /// `web_fetch` focus. No extra URL traversal.
+        /// `fetch` focus. No extra URL traversal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<String>,
         /// Maximum focused chunks to return (1-5, default 5).
@@ -48,13 +48,14 @@ pub enum BatchFetchItem {
         /// effective per-item `max_chars` budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
-        /// PDF options for this item; same fields and validation as `web_fetch`.
+        /// PDF options for this item; same fields and validation as `fetch`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pdf: Option<crate::core::fetch::PdfFetchOptions>,
-        /// Render policy: `http_only`, `auto`, or `browser`; same as `web_fetch`.
+        /// Render policy: `http_only`, `auto`, or `browser`; same as `fetch`.
+        #[schemars(with = "Option<crate::core::fetch::RenderPolicy>")]
         #[serde(default, skip_serializing_if = "Option::is_none")]
         render: Option<String>,
-        /// Named browser profile; same authorization as `web_fetch`.
+        /// Named browser profile; same authorization as `fetch`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         browser_profile: Option<String>,
         #[schemars(description = "Include a bounded viewport screenshot as MCP image content.")]
@@ -97,7 +98,7 @@ pub enum BatchFetchItem {
         max_chars: Option<usize>,
         /// Optional focus query applied as a deterministic projection
         /// after the underlying repo fetch returns a bounded
-        /// document/span. Same validation as `web_fetch` focus.
+        /// document/span. Same validation as `fetch` focus.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<String>,
         /// Maximum focused chunks to return (1-5, default 5).
@@ -212,7 +213,7 @@ pub struct BatchFetchResult {
     pub stable_id: Option<String>,
     /// Whether this item was fetched successfully.
     pub ok: bool,
-    /// Serialized response payload (web_fetch or repo_fetch response shape).
+    /// Serialized response payload (fetch or repo_fetch response shape).
     /// Present only when `ok = true`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<serde_json::Value>,
@@ -225,7 +226,7 @@ pub struct BatchFetchResult {
     pub truncated: bool,
 }
 
-/// Aggregate telemetry for a `batch_fetch` response.
+/// Aggregate telemetry for a canonical `fetch` response.
 ///
 /// All counters are deterministic derivations of the request and the
 /// per-item outcomes. Focus projection never changes stable item IDs;
@@ -275,7 +276,7 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 
-/// Response type for the `batch_fetch` tool.
+/// Response type for the canonical `fetch` tool.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct BatchFetchResponse {
     /// Number of items successfully fetched.

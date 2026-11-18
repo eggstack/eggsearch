@@ -7113,15 +7113,17 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
 }
 
 #[test]
-fn batch_fetch_server_instructions_mention_batch_fetch() {
+fn fetch_server_instructions_mention_canonical_fetch() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let info = server.get_info();
     let instructions = info.instructions.unwrap_or_default();
     assert!(
-        instructions.contains("batch_fetch"),
-        "instructions should mention batch_fetch: {instructions}"
+        instructions.contains("Use `fetch` for one or more explicitly selected web URLs"),
+        "instructions should describe canonical fetch: {instructions}"
     );
+    assert!(!instructions.contains("batch_fetch"));
+    assert!(!instructions.contains("web_fetch"));
 }
 
 #[tokio::test]

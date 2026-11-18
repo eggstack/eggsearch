@@ -128,7 +128,7 @@ impl ToolContract {
     }
 }
 
-/// Whether a name is one of the ten stable canonical tool names.
+/// Whether a name is one of the nine stable canonical tool names.
 ///
 /// Harnesses must ignore `next_actions` entries whose `tool` fails this
 /// check; unknown or malicious names never widen execution authority.
@@ -138,32 +138,6 @@ pub fn is_known_tool(name: &str) -> bool {
 
 /// Canonical contracts in deterministic alphabetical name order.
 pub static ALL_CONTRACTS: &[ToolContract] = &[
-    ToolContract {
-        name: "batch_fetch",
-        description: "Fetch several known URLs or repo locators in one bounded call. Use for fan-out over selected `items`; not a crawler. Each item reports its own result.",
-        purpose: "bounded multi-target fetch over explicit targets",
-        use_when: "several search results or suggested fetches are already selected",
-        not_for: "search, crawling, or following links",
-        domain: ToolDomain::Fetch,
-        disclosure: ToolDisclosureHint::Deferred,
-        read_only: true,
-        open_world: true,
-        destructive: false,
-        idempotent: true,
-        related_tools: &["repo_fetch", "repo_search", "web_fetch", "web_search"],
-        next_tools: &["build_evidence_bundle"],
-        keywords: &[
-            "batch",
-            "fan-out",
-            "multi-fetch",
-            "suggested fetches",
-            "several",
-            "multiple",
-            "urls",
-            "files",
-        ],
-        aliases: &["batch", "multi_fetch", "fan_out"],
-    },
     ToolContract {
         name: "build_evidence_bundle",
         description: "Package already-selected search and fetch evidence for handoff. Use with gathered `sources` and `fetches`; does not search, fetch, or summarize.",
@@ -177,17 +151,34 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         destructive: false,
         idempotent: true,
         related_tools: &[
-            "batch_fetch",
+            "fetch",
             "repo_fetch",
             "repo_search",
             "research_search",
             "security_search",
-            "web_fetch",
+            "fetch",
             "web_search",
         ],
         next_tools: &[],
         keywords: &["bundle", "handoff", "evidence", "package"],
         aliases: &["bundle", "evidence", "handoff"],
+    },
+    ToolContract {
+        name: "fetch",
+        description: "Fetch one or more explicitly selected web URLs or repo targets in one bounded call; pass a tagged `items` object or an array. Not for search or crawling.",
+        purpose: "bounded single- or multi-target web and repository fetching",
+        use_when: "one or more explicit web URLs or repo locators must be read",
+        not_for: "search, crawling, or following links",
+        domain: ToolDomain::Fetch,
+        disclosure: ToolDisclosureHint::Core,
+        read_only: true,
+        open_world: true,
+        destructive: false,
+        idempotent: true,
+        related_tools: &["repo_fetch", "repo_search", "web_search"],
+        next_tools: &["build_evidence_bundle"],
+        keywords: &["url", "page", "extract", "read", "inspect", "repository", "file", "multiple", "offset", "limit"],
+        aliases: &["web", "repository", "page", "read"],
     },
     ToolContract {
         name: "provider_status",
@@ -208,7 +199,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "repo_fetch",
-        description: "Fetch a known repository file or span by structured locator. Use after `repo_search` with `owner`, `repo`, `path`; for arbitrary URLs use `web_fetch`.",
+        description: "Fetch a known repository file or span by structured locator. Use after `repo_search` with `owner`, `repo`, `path`; for arbitrary URLs use `fetch`.",
         purpose: "bounded repository file or span inspection",
         use_when: "a concrete repository file or line span is already known",
         not_for: "repository discovery or arbitrary URL fetching",
@@ -218,7 +209,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         destructive: false,
         idempotent: true,
-        related_tools: &["batch_fetch", "repo_map", "repo_search", "web_fetch"],
+        related_tools: &["fetch", "repo_map", "repo_search", "fetch"],
         next_tools: &["build_evidence_bundle"],
         keywords: &[
             "file", "span", "symbol", "locator", "source", "read", "inspect", "known",
@@ -264,7 +255,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         destructive: false,
         idempotent: true,
         related_tools: &["repo_fetch", "repo_map", "web_search"],
-        next_tools: &["batch_fetch", "repo_fetch", "repo_map"],
+        next_tools: &["fetch", "repo_fetch", "repo_map"],
         keywords: &[
             "code",
             "repository",
@@ -289,8 +280,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         destructive: false,
         idempotent: true,
-        related_tools: &["batch_fetch", "repo_search", "web_fetch", "web_search"],
-        next_tools: &["batch_fetch", "build_evidence_bundle", "repo_fetch", "web_fetch"],
+        related_tools: &["fetch", "repo_search", "fetch", "web_search"],
+        next_tools: &["fetch", "build_evidence_bundle", "repo_fetch", "fetch"],
         keywords: &[
             "architecture",
             "comparison",
@@ -314,8 +305,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         destructive: false,
         idempotent: true,
-        related_tools: &["batch_fetch", "web_fetch", "web_search"],
-        next_tools: &["batch_fetch", "build_evidence_bundle", "web_fetch"],
+        related_tools: &["fetch", "fetch", "web_search"],
+        next_tools: &["fetch", "build_evidence_bundle", "fetch"],
         keywords: &[
             "cve",
             "ghsa",
@@ -330,28 +321,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         aliases: &["cve", "vuln", "advisory", "security"],
     },
     ToolContract {
-        name: "web_fetch",
-        description: "Fetch one known HTTP(S) URL with bounded extracted text. Use after search with `url`; for several targets use `batch_fetch`. Do not use for search or crawling.",
-        purpose: "bounded single-URL inspection",
-        use_when: "one explicit URL from search results or user input must be read, including a later `offset`/`limit` window of a document already fetched",
-        not_for: "search, crawling, or following links",
-        domain: ToolDomain::Web,
-        disclosure: ToolDisclosureHint::Core,
-        read_only: true,
-        open_world: true,
-        destructive: false,
-        idempotent: true,
-        related_tools: &["batch_fetch", "web_search"],
-        next_tools: &["build_evidence_bundle"],
-        keywords: &[
-            "fetch", "url", "page", "extract", "read", "inspect", "offset", "limit", "window",
-            "range",
-        ],
-        aliases: &["webfetch", "fetch", "page"],
-    },
-    ToolContract {
         name: "web_search",
-        description: "Find candidate public web sources as source cards. Use for general research with `query`; inspect content with `web_fetch`. Returns source cards only, never page text or a synthesized answer.",
+        description: "Find candidate public web sources as source cards. Use for general research with `query`; inspect content with `fetch`. Returns source cards only, never page text or a synthesized answer.",
         purpose: "general web source discovery",
         use_when: "candidate sources must be discovered before any fetch",
         not_for: "fetching page content or inspecting a known URL",
@@ -362,13 +333,13 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         destructive: false,
         idempotent: true,
         related_tools: &[
-            "batch_fetch",
+            "fetch",
             "repo_search",
             "research_search",
             "security_search",
-            "web_fetch",
+            "fetch",
         ],
-        next_tools: &["batch_fetch", "web_fetch"],
+        next_tools: &["fetch", "fetch"],
         keywords: &["search", "web", "discovery", "sources", "lookup", "general"],
         aliases: &["websearch", "search", "lookup"],
     },
@@ -396,10 +367,10 @@ mod tests {
         assert_eq!(names, sorted, "contracts must stay in alphabetical order");
         let mut dedup = sorted.clone();
         dedup.dedup();
-        assert_eq!(dedup.len(), 10, "exactly ten contracts expected");
+        assert_eq!(dedup.len(), 9, "exactly nine contracts expected");
         names.sort_unstable();
         names.dedup();
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 9);
     }
 
     #[test]

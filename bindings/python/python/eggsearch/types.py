@@ -170,6 +170,64 @@ class BatchFetchRequest(TypedDict, total=False):
     response_detail: ResponseDetail | None
 
 
+class WebFetchItem(TypedDict, total=False):
+    type: Required[Literal["web"]]
+    url: Required[str]
+    extract_mode: str | None
+    include_links: bool | None
+    max_chars: int | None
+    cache_policy: str | None
+    max_cache_age_seconds: int | None
+    focus: str | None
+    focus_max_chunks: int | None
+    focus_max_chars: int | None
+    pdf: dict[str, JSONValue] | None
+    render: str | None
+    browser_profile: str | None
+    include_screenshot: bool | None
+    offset: int | None
+    limit: int | None
+
+
+class RepoFetchItem(TypedDict, total=False):
+    type: Required[Literal["repo"]]
+    host: str | None
+    owner: Required[str]
+    repo: Required[str]
+    ref_name: str | None
+    commit_sha: str | None
+    path: Required[str]
+    line_start: int | None
+    line_end: int | None
+    context_before: int | None
+    context_after: int | None
+    max_chars: int | None
+    focus: str | None
+    focus_max_chunks: int | None
+    focus_max_chars: int | None
+    symbol: str | None
+    symbol_kind: str | None
+    match_text: str | None
+    expand_to_block: bool | None
+    max_block_lines: int | None
+    prefer_local: bool | None
+
+
+FetchItem = WebFetchItem | RepoFetchItem
+
+
+class FetchRequest(TypedDict, total=False):
+    items: Required[FetchItem | list[FetchItem]]
+    max_items: int | None
+    max_chars_per_item: int | None
+    max_total_chars: int | None
+    timeout_ms: int | None
+    continue_on_error: bool | None
+    offset: int | None
+    limit: int | None
+    response_detail: ResponseDetail | None
+
+
 class ProviderStatusRequest(TypedDict, total=False):
     probe: bool
     recipe_detail: Literal["none", "summary", "full"] | None
@@ -354,6 +412,7 @@ class ToolContractSet(TypedDict):
 WebSearchResponse = ToolResponse
 WebFetchResponse = ToolResponse
 BatchFetchResponse = ToolResponse
+FetchResponse = ToolResponse
 ProviderStatusResponse = ToolResponse
 RepoSearchResponse = ToolResponse
 RepoFetchResponse = ToolResponse
@@ -373,12 +432,16 @@ __all__ = [
     "EvidenceBundleResponse",
     "EvidenceSourceInput",
     "FetchDocument",
+    "FetchItem",
+    "FetchRequest",
+    "FetchResponse",
     "FetchResult",
     "JSONValue",
     "ProviderFailure",
     "ProviderStatusRequest",
     "ProviderStatusResponse",
     "RepairHint",
+    "RepoFetchItem",
     "RepoFetchRequest",
     "RepoFetchResponse",
     "RepoMapRequest",
@@ -397,6 +460,7 @@ __all__ = [
     "ToolContractSet",
     "TrustLabel",
     "TrustMarkers",
+    "WebFetchItem",
     "WebFetchRequest",
     "WebFetchResponse",
     "WebSearchRequest",

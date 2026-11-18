@@ -42,9 +42,16 @@ avoided dead-token request: the derived arm's entry expired on the published sch
 second search took a miss and re-solved directly (`cookie_misses=2`, `cookie_hits=0`, 3 rows),
 where the fixed 30-minute rule would have presented the expired token first.
 
-The two-arm solve-count comparison was therefore not run. Closing as `closed` would claim an
-acceptance the plan does not authorize; the milestone is complete in implementation and verified in
-behaviour, and this condition records the missing comparative measurement.
+The two-arm solve-count comparison was therefore not run. The implemented resolver returns at most
+the configured ceiling: a published lifetime is clamped to it, an unstated lifetime falls back to
+it, and an expired or malformed lifetime disables reuse. Against the old fixed-ceiling rule and an
+identical request schedule, this can preserve or shorten reuse, never lengthen it; it therefore
+cannot establish fewer solves than the fixed-window baseline. For observed Startpage, the published
+~20-minute lifetime exceeds the shipped 240-second ceiling (no solve-count delta at default);
+Mojeek publishes no lifetime (same fallback behavior). The live observation of avoiding a dead-token
+replay is a reliability/request-count benefit, not a solve-count reduction. Keep M014 conditionally
+closed until its acceptance criterion is explicitly reconciled; do not claim a reduction. Closing as
+`closed` would claim an acceptance the plan does not authorize.
 
 ## Published attributes (live capture, 2026-11-13, value redacted)
 

@@ -1,9 +1,9 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M014 conditionally closed; M001–M028 otherwise closed)
+Status: active (M014 conditionally closed; M001–M028 otherwise closed; M029 closing)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
-References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
+References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
 
 Prior closed evidence: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` (M001–M006 closed, including the M004 methodology limitation and the M006 comparative report `docs/retrieval-quality-comparison.md`); `plans/subsystems/standalone-mcp-local-inference-roadmap.md` (M001–M008 closed, compact remains opt-in with a mixed quality disposition); `plans/subsystems/tool-surface-consolidation-roadmap.md` (M001–M007 closed); `plans/subsystems/search-capability-roadmap.md`.
 
@@ -15,7 +15,7 @@ Eggsearch owns scraper fidelity, candidate generation/routing policy, fusion and
 
 ### Work classification
 
-- **Invariant:** keyless HTML metasearch first-class and no-key functional (ADR-0006); inference-free deterministic retrieval; ten MCP tools; stable IDs; sanitization and trust framing; explicit absence-versus-failure ledger; Mode-Off zero-remote-dispatch; bounded I/O and deadlines.
+- **Invariant:** keyless HTML metasearch first-class and no-key functional (ADR-0006); inference-free deterministic retrieval; the nine-tool canonical inventory established by ADR-0016 and M029, with only the two legacy fetch aliases callable but unadvertised; stable IDs; sanitization and trust framing; explicit absence-versus-failure ledger; Mode-Off zero-remote-dispatch; bounded I/O and deadlines.
 - **Capability:** truthful empty-versus-broken provider state; lower token cost per useful evidence; intent-appropriate provider routing; smaller advertised tool surfaces.
 - **Infrastructure:** search-result cache and coalescing; captured scraper fixtures; a candidate-snapshot ranking harness; deterministic intent derivation.
 - **Polish:** diagnostics, telemetry, and documentation that do not establish a capability boundary.
@@ -56,7 +56,7 @@ Measured or code-evidenced gaps:
 - Pass-cookie identity is opaque. The solver replays the cookie pair(s) the pass-challenge response published and never selects a cookie by a hardcoded name; a deployment's prefix and dynamic suffix are data, not protocol constants.
 - A challenge extension is refused unless an accepted ADR names it. ADR-0012 proposes `css-load` only; `headless`/BotStopper and every interactive, visual, or code-executing extension stay prohibited.
 - No Eggsearch-side inference: no embeddings, vector index, LLM reranker, generated answer, or hosted classification in any execution path. Existing opt-in semantic **providers** are unchanged upstream sources.
-- No new MCP tools, no removal or rename of existing tools, no schema-breaking change. Advertisement profiles may hide tools; hidden tools still execute.
+- No general MCP tool growth, removal, or rename and no unrelated schema-breaking change. The sole planned exception is M029 under ADR-0016: replace the advertised `web_fetch` and `batch_fetch` entries with one advertised `fetch`, while retaining both old names as callable, unadvertised compatibility aliases. Advertisement profiles may still hide tools; hidden tools still execute.
 - Preserve stable FNV-1a IDs, RRF tie ordering unless an accepted measured change says otherwise, sanitization tiers, trust markers, per-provider attempt ledger, capability-skip semantics, deadlines, and Mode-Off remote denial.
 - Do not change shipped default features, binary SKUs, or Python wheel behavior. A default behavior change requires its own measured acceptance inside the owning milestone.
 - No recursive crawling, automatic link following, billing, or credential requirements in routine CI.
@@ -97,6 +97,7 @@ M016 ──> M025 metarefresh presentation corrective
 M026 unsupported-extension refusal  (independent)
 M026 + ADR-0012 ──> M027 css-load extension
 ADR-0013 ──> M028 wasm sha256 method
+ADR-0016 ──> M029 unified fetch discovery and legacy aliases
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -132,6 +133,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M026 — unsupported extension refusal | invariant (corrective) | `plans/archive/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md` | none | A non-empty `extensions` list fails closed before submission with an attributable reason; no extension is authorized |
 | M027 — `css-load` extension | capability | `plans/archive/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md` | hard ADR-0012 acceptance; hard M026 | A `css-load` challenge is satisfied with one bounded same-origin GET; unknown and `headless` stay refused |
 | M028 — WASM `sha256` method | capability | `plans/archive/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md` | hard ADR-0013 acceptance; M026 | A `sha256` challenge solves under the fast-equivalent ceiling; `argon2id`/`hashx` stay refused |
+| M029 — unified fetch tool and legacy aliases | capability | `plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md` | interface ADR-0016 accepted | One canonical nine-tool inventory advertises `fetch` for one or many web/repo items; `web_fetch` and `batch_fetch` remain callable with legacy behavior but are absent from discovery and `next_actions`; full and compact schemas are smaller than baseline |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -174,7 +176,12 @@ exposed M011's mandatory-`redir` defect.
 - M014 is `conditionally closed`: the reuse window is the upstream-published `Max-Age`/`Expires` clamped by
   `cookie_ttl_seconds`, a rejected cookie is evicted, and `doctor` warns when a routed egress meets
   reuse. A live 21-minute run re-solved after the published expiry instead of replaying a dead
-  token. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.
+  token; that is stale-token avoidance, not evidence of reduced solve counts. The required two-arm
+  solve-count comparison remains unrun. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.
+- M029 is `closing`: the nine-tool schema, legacy MCP aliases, mixed web/workspace HTTP execution,
+  schema-size reduction, full local repository gate, docs gate, and an installed Python wheel test
+  pass on the current working tree. Formal closure remains pending final exact-candidate SHA evidence
+  and the required closure commit. Evidence: `plans/closure/agentic-retrieval-integrity/029-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.
@@ -247,7 +254,7 @@ These shapes are decided for this workstream. Changing one requires a new milest
 1. **Scrapers are first-class.** ADR-0006 governs. Reliability work targets parser fidelity, fixtures, and classification; it never replaces a keyless engine with an API or labels it legacy.
 2. **Measurement before policy.** Candidate snapshots are tiered: a committed structured-synthetic set as the CI gate, a small committed recorded-real set with provenance, and a larger live-recorded set generated into `target/snapshots/` for release qualification. Only the first two are tracked. A harness that cannot detect a seeded regression is rejected.
 3. **Defaults follow the happy path.** Markdown negotiation is default-on with a bounded single fallback, not an opt-in flag. Intent derivation runs without a new required argument and becomes behaviour-affecting only after snapshot non-regression.
-4. **Tools may be hidden, never removed.** Advertisement presets are a server configuration knob that filters `tools/list`; hidden tools still execute, `next_actions` are filtered to the active preset, and the ten-tool contract is unchanged.
+4. **Advertisement is the canonical tool surface; hidden tools remain callable.** M008's preset rule still applies to the tools it filters. M029 under ADR-0016 is the narrow exception to its historical ten-tool/no-removal assumption: the canonical inventory replaces the two advertised fetch names with `fetch`, while the old names remain callable aliases but never appear in `tools/list`, canonical metadata, or `next_actions`. No further inventory change is authorized by this exception.
 5. **No objective argument.** Retrieval goal is derived deterministically from the query with fixed precedence and reported reasons; callers are never required to state it.
 6. **Challenges are solved under bounds, not delegated.** ADR-0009 governs, with method coverage and the cost policy extended by ADR-0010 (see decision 7). Only published, evaluated challenge methods are solvable, only when the operator enables it, and only inside the difficulty, attempt, wall-clock, and solve-rate ceilings. The difficulty ceiling is operator configuration, not a hardcoded engine constant, so the cost/availability trade is explicit. Unsolved, unsupported, and budget-exhausted challenges stay `blocked`; interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing, and retry widening stay prohibited.
 

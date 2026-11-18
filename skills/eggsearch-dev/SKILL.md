@@ -147,7 +147,7 @@ own. Move these in the same change as the code:
 | New/renamed test suite | `docs/test-inventory.md`, `architecture/testing.md`, the test table above |
 | New provider or engine | `KNOWN_PROVIDER_IDS`, `docs/provider-setup.md` (native-vs-local enforcement), `tests/provider_capability_contract.rs` |
 | New or changed HTML scraper parser | captured fixtures under `tests/fixtures/engines/<provider>/` (results, empty, blocked), conformance coverage, and `architecture/engines.md` § Scraper Fidelity |
-| New or changed MCP tool | `src/mcp/server.rs`, `docs/tool-matrix.md`, `docs/codegg-integration.md`; the count stays at 10 unless the matrix and `tests/docs_tool_names.rs` move too |
+| New or changed MCP tool | `src/mcp/server.rs`, `docs/tool-matrix.md`, `docs/codegg-integration.md`; the canonical inventory is nine tools under ADR-0016. Update `tests/docs_tool_names.rs` and host guidance with any future inventory change; `web_fetch` and `batch_fetch` remain callable but unadvertised compatibility aliases. |
 | Release target, installer, or version fact | `packaging/release-targets.txt` + `release-inputs.txt` + release workflow + installers + updater + `docs/release.md` + `docs/installation.md` + `README.md` |
 | Milestone status | `plans/registry.md`, the owning `plans/subsystems/` roadmap, a `plans/closure/` record, and the `architecture/` section that states it — see the `eggsearch-planning` skill |
 

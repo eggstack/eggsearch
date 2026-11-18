@@ -1316,16 +1316,16 @@ fn focused_batch_next_action_is_bounded_and_typed() {
     };
     let ids: Vec<String> = (0..3).map(|i| format!("src_{i}")).collect();
     let action = focused_batch_next_action(&ids, "fetch_multiple_focused", 2);
-    assert_eq!(action.tool, "batch_fetch");
+    assert_eq!(action.tool, "fetch");
     assert_eq!(action.reason_code, "fetch_multiple_focused");
     assert!(action.input_template.get("items").is_some());
 
     let web = web_search_next_actions(&ids, true);
-    assert!(web.iter().any(|a| a.tool == "batch_fetch"));
+    assert!(web.iter().any(|a| a.tool == "fetch"));
     let sec = security_search_next_actions(&ids, true);
-    assert!(sec.iter().any(|a| a.tool == "batch_fetch"));
+    assert!(sec.iter().any(|a| a.tool == "fetch"));
     let res = research_search_next_actions(&ids, true);
-    assert!(res.iter().any(|a| a.tool == "batch_fetch"));
+    assert!(res.iter().any(|a| a.tool == "fetch"));
     for actions in [web, sec, res] {
         assert!(actions.len() <= eggsearch::core::workflow::MAX_NEXT_ACTIONS);
     }
