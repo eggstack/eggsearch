@@ -36,7 +36,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 
 | Suite | Contract |
 |-------|----------|
-| `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs) |
+| `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs), and deterministic opt-in screenshot bounds, capability/conflict errors, JSON/cache separation, and batch image association |
 | `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds, derived-intent reporting/applied reranking, search-result cache and coalescing equivalence |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
 | `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |

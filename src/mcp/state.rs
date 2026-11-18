@@ -58,6 +58,26 @@ pub(crate) static HOST_LOCAL_SCOPE_TEST_LOCK: tokio::sync::Mutex<()> =
     tokio::sync::Mutex::const_new(());
 const HOST_LOCAL_BACKEND_CACHE_CAPACITY: usize = 8;
 
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+pub struct MockBrowserRequest {
+    pub url: String,
+    pub capture: bool,
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[allow(missing_docs)]
+pub type BrowserFetchOverride = Arc<
+    dyn Fn(
+            MockBrowserRequest,
+        ) -> Result<
+            crate::fetch::browser::BrowserFetchOutcome,
+            crate::fetch::browser::BrowserFetchError,
+        > + Send
+        + Sync,
+>;
+
 /// Request-local view over a local backend and its root-specific inventory
 /// cache. Standalone requests reuse the startup-configured view; authenticated
 /// host-scoped requests use an isolated bounded-cache entry.
@@ -195,6 +215,9 @@ pub struct ServerState {
     /// avoid re-probing the filesystem on every `provider_status` call.
     #[cfg(feature = "browser")]
     pub browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState,
+    #[cfg(all(feature = "mock", feature = "browser"))]
+    #[allow(missing_docs)]
+    pub browser_fetch_override: Option<BrowserFetchOverride>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -460,6 +483,8 @@ impl ServerState {
             browser_global_semaphore,
             #[cfg(feature = "browser")]
             browser_discovery_state,
+            #[cfg(all(feature = "mock", feature = "browser"))]
+            browser_fetch_override: None,
         })
     }
 
@@ -529,6 +554,8 @@ impl ServerState {
             browser_global_semaphore: None,
             #[cfg(feature = "browser")]
             browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState::NotFound,
+            #[cfg(all(feature = "mock", feature = "browser"))]
+            browser_fetch_override: None,
         }
     }
 

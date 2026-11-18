@@ -95,6 +95,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
             focus_max_chars: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             response_detail: None,
         },
     )
@@ -122,6 +123,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -504,6 +506,7 @@ async fn web_fetch_structured_warnings_present() {
         focus_max_chars: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
         response_detail: None,
     };
     let value = run_web_fetch(state, args).await.unwrap();
@@ -534,6 +537,7 @@ async fn web_fetch_rejects_zero_timeout() {
         focus_max_chars: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
         response_detail: None,
     };
 
@@ -802,7 +806,7 @@ async fn batch_workspace_fetch_honors_host_local_scope_without_widening() {
     )
     .await
     .expect("authorized batch workspace fetch");
-    assert!(authorized["results"][0]["response"]["text"]
+    assert!(authorized.value["results"][0]["response"]["text"]
         .as_str()
         .unwrap_or_default()
         .contains("authorized"));
@@ -825,4 +829,420 @@ async fn batch_workspace_fetch_honors_host_local_scope_without_widening() {
         .as_str()
         .unwrap_or_default()
         .contains("configured"));
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn synthetic_png(seed: u8) -> Vec<u8> {
+    let mut png = vec![seed; 40];
+    png[..8].copy_from_slice(b"\x89PNG\r\n\x1a\n");
+    png[12..16].copy_from_slice(b"IHDR");
+    png[16..20].copy_from_slice(&1280_u32.to_be_bytes());
+    png[20..24].copy_from_slice(&720_u32.to_be_bytes());
+    png
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn synthetic_browser_outcome(
+    url: &str,
+    screenshot: Option<Vec<u8>>,
+) -> crate::fetch::browser::BrowserFetchOutcome {
+    use crate::fetch::browser::{
+        BrowserFetchOutcome, BrowserFetchResult, FetchDisposition, FetchTransportKind,
+        TransportResponse, TransportTiming,
+    };
+
+    BrowserFetchOutcome {
+        result: BrowserFetchResult {
+            response: TransportResponse {
+                transport: FetchTransportKind::Browser,
+                requested_url: url.to_string(),
+                final_url: url.to_string(),
+                status: Some(200),
+                headers: Vec::new(),
+                body: b"<html><body>synthetic browser content</body></html>".to_vec(),
+                content_type: Some("text/html".to_string()),
+                redirects: Vec::new(),
+                timing: TransportTiming::default(),
+                classification: Some(FetchDisposition::UsefulContent),
+            },
+            extracted_title: Some("Synthetic page".to_string()),
+            extracted_text: "synthetic browser content".to_string(),
+            trust_markers: TrustMarkers::default(),
+            warnings: Vec::new(),
+        },
+        screenshot: screenshot.map(|png| {
+            crate::fetch::browser::ScreenshotCapture::try_new(png).expect("synthetic PNG")
+        }),
+    }
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn synthetic_browser_state(
+    browser_fetch_override: crate::mcp::state::BrowserFetchOverride,
+) -> Arc<ServerState> {
+    use crate::fetch::browser::{
+        BrowserConfig, BrowserDiscovery, BrowserDiscoveryState, BrowserFamily, BrowserLifecycle,
+        BrowserSource, RenderPolicy,
+    };
+
+    let mut config = AppConfig::default();
+    config.fetch.browser.enabled = true;
+    let mut state = Arc::new(ServerState::build(config).expect("state builds"));
+    let discovery = BrowserDiscovery {
+        path: std::path::PathBuf::from("/synthetic/chrome"),
+        family: BrowserFamily::Chrome,
+        version: "Chrome 120.0.0.0".to_string(),
+        source: BrowserSource::AutoDiscovered,
+    };
+    let browser_config = BrowserConfig {
+        enabled: true,
+        policy: RenderPolicy::Browser,
+        ..BrowserConfig::default()
+    };
+    let state_mut = Arc::get_mut(&mut state).expect("unique state");
+    state_mut.browser_discovery_state = BrowserDiscoveryState::Available(discovery.clone());
+    state_mut.browser_lifecycle = Some(Arc::new(BrowserLifecycle::new(
+        Some(discovery),
+        browser_config,
+    )));
+    state_mut.browser_fetch_override = Some(browser_fetch_override);
+    state
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn screenshot_web_args(url: &str, include_screenshot: Option<bool>) -> WebFetchArgs {
+    WebFetchArgs {
+        offset: None,
+        limit: None,
+        url: url.to_string(),
+        max_chars: Some(1000),
+        timeout_ms: Some(5000),
+        extract_mode: Some(ExtractMode::Text),
+        include_links: Some(false),
+        pdf: None,
+        cache_policy: Some(crate::core::fetch::FetchCachePolicy::Default),
+        render: None,
+        browser_profile: None,
+        max_cache_age_seconds: None,
+        focus: None,
+        focus_max_chunks: None,
+        focus_max_chars: None,
+        response_detail: None,
+        include_screenshot,
+    }
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn screenshot_web_fetch_uses_browser_and_keeps_image_out_of_json_and_cache() {
+    use crate::mcp::state::MockBrowserRequest;
+    use base64::Engine;
+
+    let png = synthetic_png(37);
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<MockBrowserRequest>::new()));
+    let seen = requests.clone();
+    let capture_png = png.clone();
+    let state = synthetic_browser_state(Arc::new(move |request| {
+        seen.lock().expect("request lock").push(request.clone());
+        Ok(synthetic_browser_outcome(
+            &request.url,
+            request.capture.then(|| capture_png.clone()),
+        ))
+    }));
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    let outcome = run_web_fetch_outcome_with_progress(
+        state.clone(),
+        screenshot_web_args("https://example.test/static", Some(true)),
+        &mut progress,
+    )
+    .await
+    .expect("screenshot fetch");
+
+    assert_eq!(outcome.images.len(), 1);
+    assert_eq!(outcome.images[0].png, png);
+    {
+        let requests = requests.lock().expect("request lock");
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].capture);
+        assert_eq!(requests[0].url, "https://example.test/static");
+    }
+
+    let json = serde_json::to_string(&outcome.value).expect("structured JSON");
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+    assert!(!json.contains(&encoded));
+    let cache = state
+        .fetch_cache
+        .as_ref()
+        .expect("fetch cache")
+        .stats()
+        .await;
+    assert_eq!(cache.raw_entries, 0);
+    assert_eq!(cache.derived_entries, 0);
+
+    let mapped = map_tool_outcome(Ok(outcome)).expect("MCP image result");
+    let content = serde_json::to_value(&mapped.content).expect("content serialization");
+    assert_eq!(content.as_array().map(Vec::len), Some(2));
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[1]["type"], "image");
+    assert_eq!(content[1]["mimeType"], "image/png");
+    assert_eq!(content[1]["data"], encoded);
+    let structured = serde_json::to_string(
+        mapped
+            .structured_content
+            .as_ref()
+            .expect("structured content"),
+    )
+    .expect("structured payload serialization");
+    assert!(!structured.contains(&encoded));
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn screenshot_conflict_fails_before_browser_io() {
+    use crate::mcp::state::MockBrowserRequest;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = synthetic_browser_state(Arc::new(move |_request: MockBrowserRequest| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Err(crate::fetch::browser::BrowserFetchError::CaptureFailed(
+            "unexpected capture".to_string(),
+        ))
+    }));
+    let mut args = screenshot_web_args("https://example.test/conflict", Some(true));
+    args.render = Some("http_only".to_string());
+    let error = run_web_fetch(state, args)
+        .await
+        .expect_err("conflicting route options");
+    assert_eq!(error.code().as_str(), "conflicting_arguments");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn screenshot_capture_failures_do_not_return_text_only_success() {
+    use crate::mcp::state::MockBrowserRequest;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let captured = Arc::new(AtomicBool::new(false));
+    let seen = captured.clone();
+    let state = synthetic_browser_state(Arc::new(move |request: MockBrowserRequest| {
+        seen.store(request.capture, Ordering::SeqCst);
+        Err(crate::fetch::browser::BrowserFetchError::CaptureFailed(
+            "synthetic cap rejection".to_string(),
+        ))
+    }));
+    let error = run_web_fetch(
+        state,
+        screenshot_web_args("https://example.test/capture-failure", Some(true)),
+    )
+    .await
+    .expect_err("capture failure must fail the fetch");
+    assert!(captured.load(Ordering::SeqCst));
+    assert!(error.to_string().contains("synthetic cap rejection"));
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn screenshot_batch_associations_follow_successful_input_order() {
+    use crate::mcp::state::MockBrowserRequest;
+    use base64::Engine;
+
+    let first_png = synthetic_png(11);
+    let last_png = synthetic_png(29);
+    let first_capture = first_png.clone();
+    let last_capture = last_png.clone();
+    let state = synthetic_browser_state(Arc::new(move |request: MockBrowserRequest| {
+        if request.url.ends_with("/failed") {
+            return Err(crate::fetch::browser::BrowserFetchError::CaptureFailed(
+                "synthetic failed item".to_string(),
+            ));
+        }
+        let screenshot = if request.url.ends_with("/first") {
+            Some(first_capture.clone())
+        } else if request.url.ends_with("/last") {
+            Some(last_capture.clone())
+        } else {
+            None
+        };
+        Ok(synthetic_browser_outcome(&request.url, screenshot))
+    }));
+    let web_item = |url: &str, render: Option<&str>, include_screenshot| {
+        crate::core::batch_fetch::BatchFetchItem::Web {
+            url: url.to_string(),
+            extract_mode: Some(ExtractMode::Text),
+            include_links: Some(false),
+            max_chars: Some(1000),
+            cache_policy: None,
+            max_cache_age_seconds: None,
+            focus: None,
+            focus_max_chunks: None,
+            focus_max_chars: None,
+            pdf: None,
+            render: render.map(str::to_string),
+            browser_profile: None,
+            include_screenshot,
+        }
+    };
+    let args = BatchFetchArgs {
+        items: vec![
+            web_item("https://example.test/first", None, Some(true)),
+            web_item("https://example.test/plain", Some("browser"), None),
+            web_item("https://example.test/failed", None, Some(true)),
+            web_item("https://example.test/last", None, Some(true)),
+        ],
+        max_items: Some(4),
+        max_chars_per_item: Some(1000),
+        max_total_chars: Some(4000),
+        timeout_ms: Some(5000),
+        continue_on_error: Some(true),
+        offset: None,
+        limit: None,
+        response_detail: None,
+    };
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    let outcome = run_batch_fetch_with_host_scope_and_progress(state, args, None, &mut progress)
+        .await
+        .expect("batch fetch");
+
+    assert_eq!(outcome.value["results"][0]["ok"], true);
+    assert_eq!(outcome.value["results"][1]["ok"], true);
+    assert_eq!(outcome.value["results"][2]["ok"], false);
+    assert_eq!(outcome.value["results"][3]["ok"], true);
+    assert_eq!(outcome.value["telemetry"]["items_failed"], 1);
+    assert_eq!(outcome.images.len(), 2);
+    assert_eq!(
+        outcome.images[0].association.as_deref(),
+        Some("batch_fetch item 0: https://example.test/first")
+    );
+    assert_eq!(outcome.images[0].png, first_png);
+    assert_eq!(
+        outcome.images[1].association.as_deref(),
+        Some("batch_fetch item 3: https://example.test/last")
+    );
+    assert_eq!(outcome.images[1].png, last_png);
+
+    let first_encoded = base64::engine::general_purpose::STANDARD.encode(first_png);
+    let last_encoded = base64::engine::general_purpose::STANDARD.encode(last_png);
+    let mapped = map_tool_outcome(Ok(outcome)).expect("MCP batch image result");
+    let content = serde_json::to_value(&mapped.content).expect("content serialization");
+    assert_eq!(
+        content[1]["text"],
+        "batch_fetch item 0: https://example.test/first"
+    );
+    assert_eq!(content[2]["type"], "image");
+    assert_eq!(content[2]["data"], first_encoded);
+    assert_eq!(
+        content[3]["text"],
+        "batch_fetch item 3: https://example.test/last"
+    );
+    assert_eq!(content[4]["type"], "image");
+    assert_eq!(content[4]["data"], last_encoded);
+    assert!(!content[0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains(&first_encoded));
+    assert!(!content[0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains(&last_encoded));
+}
+
+#[test]
+fn screenshot_request_fields_are_omitted_when_absent_or_false() {
+    let absent: WebFetchArgs =
+        serde_json::from_value(serde_json::json!({"url": "https://example.test"})).unwrap();
+    let false_value: WebFetchArgs = serde_json::from_value(serde_json::json!({
+        "url": "https://example.test",
+        "include_screenshot": false
+    }))
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(absent).unwrap(),
+        serde_json::to_value(false_value).unwrap()
+    );
+
+    let absent_batch: crate::core::batch_fetch::BatchFetchItem =
+        serde_json::from_value(serde_json::json!({
+            "type": "web",
+            "url": "https://example.test"
+        }))
+        .unwrap();
+    let false_batch: crate::core::batch_fetch::BatchFetchItem =
+        serde_json::from_value(serde_json::json!({
+            "type": "web",
+            "url": "https://example.test",
+            "include_screenshot": false
+        }))
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(absent_batch).unwrap(),
+        serde_json::to_value(false_batch).unwrap()
+    );
+}
+
+#[cfg(feature = "browser")]
+#[tokio::test]
+async fn screenshot_capability_errors_remain_explicit() {
+    let mut disabled_config = AppConfig::default();
+    disabled_config.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(disabled_config).expect("state builds"));
+    let disabled = run_web_fetch(
+        state,
+        WebFetchArgs {
+            include_screenshot: Some(true),
+            ..serde_json::from_value(serde_json::json!({
+                "url": "https://example.com/disabled"
+            }))
+            .unwrap()
+        },
+    )
+    .await
+    .expect_err("disabled browser must reject screenshots");
+    assert_eq!(
+        disabled.error_payload()["data"]["code"],
+        "browser_disabled",
+        "{disabled:?}"
+    );
+
+    let mut config = AppConfig::default();
+    config.fetch.browser.enabled = true;
+    config.fetch.browser.executable = Some("/synthetic/missing/chrome".to_string());
+    let unavailable = Arc::new(ServerState::build(config).expect("state builds"));
+    let error = run_web_fetch(
+        unavailable,
+        WebFetchArgs {
+            include_screenshot: Some(true),
+            ..serde_json::from_value(serde_json::json!({
+                "url": "https://example.com/unavailable"
+            }))
+            .unwrap()
+        },
+    )
+    .await
+    .expect_err("unavailable browser must reject screenshots");
+    assert_eq!(error.error_payload()["data"]["code"], "browser_unavailable");
+}
+
+#[cfg(not(feature = "browser"))]
+#[tokio::test]
+async fn screenshot_capability_error_when_browser_feature_is_absent() {
+    let state = Arc::new(ServerState::build(AppConfig::default()).expect("state builds"));
+    let error = run_web_fetch(
+        state,
+        WebFetchArgs {
+            include_screenshot: Some(true),
+            ..serde_json::from_value(serde_json::json!({
+                "url": "https://example.test/no-browser-feature"
+            }))
+            .unwrap()
+        },
+    )
+    .await
+    .expect_err("missing browser feature must reject screenshots");
+    assert_eq!(
+        error.error_payload()["data"]["code"],
+        "browser_not_compiled_in"
+    );
 }

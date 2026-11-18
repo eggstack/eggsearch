@@ -20,6 +20,7 @@ mod web_search;
 
 pub(crate) use batch_fetch::run_batch_fetch_with_host_scope_and_progress;
 pub use batch_fetch::{run_batch_fetch, run_batch_fetch_with_progress, BatchFetchArgs};
+pub(crate) use common::{map_tool_outcome, ToolOutcome};
 pub use common::{map_tool_result, RepairHint, ToolError, ToolErrorCode, ToolErrorExecution};
 pub use evidence_bundle::{run_build_evidence_bundle, EvidenceBundleArgs};
 pub use provider_status::{run_provider_status, run_provider_status_async, ProviderStatusArgs};
@@ -30,6 +31,7 @@ pub use research_search::{
     run_research_search, run_research_search_with_progress, ResearchSearchArgs,
 };
 pub use security_search::{run_security_search, SecuritySearchArgs};
+pub(crate) use web_fetch::run_web_fetch_outcome_with_progress;
 pub use web_fetch::{run_web_fetch, run_web_fetch_with_progress, WebFetchArgs};
 pub use web_search::{run_web_search, WebSearchArgs};
 

@@ -179,6 +179,14 @@ Every tool module follows one pipeline:
 - `ToolError::InvalidRequest` → JSON-RPC `invalid_params`. Reserved for shapes that cannot be interpreted at all.
 - `ToolError::Internal` → JSON-RPC `internal_error` without stack traces. Reserved for server faults.
 
+For the opt-in screenshot path, `web_fetch` and `batch_fetch` use an
+image-capable `ToolOutcome` at the server seam. Its structured JSON stays the
+ordinary tool response; validated PNG bytes are appended as native `image/png`
+content blocks and never enter `structuredContent`. In batch results, a sanitized
+text association names the original zero-based item index and label before each
+image, and attachments preserve input order. Screenshot-bearing batches are kept
+synchronous because the deferred task result path carries JSON only.
+
 rmcp input-schema decode failures surface as `isError` tool errors in the pinned release; only true protocol failures (malformed JSON-RPC, missing negotiation headers) remain JSON-RPC errors on the wire.
 
 ### Shared helpers (`tools/common.rs`)

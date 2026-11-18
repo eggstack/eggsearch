@@ -19,8 +19,8 @@ use eggsearch::mcp::state::ServerState;
 // Re-measured after every tool began advertising all four behavior hints and
 // `web_search` stated that it returns no synthesized answer: +660 definition
 // bytes, +165 estimated tokens.
-const BASELINE_TOTAL_BYTES: i64 = 77789;
-const BASELINE_EST_TOKENS: i64 = 19448;
+const BASELINE_TOTAL_BYTES: i64 = 78061;
+const BASELINE_EST_TOKENS: i64 = 19516;
 const BASELINE_MAX_DESC: i64 = 186;
 const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 

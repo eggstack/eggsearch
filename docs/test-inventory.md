@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6291 | 28 |
-| `--features mock` | 5935 | 4 |
+| `--all-features` | 6359 | 28 |
+| `--features mock` | 6332 | 5 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -15,7 +15,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 
 | Suite | Feature Gate | Focus |
 |-------|-------------|-------|
-| `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection |
+| `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection; opt-in screenshot PNG bounds, browser capability/conflict errors, image-out-of-JSON/cache behavior, and ordered batch image association |
 | `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection, derived-intent reporting and applied reranking, search-result cache hit/miss/coalesce equivalence and partial-fan-out bypass, blocked-provider classification |
 | `engine_parse_conformance` | `mock` | Captured-fixture conformance for the five HTML scrapers: parsed rows, explicit empty state, block classification, and a seeded-drift negative control that requires `parse_error` |
 | `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`), and Anubis solve-and-replay under `[search.challenge]` |

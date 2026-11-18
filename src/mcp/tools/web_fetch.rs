@@ -5,6 +5,10 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+fn is_none_or_false(value: &Option<bool>) -> bool {
+    !value.unwrap_or(false)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RenderRequest {
     HttpOnly,
@@ -28,6 +32,7 @@ pub(crate) fn validate_batch_route_options(
     url: &str,
     render: Option<&str>,
     browser_profile: Option<&str>,
+    include_screenshot: bool,
 ) -> Result<(), ToolError> {
     #[cfg(not(feature = "browser"))]
     let _ = url;
@@ -40,7 +45,18 @@ pub(crate) fn validate_batch_route_options(
     } else {
         "http_only"
     };
-    let render_request = parse_render_request(Some(render.unwrap_or(configured_render)))?;
+    let parsed_render_request = parse_render_request(Some(render.unwrap_or(configured_render)))?;
+    if include_screenshot && render == Some("http_only") {
+        return Err(ToolError::conflicting_arguments(
+            "include_screenshot=true conflicts with explicit render=http_only",
+            Some("render"),
+        ));
+    }
+    let render_request = if include_screenshot {
+        RenderRequest::Browser
+    } else {
+        parsed_render_request
+    };
 
     #[cfg(not(feature = "browser"))]
     {
@@ -156,6 +172,11 @@ pub struct WebFetchArgs {
     /// Requires the `browser` feature.
     #[serde(default)]
     pub browser_profile: Option<String>,
+    #[schemars(
+        description = "Include a bounded viewport screenshot of an HTTP(S) webpage as MCP image content."
+    )]
+    #[serde(default, skip_serializing_if = "is_none_or_false")]
+    pub include_screenshot: Option<bool>,
     /// Zero-based character offset into the addressable document text.
     /// `start_index` is accepted as a compatibility alias.
     #[serde(default, alias = "start_index")]
@@ -182,6 +203,16 @@ pub async fn run_web_fetch_with_progress(
     args: WebFetchArgs,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<serde_json::Value, ToolError> {
+    run_web_fetch_outcome_with_progress(state, args, progress)
+        .await
+        .map(|outcome| outcome.value)
+}
+
+pub(crate) async fn run_web_fetch_outcome_with_progress(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+    progress: &mut crate::mcp::progress::ProgressSink,
+) -> Result<ToolOutcome, ToolError> {
     run_web_fetch_inner(state, args, progress, None, None).await
 }
 
@@ -190,7 +221,7 @@ pub(crate) async fn run_web_fetch_with_prepared_client(
     args: WebFetchArgs,
     client: Arc<FetchClient>,
     budget_ms: u64,
-) -> Result<serde_json::Value, ToolError> {
+) -> Result<ToolOutcome, ToolError> {
     let mut progress = crate::mcp::progress::ProgressSink::disabled();
     run_web_fetch_inner(state, args, &mut progress, Some(client), Some(budget_ms)).await
 }
@@ -201,7 +232,7 @@ async fn run_web_fetch_inner(
     progress: &mut crate::mcp::progress::ProgressSink,
     prepared_client: Option<Arc<FetchClient>>,
     prepared_budget_ms: Option<u64>,
-) -> Result<serde_json::Value, ToolError> {
+) -> Result<ToolOutcome, ToolError> {
     use crate::core::fetch::ExtractMode;
     use crate::fetch::accept::select_accept_policy;
     use crate::fetch::cache::{
@@ -224,6 +255,14 @@ async fn run_web_fetch_inner(
         ));
     };
     let trimmed_url = resolved_url.as_str();
+    let include_screenshot = args.include_screenshot.unwrap_or(false);
+    validate_batch_route_options(
+        state.as_ref(),
+        trimmed_url,
+        args.render.as_deref(),
+        args.browser_profile.as_deref(),
+        include_screenshot,
+    )?;
 
     if let Some(0) = args.max_chars {
         return Err(ToolError::Validation("max_chars must be > 0".to_string()));
@@ -286,7 +325,11 @@ async fn run_web_fetch_inner(
         .include_links
         .unwrap_or(state.config.fetch.include_links_default);
 
-    let cache_policy = crate::core::fetch_policy::cache_policy_or_default(args.cache_policy);
+    let cache_policy = if include_screenshot {
+        crate::core::fetch::FetchCachePolicy::Bypass
+    } else {
+        crate::core::fetch_policy::cache_policy_or_default(args.cache_policy)
+    };
 
     if let Err(e) = crate::core::fetch_policy::validate_cache_age(args.max_cache_age_seconds) {
         return Err(ToolError::Validation(e));
@@ -337,8 +380,13 @@ async fn run_web_fetch_inner(
     } else {
         "http_only"
     };
-    let render_request =
+    let parsed_render_request =
         parse_render_request(Some(args.render.as_deref().unwrap_or(configured_render)))?;
+    let render_request = if include_screenshot {
+        RenderRequest::Browser
+    } else {
+        parsed_render_request
+    };
 
     #[cfg(feature = "browser")]
     let render_policy = match render_request {
@@ -682,6 +730,8 @@ async fn run_web_fetch_inner(
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
     progress.phase("plan");
     let mut auto_escalation_unavailable = false;
+    #[allow(unused_mut)]
+    let mut screenshot_png: Option<Vec<u8>> = None;
 
     #[cfg(feature = "browser")]
     let browser_direct = matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser);
@@ -704,13 +754,15 @@ async fn run_web_fetch_inner(
                         state.config.fetch.sanitize_output,
                         &render_policy,
                         profile_chrome_data_dir.as_deref(),
+                        include_screenshot,
                     ),
                 )
                 .await
                 {
-                    Ok(Ok(result)) => {
+                    Ok(Ok(outcome)) => {
+                        screenshot_png = outcome.screenshot.map(|capture| capture.png().to_vec());
                         let resp = crate::fetch::browser::browser_result_to_response(
-                            result,
+                            outcome.result,
                             trimmed_url,
                             budgets,
                             extract_mode,
@@ -854,14 +906,15 @@ async fn run_web_fetch_inner(
                                             state.config.fetch.sanitize_output,
                                             &render_policy,
                                             profile_chrome_data_dir.as_deref(),
+                                            false,
                                         ),
                                     )
                                     .await
                                     {
-                                        Ok(Ok(result)) => {
+                                        Ok(Ok(outcome)) => {
                                             let mut browser_resp =
                                                 crate::fetch::browser::browser_result_to_response(
-                                                    result,
+                                                    outcome.result,
                                                     trimmed_url,
                                                     budgets,
                                                     extract_mode,
@@ -1059,7 +1112,9 @@ async fn run_web_fetch_inner(
         };
     }
 
-    if metadata.cache_status == CacheStatus::Miss || metadata.cache_status == CacheStatus::Bypassed
+    if !include_screenshot
+        && (metadata.cache_status == CacheStatus::Miss
+            || metadata.cache_status == CacheStatus::Bypassed)
     {
         if let Some(ref cache) = state.fetch_cache {
             let raw_key = build_raw_cache_key(
@@ -1275,12 +1330,24 @@ async fn run_web_fetch_inner(
         state.config.mcp.schema_profile,
     );
     progress.phase("project");
-    Ok(crate::mcp::projection::project_with_budget(
+    let value = crate::mcp::projection::project_with_budget(
         "web_fetch",
         payload,
         detail,
         state.config.mcp.brief_max_chars,
-    ))
+    );
+    let images = if include_screenshot {
+        screenshot_png
+            .into_iter()
+            .map(|png| ImageAttachment {
+                association: None,
+                png,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(ToolOutcome { value, images })
 }
 
 #[allow(clippy::too_many_arguments)]

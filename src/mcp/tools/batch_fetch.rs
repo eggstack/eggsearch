@@ -149,15 +149,17 @@ pub async fn run_batch_fetch_with_progress(
     args: BatchFetchArgs,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<serde_json::Value, ToolError> {
-    run_batch_fetch_with_host_scope_and_progress(state, args, None, progress).await
+    run_batch_fetch_with_host_scope_and_progress(state, args, None, progress)
+        .await
+        .map(|outcome| outcome.value)
 }
 
-pub async fn run_batch_fetch_with_host_scope_and_progress(
+pub(crate) async fn run_batch_fetch_with_host_scope_and_progress(
     state: Arc<ServerState>,
     args: BatchFetchArgs,
     host_local_scope: Option<serde_json::Value>,
     progress: &mut crate::mcp::progress::ProgressSink,
-) -> Result<serde_json::Value, ToolError> {
+) -> Result<ToolOutcome, ToolError> {
     use crate::core::batch_fetch::{
         BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult,
     };
@@ -318,6 +320,7 @@ pub async fn run_batch_fetch_with_host_scope_and_progress(
                 pdf,
                 render,
                 browser_profile,
+                include_screenshot,
                 ..
             } => {
                 let target = crate::core::fetch_locator::resolve_fetch_target(
@@ -343,6 +346,7 @@ pub async fn run_batch_fetch_with_host_scope_and_progress(
                     &resolved_url,
                     render.as_deref(),
                     browser_profile.as_deref(),
+                    include_screenshot.unwrap_or(false),
                 )
                 .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
                 #[cfg(not(feature = "pdf"))]
@@ -543,6 +547,9 @@ pub async fn run_batch_fetch_with_host_scope_and_progress(
     // discovered during the spawn loop, so a plain `Vec` of pushes would
     // interleave them and desynchronize the index-based accounting below.
     let mut results: Vec<Option<BatchFetchResult>> = vec![None; effective_items.len()];
+    let mut images: Vec<Option<ImageAttachment>> = std::iter::repeat_with(|| None)
+        .take(effective_items.len())
+        .collect();
     let mut total_chars: usize = 0;
     let mut budget_exhausted = false;
     let mut aborted = false;
@@ -643,14 +650,16 @@ pub async fn run_batch_fetch_with_host_scope_and_progress(
         // Collect all wave results keyed by their returned index.
         // JoinSet::join_next() returns whichever task completes first,
         // so we must not associate results by iteration order.
-        let mut wave_results: std::collections::BTreeMap<usize, BatchFetchResult> =
-            std::collections::BTreeMap::new();
+        let mut wave_results: std::collections::BTreeMap<
+            usize,
+            (BatchFetchResult, Option<ImageAttachment>),
+        > = std::collections::BTreeMap::new();
 
         while let Some(join_result) = join_set.join_next().await {
             match join_result {
-                Ok(Ok(batch_result)) => {
+                Ok(Ok((batch_result, image))) => {
                     let local = batch_result.index.saturating_sub(window.from);
-                    wave_results.insert(local, batch_result);
+                    wave_results.insert(local, (batch_result, image));
                 }
                 Ok(Err(tool_err)) => {
                     // Tool error without an index — cannot know which item.
@@ -672,22 +681,26 @@ pub async fn run_batch_fetch_with_host_scope_and_progress(
         // indices that are missing (panic, cancellation, or tool error).
         for idx in &wave_indices {
             match wave_results.remove(idx) {
-                Some(mut batch_result) => {
+                Some((mut batch_result, image)) => {
                     if !batch_result.ok && !continue_on_error {
                         aborted = true;
                     }
-                    // Enforce the aggregate total_chars budget per result:
-                    // metadata fields (title/description/links) accounted in
-                    // chars_returned may push the running total past
-                    // max_total_chars even though the per-item cap was respected.
                     let remaining = total_cap.saturating_sub(total_chars);
                     if batch_result.chars_returned > remaining {
                         batch_result =
                             truncate_batch_result_to_budget(batch_result, remaining, total_cap);
                     }
                     total_chars += batch_result.chars_returned;
-                    // The result's index is already correct from the future.
-                    // No mutation needed.
+                    if batch_result.ok {
+                        if let Some(mut image) = image {
+                            let (label, _) =
+                                crate::core::sanitize::strip_control_chars(&batch_result.label);
+                            let (label, _) = crate::core::sanitize::bound_text(&label, 200);
+                            image.association =
+                                Some(format!("batch_fetch item {}: {label}", batch_result.index));
+                            images[*idx] = Some(image);
+                        }
+                    }
                     results[*idx] = Some(batch_result);
                 }
                 None => {
@@ -837,12 +850,16 @@ pub async fn run_batch_fetch_with_host_scope_and_progress(
         state.config.mcp.schema_profile,
     );
     progress.phase("project");
-    Ok(crate::mcp::projection::project_with_budget(
+    let value = crate::mcp::projection::project_with_budget(
         "batch_fetch",
         value,
         detail,
         state.config.mcp.brief_max_chars,
-    ))
+    );
+    Ok(ToolOutcome {
+        value,
+        images: images.into_iter().flatten().collect(),
+    })
 }
 
 /// Trim a `BatchFetchResult`'s embedded `response` payload so that

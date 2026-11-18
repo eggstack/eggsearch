@@ -585,6 +585,23 @@ IPv4-compatible IPv6 via the shared `limits::classify_ip`), and a 3 s DNS
 resolution check rejecting private resolutions. It does not take
 `allow_localhost` / `allow_private_network` overrides.
 
+### Viewport screenshot capture
+
+`include_screenshot = true` on `web_fetch` or a `batch_fetch` web item forces
+`RenderPolicy::Browser`, even when the configured policy is `http_only`; an
+explicit per-call `render = "http_only"` is a pre-I/O conflict. Capture runs
+after normal DOM extraction and before the page closes, using the existing
+1280×720 viewport. It requests PNG with no full-page extension, scrolling, input,
+or other interaction. The PNG signature, IHDR dimensions, and encoded size are
+checked before result assembly; width and height may not exceed 1280×720 and the
+PNG may not exceed 4 MiB. Capture failures are explicit errors, not text-only
+successes. Recognized PDF main responses skip capture and add a warning; repo
+and local workspace targets never enter this browser path.
+
+Screenshot requests bypass both cache reads and writes, regardless of the
+requested cache policy. Image bytes travel outside `WebFetchResponse` and the
+cache structures. The ordinary JSON response and its output schema are unchanged.
+
 ### Challenge pages on the HTTP path
 
 Plain HTTP responses are classified before they are returned. `src/fetch/challenge.rs` recognises

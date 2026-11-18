@@ -20,13 +20,26 @@ use crate::mcp::tasks::{
     complete_response, is_eligible, run_cancellable, task_response, TaskRuntime,
 };
 use crate::mcp::tools::{
-    map_tool_result, run_batch_fetch_with_host_scope_and_progress, run_build_evidence_bundle,
-    run_provider_status_async, run_repo_fetch_with_host_scope, run_repo_map_with_host_scope,
-    run_repo_search_with_host_scope, run_research_search_with_progress, run_security_search,
-    run_web_fetch_with_progress, run_web_search, BatchFetchArgs, EvidenceBundleArgs,
-    ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, RepoSearchArgs, ResearchSearchArgs,
-    SecuritySearchArgs, ToolError, WebFetchArgs, WebSearchArgs,
+    map_tool_outcome, map_tool_result, run_batch_fetch_with_host_scope_and_progress,
+    run_build_evidence_bundle, run_provider_status_async, run_repo_fetch_with_host_scope,
+    run_repo_map_with_host_scope, run_repo_search_with_host_scope,
+    run_research_search_with_progress, run_security_search, run_web_fetch_outcome_with_progress,
+    run_web_search, BatchFetchArgs, EvidenceBundleArgs, ProviderStatusArgs, RepoFetchArgs,
+    RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, ToolError, ToolOutcome,
+    WebFetchArgs, WebSearchArgs,
 };
+
+fn batch_contains_screenshot(items: &[crate::core::batch_fetch::BatchFetchItem]) -> bool {
+    items.iter().any(|item| {
+        matches!(
+            item,
+            crate::core::batch_fetch::BatchFetchItem::Web {
+                include_screenshot: Some(true),
+                ..
+            }
+        )
+    })
+}
 
 #[derive(Clone)]
 pub struct EggsearchServer {
@@ -125,6 +138,23 @@ impl EggsearchServer {
     ) -> Result<CallToolResponse, McpError> {
         let payload = result.map(|value| advertisement::filter_payload(self.tool_preset, value));
         complete_response(map_tool_result(payload)?)
+    }
+
+    fn respond_outcome(
+        &self,
+        result: Result<ToolOutcome, ToolError>,
+    ) -> Result<CallToolResult, McpError> {
+        map_tool_outcome(result.map(|mut outcome| {
+            outcome.value = advertisement::filter_payload(self.tool_preset, outcome.value);
+            outcome
+        }))
+    }
+
+    fn respond_response_outcome(
+        &self,
+        result: Result<ToolOutcome, ToolError>,
+    ) -> Result<CallToolResponse, McpError> {
+        complete_response(self.respond_outcome(result)?)
     }
 
     fn spawn_task<F>(&self, eligible: bool, build: F) -> Option<rmcp::model::CreateTaskResult>
@@ -231,6 +261,7 @@ fn compact_schema(name: &str, schema: &mut serde_json::Value) {
             "focus_max_chunks",
             "focus_max_chars",
             "render",
+            "include_screenshot",
             "offset",
             "limit",
             "response_detail",
@@ -572,7 +603,9 @@ impl EggsearchServer {
     ) -> Result<CallToolResponse, McpError> {
         let state = self.state.clone();
         let mut progress = ProgressSink::from_context(&context);
-        self.respond_response(run_web_fetch_with_progress(state, args, &mut progress).await)
+        self.respond_response_outcome(
+            run_web_fetch_outcome_with_progress(state, args, &mut progress).await,
+        )
     }
 
     #[tool(
@@ -659,7 +692,8 @@ impl EggsearchServer {
         Parameters(args): Parameters<BatchFetchArgs>,
     ) -> Result<CallToolResponse, McpError> {
         let item_count = args.items.len();
-        let eligible = is_eligible("batch_fetch", None, item_count);
+        let eligible =
+            is_eligible("batch_fetch", None, item_count) && !batch_contains_screenshot(&args.items);
         let host_scope = context.meta.0 .0.get("codegg/host-local-scope").cloned();
         let task_args = args.clone();
         let task_host_scope = host_scope.clone();
@@ -673,13 +707,14 @@ impl EggsearchServer {
                     &mut sink,
                 )
                 .await
+                .map(|outcome| outcome.value)
             })
         }) {
             return task_response(offloaded);
         }
         let state = self.state.clone();
         let mut progress = ProgressSink::from_context(&context);
-        self.respond_response(
+        self.respond_response_outcome(
             run_batch_fetch_with_host_scope_and_progress(state, args, host_scope, &mut progress)
                 .await,
         )
@@ -944,6 +979,30 @@ mod tests {
             Box::pin(async { Ok(serde_json::json!({"ok": true})) })
         });
         assert!(spawn.is_none());
+    }
+
+    #[test]
+    fn screenshot_batches_stay_synchronous_while_plain_batches_remain_eligible() {
+        let plain: crate::core::batch_fetch::BatchFetchItem =
+            serde_json::from_value(serde_json::json!({
+                "type": "web",
+                "url": "https://example.test/plain"
+            }))
+            .unwrap();
+        let screenshot: crate::core::batch_fetch::BatchFetchItem =
+            serde_json::from_value(serde_json::json!({
+                "type": "web",
+                "url": "https://example.test/image",
+                "include_screenshot": true
+            }))
+            .unwrap();
+        let mut items = vec![plain; crate::mcp::tasks::MAX_TASK_ELIGIBLE_BATCH_ITEMS + 1];
+        assert!(is_eligible("batch_fetch", None, items.len()));
+        assert!(!batch_contains_screenshot(&items));
+        items[0] = screenshot;
+        assert!(
+            !is_eligible("batch_fetch", None, items.len()) || batch_contains_screenshot(&items)
+        );
     }
 
     #[tokio::test]

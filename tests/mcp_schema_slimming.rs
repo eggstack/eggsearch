@@ -61,6 +61,19 @@ fn has_prop(schema: &serde_json::Value, prop: &str) -> bool {
     schema.get("properties").and_then(|p| p.get(prop)).is_some()
 }
 
+fn accepts_boolean(schema: &serde_json::Value) -> bool {
+    schema.get("type").and_then(serde_json::Value::as_str) == Some("boolean")
+        || schema
+            .get("type")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|types| types.iter().any(|kind| kind.as_str() == Some("boolean")))
+        || ["anyOf", "oneOf"]
+            .iter()
+            .filter_map(|key| schema.get(*key).and_then(serde_json::Value::as_array))
+            .flatten()
+            .any(accepts_boolean)
+}
+
 fn batch_variant<'a>(schema: &'a serde_json::Value, kind: &str) -> &'a serde_json::Value {
     schema
         .pointer("/$defs/BatchFetchItem/oneOf")
@@ -146,7 +159,7 @@ fn search_four_schema_bytes_stay_slim() {
         .sum();
     assert!(
         total <= 78_250,
-        "all tool definitions total {total} bytes exceeds 78250 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver; +632 for explicit behavior hints on all ten tools and the web_search evidence-only sentence; +2,532 for M002 documented per-target batch controls)"
+        "all tool definitions total {total} bytes exceeds 78250 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver; +632 for explicit behavior hints on all ten tools and the web_search evidence-only sentence; +2,532 for M002 documented per-target batch controls; +272 for M003 screenshot request properties)"
     );
 }
 
@@ -198,7 +211,17 @@ fn web_search_hides_infrastructure_controls() {
 
 #[test]
 fn compact_web_fetch_preserves_browser_render_modes() {
+    let full = schema_for("web_fetch");
     let schema = compact_schema_for("web_fetch");
+    for (name, current) in [("full", &full), ("compact", &schema)] {
+        let screenshot = current
+            .pointer("/properties/include_screenshot")
+            .unwrap_or_else(|| panic!("{name} web_fetch exposes include_screenshot"));
+        assert!(
+            accepts_boolean(screenshot),
+            "{name} screenshot field must accept boolean: {screenshot}"
+        );
+    }
     let render = schema
         .pointer("/properties/render")
         .expect("compact web_fetch exposes render");
@@ -232,11 +255,15 @@ fn batch_fetch_advertises_per_target_controls_in_full_and_compact_schemas() {
 
     for schema in [&full, &compact] {
         let web = batch_variant(schema, "web");
-        for property in ["pdf", "render", "browser_profile"] {
-            assert!(
-                web.pointer(&format!("/properties/{property}")).is_some(),
-                "web batch items must advertise {property}"
-            );
+        for property in ["pdf", "render", "browser_profile", "include_screenshot"] {
+            let field = web.pointer(&format!("/properties/{property}"));
+            assert!(field.is_some(), "web batch items must advertise {property}");
+            if property == "include_screenshot" {
+                assert!(
+                    accepts_boolean(field.unwrap()),
+                    "{property} must accept boolean"
+                );
+            }
         }
         assert!(
             web.get("description")

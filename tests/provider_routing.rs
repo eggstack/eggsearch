@@ -773,6 +773,7 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
         cache_policy: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
         max_cache_age_seconds: None,
         focus: None,
         focus_max_chunks: None,

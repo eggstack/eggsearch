@@ -240,6 +240,7 @@ pub fn url_to_batch_web_item(
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     }
 }
 

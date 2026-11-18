@@ -147,6 +147,7 @@ async fn batch_fetch_returns_results_with_same_length_as_input() {
             pdf: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -237,6 +238,7 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -271,6 +273,7 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -318,6 +321,7 @@ async fn batch_fetch_with_single_empty_url_returns_validation_error() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -369,6 +373,7 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
@@ -398,6 +403,7 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -464,6 +470,7 @@ async fn batch_fetch_respects_per_origin_concurrency() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             }
         })
         .collect();
@@ -983,6 +990,7 @@ async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
             pdf: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 

@@ -45,6 +45,7 @@ fn fetch_args(url: String) -> WebFetchArgs {
         focus_max_chars: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
         response_detail: None,
     }
 }
@@ -414,6 +415,7 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
             pdf: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
         }
     };
     let run = |items: Vec<eggsearch::core::batch_fetch::BatchFetchItem>| {
@@ -457,6 +459,7 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     };
     let error = run(vec![bad])
         .await

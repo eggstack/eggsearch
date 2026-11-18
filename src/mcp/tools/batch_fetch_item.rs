@@ -1,5 +1,5 @@
 use super::batch_fetch::{batch_payload_chars, inject_repo_focus_into_payload};
-use super::common::ToolError;
+use super::common::{ImageAttachment, ToolError};
 use super::repo_fetch::{run_repo_fetch_with_host_scope, RepoFetchArgs};
 use crate::fetch::FetchClient;
 use crate::mcp::state::ServerState;
@@ -17,15 +17,21 @@ pub(crate) struct BatchFetchItemContext<'a> {
     pub(super) host_local_scope: Option<serde_json::Value>,
 }
 
-pub(crate) fn make_batch_fetch_future(
-    context: BatchFetchItemContext<'_>,
-) -> std::pin::Pin<
+type BatchFetchItemFuture = std::pin::Pin<
     Box<
         dyn std::future::Future<
-                Output = Result<crate::core::batch_fetch::BatchFetchResult, ToolError>,
+                Output = Result<
+                    (
+                        crate::core::batch_fetch::BatchFetchResult,
+                        Option<ImageAttachment>,
+                    ),
+                    ToolError,
+                >,
             > + Send,
     >,
-> {
+>;
+
+pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> BatchFetchItemFuture {
     use crate::core::batch_fetch::{BatchFetchItem, BatchFetchItemType, BatchFetchResult};
     use crate::core::identity::batch_fetch_id;
 
@@ -55,6 +61,7 @@ pub(crate) fn make_batch_fetch_future(
             pdf,
             render,
             browser_profile,
+            include_screenshot,
         } => {
             let stable_id = batch_fetch_id(&label, i);
             let effective_max = max_chars
@@ -75,6 +82,7 @@ pub(crate) fn make_batch_fetch_future(
                 focus_max_chars: *focus_max_chars,
                 render: render.clone(),
                 browser_profile: browser_profile.clone(),
+                include_screenshot: *include_screenshot,
                 offset: None,
                 limit: None,
                 response_detail: Some(crate::mcp::projection::ResponseDetail::Diagnostic),
@@ -92,7 +100,9 @@ pub(crate) fn make_batch_fetch_future(
                 )
                 .await
                 {
-                    Ok(payload) => {
+                    Ok(outcome) => {
+                        let image = outcome.images.into_iter().next();
+                        let payload = outcome.value;
                         let body_chars = payload
                             .get("document")
                             .and_then(|document| document.get("text_chars_returned"))
@@ -144,17 +154,20 @@ pub(crate) fn make_batch_fetch_future(
                             .get("truncated")
                             .and_then(serde_json::Value::as_bool)
                             .unwrap_or(false);
-                        Ok(BatchFetchResult {
-                            index: i,
-                            item_type: BatchFetchItemType::Web,
-                            label,
-                            stable_id: Some(stable_id),
-                            ok: true,
-                            response: Some(payload),
-                            error: None,
-                            chars_returned: body_chars + meta_chars,
-                            truncated,
-                        })
+                        Ok((
+                            BatchFetchResult {
+                                index: i,
+                                item_type: BatchFetchItemType::Web,
+                                label,
+                                stable_id: Some(stable_id),
+                                ok: true,
+                                response: Some(payload),
+                                error: None,
+                                chars_returned: body_chars + meta_chars,
+                                truncated,
+                            },
+                            image,
+                        ))
                     }
                     Err(error) => {
                         let error_payload = error.error_payload();
@@ -162,17 +175,20 @@ pub(crate) fn make_batch_fetch_future(
                             .get("code")
                             .and_then(serde_json::Value::as_str)
                             .unwrap_or("fetch_failed");
-                        Ok(BatchFetchResult {
-                            index: i,
-                            item_type: BatchFetchItemType::Web,
-                            label,
-                            stable_id: Some(stable_id),
-                            ok: false,
-                            response: None,
-                            error: Some(format!("{code}: {error}")),
-                            chars_returned: 0,
-                            truncated: false,
-                        })
+                        Ok((
+                            BatchFetchResult {
+                                index: i,
+                                item_type: BatchFetchItemType::Web,
+                                label,
+                                stable_id: Some(stable_id),
+                                ok: false,
+                                response: None,
+                                error: Some(format!("{code}: {error}")),
+                                chars_returned: 0,
+                                truncated: false,
+                            },
+                            None,
+                        ))
                     }
                 }
             })
@@ -250,29 +266,35 @@ pub(crate) fn make_batch_fetch_future(
                             .get("truncated")
                             .and_then(|t| t.as_bool())
                             .unwrap_or(false);
-                        Ok(BatchFetchResult {
+                        Ok((
+                            BatchFetchResult {
+                                index: i,
+                                item_type: BatchFetchItemType::Repo,
+                                label: ok_label,
+                                stable_id: Some(stable_id),
+                                ok: true,
+                                response: Some(payload),
+                                error: None,
+                                chars_returned: text_len,
+                                truncated,
+                            },
+                            None,
+                        ))
+                    }
+                    Err(error) => Ok((
+                        BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Repo,
-                            label: ok_label,
+                            label,
                             stable_id: Some(stable_id),
-                            ok: true,
-                            response: Some(payload),
-                            error: None,
-                            chars_returned: text_len,
-                            truncated,
-                        })
-                    }
-                    Err(error) => Ok(BatchFetchResult {
-                        index: i,
-                        item_type: BatchFetchItemType::Repo,
-                        label,
-                        stable_id: Some(stable_id),
-                        ok: false,
-                        response: None,
-                        error: Some(error.to_string()),
-                        chars_returned: 0,
-                        truncated: false,
-                    }),
+                            ok: false,
+                            response: None,
+                            error: Some(error.to_string()),
+                            chars_returned: 0,
+                            truncated: false,
+                        },
+                        None,
+                    )),
                 }
             })
         }

@@ -614,6 +614,7 @@ mod pagination {
             focus_max_chars: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             response_detail: None,
         }
     }
@@ -944,6 +945,7 @@ mod pagination {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             })
             .collect()
     }
@@ -1196,6 +1198,7 @@ mod document_budget {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,

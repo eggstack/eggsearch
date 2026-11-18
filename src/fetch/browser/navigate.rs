@@ -6,6 +6,7 @@ use chromiumoxide::cdp::browser_protocol::network as cdp_network;
 use chromiumoxide::page::Page;
 use futures::StreamExt;
 
+use super::capture::{capture_viewport, ScreenshotCapture};
 use super::classify::{classify_response, FetchDisposition};
 use super::intercept::{is_request_allowed_with_dns, PolicyViolation};
 use super::lifecycle::BrowserLifecycle;
@@ -28,6 +29,7 @@ pub enum BrowserFetchError {
     LaunchFailed(String),
     NavigationFailed(String),
     DomExtractionFailed(String),
+    CaptureFailed(String),
     Timeout,
     PageClosed,
     InteractiveChallenge(ManualInteractionRequired),
@@ -41,6 +43,7 @@ impl std::fmt::Display for BrowserFetchError {
             Self::LaunchFailed(e) => write!(f, "browser launch failed: {e}"),
             Self::NavigationFailed(e) => write!(f, "navigation failed: {e}"),
             Self::DomExtractionFailed(e) => write!(f, "DOM extraction failed: {e}"),
+            Self::CaptureFailed(e) => write!(f, "screenshot capture failed: {e}"),
             Self::Timeout => write!(f, "browser navigation timed out"),
             Self::PageClosed => write!(f, "page was closed"),
             Self::InteractiveChallenge(r) => {
@@ -60,20 +63,27 @@ pub struct BrowserFetchResult {
     pub warnings: Vec<String>,
 }
 
+pub struct BrowserFetchOutcome {
+    pub result: BrowserFetchResult,
+    pub screenshot: Option<ScreenshotCapture>,
+}
+
 pub async fn browser_fetch(
     lifecycle: &Arc<BrowserLifecycle>,
     url: &str,
     config: &BrowserConfig,
     sanitize_output: bool,
 ) -> Result<BrowserFetchResult, BrowserFetchError> {
-    browser_fetch_with_policy(
+    browser_fetch_outcome(
         lifecycle,
         url,
         config,
         sanitize_output,
         &RenderPolicy::Browser,
+        false,
     )
     .await
+    .map(|outcome| outcome.result)
 }
 
 pub async fn browser_fetch_with_policy(
@@ -83,6 +93,19 @@ pub async fn browser_fetch_with_policy(
     sanitize_output: bool,
     policy: &RenderPolicy,
 ) -> Result<BrowserFetchResult, BrowserFetchError> {
+    browser_fetch_outcome(lifecycle, url, config, sanitize_output, policy, false)
+        .await
+        .map(|outcome| outcome.result)
+}
+
+pub async fn browser_fetch_outcome(
+    lifecycle: &Arc<BrowserLifecycle>,
+    url: &str,
+    config: &BrowserConfig,
+    sanitize_output: bool,
+    policy: &RenderPolicy,
+    capture: bool,
+) -> Result<BrowserFetchOutcome, BrowserFetchError> {
     match policy {
         RenderPolicy::HttpOnly => return Err(BrowserFetchError::HttpOnly),
         RenderPolicy::Auto | RenderPolicy::Browser => {}
@@ -93,7 +116,7 @@ pub async fn browser_fetch_with_policy(
         .map_err(BrowserFetchError::PolicyViolation)?;
 
     let gate = lifecycle.begin_render().await;
-    let result = render_once(lifecycle, url, config, sanitize_output).await;
+    let result = render_once(lifecycle, url, config, sanitize_output, capture).await;
     lifecycle.finish_render(gate).await;
     result
 }
@@ -103,7 +126,8 @@ async fn render_once(
     url: &str,
     config: &BrowserConfig,
     sanitize_output: bool,
-) -> Result<BrowserFetchResult, BrowserFetchError> {
+    capture: bool,
+) -> Result<BrowserFetchOutcome, BrowserFetchError> {
     let browser = lifecycle
         .ensure_browser()
         .await
@@ -164,7 +188,7 @@ async fn render_once(
     let captured: Arc<StdMutex<Option<CapturedMainResponse>>> = Arc::new(StdMutex::new(None));
     let collector = capture_main_response_status(&page, Arc::clone(&captured)).await;
 
-    let result = navigate_and_extract(&page, config, &params, &captured).await;
+    let result = navigate_and_extract(&page, config, &params, &captured, capture).await;
 
     if let Some(handle) = interceptor {
         handle.abort();
@@ -294,7 +318,8 @@ async fn navigate_and_extract(
     config: &BrowserConfig,
     params: &NavigateParams,
     captured: &StdMutex<Option<CapturedMainResponse>>,
-) -> Result<BrowserFetchResult, BrowserFetchError> {
+    capture: bool,
+) -> Result<BrowserFetchOutcome, BrowserFetchError> {
     let url = &params.url;
     let _ = tokio::time::timeout(params.nav_timeout, page.goto(url))
         .await
@@ -474,7 +499,22 @@ async fn navigate_and_extract(
         trust.text_sanitized = true;
     }
 
-    Ok(BrowserFetchResult {
+    let pdf_document = is_pdf_document(response_content_type.as_deref(), &final_url);
+    let screenshot = if capture && pdf_document {
+        warnings.push("screenshot not produced: target resolved to a PDF document".to_string());
+        None
+    } else if capture {
+        let remaining = params.nav_timeout.saturating_sub(params.start.elapsed());
+        Some(
+            tokio::time::timeout(remaining, capture_viewport(page))
+                .await
+                .map_err(|_| BrowserFetchError::Timeout)??,
+        )
+    } else {
+        None
+    };
+
+    let result = BrowserFetchResult {
         response: TransportResponse {
             transport: FetchTransportKind::Browser,
             requested_url: url.to_string(),
@@ -494,7 +534,18 @@ async fn navigate_and_extract(
         extracted_text: bounded_body,
         trust_markers: trust,
         warnings,
-    })
+    };
+    Ok(BrowserFetchOutcome { result, screenshot })
+}
+
+fn is_pdf_document(content_type: Option<&str>, final_url: &str) -> bool {
+    let content_type_is_pdf = content_type
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/pdf"));
+    let path_is_pdf = url::Url::parse(final_url)
+        .ok()
+        .is_some_and(|parsed| parsed.path().to_ascii_lowercase().ends_with(".pdf"));
+    content_type_is_pdf || path_is_pdf
 }
 
 pub fn browser_result_to_response(
@@ -767,5 +818,18 @@ mod tests {
             .unwrap_or_default()
             .contains("<<<EXTERNAL_UNTRUSTED"));
         assert!(response.trust_markers.text_framed);
+    }
+
+    #[test]
+    fn pdf_document_detection_skips_screenshot_capture() {
+        assert!(is_pdf_document(
+            Some("application/pdf; charset=binary"),
+            "https://example.com/document"
+        ));
+        assert!(is_pdf_document(None, "https://example.com/document.pdf"));
+        assert!(!is_pdf_document(
+            Some("text/html"),
+            "https://example.com/page"
+        ));
     }
 }

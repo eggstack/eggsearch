@@ -230,6 +230,23 @@ The response includes:
 
 Fresh raw cache entries can satisfy a new extraction mode, link setting, character bound, or PDF page selection without another network request.
 
+### Viewport Screenshots
+
+`web_fetch` and each `batch_fetch` web item accept the opt-in `include_screenshot`
+boolean. When true, eggsearch forces browser rendering and captures the current
+viewport as PNG after page extraction. The browser must be enabled and an installed
+Chrome/Chromium executable must be available; capability failures are explicit,
+with no HTTP-only fallback. An explicit `render = "http_only"` conflicts with
+`include_screenshot = true`; when `render` is omitted, the opt-in overrides the
+configured render policy.
+
+The screenshot is delivered as native MCP image content, separate from the
+unchanged structured JSON response. It is limited to 1280×720 pixels and 4 MiB.
+Recognized PDF responses are not captured; repository and workspace items do not
+support screenshots. Screenshot requests bypass cache reads and writes. In
+`batch_fetch`, each image is associated with its original zero-based item index
+and label, in input order; any batch containing a screenshot request runs
+synchronously rather than as a deferred task.
 
 ### Configuration Reference
 

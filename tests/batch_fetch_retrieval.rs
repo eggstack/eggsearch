@@ -54,6 +54,7 @@ fn web_item(url: String) -> BatchFetchItem {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     }
 }
 
@@ -71,6 +72,7 @@ fn focused_web_item(url: String, focus: &str) -> BatchFetchItem {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     }
 }
 
@@ -210,6 +212,7 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![bad_empty]))
         .await
@@ -229,6 +232,7 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![bad_chunks]))
         .await
@@ -248,6 +252,7 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![bad_chars]))
         .await
@@ -330,6 +335,7 @@ async fn batch_focus_rejected_for_metadata_only() {
         pdf: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![item]))
         .await
@@ -457,6 +463,7 @@ async fn batch_focus_with_cache_hit() {
                     pdf: None,
                     render: None,
                     browser_profile: None,
+                    include_screenshot: None,
                 }]),
             )
             .await
@@ -700,6 +707,7 @@ async fn batch_web_target_options_match_web_fetch() {
             focus_max_chars: Some(500),
             render: Some("http_only".to_string()),
             browser_profile: None,
+            include_screenshot: None,
             offset: None,
             limit: None,
             response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic),
@@ -722,6 +730,7 @@ async fn batch_web_target_options_match_web_fetch() {
             pdf: None,
             render: Some("http_only".to_string()),
             browser_profile: None,
+            include_screenshot: None,
         }]),
     )
     .await
@@ -783,6 +792,7 @@ async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
             focus_max_chars: None,
             render: Some("http_only".to_string()),
             browser_profile: None,
+            include_screenshot: None,
             offset: None,
             limit: None,
             response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic),
@@ -810,6 +820,7 @@ async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
             }),
             render: Some("http_only".to_string()),
             browser_profile: None,
+            include_screenshot: None,
         }]),
     )
     .await
@@ -943,6 +954,7 @@ async fn batch_pdf_options_are_ignored_for_html_and_metadata_only_matches_web_fe
             focus_max_chars: None,
             render: Some("http_only".to_string()),
             browser_profile: None,
+            include_screenshot: None,
             offset: None,
             limit: None,
             response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic),

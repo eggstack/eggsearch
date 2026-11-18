@@ -2093,6 +2093,7 @@ async fn corpus_batch_fetch_returns_structured_results() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             },
             BatchFetchItem::Web {
                 url: format!("{base}/page2.html"),
@@ -2107,6 +2108,7 @@ async fn corpus_batch_fetch_returns_structured_results() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             },
         ],
         max_items: None,
@@ -2176,6 +2178,7 @@ async fn corpus_batch_fetch_handles_mixed_success_failure() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             },
             BatchFetchItem::Web {
                 url: format!("{base}/fail.html"),
@@ -2190,6 +2193,7 @@ async fn corpus_batch_fetch_handles_mixed_success_failure() {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                include_screenshot: None,
             },
         ],
         max_items: None,

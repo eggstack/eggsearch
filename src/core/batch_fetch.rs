@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::fetch::ExtractMode;
 
+fn is_none_or_false(value: &Option<bool>) -> bool {
+    !value.unwrap_or(false)
+}
+
 /// A single item in a batch fetch request.
 ///
 /// Each item is either a web URL fetch or a structured repo fetch
@@ -53,6 +57,10 @@ pub enum BatchFetchItem {
         /// Named browser profile; same authorization as `web_fetch`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         browser_profile: Option<String>,
+        #[schemars(description = "Include a bounded viewport screenshot as MCP image content.")]
+        #[allow(missing_docs)]
+        #[serde(default, skip_serializing_if = "is_none_or_false")]
+        include_screenshot: Option<bool>,
     },
     /// Fetch a repository file by structured locator; controls match `repo_fetch`.
     Repo {
@@ -310,6 +318,7 @@ mod tests {
             pdf: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
         };
         let v = serde_json::to_value(&web).unwrap();
         assert_eq!(v["type"], "web");
@@ -357,6 +366,7 @@ mod tests {
             pdf: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
         };
         assert_eq!(web.label(), "https://example.com");
 
