@@ -10,6 +10,13 @@
 //! attempt, and wall-clock ceilings; the replayed cookie is sent on the first
 //! hop only; and every other outcome leaves the original response untouched.
 //!
+//! ADR-0018 refines that contract for one case. A stored pair set the upstream
+//! refuses is presented once as a reuse probe; the probe is neither a solve
+//! nor a replay of a solved pair set, because no solve produced it. The
+//! refusal evicts the entry and the same call continues into the ordinary
+//! solve path, so the call's single solve and single replay are spent on the
+//! freshly issued pair set.
+//!
 //! The Anubis and ALTCHA branches share that sequence. The ALTCHA branch
 //! lives in `altcha`, which owns the page-shaped endpoint derivation the
 //! ALTCHA solve needs.
@@ -92,11 +99,16 @@ pub struct SolvedReplay {
 /// Solve the challenge published on `response` and replay the request once.
 ///
 /// A stored pair set for the request's own origin is replayed before any
-/// solve is attempted. Returns the replayed response when the challenge was
-/// solved and the replay is not itself a challenge page. Every other outcome —
-/// solving disabled, no parseable challenge, a refusal at any ceiling, an
-/// error, an exhausted deadline, or a challenged replay — returns `None`, so
-/// the caller keeps the original response exactly as it was.
+/// solve is attempted. A pair set the upstream refuses is evicted, and the
+/// same call continues into the ordinary solve path with the challenge page it
+/// already holds, so a caller never has to await a second fetch for the
+/// document.
+///
+/// Returns the replayed response when the challenge was solved and the replay
+/// is not itself a challenge page. Every other outcome — solving disabled, no
+/// parseable challenge, a refusal at any ceiling, an error, an exhausted
+/// deadline, or a challenged replay — returns `None`, so the caller keeps the
+/// original response exactly as it was.
 pub async fn replay_challenge(
     client: &FetchClient,
     url: &str,
@@ -114,7 +126,11 @@ pub async fn replay_challenge(
     let origin = reuse_origin(url, response);
     if let Some(origin) = origin.as_deref() {
         if let Some(cookie) = fetch_pass_cookie_cache().get(origin) {
-            return replay_cached(client, url, &cookie, origin, plan).await;
+            match replay_cached(client, url, &cookie, origin, plan).await {
+                CachedReplay::Replayed(replayed) => return Some(*replayed),
+                CachedReplay::Refused => {}
+                CachedReplay::Failed => return None,
+            }
         }
     }
     let solved = match kind {
@@ -146,18 +162,28 @@ fn reuse_origin(url: &str, response: &WebFetchResponse) -> Option<String> {
     (request == issuing).then_some(request)
 }
 
+/// The outcome of a reuse attempt with a stored pair set.
+enum CachedReplay {
+    /// The upstream served the document for the stored pair set.
+    Replayed(Box<WebFetchResponse>),
+    /// The upstream answered with a challenge page, so the pair set is stale.
+    Refused,
+    /// The attempt could not complete, so the pair set stays untested.
+    Failed,
+}
+
 /// Replay the request once with a stored pair set.
 ///
 /// A replay the upstream answers with a challenge page evicts the entry, so
-/// the next fetch starts cold.
+/// the next fetch starts cold and the refused pair set is never offered again.
 async fn replay_cached(
     client: &FetchClient,
     url: &str,
     cookie: &str,
     origin: &str,
     plan: &ChallengePlan<'_>,
-) -> Option<WebFetchResponse> {
-    let replayed = client
+) -> CachedReplay {
+    let replayed = match client
         .fetch_with_cookie(
             url,
             plan.max_chars,
@@ -168,12 +194,15 @@ async fn replay_cached(
             Some(cookie),
         )
         .await
-        .ok()?;
+    {
+        Ok(replayed) => replayed,
+        Err(_) => return CachedReplay::Failed,
+    };
     if response_challenge(&replayed).is_some() {
         fetch_pass_cookie_cache().remove(origin);
-        return None;
+        return CachedReplay::Refused;
     }
-    Some(replayed)
+    CachedReplay::Replayed(Box::new(replayed))
 }
 
 async fn replay_anubis(

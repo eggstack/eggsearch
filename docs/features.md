@@ -118,8 +118,9 @@ enabled = true
 - Search engines share the solver in `src/meta/challenge/`; fetch-path detect/solve/replay is owned by `src/challenge_replay/`
 - With solving enabled, `web_fetch`, `batch_fetch`, unified `fetch` web items, remote `repo_fetch`, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
 - A fetch-path ALTCHA solve takes its challenge document and its verification endpoint from the page's own `altcha-widget` publication, same-origin only; a cross-origin, scheme-changing, or malformed publication is refused before any request is issued
-- A fetch-path pass cookie is reused for a later fetch to the same origin, from a process-local cache keyed by origin. The window is the upstream-published lifetime clamped by `cookie_ttl_seconds`; a fetch that crossed an origin stores nothing and reuses nothing, and a pair set the upstream rejects is evicted
-- One fetch call still performs at most one solve and one replay; a reused pair set performs no solve at all
+- A fetch-path pass cookie is reused for a later fetch to the same origin, from a process-local cache keyed by origin. The window is the upstream-published lifetime clamped by `cookie_ttl_seconds`; a fetch that crossed an origin stores nothing and reuses nothing
+- A pair set the upstream refuses is evicted, and the same call then solves the challenge it was already holding and replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is attempted
+- One fetch call still performs at most one solve and one replay; a reused pair set performs no solve at all, and a refused pair set is presented at most once
 - Fetch-path solves use the `fetch` label in `provider_status.challenge_solver.providers`; search upstreams retain their own labels
 - At most one solve per provider per search request, and one per `cookie_ttl_seconds`
 - A solved search request runs through the normal parser and the normal four-outcome classification

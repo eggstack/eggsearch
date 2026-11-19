@@ -14,10 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (scheme, host, effective port), holds at most 32 origins and 64 KiB, and is never written to
   disk. The window is the lifetime the upstream published, clamped by `cookie_ttl_seconds`, so
   `0` still disables reuse and a malformed, zero, or already-expired lifetime stores nothing. A
-  fetch that crossed an origin stores nothing and reuses nothing, and a pair set the upstream
-  rejects is evicted so the next fetch solves again. One fetch call still performs at most one
-  solve and one replay; a reused pair set performs no solve at all. No tool, argument, schema, or
-  configuration key changes.
+  fetch that crossed an origin stores nothing and reuses nothing. A pair set the upstream
+  rejects is evicted, and the same call then solves the challenge it was already holding and
+  replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A
+  transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is
+  attempted. One fetch call still performs at most one solve and one replay; a reused pair set
+  performs no solve at all, and a refused pair set is presented at most once. No tool, argument,
+  schema, or configuration key changes.
 - `web_fetch` and `batch_fetch` web items accept opt-in `include_screenshot` to capture a bounded 1280×720 viewport PNG (maximum 4 MiB) as native MCP image content. Structured JSON remains unchanged; recognized PDF responses are skipped, screenshot requests bypass caches, and screenshot-bearing batches run synchronously with images associated by original item index and label.
 - `batch_fetch` web items accept the same PDF page-selection options as `web_fetch`, with page syntax prevalidated before item fetching. `repo_fetch` extracts explicitly named PDFs under configured local workspace roots by extension or `%PDF-` prefix, under `[local].pdf_max_file_bytes` and the existing PDF feature/config gates; PDFs remain excluded from local indexing and repo maps.
 - `batch_fetch` web items accept `pdf`, `render`, and `browser_profile` with the same routing and cache semantics as `web_fetch`; repo items accept `symbol`, `symbol_kind`, `match_text`, `expand_to_block`, `max_block_lines`, and `prefer_local`. Host-local scope metadata now restricts batch workspace items to the same authorized view as `repo_fetch`. Item order, per-item failures, stable IDs, budgets, and telemetry are unchanged.

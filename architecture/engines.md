@@ -322,9 +322,16 @@ Implementation:
   `web_fetch` classifies its bounded body with `src/fetch/challenge.rs`, solves a detected Anubis
   challenge once via `anubis::solve_and_verify`, and replays once with the cookie pairs the pass
   response issued, joined with `; `, on the first hop. `src/fetch/**` remains independent of
-  `src/meta/**`; only `src/mcp/tools/web_fetch.rs` orchestrates the solve. A fetch-side pass pair set
-  is reused from the process-local, origin-keyed cache in `src/challenge_replay/cache.rs`, so
-  `cookie_ttl_seconds` governs the search upstreams and the fetch path alike.
+  `src/meta/**`; the shared `src/challenge_replay/` module orchestrates the solve for every
+  surface, and `src/mcp/tools/web_fetch.rs`, `src/mcp/tools/repo_fetch.rs`, and
+  `src/commands/fetch.rs` all reach it. A fetch-side pass pair set is reused from the
+  process-local, origin-keyed cache in `src/challenge_replay/cache.rs`, so `cookie_ttl_seconds`
+  governs the search upstreams and the fetch path alike.
+- A stored pair set the upstream refuses evicts the entry and the same call continues into the
+  ordinary solve path, so a stale pair set costs no second fetch (ADR-0018). The refusal is a
+  challenge page; a transport error, a timeout, and a non-2xx status are not refusals, so the
+  stored pair set is kept and no solve is attempted. The call still performs at most one solve and
+  one replay, and the refused pair set is presented at most once.
 - Pass-cookie identity is opaque, like the challenge id. The Anubis solver never looks for a fixed
   name: it takes every non-deletion pair the pass-challenge response set (empty values and deletion
   cookies dropped, duplicate names resolved by the last non-deletion value at the first position),

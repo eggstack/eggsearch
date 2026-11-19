@@ -6324,6 +6324,26 @@ fn clear_fetch_pass_cookie(url: &str) {
     }
 }
 
+/// Store a pair set for an origin the way an earlier fetch would have.
+///
+/// The cache is process-local, so a stale pair set is the only state a test
+/// cannot reach by fetching first.
+fn seed_fetch_pass_cookie(url: &str, cookie: &str) {
+    let origin = eggsearch::challenge_replay::cache::origin_key(url)
+        .expect("a loopback URL has an origin key");
+    eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().put(
+        &origin,
+        cookie,
+        Duration::from_secs(300),
+    );
+}
+
+/// The pair set the cache currently holds for an origin.
+fn stored_fetch_pass_cookie(url: &str) -> Option<String> {
+    let origin = eggsearch::challenge_replay::cache::origin_key(url)?;
+    eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().get(&origin)
+}
+
 #[tokio::test]
 async fn web_fetch_reuses_a_pass_cookie_for_a_second_challenge_to_the_same_origin() {
     use httpmock::prelude::*;
@@ -6492,7 +6512,111 @@ async fn web_fetch_solves_again_when_the_published_lifetime_is_malformed() {
 }
 
 #[tokio::test]
-async fn web_fetch_evicts_a_pass_cookie_the_upstream_rejects() {
+async fn web_fetch_recovers_in_call_when_the_upstream_rejects_the_stored_pair_set() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let serve_fresh = server.mock(|when, then| {
+        when.method(GET).path("/").header("cookie", "chllg=fresh-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>");
+    });
+    let reject_stale = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "chllg=stale-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                "chllg=fresh-pass; Path=/; HttpOnly; Max-Age=300",
+            )
+            .body("");
+    });
+
+    seed_fetch_pass_cookie(&url, "chllg=stale-pass");
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(
+        first["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"),
+        "the refused pair set is recovered inside the same call: {first:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&first),
+        0,
+        "a recovered fetch carries no challenge warning"
+    );
+    assert_eq!(
+        reject_stale.hits(),
+        1,
+        "the refused pair set is presented exactly once"
+    );
+    assert_eq!(serve_fresh.hits(), 1, "the fresh pair set is replayed once");
+    assert_eq!(challenge.hits(), 1, "the recovery solves exactly once");
+    assert_eq!(verify.hits(), 1, "the recovery verifies exactly once");
+    assert_eq!(wall.hits(), 1, "the fetch meets the wall once");
+
+    let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert!(
+        second["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"),
+        "the fresh pair set is reused by the next fetch: {second:?}"
+    );
+    assert_eq!(
+        verify.hits(),
+        1,
+        "the fresh pair set is reused, so the next fetch solves nothing"
+    );
+    assert_eq!(
+        serve_fresh.hits(),
+        2,
+        "the fresh pair set is replayed again"
+    );
+    assert_eq!(
+        reject_stale.hits(),
+        1,
+        "the refused pair set is never presented again"
+    );
+
+    let serialized = serde_json::to_string(&first).expect("payload is serializable");
+    for canary in ["chllg", "fresh-pass", "stale-pass"] {
+        assert!(
+            !serialized.contains(canary),
+            "challenge material {canary} must not reach the payload: {serialized}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_original_response_when_the_recovery_fails() {
     use httpmock::prelude::*;
     let server = challenge_server();
     let url = server.url("/");
@@ -6521,17 +6645,23 @@ async fn web_fetch_evicts_a_pass_cookie_the_upstream_rejects() {
     assert_eq!(
         challenge_warning_count(&second),
         1,
-        "a rejected pair set leaves the original marking unchanged"
+        "a failed recovery leaves the original marking unchanged"
     );
     assert_eq!(
         verify.hits(),
-        1,
-        "the rejected pair set is replayed, not re-solved"
+        2,
+        "the refused pair set is re-solved in the same call"
     );
+    assert_eq!(challenge.hits(), 2, "the recovery solves exactly once");
     assert_eq!(
         wall.hits(),
-        3,
-        "the second fetch meets the wall, and its rejected replay meets it again"
+        4,
+        "the second fetch meets the wall, its refused replay meets it again, and the recovery's replay meets it again"
+    );
+    assert_eq!(
+        stored_fetch_pass_cookie(&url),
+        None,
+        "a failed recovery leaves the origin with no pair set"
     );
 
     wall.delete();
@@ -6562,12 +6692,69 @@ async fn web_fetch_evicts_a_pass_cookie_the_upstream_rejects() {
     );
     assert_eq!(
         verify.hits(),
-        2,
+        3,
         "the evicted pair set is solved again on the next fetch"
     );
-    assert_eq!(challenge.hits(), 2);
+    assert_eq!(challenge.hits(), 3);
     assert_eq!(replay_again.hits(), 1);
     assert_eq!(wall_again.hits(), 1);
+}
+
+#[tokio::test]
+async fn web_fetch_does_not_reuse_a_stored_pair_set_when_solving_is_disabled() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let reject_stale = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "chllg=stale-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                "chllg=fresh-pass; Path=/; HttpOnly; Max-Age=300",
+            )
+            .body("");
+    });
+
+    seed_fetch_pass_cookie(&url, "chllg=stale-pass");
+
+    let value = run_web_fetch(challenge_state(false), challenge_fetch_args(url.clone()))
+        .await
+        .expect("challenge page fetch succeeds");
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1, "the fetch meets the wall once");
+    assert_eq!(
+        reject_stale.hits(),
+        0,
+        "a disabled opt-in never presents the stored pair set"
+    );
+    assert_eq!(challenge.hits(), 0, "a disabled opt-in solves nothing");
+    assert_eq!(verify.hits(), 0, "a disabled opt-in verifies nothing");
+    assert_eq!(
+        stored_fetch_pass_cookie(&url).as_deref(),
+        Some("chllg=stale-pass"),
+        "a disabled opt-in never consults the cache, so the stored pair set is untouched"
+    );
 }
 
 #[tokio::test]
