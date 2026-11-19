@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M028 closed; M029 and M030 closed)
+Status: active (M001–M030 closed; M031 ready; M032–M033 proposed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -49,6 +49,18 @@ Measured or code-evidenced gaps:
 - Anubis v1.28's WASM methods (`sha256`, `argon2id`, `hashx`) are outside ADR-0010's evaluated set
   and are refused as `unsupported scheme`; `sha256` is the same primitive and per-candidate cost as
   `fast`.
+- The bounded solve reaches only the MCP web family. `repo_fetch`'s remote path contains no
+  challenge handling at all, and the CLI `eggsearch fetch` command calls `FetchClient` directly,
+  so its payload carries neither `structured_warnings` nor `manual_interaction_required` and an
+  Anubis wall reaches the operator as ordinary content.
+- `architecture/fetch.md` records that `batch_fetch` does not solve. That note predates the batch
+  rework that routed batch web items through the shared web-fetch handler; the code path suggests
+  batch now inherits the solve, but no test proves it either way.
+- The fetch path detects ALTCHA but never solves it. The ALTCHA solver is coupled to fixed
+  same-origin challenge and verify endpoints, so a general page's embedded challenge has no
+  reviewed path to a solve.
+- A fetch-side pass cookie is never reused. Every challenged fetch pays a full solve, and the
+  upstream-published lifetime that M014 made safe to parse is not applied on the fetch path.
 
 ## 3. Invariants and non-goals
 
@@ -98,6 +110,8 @@ M026 unsupported-extension refusal  (independent)
 M026 + ADR-0012 ──> M027 css-load extension
 ADR-0013 ──> M028 wasm sha256 method
 ADR-0016 ──> M029 unified fetch discovery and legacy aliases
+ADR-0017 ──> M031 fetch-path challenge solve parity ──> M032 ALTCHA on the general fetch path
+M031 ──> M033 fetch-side pass-cookie reuse
 M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
@@ -136,6 +150,9 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M028 — WASM `sha256` method | capability | `plans/archive/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md` | hard ADR-0013 acceptance; M026 | A `sha256` challenge solves under the fast-equivalent ceiling; `argon2id`/`hashx` stay refused |
 | M029 — unified fetch tool and legacy aliases | capability | `plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md` | interface ADR-0016 accepted | One canonical nine-tool inventory advertises `fetch` for one or many web/repo items; `web_fetch` and `batch_fetch` remain callable with legacy behavior but are absent from discovery and `next_actions`; full and compact schemas are smaller than baseline |
 | M030 — M014 expiry-safety acceptance reconciliation | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` | operational: user-selected path 1 | M014's expiry-safety criterion is evidenced; its original solve-count-reduction clause is superseded, not met, and no reduction is claimed |
+| M031 — fetch-path challenge solve parity | capability | `plans/implementation/agentic-retrieval-integrity/031-fetch-path-challenge-solve-parity.md` | hard ADR-0017 (accepted) | Every fetch surface that can observe a published challenge attempts one bounded solve and one replay through a single shared implementation; `repo_fetch` and the CLI gain the classification the MCP web family already has; the `batch_fetch` residual is proven by test and its stale note corrected |
+| M032 — ALTCHA on the general fetch path | capability | `plans/implementation/agentic-retrieval-integrity/032-altcha-on-the-general-fetch-path.md` | hard ADR-0017 (accepted); hard M031 | A general fetch that meets a published ALTCHA PBKDF2 challenge solves it under the same ceilings and replays once; a challenge or verify endpoint that cannot be derived same-origin fails closed as `unsupported scheme` |
+| M033 — fetch-side pass-cookie reuse | capability | `plans/implementation/agentic-retrieval-integrity/033-fetch-side-pass-cookie-reuse.md` | hard ADR-0017 (accepted); hard M031; interface M014 | A fetch-side pass cookie is reused for the issuing origin only, within its published lifetime and the operator ceiling, never past expiry, and is evicted when the upstream rejects it |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -162,7 +179,7 @@ with a self-describing cursor that needs no negotiation.
 
 Upstream HTML drift is continuous; the fidelity contract reduces the blast radius but does not remove maintenance. Captured fixtures go stale by design and need a refresh path. Markdown negotiation depends on origin cooperation and may reduce table fidelity for some pages. Search caching risks serving stale results to a freshness-sensitive caller if the TTL is unbounded. Intent routing can regress exact queries if precedence is wrong. Advertisement presets can strand a model that needs a hidden tool if `next_actions` are not filtered. The Tasks extension may not be available through the current rmcp version.
 
-Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation, and any default-feature change. Also deferred: Anubis `argon2id` and `hashx` (each needs a separate ADR and cost evidence), the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays).
+Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation, and any default-feature change. Also deferred: Anubis `argon2id` and `hashx` (each needs a separate ADR and cost evidence), the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays). Under ADR-0017's proposed decision two further items are recorded as deferred rather than undecided. Anubis `argon2id` and `hashx` remain `unsupported scheme`, because upstream v1.28.2 (2026-10-23) ships them disabled by default with stated intent to enable them by default in a later version, so an upstream default flip is a known coverage risk rather than a solved item. Moving the solver into `src/core` is deferred until a consumer appears outside the MCP tool and CLI surfaces, because `core` is the pure, HTTP-free foundation and the solver needs transport.
 
 ## 9. Closure and status
 
