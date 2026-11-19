@@ -1,6 +1,6 @@
 # M033 — Fetch-Side Pass-Cookie Reuse
 
-Status: ready
+Status: closed
 
 Class: capability
 
