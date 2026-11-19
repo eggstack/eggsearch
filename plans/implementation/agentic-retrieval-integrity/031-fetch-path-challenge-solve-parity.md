@@ -1,6 +1,6 @@
 # M031 — Fetch-Path Challenge Solve Parity
 
-Status: proposed
+Status: closed
 
 Class: capability
 
