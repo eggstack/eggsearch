@@ -572,8 +572,9 @@ initial URL with `is_request_allowed_with_dns`, then:
 3. `classify_response` maps status/title/text-length/body-snippet to
    `UsefulContent`, `JavascriptShell`, `NonInteractiveVerification`,
    `InteractiveChallenge`, and HTTP error dispositions. Interactive challenges
-   error immediately; non-interactive verifications wait up to
-   `verification_timeout_ms`.
+   error immediately. A script-driven wall polls the live classification every
+   500 ms up to `verification_timeout_ms` and is returned marked when it does
+   not resolve; see § Browser challenge completion.
 4. DOM length is checked before and after `page.content()` against
    `max_dom_bytes`; the DOM converts through `browser_result_to_response` — the
    same render + detect + link + sanitize pipeline as HTTP, tagged
@@ -638,9 +639,10 @@ ALTCHA solve replays with the `chllg` pass cookie its verification endpoint issu
 successful replay returns the document with `manual_interaction_required: false` and no
 `fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a refusal at
 any ceiling, an error, an exhausted deadline, or a replay that is itself a challenge all leave the
-original response marking unchanged, with at most one solve and one replay per call. For web fetch,
-the browser path keeps priority: a successful `render: "auto"` render replaces the payload before
-the solver runs. `batch_fetch` inherits solve behavior through the shared web-fetch handler.
+original response marking unchanged, with at most one solve and one replay per call. For web fetch
+the solver keeps priority: under `render: "auto"` a solvable Anubis or ALTCHA wall is solved and
+replayed before any browser escalation is considered, and the browser receives only what the solver
+left unsolved. `batch_fetch` inherits solve behavior through the shared web-fetch handler.
 
 ### ALTCHA endpoint derivation
 
@@ -755,6 +757,46 @@ reuse window is never extended by the recovery.
 **Bounds.** The cache holds at most 32 origins and at most 64 KiB of stored pair-set bytes. Both
 bounds are explicit: an insertion that would exceed either bound evicts the entry closest to
 expiry first, and an insertion larger than the byte ceiling on its own is not stored at all.
+
+### Browser challenge completion
+
+The browser is a completion mechanism for script-driven walls. It is neither a replacement for the
+cheap solver nor a way to return a wall as a document. Three rules fix the order and the outcome.
+
+**Order of mechanisms.** When a plain HTTP fetch returns a wall and `render: "auto"` is in effect,
+the solver runs first. `src/challenge_replay/` decides whether the response is a solvable Anubis or
+ALTCHA page, and a solve that returns the document ends the call before any browser work is
+considered. Only a response that is still a wall — solving disabled, no parseable challenge, a
+refusal at a ceiling, a failed replay, or a family the solver does not own — reaches the browser,
+under the same `browser` feature, availability check, and remaining-deadline floor as any other
+auto escalation. A call therefore performs at most one solve-and-replay and at most one escalation,
+in that order, and a solvable puzzle never reaches Chrome. `render: "http_only"` keeps the marked
+body and never escalates; an explicit `render: "browser"` stays a direct render with its existing
+semantics.
+
+**Completion rule.** After the page loads and `post_load_wait_ms` elapses, the render classifies the
+live page with `classify_response` over the current status, content type, title,
+`document.body.innerText` length, and bounded body. A page classified `JavascriptShell` or
+`NonInteractiveVerification`, or one `src/fetch/challenge.rs` recognises as a challenge family, is
+treated as a script-driven wall: the render polls the same live state every 500 ms until the page
+stops being one of those two dispositions, bounded by `verification_wait_ms` and the call deadline.
+Completion is decided by that classification, never by the title, so a page that clears without
+changing its title is no longer treated as unresolved and a legitimate page whose title happens to
+carry a verification phrase is no longer treated as a wall. `InteractiveChallenge` remains an
+immediate `manual_interaction_required` error and is never polled.
+
+**Completed or marked.** A wall that resolves inside the wait returns the document. A wall that does
+not resolve is returned, not errored: the response carries the rendered body,
+`manual_interaction_required: true`, and the existing `fetch_challenge_page` structured warning when
+`src/fetch/challenge.rs` recognises the family. A page that was never a wall keeps today's response
+and `manual_interaction_required: false`, so a legitimate document is never reported as a
+challenge. A wall completed by the browser is counted once in
+`provider_status.challenge_solver.providers.fetch.browser_completions`; the counter is a count only
+and carries no cookie, nonce, challenge id, pass token, or profile path.
+
+A wall whose own failure page presents ordinary content is indistinguishable from a document once
+rendered, so it is returned as one. That case is recorded as residual risk in the milestone closure
+rather than guessed at from a title or a status code.
 
 ### Profiles: opaque IDs, origin-scoped logins
 
