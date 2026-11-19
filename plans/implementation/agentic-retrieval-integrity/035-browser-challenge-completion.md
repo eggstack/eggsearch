@@ -1,6 +1,6 @@
 # M035 — Browser Challenge Completion
 
-Status: ready
+Status: closed
 Date: 2026-11-19
 Subsystem: agentic retrieval integrity
 Milestone class: capability

@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M034 closed; M035 ready)
+Status: active (M001–M035 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -209,6 +209,15 @@ exposed M011's mandatory-`redir` defect.
 - M032 is `closed` on implementation candidate `421d4b2bbb81f22d3e74be1f7f3ff22a5d63c54e`: the shared `src/challenge_replay/` module gained an ALTCHA branch beside the Anubis one, so a general fetch that meets a published ALTCHA PBKDF2 wall attempts one bounded solve and one replay on the MCP web family, the remote `repo_fetch` path, and the CLI. The new `src/challenge_replay/altcha.rs` derives the challenge document and the verification endpoint from the page's own widget publication, same-origin only, and refuses a cross-origin, scheme-changing, credentialed, query-bearing, over-long, or off-shape endpoint before any request is issued. One ALTCHA solve implementation serves the engine side and the fetch side; a published PBKDF2 `cost` above the solver's ceiling is refused as malformed rather than started, because the cost is the work factor of one counter iteration. Two static guards keep the ownership and the same-origin gate, and a property test proves a derived endpoint is never cross-origin. Pinned Rust 1.89 `make check` passed with 85 suites and 6,399 tests, `make docs-check` passed, and the packaging and planning contracts passed. Evidence: `plans/closure/agentic-retrieval-integrity/032-status.md`.
 - M033 is `closed` on implementation candidate `5a98682bda4a68ec55dc9e28409fd8269d1f284d`: the shared `src/challenge_replay/` module gained a process-local, origin-keyed pass-cookie cache, so a second challenged fetch to the same origin replays the stored pair set and performs no solve, on the MCP web family, the remote `repo_fetch` path, and the CLI. The reuse window is M014's unchanged rule — the upstream-published lifetime clamped by `cookie_ttl_seconds` — and the cache is bounded to 32 origins and 64 KiB, is never written to disk, and evicts a pair set the upstream rejects. A fetch that crossed an origin stores nothing and reuses nothing, because the issuing origin cannot be established without following the redirect. A new static guard keeps the cache single-owner and disk-free, and the `doctor` egress warning now names the fetch path without adding a warning. Pinned Rust 1.89 `make check` passed with 85 suites and 6,420 tests, `make docs-check` passed, and the packaging and planning contracts passed. Evidence: `plans/closure/agentic-retrieval-integrity/033-status.md`.
 - M030 is `closed`: the user selected path 1, re-scoping only M014's solve-count-reduction clause to expiry safety. Existing deterministic tests and the recorded Startpage expiry-boundary observation satisfy the replacement criterion; Mojeek's no-lifetime fallback is unchanged. Solve-count reduction remains unproven. The closure record, plan, roadmap, and registry carry this disposition together. Evidence: `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` and `plans/closure/agentic-retrieval-integrity/030-status.md`.
+- M035 is `closed` on implementation candidate `55180790c6dc5dbb2ce0d94c186ef88cd7584f48`: under
+  `policy = auto` the solver runs before the browser, so a solvable wall no longer reaches Chrome;
+  a script-driven wall is completed by polling live `classify_response` instead of four title
+  substrings; a wall that does not resolve is returned with `manual_interaction_required: true`
+  and a `fetch_challenge_page` warning rather than as a bare document; and
+  `provider_status.challenge_solver.providers.<label>` gains a `browser_completions` count. Pinned
+  Rust 1.89 `make check` passed with 85 suites and 6,430 tests, `make docs-check` passed, and the
+  packaging and planning contracts passed. The polling loop inside a real render is not in the
+  default gate. Evidence: `plans/closure/agentic-retrieval-integrity/035-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.
