@@ -61,6 +61,10 @@ pub struct BrowserFetchResult {
     pub extracted_text: String,
     pub trust_markers: TrustMarkers,
     pub warnings: Vec<String>,
+    /// Whether the render got past a detected wall and returned its document.
+    pub challenge_completed: bool,
+    /// The challenge family the final page still presents, if any.
+    pub challenge: Option<crate::fetch::challenge::ChallengeKind>,
 }
 
 pub struct BrowserFetchOutcome {
@@ -347,87 +351,45 @@ async fn navigate_and_extract(
         .map_err(BrowserFetchError::PolicyViolation)?;
 
     let captured_main = captured.lock().ok().and_then(|slot| slot.clone());
-    let (response_status, response_content_type) =
+    let (mut response_status, mut response_content_type) =
         captured_main.unwrap_or((200_u16, Some("text/html".to_string())));
 
-    let title: Option<String> = page
-        .evaluate("document.title")
-        .await
-        .ok()
-        .and_then(|v| v.into_value::<String>().ok());
+    let mut sample = page_sample(page, response_status, response_content_type.as_deref()).await;
 
-    let text_len: usize = page
-        .evaluate("document.body ? document.body.innerText.length : 0")
-        .await
-        .ok()
-        .and_then(|v| v.into_value::<f64>().ok())
-        .map(|v| v as usize)
-        .unwrap_or(0);
+    if matches!(sample.disposition, FetchDisposition::InteractiveChallenge) {
+        return Err(interactive_challenge_error(url));
+    }
 
-    let body_snippet: Vec<u8> = page
-        .evaluate("document.body ? document.body.innerHTML.substring(0, 4096) : ''")
-        .await
-        .ok()
-        .and_then(|v| v.into_value::<String>().ok())
-        .map(|s| s.into_bytes())
-        .unwrap_or_default();
-
-    let classification = classify_response(
-        response_status,
-        response_content_type.as_deref(),
-        title.as_deref(),
-        text_len,
-        &body_snippet,
-    );
-
-    match &classification {
-        FetchDisposition::InteractiveChallenge => {
-            return Err(BrowserFetchError::InteractiveChallenge(
-                ManualInteractionRequired {
-                    origin: url.to_string(),
-                    reason: ManualInteractionReason::InteractiveChallenge,
-                    browser_profile_supported: false,
-                    message: "Interactive challenge detected; manual interaction required".into(),
-                },
-            ));
-        }
-        FetchDisposition::NonInteractiveVerification => {
-            let verification_start = Instant::now();
-            loop {
-                if verification_start.elapsed() > params.verification_timeout {
-                    return Err(BrowserFetchError::InteractiveChallenge(
-                        ManualInteractionRequired {
-                            origin: url.to_string(),
-                            reason: ManualInteractionReason::OtherVerificationRequired,
-                            browser_profile_supported: false,
-                            message: "Non-interactive verification did not resolve within timeout"
-                                .into(),
-                        },
-                    ));
-                }
-
-                tokio::time::sleep(Duration::from_millis(500)).await;
-
-                let current_title = page
-                    .evaluate("document.title")
-                    .await
-                    .ok()
-                    .and_then(|v| v.into_value::<String>().ok())
-                    .unwrap_or_default()
-                    .to_lowercase();
-
-                let still_verification = current_title.contains("just a moment")
-                    || current_title.contains("checking")
-                    || current_title.contains("verifying")
-                    || current_title.contains("please wait");
-
-                if !still_verification {
-                    break;
+    let entered_wall = matches!(
+        sample.disposition,
+        FetchDisposition::NonInteractiveVerification
+    ) || sample.family.is_some();
+    if entered_wall || sample.disposition.is_script_wall() {
+        let wait_start = Instant::now();
+        while wait_start.elapsed() < params.verification_timeout {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if let Ok(current) = captured.lock() {
+                if let Some((status, content_type)) = current.clone() {
+                    response_status = status;
+                    response_content_type = content_type;
                 }
             }
+            sample = page_sample(page, response_status, response_content_type.as_deref()).await;
+            if matches!(sample.disposition, FetchDisposition::InteractiveChallenge) {
+                return Err(interactive_challenge_error(url));
+            }
+            if !sample.disposition.is_script_wall() {
+                break;
+            }
         }
-        _ => {}
     }
+
+    let challenge_completed = entered_wall
+        && matches!(sample.disposition, FetchDisposition::UsefulContent)
+        && sample.family.is_none();
+
+    let title = sample.title;
+    let classification = sample.disposition;
 
     let dom_len: usize = page
         .evaluate("document.documentElement ? document.documentElement.outerHTML.length : 0")
@@ -534,8 +496,71 @@ async fn navigate_and_extract(
         extracted_text: bounded_body,
         trust_markers: trust,
         warnings,
+        challenge_completed,
+        challenge: sample.family,
     };
     Ok(BrowserFetchOutcome { result, screenshot })
+}
+
+struct PageSample {
+    title: Option<String>,
+    disposition: FetchDisposition,
+    family: Option<crate::fetch::challenge::ChallengeKind>,
+}
+
+async fn page_sample(page: &Page, status: u16, content_type: Option<&str>) -> PageSample {
+    let title: Option<String> = page
+        .evaluate("document.title")
+        .await
+        .ok()
+        .and_then(|v| v.into_value::<String>().ok());
+
+    let text_len: usize = page
+        .evaluate("document.body ? document.body.innerText.length : 0")
+        .await
+        .ok()
+        .and_then(|v| v.into_value::<f64>().ok())
+        .map(|v| v as usize)
+        .unwrap_or(0);
+
+    let body_snippet: Vec<u8> = page
+        .evaluate("document.body ? document.body.innerHTML.substring(0, 4096) : ''")
+        .await
+        .ok()
+        .and_then(|v| v.into_value::<String>().ok())
+        .map(|s| s.into_bytes())
+        .unwrap_or_default();
+
+    let document_snippet: String = page
+        .evaluate("document.documentElement ? document.documentElement.innerHTML.substring(0, 16384) : ''")
+        .await
+        .ok()
+        .and_then(|v| v.into_value::<String>().ok())
+        .unwrap_or_default();
+
+    let disposition = classify_response(
+        status,
+        content_type,
+        title.as_deref(),
+        text_len,
+        &body_snippet,
+    );
+    let family = crate::fetch::challenge::detect(title.as_deref(), &document_snippet);
+
+    PageSample {
+        title,
+        disposition,
+        family,
+    }
+}
+
+fn interactive_challenge_error(url: &str) -> BrowserFetchError {
+    BrowserFetchError::InteractiveChallenge(ManualInteractionRequired {
+        origin: url.to_string(),
+        reason: ManualInteractionReason::InteractiveChallenge,
+        browser_profile_supported: false,
+        message: "Interactive challenge detected; manual interaction required".into(),
+    })
 }
 
 fn is_pdf_document(content_type: Option<&str>, final_url: &str) -> bool {
@@ -571,6 +596,22 @@ pub fn browser_result_to_response(
     // Surface injection hits on the machine-readable channel too;
     // web-search responses already do this for card content.
     let mut structured_warnings: Vec<crate::core::warning::AgentWarning> = Vec::new();
+    let mut manual_interaction_required = false;
+    if let Some(family) = result.challenge {
+        manual_interaction_required = true;
+        structured_warnings.extend(crate::fetch::challenge::warnings(Some(family)));
+    } else if matches!(
+        result.response.classification,
+        Some(FetchDisposition::NonInteractiveVerification)
+    ) {
+        manual_interaction_required = true;
+        structured_warnings.push(crate::core::warning::AgentWarning::new(
+            crate::core::warning::WarningCode::FetchChallengePage,
+            "verification interstitial did not resolve: the response is a verification page, not the \
+             requested document"
+                .to_string(),
+        ));
+    }
     if trust_markers.injection_hits > 0 {
         structured_warnings.push(
             crate::core::warning::AgentWarning::new(
@@ -750,7 +791,7 @@ pub fn browser_result_to_response(
         transport: Some("browser".to_string()),
         browser_escalated: false,
         accept_policy: Some(crate::fetch::accept::AcceptPolicy::Html),
-        manual_interaction_required: false,
+        manual_interaction_required,
         focus: None,
         raw_body: Some(body.clone()),
     }
@@ -796,6 +837,8 @@ mod tests {
             extracted_text: "Hello".into(),
             trust_markers: TrustMarkers::default(),
             warnings: Vec::new(),
+            challenge_completed: false,
+            challenge: None,
         };
 
         let response = browser_result_to_response(

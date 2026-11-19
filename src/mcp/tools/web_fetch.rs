@@ -761,6 +761,9 @@ async fn run_web_fetch_inner(
                 {
                     Ok(Ok(outcome)) => {
                         screenshot_png = outcome.screenshot.map(|capture| capture.png().to_vec());
+                        if outcome.result.challenge_completed {
+                            crate::challenge_replay::record_browser_completion();
+                        }
                         let resp = crate::fetch::browser::browser_result_to_response(
                             outcome.result,
                             trimmed_url,
@@ -848,57 +851,74 @@ async fn run_web_fetch_inner(
                         ctrl.record_success(&origin_key).await;
                     }
 
-                    #[cfg(feature = "browser")]
-                    let mut escalated = false;
-                    #[cfg(not(feature = "browser"))]
-                    let escalated = false;
+                    let challenge_plan = crate::challenge_replay::ChallengePlan {
+                        challenge: &state.config.search.challenge,
+                        user_agent: &state.config.fetch.user_agent,
+                        origin_controller: state.origin_controller.as_deref(),
+                        max_chars: args.max_chars,
+                        extract_mode,
+                        include_links,
+                        pdf_options: args.pdf.as_ref(),
+                        deadline,
+                    };
+                    let solved = crate::challenge_replay::replay_challenge(
+                        client.as_ref(),
+                        args.url.trim(),
+                        &resp,
+                        challenge_cookies,
+                        &challenge_plan,
+                    )
+                    .await;
 
-                    #[cfg(feature = "browser")]
-                    if matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto) {
-                        let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                        let text_len = resp
-                            .document
-                            .as_ref()
-                            .map(|document| {
-                                document
-                                    .blocks
-                                    .iter()
-                                    .map(|block| block.text.trim().chars().count())
-                                    .sum::<usize>()
-                            })
-                            .or_else(|| {
-                                resp.text.as_deref().map(|text| text.trim().chars().count())
-                            })
-                            .unwrap_or(0);
-                        let title_str = resp.title.as_deref().unwrap_or("");
-                        let classification = crate::fetch::browser::classify_response(
-                            resp.status,
-                            resp.content_type.as_deref(),
-                            Some(title_str),
-                            text_len,
-                            body_bytes,
-                        );
-                        let challenge_detected = crate::fetch::challenge::detect(
-                            Some(title_str),
-                            &String::from_utf8_lossy(body_bytes),
-                        )
-                        .is_some();
-                        let should_escalate = challenge_detected
+                    if let Some(solved) = solved {
+                        response = Some(solved);
+                    } else {
+                        #[cfg(feature = "browser")]
+                        if matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto) {
+                            let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
+                            let text_len = resp
+                                .document
+                                .as_ref()
+                                .map(|document| {
+                                    document
+                                        .blocks
+                                        .iter()
+                                        .map(|block| block.text.trim().chars().count())
+                                        .sum::<usize>()
+                                })
+                                .or_else(|| {
+                                    resp.text.as_deref().map(|text| text.trim().chars().count())
+                                })
+                                .unwrap_or(0);
+                            let title_str = resp.title.as_deref().unwrap_or("");
+                            let classification = crate::fetch::browser::classify_response(
+                                resp.status,
+                                resp.content_type.as_deref(),
+                                Some(title_str),
+                                text_len,
+                                body_bytes,
+                            );
+                            let challenge_detected = crate::fetch::challenge::detect(
+                                Some(title_str),
+                                &String::from_utf8_lossy(body_bytes),
+                            )
+                            .is_some();
+                            let should_escalate = challenge_detected
                             || matches!(
                                 classification,
                                 crate::fetch::browser::FetchDisposition::JavascriptShell
                                     | crate::fetch::browser::FetchDisposition::NonInteractiveVerification
                             );
-                        if should_escalate {
-                            if !browser_available {
-                                auto_escalation_unavailable = true;
-                            } else {
-                                let remaining =
-                                    deadline.saturating_duration_since(std::time::Instant::now());
-                                if remaining.as_millis() < 2000 {
+                            if should_escalate {
+                                if !browser_available {
                                     auto_escalation_unavailable = true;
                                 } else {
-                                    match tokio::time::timeout(
+                                    let remaining = deadline
+                                        .saturating_duration_since(std::time::Instant::now());
+                                    if remaining.as_millis() < 2000 {
+                                        auto_escalation_unavailable = true;
+                                    } else {
+                                        match tokio::time::timeout(
                                         remaining,
                                         run_browser_fetch(
                                             state.as_ref(),
@@ -912,6 +932,9 @@ async fn run_web_fetch_inner(
                                     .await
                                     {
                                         Ok(Ok(outcome)) => {
+                                            if outcome.result.challenge_completed {
+                                                crate::challenge_replay::record_browser_completion();
+                                            }
                                             let mut browser_resp =
                                                 crate::fetch::browser::browser_result_to_response(
                                                     outcome.result,
@@ -923,7 +946,6 @@ async fn run_web_fetch_inner(
                                                 );
                                             browser_resp.browser_escalated = true;
                                             response = Some(browser_resp);
-                                            escalated = true;
                                         }
                                         Ok(Err(
                                             crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
@@ -950,45 +972,26 @@ async fn run_web_fetch_inner(
                                             auto_escalation_unavailable = true;
                                         }
                                     }
+                                    }
                                 }
                             }
                         }
-                    }
-                    #[cfg(not(feature = "browser"))]
-                    if matches!(render_request, RenderRequest::Auto) {
-                        let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                        if crate::fetch::challenge::detect(
-                            resp.title.as_deref(),
-                            &String::from_utf8_lossy(body_bytes),
-                        )
-                        .is_some()
-                        {
-                            auto_escalation_unavailable = true;
-                        }
-                    }
-
-                    if !escalated {
-                        let challenge_plan = crate::challenge_replay::ChallengePlan {
-                            challenge: &state.config.search.challenge,
-                            user_agent: &state.config.fetch.user_agent,
-                            origin_controller: state.origin_controller.as_deref(),
-                            max_chars: args.max_chars,
-                            extract_mode,
-                            include_links,
-                            pdf_options: args.pdf.as_ref(),
-                            deadline,
-                        };
-                        response = Some(
-                            crate::challenge_replay::replay_challenge(
-                                client.as_ref(),
-                                args.url.trim(),
-                                &resp,
-                                challenge_cookies,
-                                &challenge_plan,
+                        #[cfg(not(feature = "browser"))]
+                        if matches!(render_request, RenderRequest::Auto) {
+                            let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
+                            if crate::fetch::challenge::detect(
+                                resp.title.as_deref(),
+                                &String::from_utf8_lossy(body_bytes),
                             )
-                            .await
-                            .unwrap_or(resp),
-                        );
+                            .is_some()
+                            {
+                                auto_escalation_unavailable = true;
+                            }
+                        }
+
+                        if response.is_none() {
+                            response = Some(resp);
+                        }
                     }
                     break;
                 }

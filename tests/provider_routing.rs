@@ -1359,6 +1359,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
     );
     solve_ledger().record_cookie_lookup("mojeek", true);
     solve_ledger().record_cookie_lookup("mojeek", false);
+    solve_ledger().record_browser_completion("fetch");
 
     let mut cfg = AppConfig::default();
     cfg.search.challenge.enabled = true;
@@ -1391,6 +1392,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
         "refusals",
         "cookie_hits",
         "cookie_misses",
+        "browser_completions",
         "last_candidates",
         "last_wall_clock_ms",
     ]
@@ -1429,6 +1431,16 @@ fn challenge_solver_block_reports_the_shared_ledger() {
     assert_eq!(refusals["already spent"], serde_json::json!(1));
     assert_eq!(refusals["challenge expired"], serde_json::json!(0));
     assert_eq!(refusals["unsafe base prefix"], serde_json::json!(0));
+
+    let fetch = exercised["challenge_solver"]["providers"]["fetch"]
+        .as_object()
+        .expect("the browser completion is reported");
+    assert_eq!(fetch["browser_completions"], serde_json::json!(1));
+    assert_eq!(
+        fetch["solves_attempted"],
+        serde_json::json!(0),
+        "a browser completion is not a solve"
+    );
 
     let rendered = serde_json::to_string(&exercised).expect("payload serializes");
     assert!(

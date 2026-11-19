@@ -869,6 +869,8 @@ fn synthetic_browser_outcome(
             extracted_text: "synthetic browser content".to_string(),
             trust_markers: TrustMarkers::default(),
             warnings: Vec::new(),
+            challenge_completed: false,
+            challenge: None,
         },
         screenshot: screenshot.map(|png| {
             crate::fetch::browser::ScreenshotCapture::try_new(png).expect("synthetic PNG")

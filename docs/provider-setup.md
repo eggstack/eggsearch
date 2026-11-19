@@ -701,13 +701,16 @@ as native coverage, so a real `native_*_unavailable` warning is still reported.
 - `enabled`: the configured `[search.challenge].enabled` value.
 - `untracked_providers`: records dropped because the four-entry provider cap was already full.
 - `providers.<id>`: `solves_attempted`, `solves_succeeded`, `solves_errored`, `cookie_hits`,
-  `cookie_misses`, `last_candidates`, `last_wall_clock_ms`, and a fixed ten-key `refusals` object
+  `cookie_misses`, `browser_completions`, `last_candidates`, `last_wall_clock_ms`, and a fixed
+  ten-key `refusals` object
   (`difficulty above ceiling`, `attempts exhausted`, `wall clock exhausted`, `unsupported scheme`,
   `malformed parameters`, `pass cookie absent`, `pass cookie rejected`, `challenge expired`,
   `already spent`, `unsafe base prefix`).
 
 `providers` is `{}` until the first solve, so a stable key set is visible before anything runs.
 `solves_attempted` always equals `solves_succeeded + refusals_total + solves_errored`.
+`browser_completions` counts walls a browser render completed on the fetch path; it is not a solve
+and moves no solve or refusal counter.
 `last_candidates` and `last_wall_clock_ms` describe only the most recent attempt and are `0` when it
 ended before any computation. An extension refusal is one of the `unsupported scheme` entries: the
 key is unchanged and the sentence names the extension list. All values are process-lifetime totals

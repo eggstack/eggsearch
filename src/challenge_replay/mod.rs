@@ -40,6 +40,14 @@ use cache::{fetch_pass_cookie_cache, origin_key};
 /// Ledger label recorded for every solve performed on the fetch path.
 pub const FETCH_LEDGER_LABEL: &str = "fetch";
 
+/// Record one wall the browser completed on the fetch path.
+///
+/// A browser completion is not a solve: it is counted beside the solve
+/// counters, because the solver was skipped or had already declined the page.
+pub fn record_browser_completion() {
+    crate::meta::challenge::solve_ledger().record_browser_completion(FETCH_LEDGER_LABEL);
+}
+
 /// Everything one bounded challenge solve and replay needs.
 pub struct ChallengePlan<'a> {
     /// Operator challenge configuration.

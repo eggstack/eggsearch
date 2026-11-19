@@ -11,6 +11,21 @@ pub enum FetchDisposition {
     Unsupported,
 }
 
+impl FetchDisposition {
+    /// Whether a rendered page is still a script-driven wall.
+    ///
+    /// The two dispositions a browser render waits on and reports when it cannot
+    /// get past them. A detected challenge family is a wall whatever its
+    /// classification says, so callers check detection as well.
+    #[must_use]
+    pub fn is_script_wall(&self) -> bool {
+        matches!(
+            self,
+            Self::JavascriptShell | Self::NonInteractiveVerification
+        )
+    }
+}
+
 pub fn classify_response(
     status: u16,
     content_type: Option<&str>,
@@ -123,6 +138,23 @@ fn is_javascript_shell(_title_lower: &str, text_len: usize, body: &str) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_two_script_wall_dispositions_wait_for_completion() {
+        assert!(FetchDisposition::JavascriptShell.is_script_wall());
+        assert!(FetchDisposition::NonInteractiveVerification.is_script_wall());
+        for settled in [
+            FetchDisposition::UsefulContent,
+            FetchDisposition::InteractiveChallenge,
+            FetchDisposition::RateLimited,
+            FetchDisposition::AccessDenied,
+            FetchDisposition::AuthenticationRequired,
+            FetchDisposition::ServerError,
+            FetchDisposition::Unsupported,
+        ] {
+            assert!(!settled.is_script_wall(), "{settled:?} must not wait");
+        }
+    }
 
     #[test]
     fn useful_content() {

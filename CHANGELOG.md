@@ -137,6 +137,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Under `render: "auto"` the fetch path now runs the bounded challenge solver before any browser
+  escalation, so a solvable Anubis or ALTCHA wall returns its document without launching Chrome.
+  A wall the solver leaves unsolved is completed by the browser when one is available, and a wall
+  that does not resolve inside `verification_wait_ms` is returned with
+  `manual_interaction_required: true` and the `fetch_challenge_page` warning instead of as an
+  unmarked document. Completion is decided by live `classify_response` over the rendered page
+  rather than by four title substrings, and
+  `provider_status.challenge_solver.providers.<label>` gains a `browser_completions` count. One
+  solver attempt pair and one escalation per call still hold.
 - Every tool now advertises all four static MCP behavior hints: `readOnlyHint: true`,
   `destructiveHint: false`, `idempotentHint: true`, and an accurate `openWorldHint` (`false` only
   for `provider_status` and `build_evidence_bundle`). The hints are explicit rather than relying on

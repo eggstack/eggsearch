@@ -5728,12 +5728,95 @@ fn anubis_wall<'a>(
     (replay, wall, pass)
 }
 
-fn challenge_state(enabled: bool) -> Arc<ServerState> {
+fn challenge_config(enabled: bool) -> AppConfig {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
     cfg.search.challenge.enabled = enabled;
-    Arc::new(ServerState::build(cfg).expect("state builds"))
+    cfg
+}
+
+fn challenge_state(enabled: bool) -> Arc<ServerState> {
+    Arc::new(ServerState::build(challenge_config(enabled)).expect("state builds"))
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn state_with_mock_browser(
+    mut cfg: AppConfig,
+    browser_fetch_override: eggsearch::mcp::state::BrowserFetchOverride,
+) -> Arc<ServerState> {
+    use eggsearch::fetch::browser::{
+        BrowserConfig, BrowserDiscovery, BrowserDiscoveryState, BrowserFamily, BrowserLifecycle,
+        BrowserSource,
+    };
+
+    cfg.fetch.browser.enabled = true;
+    cfg.fetch.browser.policy = "auto".to_string();
+    let mut state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let discovery = BrowserDiscovery {
+        path: std::path::PathBuf::from("/synthetic/chrome"),
+        family: BrowserFamily::Chrome,
+        version: "Chrome 120.0.0.0".to_string(),
+        source: BrowserSource::AutoDiscovered,
+    };
+    let state_mut = Arc::get_mut(&mut state).expect("unique state");
+    state_mut.browser_discovery_state = BrowserDiscoveryState::Available(discovery.clone());
+    state_mut.browser_lifecycle = Some(Arc::new(BrowserLifecycle::new(
+        Some(discovery),
+        BrowserConfig {
+            enabled: true,
+            ..BrowserConfig::default()
+        },
+    )));
+    state_mut.browser_fetch_override = Some(browser_fetch_override);
+    state
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn browser_outcome(
+    url: &str,
+    classification: eggsearch::fetch::browser::FetchDisposition,
+    challenge: Option<eggsearch::fetch::challenge::ChallengeKind>,
+    challenge_completed: bool,
+) -> eggsearch::fetch::browser::BrowserFetchOutcome {
+    use eggsearch::core::sanitize::TrustMarkers;
+    use eggsearch::fetch::browser::{
+        BrowserFetchOutcome, BrowserFetchResult, FetchTransportKind, TransportResponse,
+        TransportTiming,
+    };
+
+    BrowserFetchOutcome {
+        result: BrowserFetchResult {
+            response: TransportResponse {
+                transport: FetchTransportKind::Browser,
+                requested_url: url.to_string(),
+                final_url: url.to_string(),
+                status: Some(200),
+                headers: Vec::new(),
+                body: b"<html><body><p>rendered</p></body></html>".to_vec(),
+                content_type: Some("text/html".to_string()),
+                redirects: Vec::new(),
+                timing: TransportTiming::default(),
+                classification: Some(classification),
+            },
+            extracted_title: Some("Rendered".to_string()),
+            extracted_text: "<p>rendered</p>".to_string(),
+            trust_markers: TrustMarkers::default(),
+            warnings: Vec::new(),
+            challenge_completed,
+            challenge,
+        },
+        screenshot: None,
+    }
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn browser_completions() -> u64 {
+    eggsearch::meta::challenge::ledger::solve_ledger()
+        .snapshot()
+        .providers
+        .get("fetch")
+        .map_or(0, |stats| stats.browser_completions)
 }
 
 fn challenge_warning_count(value: &serde_json::Value) -> usize {
@@ -7009,5 +7092,276 @@ async fn web_fetch_auto_classifies_a_js_shell_by_document_text_not_framing() {
             .iter()
             .any(|warning| warning["code"] == "browser_unavailable"),
         "the JS shell must be classified from document blocks, not framing: {warnings:?}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_solves_a_wall_before_escalating_to_the_browser() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = challenge_server();
+    let (replay, wall, pass) = anubis_wall(
+        &server,
+        "<html><head><title>Solved</title></head><body><h1>Solved document</h1></body></html>",
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        challenge_config(true),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Err(eggsearch::fetch::browser::BrowserFetchError::LaunchFailed(
+                "a solvable wall must not reach the browser".to_string(),
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args).await.expect("fetch succeeds");
+
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Solved document"),
+        "the solver must return the document: {value:?}"
+    );
+    assert_eq!(value["manual_interaction_required"], false);
+    assert_eq!(challenge_warning_count(&value), 0);
+    assert_eq!(value["browser_escalated"], false);
+    assert_eq!(wall.hits(), 1, "the wall is requested once");
+    assert_eq!(pass.hits(), 1, "the published challenge is answered once");
+    assert_eq!(replay.hits(), 1, "the solved request is replayed once");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "the browser must not be launched for a solvable wall"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_returns_an_unresolved_wall_marked_not_as_a_document() {
+    let server = challenge_server();
+    let (_replay, wall, pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::NonInteractiveVerification,
+                Some(eggsearch::fetch::challenge::ChallengeKind::Anubis),
+                false,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("an unresolved wall is returned, not errored");
+
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let challenge = warnings
+        .iter()
+        .find(|warning| warning["code"] == "fetch_challenge_page")
+        .expect("the wall is named");
+    assert!(
+        challenge["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("anubis"),
+        "the warning names the family: {challenge:?}"
+    );
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(pass.hits(), 0, "a disabled solver answers nothing");
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_marks_a_verification_interstitial_that_never_resolves() {
+    let server = challenge_server();
+    let (_replay, _wall, _pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::NonInteractiveVerification,
+                None,
+                false,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("an unresolved verification is returned marked");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let challenge = warnings
+        .iter()
+        .find(|warning| warning["code"] == "fetch_challenge_page")
+        .expect("the verification is reported");
+    assert!(
+        challenge["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("verification"),
+        "the warning names the interstitial: {challenge:?}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_counts_a_wall_the_browser_completed() {
+    let server = challenge_server();
+    let (_replay, _wall, _pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state.clone(), args)
+        .await
+        .expect("a completed wall returns the document");
+
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert_eq!(
+        browser_completions(),
+        before + 1,
+        "exactly one completion is recorded"
+    );
+
+    let status = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("provider status builds");
+    assert_eq!(
+        status["challenge_solver"]["providers"]["fetch"]["browser_completions"],
+        serde_json::json!(before + 1)
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_never_completes_an_interactive_challenge() {
+    let server = challenge_server();
+    let (_replay, _wall, _pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            Err(
+                eggsearch::fetch::browser::BrowserFetchError::InteractiveChallenge(
+                    eggsearch::fetch::browser::ManualInteractionRequired {
+                        origin: "http://origin.test".to_string(),
+                        reason:
+                            eggsearch::fetch::browser::ManualInteractionReason::InteractiveChallenge,
+                        browser_profile_supported: false,
+                        message: "Interactive challenge detected; manual interaction required"
+                            .to_string(),
+                    },
+                ),
+            )
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let error = run_web_fetch(state, args)
+        .await
+        .expect_err("an interactive challenge stays manual");
+    assert!(
+        format!("{error}").contains("manual_interaction_required"),
+        "got: {error}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_returns_the_marked_wall_when_the_deadline_leaves_no_render_time() {
+    use httpmock::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = challenge_server();
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/wall");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .delay(Duration::from_millis(1200))
+            .body(
+                r#"<html><head><script id="anubis_challenge">{"rules":{"difficulty":6}}</script></head><body><div id="app"></div></body></html>"#,
+            );
+    });
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                "unused",
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    args.timeout_ms = Some(2600);
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("the marked wall is returned inside the deadline");
+
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(value["browser_escalated"], false);
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == "browser_unavailable"),
+        "the caller is told why rendering did not happen: {warnings:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "an insufficient deadline must not launch the browser"
     );
 }

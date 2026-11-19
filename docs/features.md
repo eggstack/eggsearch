@@ -121,7 +121,9 @@ enabled = true
 - A fetch-path pass cookie is reused for a later fetch to the same origin, from a process-local cache keyed by origin. The window is the upstream-published lifetime clamped by `cookie_ttl_seconds`; a fetch that crossed an origin stores nothing and reuses nothing
 - A pair set the upstream refuses is evicted, and the same call then solves the challenge it was already holding and replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is attempted
 - One fetch call still performs at most one solve and one replay; a reused pair set performs no solve at all, and a refused pair set is presented at most once
-- Fetch-path solves use the `fetch` label in `provider_status.challenge_solver.providers`; search upstreams retain their own labels
+- Under `render: "auto"` the solver runs before the browser, so a solvable Anubis or ALTCHA wall returns its document without launching Chrome. Only a wall the solver leaves unsolved escalates
+- A script-driven wall the browser cannot get past is returned marked with `manual_interaction_required: true` and a `fetch_challenge_page` warning, never as an unmarked document
+- Fetch-path solves use the `fetch` label in `provider_status.challenge_solver.providers`; search upstreams retain their own labels. A wall the browser completed is counted beside them as `browser_completions`
 - At most one solve per provider per search request, and one per `cookie_ttl_seconds`
 - A solved search request runs through the normal parser and the normal four-outcome classification
 
@@ -185,12 +187,15 @@ caller omits it, the configured `[fetch.browser].policy` applies; a per-call
 | Value | Behavior |
 |-------|----------|
 | `http_only` | HTTP only, never launches Chrome |
-| `auto` (default) | HTTP first, then at most one browser escalation for JavaScript shells, non-interactive verification, or detected challenge pages |
+| `auto` (default) | HTTP first, then one bounded solve-and-replay when the page publishes an Anubis or ALTCHA challenge, then at most one browser escalation for a wall the solver left unsolved |
 | `browser` | Browser directly, no HTTP prefetch. Fails if no Chrome/Chromium executable is available |
 
 `auto` does not escalate for authentication or rate-limited responses. If browser
 rendering finds an interactive challenge, `web_fetch` returns a manual-interaction
-error. It does not solve the challenge.
+error; it never clicks or simulates it. A non-interactive script wall is completed by
+letting the page's own script run, and the render polls the live classification for up
+to `verification_wait_ms`. A wall that still has not resolved is returned marked as a
+challenge page rather than as a document.
 
 ### Error Outcomes
 
@@ -212,7 +217,7 @@ error instead.
 
 - **Public-network-only**: Rejects localhost, private IPv4/IPv6, link-local, and cloud metadata addresses regardless of `allow_localhost`/`allow_private_network` settings
 - **No browser download**: Discovers an already-installed system Chrome/Chromium. Never downloads, installs, or manages browser updates
-- **No challenge solving in the browser**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured error codes. They are never clicked, simulated, or sent to external solving services. Engine-level proof-of-work solving under ADR-0009 is separate, opt-in, and non-interactive
+- **No interactive challenge solving in the browser**: CAPTCHAs and Turnstile are detected and reported as structured error codes. They are never clicked, simulated, or sent to external solving services. A non-interactive script wall is completed only by letting the page's own script run inside the sandboxed render; the solver in `src/meta/challenge/` stays separate and bounded by its own ceilings
 - **Deterministic executable path**: An explicitly configured invalid browser executable path fails without silently falling back to auto-discovery
 - **Request interception**: All observable requests are intercepted and checked against the network policy
 - **Bounded extraction**: DOM size, request count, navigation time, and post-load wait are all bounded by configuration. The session request bound is enforced: reaching `max_requests` closes the browser session and the next render relaunches, and an idle interval with no in-flight render tears the shared browser down

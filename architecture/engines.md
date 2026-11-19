@@ -397,6 +397,7 @@ Implementation:
         },
         "cookie_hits": 4,
         "cookie_misses": 3,
+        "browser_completions": 0,
         "last_candidates": 291,
         "last_wall_clock_ms": 420
       }
@@ -406,6 +407,9 @@ Implementation:
 
   `solves_attempted == solves_succeeded + refusals_total + solves_errored` holds by construction
   because one recording call increments the attempt and exactly one outcome under one lock.
+  `browser_completions` is that counter's sibling, not a solve: it counts walls a browser render
+  completed on the fetch path, moves no solve or refusal counter, and carries no cookie or challenge
+  parameter.
   `last_candidates` is the budget attempts the most recent attempt consumed; `last_wall_clock_ms` is
   its parse-to-decision time, excluding every HTTP request. Both are `0` when the attempt ended
   before any computation. The refusal key set is fixed and always emitted in full, so a zero is
