@@ -1,6 +1,6 @@
 # M034 — Fetch-Side Stale Pass-Cookie Recovery
 
-Status: active
+Status: closed
 
 Class: capability
 
