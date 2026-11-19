@@ -22,7 +22,7 @@ use crate::meta::challenge::{
     SolveBudget, SolveOutcome, BOUND_MALFORMED, BOUND_UNSUPPORTED_SCHEME,
 };
 
-use super::{response_challenge, ChallengePlan, FETCH_LEDGER_LABEL};
+use super::{response_challenge, ChallengePlan, SolvedReplay, FETCH_LEDGER_LABEL};
 
 /// Maximum characters accepted from a published endpoint attribute.
 pub const MAX_ENDPOINT_CHARS: usize = 256;
@@ -116,15 +116,15 @@ pub fn derive(page_url: &str, page: &str) -> Result<PublishedAltcha, &'static st
 
 /// Solve the ALTCHA challenge published on `response` and replay the request once.
 ///
-/// Returns the replayed response when the challenge was solved and the replay
-/// is not itself a challenge page. Every other outcome returns `None`, so the
+/// Returns the solved replay when the challenge was solved and the replay is
+/// not itself a challenge page. Every other outcome returns `None`, so the
 /// caller keeps the original response exactly as it was.
 pub async fn replay(
     client: &FetchClient,
     url: &str,
     response: &WebFetchResponse,
     plan: &ChallengePlan<'_>,
-) -> Option<WebFetchResponse> {
+) -> Option<SolvedReplay> {
     let settings = plan.challenge;
     let remaining = plan.deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
@@ -170,7 +170,7 @@ pub async fn replay(
         Ok(outcome) => outcome,
         Err(_) => return None,
     };
-    let SolveOutcome::Solved { cookie, .. } = outcome else {
+    let SolveOutcome::Solved { cookie, lifetime } = outcome else {
         return None;
     };
     let replayed = client
@@ -188,7 +188,11 @@ pub async fn replay(
     if response_challenge(&replayed).is_some() {
         return None;
     }
-    Some(replayed)
+    Some(SolvedReplay {
+        response: replayed,
+        cookie,
+        lifetime,
+    })
 }
 
 fn record_refusal(bound: &'static str) {

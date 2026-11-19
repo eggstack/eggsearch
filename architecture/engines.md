@@ -323,7 +323,8 @@ Implementation:
   challenge once via `anubis::solve_and_verify`, and replays once with the cookie pairs the pass
   response issued, joined with `; `, on the first hop. `src/fetch/**` remains independent of
   `src/meta/**`; only `src/mcp/tools/web_fetch.rs` orchestrates the solve. A fetch-side pass pair set
-  is never cached for reuse, so `cookie_ttl_seconds` still governs search upstreams only.
+  is reused from the process-local, origin-keyed cache in `src/challenge_replay/cache.rs`, so
+  `cookie_ttl_seconds` governs the search upstreams and the fetch path alike.
 - Pass-cookie identity is opaque, like the challenge id. The Anubis solver never looks for a fixed
   name: it takes every non-deletion pair the pass-challenge response set (empty values and deletion
   cookies dropped, duplicate names resolved by the last non-deletion value at the first position),

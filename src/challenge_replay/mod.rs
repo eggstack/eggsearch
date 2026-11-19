@@ -15,8 +15,9 @@
 //! ALTCHA solve needs.
 
 pub mod altcha;
+pub mod cache;
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::core::config::ChallengeSection;
 use crate::core::fetch::{ExtractMode, FetchRepresentation, PdfFetchOptions, WebFetchResponse};
@@ -24,7 +25,10 @@ use crate::fetch::challenge::{detect_html, ChallengeKind};
 use crate::fetch::origin::OriginController;
 use crate::fetch::{FetchClient, FetchError};
 use crate::meta::challenge::anubis;
+use crate::meta::challenge::cookie::{self, PublishedLifetime};
 use crate::meta::challenge::{SolveBudget, SolveOutcome};
+
+use cache::{fetch_pass_cookie_cache, origin_key};
 
 /// Ledger label recorded for every solve performed on the fetch path.
 pub const FETCH_LEDGER_LABEL: &str = "fetch";
@@ -75,13 +79,24 @@ pub fn response_challenge(response: &WebFetchResponse) -> Option<ChallengeKind> 
     )
 }
 
+/// A solved challenge that produced a replayable pair set.
+pub struct SolvedReplay {
+    /// The replayed document.
+    pub response: WebFetchResponse,
+    /// The replayable `Cookie` header value the pass response issued.
+    pub cookie: String,
+    /// The lifetime the upstream published for it.
+    pub lifetime: PublishedLifetime,
+}
+
 /// Solve the challenge published on `response` and replay the request once.
 ///
-/// Returns the replayed response when the challenge was solved and the replay
-/// is not itself a challenge page. Every other outcome — solving disabled, no
-/// parseable challenge, a refusal at any ceiling, an error, an exhausted
-/// deadline, or a challenged replay — returns `None`, so the caller keeps the
-/// original response exactly as it was.
+/// A stored pair set for the request's own origin is replayed before any
+/// solve is attempted. Returns the replayed response when the challenge was
+/// solved and the replay is not itself a challenge page. Every other outcome —
+/// solving disabled, no parseable challenge, a refusal at any ceiling, an
+/// error, an exhausted deadline, or a challenged replay — returns `None`, so
+/// the caller keeps the original response exactly as it was.
 pub async fn replay_challenge(
     client: &FetchClient,
     url: &str,
@@ -92,13 +107,73 @@ pub async fn replay_challenge(
     if !plan.challenge.enabled {
         return None;
     }
-    match response_challenge(response) {
-        Some(ChallengeKind::Anubis) => {
+    let kind = response_challenge(response)?;
+    if !matches!(kind, ChallengeKind::Anubis | ChallengeKind::Altcha) {
+        return None;
+    }
+    let origin = reuse_origin(url, response);
+    if let Some(origin) = origin.as_deref() {
+        if let Some(cookie) = fetch_pass_cookie_cache().get(origin) {
+            return replay_cached(client, url, &cookie, origin, plan).await;
+        }
+    }
+    let solved = match kind {
+        ChallengeKind::Anubis => {
             replay_anubis(client, url, response, challenge_cookies, plan).await
         }
-        Some(ChallengeKind::Altcha) => altcha::replay(client, url, response, plan).await,
+        ChallengeKind::Altcha => altcha::replay(client, url, response, plan).await,
         _ => None,
+    }?;
+    if let Some(origin) = origin.as_deref() {
+        let ttl = cookie::reuse_ttl(
+            solved.lifetime,
+            SystemTime::now(),
+            Duration::from_secs(plan.challenge.cookie_ttl_seconds),
+        );
+        fetch_pass_cookie_cache().put(origin, &solved.cookie, ttl);
     }
+    Some(solved.response)
+}
+
+/// Origin key for reuse, when the challenge page came from that same origin.
+///
+/// A fetch that crossed an origin has no reusable key: the issuing origin
+/// cannot be established without following the redirect, so nothing is stored
+/// and nothing is reused.
+fn reuse_origin(url: &str, response: &WebFetchResponse) -> Option<String> {
+    let request = origin_key(url)?;
+    let issuing = origin_key(&response.final_url)?;
+    (request == issuing).then_some(request)
+}
+
+/// Replay the request once with a stored pair set.
+///
+/// A replay the upstream answers with a challenge page evicts the entry, so
+/// the next fetch starts cold.
+async fn replay_cached(
+    client: &FetchClient,
+    url: &str,
+    cookie: &str,
+    origin: &str,
+    plan: &ChallengePlan<'_>,
+) -> Option<WebFetchResponse> {
+    let replayed = client
+        .fetch_with_cookie(
+            url,
+            plan.max_chars,
+            plan.extract_mode,
+            plan.include_links,
+            plan.pdf_options,
+            plan.origin_controller,
+            Some(cookie),
+        )
+        .await
+        .ok()?;
+    if response_challenge(&replayed).is_some() {
+        fetch_pass_cookie_cache().remove(origin);
+        return None;
+    }
+    Some(replayed)
 }
 
 async fn replay_anubis(
@@ -107,7 +182,7 @@ async fn replay_anubis(
     response: &WebFetchResponse,
     challenge_cookies: Option<String>,
     plan: &ChallengePlan<'_>,
-) -> Option<WebFetchResponse> {
+) -> Option<SolvedReplay> {
     let settings = plan.challenge;
     let remaining = plan.deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
@@ -131,7 +206,7 @@ async fn replay_anubis(
     )
     .await
     .ok()?;
-    let SolveOutcome::Solved { cookie, .. } = outcome else {
+    let SolveOutcome::Solved { cookie, lifetime } = outcome else {
         return None;
     };
     let replayed = client
@@ -149,7 +224,11 @@ async fn replay_anubis(
     if response_challenge(&replayed).is_some() {
         return None;
     }
-    Some(replayed)
+    Some(SolvedReplay {
+        response: replayed,
+        cookie,
+        lifetime,
+    })
 }
 
 /// Fetch `url`, then attempt one bounded challenge solve and replay.

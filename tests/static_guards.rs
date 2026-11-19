@@ -2687,3 +2687,70 @@ fn altcha_endpoint_derivation_is_same_origin_only() {
         "the ALTCHA derivation must not carry a hardcoded request target"
     );
 }
+
+#[test]
+fn fetch_pass_cookie_cache_is_process_local_and_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    let mut owners = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        if clean.contains("pub struct FetchPassCookieCache") {
+            owners += 1;
+            assert_eq!(
+                rel, "src/challenge_replay/cache.rs",
+                "the fetch-side pass-cookie cache must be defined in one place"
+            );
+        }
+        if rel == "src/challenge_replay/cache.rs" {
+            for forbidden in [
+                "std::fs",
+                "fs::write",
+                "fs::create",
+                "File::create",
+                "OpenOptions",
+                "tempfile",
+                "serde",
+                "Serialize",
+            ] {
+                assert!(
+                    !clean.contains(forbidden),
+                    "src/challenge_replay/cache.rs must not persist a pass cookie \
+                     (`{forbidden}`); the fetch-side cache is process-local"
+                );
+            }
+            continue;
+        }
+        if rel.starts_with("src/challenge_replay/") {
+            continue;
+        }
+        for forbidden in ["fetch_pass_cookie_cache", "FetchPassCookieCache"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not touch the fetch-side pass-cookie cache (`{forbidden}`); \
+                 src/challenge_replay/ owns it"
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(
+        owners, 1,
+        "exactly one file must define the fetch-side pass-cookie cache"
+    );
+    assert!(
+        checked >= 20,
+        "the src walk must not be vacuous, checked {checked} files"
+    );
+
+    let shared = read_source("src/challenge_replay/mod.rs");
+    assert!(
+        shared.contains("fetch_pass_cookie_cache"),
+        "src/challenge_replay/mod.rs must own the fetch-side reuse sequence"
+    );
+}

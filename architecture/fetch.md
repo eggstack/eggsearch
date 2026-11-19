@@ -631,7 +631,9 @@ difficulty and is bounded by its PBKDF2 `cost`, the attempt ceiling, and the wal
 The solve replays the same request once with the cookie pairs the pass response issued, joined with
 `; `. The pair set is opaque — its names are whatever the deployment publishes (`spchal-auth`,
 `techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and is sent on
-the first hop only, so a redirect cannot forward it to another origin. It is never stored. An
+the first hop only, so a redirect cannot forward it to another origin. It is never written to
+disk; a pair set a fetch issued is reused from the process-local origin-keyed cache described
+below. An
 ALTCHA solve replays with the `chllg` pass cookie its verification endpoint issued. A
 successful replay returns the document with `manual_interaction_required: false` and no
 `fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a refusal at
@@ -691,6 +693,43 @@ published challenge document that does not parse into the documented parameter s
 factor of one counter iteration, so a cost above the solver's ceiling is refused rather than
 started. Both are existing refusal keys; the vocabulary does not grow. Every refusal leaves the
 original response exactly as it was.
+
+### Fetch-side pass-cookie reuse
+
+A pass cookie the fetch path is issued is reused for a later fetch to the same origin instead of
+being solved again every time. The reuse window is the same rule the search side already uses, and
+the reuse itself is bounded by the same origin rule the ALTCHA derivation uses.
+
+**Owner.** `src/challenge_replay/cache.rs` owns the cache. It is process-local: a stored pair set
+lives in memory for the life of the process and is never written to disk, never persisted to a
+cache directory, and never serialized into a response, a diagnostic, or a fixture. The cache is the
+only place a fetch-path pair set is retained, and only `src/challenge_replay/` may reach it.
+
+**Origin key.** The key is the origin of the *request* URL: scheme, host, and effective port. It is
+derived without following a redirect. An entry is stored and looked up only when the origin that
+served the challenge page is that same origin. A fetch that crossed an origin — a redirect to
+another host, another scheme, or another port — has no reusable key, because the issuing origin
+cannot be established without following the redirect; such a fetch stores nothing and reuses
+nothing. A cached pair set is therefore never replayed to an origin other than the one that issued
+it, and the replay itself still travels on the first hop only.
+
+**Reuse window.** The window is M014's rule, unchanged. `src/meta/challenge/cookie.rs` resolves the
+lifetime the upstream published — `Max-Age` over `Expires`, `Expires` in the past never usable —
+and clamps it to `[search.challenge].cookie_ttl_seconds`. `cookie_ttl_seconds = 0` stores
+nothing; an unstated lifetime falls back to the ceiling; a malformed lifetime, a zero lifetime, or
+an expiry at or before now stores nothing. The shipped default is unchanged.
+
+**Sequence.** On a detected Anubis or ALTCHA page the shared module consults the cache before it
+solves. A hit replays the request once with the stored pair set and performs no solve. A miss
+solves as usual and, when the replay returns the document, stores the issued pair set under its
+published lifetime. A replay that comes back as a challenge page — the upstream refusing the
+cookie — evicts the entry, so the next fetch starts cold. The one-solve-one-replay rule is
+unchanged: a fetch never solves and replays twice, and it never uses a cached cookie to avoid a
+solve inside the same call.
+
+**Bounds.** The cache holds at most 32 origins and at most 64 KiB of stored pair-set bytes. Both
+bounds are explicit: an insertion that would exceed either bound evicts the entry closest to
+expiry first, and an insertion larger than the byte ceiling on its own is not stored at all.
 
 ### Profiles: opaque IDs, origin-scoped logins
 

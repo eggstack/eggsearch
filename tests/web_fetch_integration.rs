@@ -5609,7 +5609,7 @@ async fn offset_windows_live() {
 #[tokio::test]
 async fn web_fetch_marks_anubis_and_altcha_challenge_pages() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     server.mock(|when, then| {
         when.method(GET).path("/anubis");
         then.status(200)
@@ -5811,7 +5811,7 @@ fn anubis_header_only_metarefresh_page() -> String {
 #[tokio::test]
 async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(
         &server,
         "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
@@ -5843,7 +5843,7 @@ async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document(
 #[tokio::test]
 async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
 
     let value = run_web_fetch(challenge_state(false), fetch_args_for(server.url("/")))
@@ -5860,7 +5860,7 @@ async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
 #[tokio::test]
 async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
 
     let mut cfg = AppConfig::default();
@@ -5884,7 +5884,7 @@ async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
 #[tokio::test]
 async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(&server, &anubis_fast_challenge_page());
 
     let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
@@ -5901,7 +5901,7 @@ async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
 #[tokio::test]
 async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (_, _, _) = anubis_wall(
         &server,
         "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
@@ -5923,7 +5923,7 @@ async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
 #[tokio::test]
 async fn web_fetch_replays_a_default_anubis_pass_cookie() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_default_name_wall(
         &server,
         "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
@@ -5959,7 +5959,7 @@ async fn web_fetch_replays_a_default_anubis_pass_cookie() {
 #[tokio::test]
 async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, _, pass) = anubis_default_name_wall(
         &server,
         "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
@@ -6046,7 +6046,7 @@ fn altcha_wall<'a>(
 #[tokio::test]
 async fn web_fetch_solves_a_published_altcha_challenge_and_returns_the_document() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, challenge, verify) = altcha_wall(
         &server,
         "/captcha/challenge",
@@ -6085,7 +6085,7 @@ async fn web_fetch_solves_a_published_altcha_challenge_and_returns_the_document(
 #[tokio::test]
 async fn web_fetch_marks_the_altcha_challenge_when_solving_is_disabled() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, challenge, verify) = altcha_wall(
         &server,
         "/captcha/challenge",
@@ -6112,7 +6112,7 @@ async fn web_fetch_marks_the_altcha_challenge_when_solving_is_disabled() {
 #[tokio::test]
 async fn web_fetch_refuses_a_cross_origin_altcha_endpoint() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, challenge, verify) = altcha_wall(
         &server,
         "https://other.example/captcha/challenge",
@@ -6143,7 +6143,7 @@ async fn web_fetch_refuses_a_cross_origin_altcha_endpoint() {
 #[tokio::test]
 async fn web_fetch_refuses_a_malformed_altcha_payload() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, challenge, verify) = altcha_wall(
         &server,
         "/captcha/challenge",
@@ -6174,7 +6174,7 @@ async fn web_fetch_refuses_a_malformed_altcha_payload() {
 #[tokio::test]
 async fn web_fetch_keeps_the_mark_when_the_altcha_budget_refuses() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, challenge, verify) = altcha_wall(
         &server,
         "/captcha/challenge",
@@ -6208,7 +6208,7 @@ async fn web_fetch_keeps_the_mark_when_the_altcha_budget_refuses() {
 #[tokio::test]
 async fn web_fetch_refuses_an_unsupported_altcha_algorithm() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, challenge, verify) = altcha_wall(
         &server,
         "/captcha/challenge",
@@ -6235,7 +6235,7 @@ async fn web_fetch_refuses_an_unsupported_altcha_algorithm() {
 #[tokio::test]
 async fn web_fetch_solved_altcha_payload_carries_no_cookie_material() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, _, _, verify) = altcha_wall(
         &server,
         "/captcha/challenge",
@@ -6262,10 +6262,415 @@ async fn web_fetch_solved_altcha_payload_carries_no_cookie_material() {
     assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
 }
 
+fn altcha_wall_with_cookie<'a>(
+    server: &'a httpmock::MockServer,
+    pass_cookie: &str,
+    set_cookie: &str,
+    replay_body: &str,
+) -> (
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("chllg={pass_cookie}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200).header("set-cookie", set_cookie).body("");
+    });
+    (replay, wall, challenge, verify)
+}
+
+fn challenge_fetch_args(url: String) -> WebFetchArgs {
+    let mut args = fetch_args_for(url);
+    args.cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::Bypass);
+    args
+}
+
+/// A mock server whose origin carries no pass cookie from an earlier test.
+///
+/// The fetch-side pass-cookie cache is process-local and keyed by origin, and
+/// a loopback port can be recycled between tests, so every challenge test
+/// starts from an origin that holds no pair set.
+fn challenge_server() -> httpmock::MockServer {
+    let server = httpmock::MockServer::start();
+    clear_fetch_pass_cookie(&server.url("/"));
+    server
+}
+
+fn clear_fetch_pass_cookie(url: &str) {
+    if let Some(origin) = eggsearch::challenge_replay::cache::origin_key(url) {
+        eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().remove(&origin);
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_reuses_a_pass_cookie_for_a_second_challenge_to_the_same_origin() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+
+    for (name, value) in [("first", &first), ("second", &second)] {
+        assert!(
+            value["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Rust programming language"),
+            "the {name} fetch must return the document: {value:?}"
+        );
+        assert_eq!(
+            challenge_warning_count(value),
+            0,
+            "the {name} fetch carries no challenge warning"
+        );
+    }
+    assert_eq!(
+        verify.hits(),
+        1,
+        "the second fetch replays the stored pair set and solves nothing"
+    );
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(wall.hits(), 2, "each fetch meets the wall once");
+    assert_eq!(replay.hits(), 2, "each fetch replays once");
+
+    let serialized = serde_json::to_string(&second).expect("payload is serializable");
+    for canary in [ALTCHA_PASS_COOKIE, "chllg"] {
+        assert!(
+            !serialized.contains(canary),
+            "challenge material {canary} must not reach the payload: {serialized}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_reuses_an_anubis_pass_cookie_for_the_same_origin() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, pass) = anubis_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    for _ in 0..2 {
+        let value = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+            .await
+            .expect("fetch succeeds");
+        assert!(
+            value["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Rust programming language"),
+            "each fetch must return the document: {value:?}"
+        );
+        assert_eq!(challenge_warning_count(&value), 0);
+    }
+
+    assert_eq!(
+        pass.hits(),
+        1,
+        "the second fetch replays the stored pair set and solves nothing"
+    );
+    assert_eq!(wall.hits(), 2, "each fetch meets the wall once");
+    assert_eq!(replay.hits(), 2, "each fetch replays once");
+}
+
+#[tokio::test]
+async fn web_fetch_solves_again_after_the_published_lifetime_expires() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=1"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(first["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Rust programming language"));
+
+    tokio::time::sleep(Duration::from_millis(1300)).await;
+
+    let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert!(second["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Rust programming language"));
+    assert_eq!(
+        verify.hits(),
+        2,
+        "an expired pair set is solved again, never replayed"
+    );
+    assert_eq!(
+        challenge.hits(),
+        2,
+        "the published challenge is fetched twice"
+    );
+    assert_eq!(wall.hits(), 2);
+    assert_eq!(replay.hits(), 2);
+}
+
+#[tokio::test]
+async fn web_fetch_solves_again_when_the_published_lifetime_is_malformed() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=not-a-number"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    for _ in 0..2 {
+        let value = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+            .await
+            .expect("fetch succeeds");
+        assert!(value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"));
+    }
+
+    assert_eq!(
+        verify.hits(),
+        2,
+        "a malformed lifetime stores nothing and reuses nothing"
+    );
+    assert_eq!(challenge.hits(), 2);
+    assert_eq!(wall.hits(), 2);
+    assert_eq!(replay.hits(), 2);
+}
+
+#[tokio::test]
+async fn web_fetch_evicts_a_pass_cookie_the_upstream_rejects() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (mut replay, mut wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(first["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Rust programming language"));
+    assert_eq!(verify.hits(), 1);
+
+    replay.delete();
+
+    let second = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert_eq!(
+        challenge_warning_count(&second),
+        1,
+        "a rejected pair set leaves the original marking unchanged"
+    );
+    assert_eq!(
+        verify.hits(),
+        1,
+        "the rejected pair set is replayed, not re-solved"
+    );
+    assert_eq!(
+        wall.hits(),
+        3,
+        "the second fetch meets the wall, and its rejected replay meets it again"
+    );
+
+    wall.delete();
+    let replay_again = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>");
+    });
+    let wall_again = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+
+    let third = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("third fetch succeeds");
+    assert!(
+        third["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"),
+        "the next fetch starts cold and solves again: {third:?}"
+    );
+    assert_eq!(
+        verify.hits(),
+        2,
+        "the evicted pair set is solved again on the next fetch"
+    );
+    assert_eq!(challenge.hits(), 2);
+    assert_eq!(replay_again.hits(), 1);
+    assert_eq!(wall_again.hits(), 1);
+}
+
+#[tokio::test]
+async fn web_fetch_never_replays_a_pass_cookie_to_another_origin() {
+    use httpmock::prelude::*;
+    let first_server = challenge_server();
+    let first_url = first_server.url("/");
+    let (first_replay, _, _, first_verify) = altcha_wall_with_cookie(
+        &first_server,
+        "origin-one-pass",
+        "chllg=origin-one-pass; Path=/; HttpOnly; Max-Age=300",
+        "<html><head><title>One</title></head><body><h1>Origin one document</h1></body></html>",
+    );
+
+    let second_server = challenge_server();
+    let second_url = second_server.url("/");
+    let leak = second_server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "chllg=origin-one-pass");
+        then.status(500)
+            .body("the first origin's pair set reached the second origin");
+    });
+    let (second_replay, _, _, second_verify) = altcha_wall_with_cookie(
+        &second_server,
+        "origin-two-pass",
+        "chllg=origin-two-pass; Path=/; HttpOnly; Max-Age=300",
+        "<html><head><title>Two</title></head><body><h1>Origin two document</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(first_url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(first["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Origin one document"));
+
+    let second = run_web_fetch(state, challenge_fetch_args(second_url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert!(
+        second["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Origin two document"),
+        "the second origin solves for itself: {second:?}"
+    );
+    assert_eq!(
+        leak.hits(),
+        0,
+        "the first origin's pair set must never reach the second origin"
+    );
+    assert_eq!(first_replay.hits(), 1);
+    assert_eq!(first_verify.hits(), 1);
+    assert_eq!(second_replay.hits(), 1);
+    assert_eq!(second_verify.hits(), 1);
+}
+
+#[tokio::test]
+async fn web_fetch_solves_again_when_the_reuse_ceiling_is_zero() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    cfg.search.challenge.cookie_ttl_seconds = 0;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    for _ in 0..2 {
+        let value = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+            .await
+            .expect("fetch succeeds");
+        assert!(value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"));
+    }
+
+    assert_eq!(
+        verify.hits(),
+        2,
+        "a zero reuse ceiling stores nothing and reuses nothing"
+    );
+    assert_eq!(challenge.hits(), 2);
+    assert_eq!(wall.hits(), 2);
+    assert_eq!(replay.hits(), 2);
+}
+
 #[tokio::test]
 async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let replay = server.mock(|when, then| {
         when.method(GET)
             .path("/")

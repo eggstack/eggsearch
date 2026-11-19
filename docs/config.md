@@ -324,7 +324,7 @@ enabled = false           # operator opt-in
 max_difficulty = 5        # Anubis ceiling; difficulty 6 is ~16.8M candidates
 max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
 timeout_ms = 2000         # wall-clock ceiling per solve
-cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
+cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider and per fetch origin
 ```
 
 | Setting | Default | Bounds | Meaning |
@@ -333,7 +333,7 @@ cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
 | `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
 | `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
 | `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
-| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider. `0` disables reuse, so every request re-solves. |
+| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider, and for an origin on the fetch path. `0` disables reuse, so every request re-solves. |
 
 Challenge solving is supported for bounded, non-interactive proof-of-work
 challenges from Mojeek and Startpage. If you raise `max_difficulty`, increase
@@ -348,12 +348,16 @@ iterations, and by `timeout_ms`. The published PBKDF2 `cost` multiplies the work
 each iteration performs, so a challenge with a very large `cost` is refused as
 malformed rather than started.
 
-Search pass cookies are held in process memory only, bounded by
+Pass cookies are held in process memory only, bounded by
 `cookie_ttl_seconds`, and never written to disk or logs. On the HTTP path,
 `web_fetch` can solve one Anubis or ALTCHA challenge when enabled. Set
 `render = "http_only"` to avoid automatic browser escalation for that request.
-Fetch-side pass cookies are used for one replay and not stored. `batch_fetch`
-inherits the same solve behavior through the shared web-fetch handler.
+A fetch-side pass cookie is reused for a later fetch to the same origin, from a
+process-local cache keyed by origin and bounded by the same published lifetime
+and the same `cookie_ttl_seconds` ceiling. A fetch that crossed an origin
+stores nothing and reuses nothing, and a pair set the upstream rejects is
+evicted so the next fetch solves again. `batch_fetch` inherits the same solve
+behavior through the shared web-fetch handler.
 See [Capabilities and Optional Features](features.md#bounded-challenge-solving)
 for the supported methods and safety limits.
 

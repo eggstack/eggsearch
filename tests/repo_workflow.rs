@@ -4433,7 +4433,7 @@ fn anubis_fast_challenge_page() -> String {
 async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
     use httpmock::prelude::*;
 
-    let server = MockServer::start();
+    let server = challenge_server();
     let replay = server.mock(|when, then| {
         when.method(GET)
             .path("/src/lib.rs")
@@ -4507,6 +4507,19 @@ async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
     );
 }
 
+/// A mock server whose origin carries no pass cookie from an earlier test.
+///
+/// The fetch-side pass-cookie cache is process-local and keyed by origin, and
+/// a loopback port can be recycled between tests, so every challenge test
+/// starts from an origin that holds no pair set.
+fn challenge_server() -> httpmock::MockServer {
+    let server = httpmock::MockServer::start();
+    if let Some(origin) = eggsearch::challenge_replay::cache::origin_key(&server.url("/")) {
+        eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().remove(&origin);
+    }
+    server
+}
+
 const ALTCHA_PASS_COOKIE: &str = "altcha-pass-cookie";
 
 const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
@@ -4515,7 +4528,7 @@ const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA
 async fn repo_fetch_remote_solves_a_published_altcha_challenge() {
     use httpmock::prelude::*;
 
-    let server = MockServer::start();
+    let server = challenge_server();
     let replay = server.mock(|when, then| {
         when.method(GET)
             .path("/src/lib.rs")
