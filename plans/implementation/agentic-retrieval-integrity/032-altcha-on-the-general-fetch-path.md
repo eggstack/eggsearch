@@ -1,6 +1,6 @@
 # M032 — ALTCHA on the General Fetch Path
 
-Status: proposed
+Status: ready
 
 Class: capability
 
