@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M035 closed; M036–M038 closing)
+Status: active (M001–M035 closed; M036–M038 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -237,16 +237,17 @@ exposed M011's mandatory-`redir` defect.
   Rust 1.89 `make check` passed with 85 suites and 6,430 tests, `make docs-check` passed, and the
   packaging and planning contracts passed. The polling loop inside a real render is not in the
   default gate. Evidence: `plans/closure/agentic-retrieval-integrity/035-status.md`.
-- M036 is `closing` on implementation fingerprint `103dbdf2…` over parent `6146341`: the
+- M036 is `closed` on implementation candidate `76c1156a2c5418d4b9dab4493eddd9232bdd7b8a`
+  (pre-commit fingerprint `103dbdf2…` over parent `6146341`): the
   unified `fetch` envelope charges a repo item by readable text plus bounded metadata instead of its
   serialized JSON, clips text before it omits an item, marks an omitted item `ok: false` with
   `response: null`, a budget error, and one structured warning, and names the missing field for an
   incomplete locator. Live probes: the 10,574-character rustfmt README returns at the default
   50,000 budget (10,863 measured characters) where it was omitted before, and an eight-line
   `std/src/lib.rs` slice returns 712 measured characters. Pinned Rust 1.89 `make check` passed
-  with 85 suites and 6,445 tests, and `make docs-check` passed. The closure commit is pending.
-  Evidence: `plans/closure/agentic-retrieval-integrity/036-status.md`.
-- M037 is `closing` on the same candidate: the source-role bonus ranks candidates but no longer
+  with 85 suites and 6,445 tests, and `make docs-check` passed. Evidence:
+  `plans/closure/agentic-retrieval-integrity/036-status.md`.
+- M037 is `closed` on the same implementation candidate: the source-role bonus ranks candidates but no longer
   admits them, so a file needs a query, path/file, content, or symbol match; a no-match query in a
   non-empty workspace returns zero local cards with `local_search_completed_no_matches`; a
   remote-scoped request includes local results only with explicit `include_local: true`; and
@@ -254,9 +255,9 @@ exposed M011's mandatory-`redir` defect.
   returns zero cards with the no-match warning (five README cards before), the scoped `VecDeque`
   request returns nine remote results and zero local cards, and content-only recall remains bounded
   by path/role candidate generation, recorded as residual risk. Pinned Rust 1.89 `make check`
-  passed with 85 suites and 6,445 tests. The closure commit is pending. Evidence:
+  passed with 85 suites and 6,445 tests. Evidence:
   `plans/closure/agentic-retrieval-integrity/037-status.md`.
-- M038 is `closing` on the same candidate: an identifier-bearing `security_search` request with no
+- M038 is `closed` on the same implementation candidate: an identifier-bearing `security_search` request with no
   explicit `providers` adds every provider the configuration already enables and that advertises
   native advisory lookup, so an enabled OSV answers a CVE query by default; explicit lists stay
   authoritative; `native_advisory_search_unavailable` and `severity_unavailable` describe what
@@ -266,7 +267,7 @@ exposed M011's mandatory-`redir` defect.
   `providers: ["duckduckgo"]` stayed authoritative; a configuration with OSV disabled reported the
   provider as disabled. The additive field grows the pinned advertisement by 37 bytes (69,932 total,
   fingerprint `517d279f73742d36`; compact unchanged). Pinned Rust 1.89 `make check` passed with 85
-  suites and 6,445 tests. The closure commit is pending. Evidence:
+  suites and 6,445 tests. Evidence:
   `plans/closure/agentic-retrieval-integrity/038-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.

@@ -1,6 +1,6 @@
 # M036 Unified Fetch Repo-Item Budget and Outcome — Closure Evidence
 
-Status: closing (implementation and evidence complete; the closure commit is pending)
+Status: closed
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/036-unified-fetch-repo-item-budget-and-outcome.md`
 
@@ -27,13 +27,12 @@ The paper-first contract is in `architecture/fetch.md` § Batch returned-charact
 
 ## Exact code candidate
 
-Parent commit `614634198bfb6f145f7c223d5a330cc8924f677d`; this work is the uncommitted
-working tree on top of it. The implementation fingerprint is
+Implementation commit `76c1156a2c5418d4b9dab4493eddd9232bdd7b8a` (parent `614634198bfb6f145f7c223d5a330cc8924f677d`). The
+pre-commit implementation fingerprint was
 `103dbdf22a28f3bed06ff0209fc8fbabacf691be13d76e5bce072bd90fc89c7d`, the SHA-256 of
 `git diff -- src tests docs architecture CHANGELOG.md` taken at 2026-11-19T21:21:54Z. Every
-command and probe below ran against that tree. The plan, registry, roadmap, and this record are
-outside that fingerprint; because the closure commit is not yet authorized, they carry
-`closing`, and the commit that carries them becomes the exact-SHA closure.
+command and probe below ran against that tree. This closure commit carries this record, the plan
+status, the roadmap status, and the registry rows together.
 
 ## Requirement-to-evidence mapping
 

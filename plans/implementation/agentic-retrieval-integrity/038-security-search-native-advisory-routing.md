@@ -1,6 +1,6 @@
 # M038 — Security-Search Native Advisory Routing
 
-Status: closing
+Status: closed
 Date: 2026-11-19
 Subsystem: agentic retrieval integrity
 Milestone class: capability (corrective)

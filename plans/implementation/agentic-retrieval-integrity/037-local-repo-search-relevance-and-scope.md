@@ -1,6 +1,6 @@
 # M037 — Local Repo-Search Relevance and Scope
 
-Status: closing
+Status: closed
 Date: 2026-11-19
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective)

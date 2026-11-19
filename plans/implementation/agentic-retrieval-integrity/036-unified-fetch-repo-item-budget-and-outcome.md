@@ -1,6 +1,6 @@
 # M036 — Unified Fetch Repo-Item Budget and Outcome
 
-Status: closing
+Status: closed
 Date: 2026-11-19
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective)

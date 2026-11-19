@@ -1,6 +1,6 @@
 # M038 Security-Search Native Advisory Routing — Closure Evidence
 
-Status: closing (implementation and evidence complete; the closure commit is pending)
+Status: closed
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/038-security-search-native-advisory-routing.md`
 
@@ -28,12 +28,11 @@ optional summary).
 
 ## Exact code candidate
 
-Parent commit `614634198bfb6f145f7c223d5a330cc8924f677d`; this work is the uncommitted
-working tree on top of it. The implementation fingerprint is
+Implementation commit `76c1156a2c5418d4b9dab4493eddd9232bdd7b8a` (parent `614634198bfb6f145f7c223d5a330cc8924f677d`). The
+pre-commit implementation fingerprint was
 `103dbdf22a28f3bed06ff0209fc8fbabacf691be13d76e5bce072bd90fc89c7d` (SHA-256 of
-`git diff -- src tests docs architecture CHANGELOG.md`, 2026-11-19T21:21:54Z). The registry,
-roadmap, plan headers, and this record are outside that fingerprint and carry `closing` until
-the closure commit.
+`git diff -- src tests docs architecture CHANGELOG.md`, 2026-11-19T21:21:54Z). This closure
+commit carries this record, the plan status, the roadmap status, and the registry rows together.
 
 ## Requirement-to-evidence mapping
 
