@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M035 closed; M036–M038 closed)
+Status: active (M001–M038 closed; M039–M040 ready)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -74,6 +74,12 @@ Measured or code-evidenced gaps:
   provider is never queried for a CVE; the response warns to enable a provider that is already
   enabled, a native result still emits `severity_unavailable`, and native vulnerabilities carry no
   summary, forcing a second fetch.
+- The unified `fetch` envelope bounds the readable measure, not the emitted payload: a
+  three-item windowed repo batch reported 12,223 characters but serialized 186,812 bytes, and an
+  eight-line `std` window carried a 64,158-byte whole-file `document`.
+- Local `repo_search` reads only `max_results * 2` path-ranked candidates (ten at defaults), so a
+  content-only or symbol query for a symbol outside that window returns no matches although the
+  file exists; `git grep` over the same tree takes 0.05 s.
 
 ## 3. Invariants and non-goals
 
@@ -130,6 +136,8 @@ ADR-0019 ──> M035 browser challenge completion
 M029 unified fetch ──> M036 unified fetch repo-item budget and outcome
 M006 repo workflow ──> M037 local repo-search relevance and scope
 M006 routing ──> M038 security-search native advisory routing
+M036 ──> M039 fetch emitted-payload budget (corrective)
+M037 ──> M040 local content-aware candidate generation (corrective)
 ADR-0019 ──> puzzle-class and identity milestones not yet registered
 M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
@@ -177,6 +185,8 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M036 — unified fetch repo-item budget and outcome | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/036-unified-fetch-repo-item-budget-and-outcome.md` | hard M029 (closed); interface adaptive M002 (closed) | A repo item is charged the same readable-text measure as a web item, truncates before it is omitted, and an omitted item is `ok: false`; no item reports success with no content |
 | M037 — local repo-search relevance and scope | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md` | none; interface M006 (closed) | A local result requires a query, path/file, or symbol match; a no-match query returns an explicit empty state; a remote-scoped request includes local results only when `include_local: true` is explicit |
 | M038 — security-search native advisory routing | capability (corrective) | `plans/implementation/agentic-retrieval-integrity/038-security-search-native-advisory-routing.md` | none; interface M006 (closed) | An enabled native advisory provider is selected for identifier queries by default, the availability and severity warnings match reality, and a native vulnerability carries a bounded summary |
+| M039 — fetch emitted-payload budget | invariant (corrective to M036) | `plans/implementation/agentic-retrieval-integrity/039-fetch-emitted-payload-budget.md` | hard M036 (closed) | `max_total_chars` bounds the emitted payload; optional `document`/`lines` degrade before the requested text is clipped, and `payload_chars` reports the true emitted size |
+| M040 — local content-aware candidate generation | capability (corrective to M037) | `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md` | hard M037 (closed) | A content or symbol query finds matches beyond the path-ranked window inside a scan bound; truncation and no-match describe the scan honestly |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -269,6 +279,10 @@ exposed M011's mandatory-`redir` defect.
   fingerprint `517d279f73742d36`; compact unchanged). Pinned Rust 1.89 `make check` passed with 85
   suites and 6,445 tests. Evidence:
   `plans/closure/agentic-retrieval-integrity/038-status.md`.
+- M039–M040 are `ready` corrective plans registered from the 2026-11-19 follow-up review: M039
+  makes the fetch budget bound the emitted payload and degrade optional structure before the
+  requested text, and M040 makes local content and symbol queries scan beyond the path-ranked
+  candidate window inside a time/byte bound. Their measured evidence is in each plan.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.
