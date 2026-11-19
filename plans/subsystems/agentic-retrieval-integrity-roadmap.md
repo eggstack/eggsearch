@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M014 conditionally closed; M001–M028 otherwise closed; M029 closed; M030 proposed)
+Status: active (M001–M028 closed; M029 and M030 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -98,7 +98,7 @@ M026 unsupported-extension refusal  (independent)
 M026 + ADR-0012 ──> M027 css-load extension
 ADR-0013 ──> M028 wasm sha256 method
 ADR-0016 ──> M029 unified fetch discovery and legacy aliases
-M014 conditionally closed ──> M030 solve-count acceptance reconciliation (proposed; decision-gated)
+M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -119,7 +119,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M011 — Anubis solver and operator difficulty ceiling | capability | `plans/archive/implementation/agentic-retrieval-integrity/011-anubis-solver-and-difficulty-ceiling.md` | hard M010 | Raising `max_difficulty` is the supported way to pay for a harder challenge; the default ceiling leaves Startpage `blocked` with a named reason |
 | M012 — Startpage payload extraction | capability | `plans/archive/implementation/agentic-retrieval-integrity/012-startpage-payload-extraction.md` | hard M011 (capture and live proof) | A solved Startpage SERP yields parsed rows; unsolved stays `blocked`, drift stays `parse_error` |
 | M013 — challenge solver conformance corrections | invariant (corrective) | `plans/archive/implementation/agentic-retrieval-integrity/013-challenge-solver-conformance-corrections.md` | none (ADR-0010 accepted) | A prefixed deployment and a `slow` deployment both solve; a spent, over-budget, or unprojectable challenge fails closed with a named reason before any hashing |
-| M014 — pass-cookie lifetime and egress binding | capability | `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md` | none | A cookie is reused for the lifetime the upstream actually published, clamped by configuration, so repeat searches re-solve far less often |
+| M014 — pass-cookie lifetime and egress binding | capability | `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md` | none | A cookie is never reused beyond a usable published lifetime or the configured ceiling; expired or malformed lifetimes disable reuse, while providers publishing no lifetime retain the existing ceiling fallback; no solve-count reduction is claimed |
 | M015 — challenge solvability observability | capability | `plans/archive/implementation/agentic-retrieval-integrity/015-challenge-solvability-observability.md` | none | An operator can see solve attempts, outcomes by bound, and cookie cache hits without reading logs, and no secret material appears |
 | M016 — Anubis `metarefresh` solver | capability | `plans/archive/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md` | ADR-0010 | A deployment offering only the no-JavaScript method is reachable with zero hashing, and the echoed payload contains only published values |
 | M017 — routing shipped-set evidence and keyword predicate | invariant (corrective to M006) | `plans/archive/implementation/agentic-retrieval-integrity/017-routing-shipped-set-evidence-and-keyword-predicate.md` | hard M004, M005, M006 | The shipped default provider set is measured, so `intent_mode` is decided by evidence; and no routing entry can be one that rejects a keyword query |
@@ -135,7 +135,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M027 — `css-load` extension | capability | `plans/archive/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md` | hard ADR-0012 acceptance; hard M026 | A `css-load` challenge is satisfied with one bounded same-origin GET; unknown and `headless` stay refused |
 | M028 — WASM `sha256` method | capability | `plans/archive/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md` | hard ADR-0013 acceptance; M026 | A `sha256` challenge solves under the fast-equivalent ceiling; `argon2id`/`hashx` stay refused |
 | M029 — unified fetch tool and legacy aliases | capability | `plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md` | interface ADR-0016 accepted | One canonical nine-tool inventory advertises `fetch` for one or many web/repo items; `web_fetch` and `batch_fetch` remain callable with legacy behavior but are absent from discovery and `next_actions`; full and compact schemas are smaller than baseline |
-| M030 — M014 solve-count acceptance reconciliation | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` | operational: explicit user choice; M014 remains conditional until resolved | The accepted M014 exit criterion distinguishes expiry safety from solve-count reduction; no stale-token avoidance is misreported as fewer solves |
+| M030 — M014 expiry-safety acceptance reconciliation | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` | operational: user-selected path 1 | M014's expiry-safety criterion is evidenced; its original solve-count-reduction clause is superseded, not met, and no reduction is claimed |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -175,13 +175,15 @@ exposed M011's mandatory-`redir` defect.
   `intent_mode` therefore ships `apply`. Evidence: `plans/closure/agentic-retrieval-integrity/006-status.md`.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
-- M014 is `conditionally closed`: the reuse window is the upstream-published `Max-Age`/`Expires` clamped by
-  `cookie_ttl_seconds`, a rejected cookie is evicted, and `doctor` warns when a routed egress meets
-  reuse. A live 21-minute run re-solved after the published expiry instead of replaying a dead
-  token; that is stale-token avoidance, not evidence of reduced solve counts. The required two-arm
-  solve-count comparison remains unrun. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.
+- M014 is `closed` under the M030 path-1 decision: reuse is bounded by a usable upstream-published
+  `Max-Age`/`Expires` and `cookie_ttl_seconds`; malformed/expired cookies disable reuse, rejected
+  cookies are evicted, and `doctor` warns when routed egress meets reuse. The Startpage post-expiry
+  run demonstrates safe expiry handling; it is not evidence of fewer solves. The planned solve-count
+  comparison was not run and no reduction is claimed. Mojeek published no lifetime and keeps its
+  existing ceiling fallback. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`
+  and `plans/closure/agentic-retrieval-integrity/030-status.md`.
 - M029 is `closed` on implementation candidate `3416da6231702dcabc22b2c8e32e94dd88cb20e4`: the nine-tool schema, legacy MCP aliases, mixed web/workspace HTTP execution, schema reduction, pinned Rust 1.89 `make check`, `make docs-check`, and installed-wheel tests pass. The exact-SHA evidence, plan, roadmap, and registry status updates landed in the closure commit. Evidence: `plans/closure/agentic-retrieval-integrity/029-status.md`.
-- M030 is `proposed`: it presents the M014 acceptance-path decision, records why the current TTL rule cannot establish fewer solves than the fixed-ceiling baseline, and keeps M014 conditionally closed until a path is chosen. Evidence: `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md`.
+- M030 is `closed`: the user selected path 1, re-scoping only M014's solve-count-reduction clause to expiry safety. Existing deterministic tests and the recorded Startpage expiry-boundary observation satisfy the replacement criterion; Mojeek's no-lifetime fallback is unchanged. Solve-count reduction remains unproven. The closure record, plan, roadmap, and registry carry this disposition together. Evidence: `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` and `plans/closure/agentic-retrieval-integrity/030-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.

@@ -1,6 +1,6 @@
 # M014 Pass-Cookie Lifetime and Egress Binding — Closure Status
 
-Status: conditionally closed
+Status: closed (M030 path 1; solve-count clause superseded)
 
 Source plan: `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md`
 
@@ -30,28 +30,27 @@ Implementation candidate and closure commit: the commit that carries this record
 cookie, and both engines call it when a replay is still challenged. `eggsearch doctor` warns when
 `[egress]` is routed and cookie reuse is enabled.
 
-## Named condition
+## Superseded solve-count condition and accepted replacement
 
-The plan's live acceptance requires both measurement arms (derived active versus the fixed-window
-reference) and at least one provider whose solve count fell, or an explicit statement that no
-provider publishes a lifetime. Startpage publishes a lifetime (~20 min `Expires`), but it is longer
-than the shipped 240 s ceiling, so at the default the clamp binds and the derivation cannot reduce
-the solve count; at a raised ceiling both the old and new rules re-solve once the challenge is
-served, so a solve-count reduction is not expected for this upstream. The observed benefit is the
-avoided dead-token request: the derived arm's entry expired on the published schedule and the
-second search took a miss and re-solved directly (`cookie_misses=2`, `cookie_hits=0`, 3 rows),
-where the fixed 30-minute rule would have presented the expired token first.
+M014's original live acceptance clause required a two-arm solve-count comparison and at least one
+provider whose solve count fell, or an explicit statement that no provider publishes a lifetime.
+That solve-count comparison was not run, and no solve-count reduction was demonstrated. The user's
+M030 path-1 decision supersedes only that unmet clause; M014's implementation plan remains
+unchanged. No solve-count reduction is claimed.
 
-The two-arm solve-count comparison was therefore not run. The implemented resolver returns at most
-the configured ceiling: a published lifetime is clamped to it, an unstated lifetime falls back to
-it, and an expired or malformed lifetime disables reuse. Against the old fixed-ceiling rule and an
-identical request schedule, this can preserve or shorten reuse, never lengthen it; it therefore
-cannot establish fewer solves than the fixed-window baseline. For observed Startpage, the published
-~20-minute lifetime exceeds the shipped 240-second ceiling (no solve-count delta at default);
-Mojeek publishes no lifetime (same fallback behavior). The live observation of avoiding a dead-token
-replay is a reliability/request-count benefit, not a solve-count reduction. Keep M014 conditionally
-closed until its acceptance criterion is explicitly reconciled; do not claim a reduction. Closing as
-`closed` would claim an acceptance the plan does not authorize.
+The accepted replacement criterion is expiry safety: a cookie is never reused beyond a usable
+upstream-published lifetime or the configured `cookie_ttl_seconds` ceiling; an expired or malformed
+published lifetime disables reuse, and rejection evicts the cookie. A provider that publishes no
+lifetime retains the existing configured-ceiling fallback and is recorded as unchanged.
+
+The existing evidence meets that criterion. Resolver tests cover past/tie expiry returning zero,
+future expiry honored and clamped, malformed expiry returning zero, the ceiling, and unstated
+fallback. Startpage engine-flow tests cover published lifetime clamping, zero-TTL behavior, and
+rejection eviction. In the recorded Startpage live run, a 30-minute ceiling exceeded its published
+~20-minute `Expires`; after 1,261.4 seconds the next search missed the cache and solved afresh,
+returning three rows. Mojeek published no lifetime and remains on the same ceiling fallback. The
+Startpage observation demonstrates expiry safety/reliability only: the 2 solves over the run are not
+a comparison and not evidence of fewer solves.
 
 ## Published attributes (live capture, 2026-11-13, value redacted)
 
@@ -130,6 +129,18 @@ a lifetime beyond the ceiling being clamped, zero TTL solving every time, and re
 
 Hosted CI: run `43472592990` on `0019f48` passed all three jobs — Ubuntu `ci` (12m11s),
 Windows all-features check, and macOS canonical verification plus filesystem portability.
+
+## M030 focused requalification on code candidate 46fda7764387fc35e9babca54036e80ed250ae78
+
+Using the pinned Rust 1.89 toolchain, the focused suites passed on the exact committed code
+candidate, with no production changes in M030:
+
+- `cargo test --locked --all-features --lib meta::challenge`: 118 passed, 0 failed.
+- `cargo test --locked --all-features --lib meta::engines::startpage`: 51 passed, 0 failed.
+- `cargo test --locked --all-features --lib meta::engines::mojeek`: 20 passed, 0 failed.
+
+The original M014 verification and hosted CI evidence above remain historical qualification. M030
+adds the selected expiry-safety disposition; it does not establish a solve-count reduction.
 
 ## Residual risk
 

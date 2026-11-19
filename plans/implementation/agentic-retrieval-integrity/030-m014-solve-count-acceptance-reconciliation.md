@@ -1,78 +1,85 @@
-# M030 — M014 Solve-Count Acceptance Reconciliation
+# M030 — M014 Expiry-Safety Acceptance Reconciliation
 
-Status: proposed
+Status: closed
 
 Class: invariant (corrective to M014's evidence contract)
 
 Source roadmap: plans/subsystems/agentic-retrieval-integrity-roadmap.md
 
-Corrects: the unresolved acceptance condition in M014; it does not reopen M014's implementation or change any closed milestone.
+Corrects: supersedes only M014's unmet solve-count-reduction acceptance clause; it does not rewrite M014's implementation plan, reopen its implementation, or change any closed milestone.
 
-Planning baseline: 3416da6231702dcabc22b2c8e32e94dd88cb20e (M029 implementation candidate)
+Planning baseline: 46fda7764387fc35e9babca54036e80ed250ae78 (current committed code candidate; M029 closure)
 
 ## Objective
 
-Resolve the mismatch between M014's requested solve-count reduction and its implemented expiry-safe cache policy. Preserve the explicit rule that avoiding a dead-cookie replay is not evidence of fewer solves. Obtain an explicit acceptance-path decision before changing M014's status or adding production behavior.
+Record the user's selected path 1 for M030: re-scope M014 success to safe pass-cookie expiry handling. Preserve the explicit evidence boundary that avoiding a dead-cookie replay does not demonstrate fewer solves. Make no production changes.
 
-## Current evidence
+## Accepted decision
 
-- The former fixed-window policy stores a pass cookie for the configured ceiling, `cookie_ttl_seconds`.
-- The derived policy stores no more than that ceiling: an upstream lifetime is clamped to it, an unstated lifetime falls back to it, and an expired or malformed lifetime disables reuse. Therefore the derived TTL is never greater than the fixed TTL. With the same request schedule, this policy can preserve or shorten reuse; it cannot establish fewer solves than the fixed-window baseline.
-- The captured Startpage pass cookie publishes an approximately 20-minute `Expires`, longer than the shipped 240-second ceiling, so the default clamp binds. The captured Mojeek pass response publishes no lifetime, so its fallback is unchanged.
-- The existing 21-minute Startpage observation at a raised ceiling recorded a second solve after expiry and no dead-token replay. It is expiry-safety evidence only; the planned two-arm solve-count comparison was not run.
-- `plans/closure/agentic-retrieval-integrity/014-status.md` records the live evidence and keeps M014 conditionally closed. It explicitly rejects treating stale-token avoidance as a solve-count reduction.
+The user selected path 1 with: “lets re-scope m014 to expire safely. go ahead with m030.” This authorizes the M030 acceptance reconciliation, not a change to production behavior or a commit.
 
-## Decision required
+Only M014's solve-count-reduction acceptance clause is superseded. The M014 implementation plan remains unchanged. Its replacement exit criterion is:
 
-Choose one path before this plan becomes active:
+1. Never reuse a cookie past its published Max-Age/Expires lifetime or the configured cookie_ttl_seconds ceiling; a known-expired or malformed lifetime disables reuse, and a rejected replay evicts the cookie.
+2. Demonstrate the expiry boundary with a provider that publishes a lifetime. Existing Startpage live evidence observes a cache miss and fresh successful solve after its published expiry.
+3. Record providers that publish no lifetime as unchanged: Mojeek continues to fall back to the configured ceiling.
+4. Make no solve-count-reduction claim. M014's planned two-arm solve-count comparison was not run and is no longer the selected criterion.
 
-1. **Re-scope M014 to expiry safety.** Explicitly supersede only its solve-count-reduction acceptance clause with a measurable validity/reliability criterion: never reuse beyond a published lifetime or the operator ceiling; demonstrate the expiry boundary with a provider that publishes a lifetime; record providers with no published lifetime as unchanged. Solve counts remain unclaimed. The corrective closure record must say the original reduction was not demonstrated and identify the accepted superseding criterion.
-2. **Retain solve-count reduction as a required outcome.** Keep M014 conditional and write a separate, user-approved implementation plan for a mechanism that can actually reduce solves while respecting both upstream expiry and the operator ceiling. Any default/configuration change or TTL-policy widening requires its own explicit decision and, where required, an ADR. A two-arm measurement alone cannot satisfy this path if its result does not show fewer solves.
-3. **Defer.** Keep M014 conditionally closed and make no claim of solve-count reduction until a feasible acceptance path is selected.
+## Evidence map
 
-This proposal does not select a path on the user's behalf. Until selected, M014 remains conditionally closed.
+- src/meta/challenge/cookie.rs implements reuse_ttl as the minimum of the usable published remaining lifetime and the configured ceiling; Unstated falls back to that ceiling, while malformed, zero, and expired lifetimes yield no reuse. Its deterministic unit tests cover these boundaries without sleeping.
+- Startpage engine-flow tests cover zero Max-Age, ceiling-clamped lifetime, zero-TTL repeat solves, and rejected-cookie eviction.
+- The M014 live record captures Startpage Expires (~20 minutes) and a run with a 1,800-second ceiling. At 1,261.4 seconds, the second search recorded cookie_hits=0, cookie_misses=2, two total successful solves, and three result rows; it took a miss and solved afresh after expiry. This is expiry-safety/reliability evidence, not a solve-count comparison.
+- The captured Mojeek pass response published no lifetime; fallback to the configured ceiling is unchanged.
 
 ## Scope and non-goals
 
-In scope: establish the arithmetic and evidence boundary; obtain the user's acceptance-path choice; register any resulting implementation or evidence plan; update M014's status only with explicit authority and exact evidence.
+In scope: record the selected acceptance path, map existing deterministic and live evidence to it, and reconcile M030/M014 closure evidence, roadmap, and registry.
 
-Out of scope: changing cookie parsing, expiry, cache behavior, the 240-second default, egress behavior, solver budgets, provider behavior, or public interfaces; generating live traffic before a feasible measurement is selected; changing M014's original plan in place; or claiming a solve reduction from avoiding rejected or expired tokens.
+Out of scope: changing cookie parsing, expiry, cache behavior, the 240-second default, egress behavior, solver budgets, providers, public interfaces, or any production file; changing M014's original implementation plan; claiming fewer solves based on fewer stale-token requests; reopening M029 or the tool-surface roadmap.
 
 ## Invariants
 
-- Reuse never exceeds the configured ceiling or an upstream-published lifetime.
-- A known-expired, malformed, or rejected cookie is not replayed as a valid cache hit.
-- Solve attempts, cache misses, rejected replays, and successful searches are distinct measurements; do not substitute one for another.
-- The user selects any changed acceptance contract. A proposal is not approval, and M014 stays conditional until its selected path is completed.
+- Reuse is bounded by both an applicable published lifetime and the operator ceiling; an unstated lifetime retains the existing configured-ceiling fallback.
+- A known-expired, malformed, or rejected cookie is not reused as a valid cache hit.
+- Solve attempts, cache misses, rejected replays, successful searches, and solve-count deltas are distinct measurements.
+- No solve-count reduction is claimed; the two-arm comparison remains unrun.
+- No production behavior changes without a separately approved implementation scope.
 - No closed milestone or the tool-surface roadmap is reopened.
 
 ## Ordered work packages
 
-1. Map `reuse_ttl` and its unit/engine tests to the fixed-window comparison. Preserve the proof that the derived TTL is bounded by the configured ceiling.
-2. Obtain an explicit choice among the three decision paths above. Do not run a long live comparison while the chosen outcome is unknown.
-3. For path 1, define the new validity/reliability acceptance in this corrective plan, map existing unit and live evidence to each criterion, and run only any missing bounded evidence. Keep solve counts explicitly unproven. The M014 status disposition must state that its original solve-reduction claim was not met and that the replacement criterion was accepted here.
-4. For path 2, prepare a separate bounded implementation plan and any required ADR. State the mechanism and its safety bound before attempting a live A/B run; if no mechanism can meet the original target safely, leave M014 conditional.
-5. For path 3, leave M014 conditionally closed, record the deferral, and stop without changing its acceptance status.
-6. When an approved path is completed, update the roadmap, registry, and a new M030 closure record together. Preserve the M014 evidence record and link the superseding decision rather than silently rewriting history.
+1. Map the resolver and engine-flow tests to expiry, ceiling, and no-lifetime behavior — complete.
+2. Record the user's explicit path-1 decision and its narrow effect on M014 acceptance — complete.
+3. Reuse the existing Startpage post-expiry live observation and Mojeek no-lifetime capture; make no new live requests because the selected criteria already have evidence — complete.
+4. Update M014 closure evidence, this M030 record, the subsystem roadmap, and registry; run focused challenge tests and planning checks — complete.
+5. Do not change production code; commit the closure set only after explicit user approval.
 
 ## Verification
 
-Planning-only changes: `make docs-check`, `make packaging-check` (including planning consistency), and `git diff --check`.
+Focused Rust tests use the repository-pinned Rust 1.89 toolchain:
 
-Any production change requires focused challenge-cookie tests, `make check` on the exact candidate with the repository's pinned Rust 1.89 toolchain, and fresh live evidence only when the selected plan authorizes it. Live evidence must record the request schedule, provider, ceiling, published attributes (without cookie values), solve-counter deltas, cache hits/misses, result outcomes, and elapsed window for both arms. Never persist or print cookie values.
+```bash
+PATH=/Users/davidbowman/.rustup/toolchains/1.89.0-aarch64-apple-darwin/bin:$PATH cargo test --locked --all-features --lib meta::challenge
+PATH=/Users/davidbowman/.rustup/toolchains/1.89.0-aarch64-apple-darwin/bin:$PATH cargo test --locked --all-features --lib meta::engines::startpage
+PATH=/Users/davidbowman/.rustup/toolchains/1.89.0-aarch64-apple-darwin/bin:$PATH cargo test --locked --all-features --lib meta::engines::mojeek
+```
+
+Planning-only validation: run make docs-check, make packaging-check, and git diff --check with the same pinned toolchain path. No production change is in scope, so a fresh live comparison and full make check are not acceptance requirements for M030.
 
 ## Acceptance criteria
 
-1. The derived-versus-fixed TTL relationship is documented accurately and supported by the existing resolver/unit-test evidence.
-2. The user-selected path is recorded explicitly; no proposal is treated as an accepted change.
-3. Stale-token avoidance is separated from solve-count reduction in the roadmap, registry, M014 evidence, and any new closure record.
-4. M014 remains conditionally closed unless the selected replacement/retained criterion is met on its exact evidence candidate.
-5. No change is made to production behavior without a separate approved implementation scope.
+1. The user's path-1 decision and the exact clause it supersedes are explicit.
+2. The expiry-safety criterion is mapped to deterministic resolver/engine tests and the existing Startpage post-expiry observation.
+3. Mojeek's no-lifetime fallback is recorded as unchanged.
+4. The records state that the solve-count comparison was not run and no reduction is claimed.
+5. M014's original implementation plan and production behavior are unchanged.
+6. M014 and M030 close together in the exact closure commit; M029 stays untouched.
 
 ## Stop conditions
 
-Stop and leave M014 conditional if no acceptance path is selected; if a purported solve-count gain requires replay beyond upstream expiry or above the configured ceiling; if the only evidence is a dead-cookie rejection avoided; or if the live comparison cannot hold provider, request schedule, and cache state comparable across arms.
+Stop and leave M014 conditional if the published-lifetime bound is contradicted by code or tests, if a live expiry observation cannot be tied to the published expiry, or if closure would require production changes or treating stale-token avoidance as a solve reduction.
 
 ## Required closure evidence
 
-Create `plans/closure/agentic-retrieval-integrity/030-status.md` only after the selected path is completed. Record the selected decision and its authority, exact candidate SHA, requirement-to-evidence mapping, commands and outcomes, live-arm details if applicable, the separate solve-count and stale-token results, M014's final status disposition, residual risk, and the roadmap/registry update carried in the same commit.
+plans/closure/agentic-retrieval-integrity/030-status.md records the selected decision and its authority, exact code candidate SHA, requirement-to-evidence mapping, commands and outcomes, separate solve-count and stale-token conclusions, M014's disposition, residual risk, and the roadmap/registry update. The authorized closure commit must carry this plan, both closure records, the roadmap, and registry together.
