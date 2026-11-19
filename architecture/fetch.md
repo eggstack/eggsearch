@@ -722,10 +722,35 @@ an expiry at or before now stores nothing. The shipped default is unchanged.
 **Sequence.** On a detected Anubis or ALTCHA page the shared module consults the cache before it
 solves. A hit replays the request once with the stored pair set and performs no solve. A miss
 solves as usual and, when the replay returns the document, stores the issued pair set under its
-published lifetime. A replay that comes back as a challenge page — the upstream refusing the
-cookie — evicts the entry, so the next fetch starts cold. The one-solve-one-replay rule is
-unchanged: a fetch never solves and replays twice, and it never uses a cached cookie to avoid a
-solve inside the same call.
+published lifetime. The one-solve-one-replay rule is unchanged: a fetch never solves and replays
+twice, and it never uses a cached cookie to avoid a solve inside the same call.
+
+**Stale pair set.** A stored pair set the upstream refuses is not a final outcome for the call that
+found it. When the replay comes back as a challenge page, the entry is evicted and the same call
+falls through to the ordinary solve path, inside the same budget. The rejected pair set is never
+presented a second time, and the call still performs at most one solve and one replay: the replay
+budget is spent on the fresh pair set, not on the refused one. ADR-0018 records that bound.
+
+The eviction is unconditional and happens before the solve, so a refused pair set is never offered
+to the upstream again, and the entry a fresh solve stores is the only entry the origin holds.
+
+A refusal is a challenge page, and nothing else. A transport error, a timeout, and a non-2xx
+status are not refusals: the stored pair set is kept, no solve is attempted, and the call leaves
+the original response exactly as it was. A transient failure therefore never spends the call's
+solve budget, and a usable pair set is never discarded because of one.
+
+This bounds the degradation M033 removed. A stale pair set used to cost one degraded fetch: the
+call returned the marked challenge page, the entry was evicted, and the *next* fetch solved. Now the
+call that discovers the stale pair set solves it, so a caller never has to await a second fetch to
+get a document. The cost is one extra upstream request in that call — the refused replay — which
+the ordinary solve path would have spent on the challenge page anyway.
+
+The budget is unchanged and still binds. The refused replay and the fresh solve share the call's
+single solve: a refused pair set costs no solve attempt of its own, because no solve was performed
+for it. A solve that then refuses, errors, exhausts the deadline, or replays into another challenge
+page leaves the original response exactly as it was, and the origin is left with no entry. The
+fresh pair set is stored under the same published-lifetime and ceiling rules as any other, so the
+reuse window is never extended by the recovery.
 
 **Bounds.** The cache holds at most 32 origins and at most 64 KiB of stored pair-set bytes. Both
 bounds are explicit: an insertion that would exceed either bound evicts the entry closest to

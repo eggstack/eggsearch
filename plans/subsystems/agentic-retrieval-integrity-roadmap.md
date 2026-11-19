@@ -111,7 +111,8 @@ M026 + ADR-0012 ──> M027 css-load extension
 ADR-0013 ──> M028 wasm sha256 method
 ADR-0016 ──> M029 unified fetch discovery and legacy aliases
 ADR-0017 ──> M031 fetch-path challenge solve parity ──> M032 ALTCHA on the general fetch path
-M031 ──> M033 fetch-side pass-cookie reuse
+M031 ──> M033 fetch-side pass-cookie reuse ──> M034 fetch-side stale pass-cookie recovery
+ADR-0018 ──> M034 fetch-side stale pass-cookie recovery
 M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
@@ -153,6 +154,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M031 — fetch-path challenge solve parity | capability | `plans/implementation/agentic-retrieval-integrity/031-fetch-path-challenge-solve-parity.md` | hard ADR-0017 (accepted) | Every fetch surface that can observe a published challenge attempts one bounded solve and one replay through a single shared implementation; `repo_fetch` and the CLI gain the classification the MCP web family already has; the `batch_fetch` residual is proven by test and its stale note corrected |
 | M032 — ALTCHA on the general fetch path | capability | `plans/implementation/agentic-retrieval-integrity/032-altcha-on-the-general-fetch-path.md` | hard ADR-0017 (accepted); hard M031 | A general fetch that meets a published ALTCHA PBKDF2 challenge solves it under the same ceilings and replays once; a challenge or verify endpoint that cannot be derived same-origin fails closed as `unsupported scheme` |
 | M033 — fetch-side pass-cookie reuse | capability | `plans/implementation/agentic-retrieval-integrity/033-fetch-side-pass-cookie-reuse.md` | hard ADR-0017 (accepted); hard M031; interface M014 | A fetch-side pass cookie is reused for the issuing origin only, within its published lifetime and the operator ceiling, never past expiry, and is evicted when the upstream rejects it |
+| M034 — fetch-side stale pass-cookie recovery | capability | `plans/implementation/agentic-retrieval-integrity/034-fetch-side-stale-pass-cookie-recovery.md` | hard ADR-0017 (accepted); hard ADR-0018 (accepted); hard M031; hard M033 | A fetch that meets a refused cached pass cookie evicts it and recovers in the same call, so the caller never has to await a second fetch to get a document; one solve and one replay of a solved pair set per call still hold |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
