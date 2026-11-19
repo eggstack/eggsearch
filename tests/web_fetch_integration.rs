@@ -5728,7 +5728,7 @@ fn anubis_wall<'a>(
     (replay, wall, pass)
 }
 
-fn anubis_state(enabled: bool) -> Arc<ServerState> {
+fn challenge_state(enabled: bool) -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
@@ -5817,7 +5817,7 @@ async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document(
         "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
 
@@ -5846,7 +5846,7 @@ async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
     let server = MockServer::start();
     let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
 
-    let value = run_web_fetch(anubis_state(false), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(false), fetch_args_for(server.url("/")))
         .await
         .expect("challenge page fetch succeeds");
 
@@ -5887,7 +5887,7 @@ async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
     let server = MockServer::start();
     let (replay, wall, pass) = anubis_wall(&server, &anubis_fast_challenge_page());
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("a challenged replay keeps the marked response");
 
@@ -5907,7 +5907,7 @@ async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
         "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
     let serialized = serde_json::to_string(&value).expect("payload is serializable");
@@ -5929,7 +5929,7 @@ async fn web_fetch_replays_a_default_anubis_pass_cookie() {
         "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
 
@@ -5965,7 +5965,7 @@ async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
         "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
     let serialized = serde_json::to_string(&value).expect("payload is serializable");
@@ -5987,6 +5987,279 @@ async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
         1,
         "the joined default-name pairs are replayed once"
     );
+}
+
+const ALTCHA_PASS_COOKIE: &str = "altcha-pass-cookie";
+
+const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
+
+fn altcha_wall_page(challenge_attribute: &str) -> String {
+    format!(
+        r#"<html><head><title>Protected</title></head><body><div class="captcha-wrap"><altcha-widget challenge="{challenge_attribute}"></altcha-widget></div></body></html>"#
+    )
+}
+
+fn altcha_wall<'a>(
+    server: &'a httpmock::MockServer,
+    challenge_attribute: &str,
+    document: &str,
+    replay_body: &str,
+) -> (
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page(challenge_attribute));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(document);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+            )
+            .body("");
+    });
+    (replay, wall, challenge, verify)
+}
+
+#[tokio::test]
+async fn web_fetch_solves_a_published_altcha_challenge_and_returns_the_document() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust is fast and reliable"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&value),
+        0,
+        "a solved fetch carries no challenge warning"
+    );
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+}
+
+#[tokio::test]
+async fn web_fetch_marks_the_altcha_challenge_when_solving_is_disabled() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(false), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(
+        challenge.hits(),
+        0,
+        "a disabled solver must not fetch the published challenge"
+    );
+    assert_eq!(verify.hits(), 0);
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_refuses_a_cross_origin_altcha_endpoint() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "https://other.example/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(
+        challenge.hits(),
+        0,
+        "a cross-origin endpoint must never be requested"
+    );
+    assert_eq!(
+        verify.hits(),
+        0,
+        "a refused endpoint issues no verification request"
+    );
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_refuses_a_malformed_altcha_payload() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        r#"{"parameters":{"algorithm":"PBKDF2/SHA-256"}}"#,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(
+        verify.hits(),
+        0,
+        "a malformed payload must be refused before any solve"
+    );
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_mark_when_the_altcha_budget_refuses() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"0000000000000000ffffffffffffffff","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00"},"signature":"00"}"#,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    cfg.search.challenge.max_attempts = 8;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let value = run_web_fetch(state, fetch_args_for(server.url("/")))
+        .await
+        .expect("refused solve keeps the marked response");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(challenge.hits(), 1);
+    assert_eq!(
+        verify.hits(),
+        0,
+        "a refusal stops before the verification request"
+    );
+    assert_eq!(replay.hits(), 0, "a refusal issues no replay");
+}
+
+#[tokio::test]
+async fn web_fetch_refuses_an_unsupported_altcha_algorithm() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        r#"{"parameters":{"algorithm":"PBKDF2/SHA-512","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00"},"signature":"00"}"#,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(challenge.hits(), 1);
+    assert_eq!(
+        verify.hits(),
+        0,
+        "an unsupported algorithm must be refused before any submission"
+    );
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_solved_altcha_payload_carries_no_cookie_material() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let (replay, _, _, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+    let serialized = serde_json::to_string(&value).expect("payload is serializable");
+
+    for canary in [
+        ALTCHA_PASS_COOKIE,
+        "chllg",
+        "b054884358ba2e5e24a53c818185502e",
+    ] {
+        assert!(
+            !serialized.contains(canary),
+            "challenge material {canary} must not reach the payload: {serialized}"
+        );
+    }
+    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
 }
 
 #[tokio::test]
@@ -6019,7 +6292,7 @@ async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
             .body("");
     });
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("a header-only metarefresh fetch succeeds");
 

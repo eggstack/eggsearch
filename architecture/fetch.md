@@ -618,24 +618,79 @@ returned as a stub; `render: "http_only"` keeps the marked body. The remote
 is returned, `fetch_challenge_page` is surfaced through `structured_warnings`. Its workspace
 path always sets the flag to false.
 
-When `[search.challenge].enabled` is true, a detected Anubis page can be solved and replayed
-once. `src/challenge_replay/` owns the shared fetch-path detect → solve → replay → classify
-sequence, combining the bounded fetch client with the solver in `src/meta/challenge/anubis.rs`.
-`web_fetch`, `batch_fetch`, and unified `fetch` web items delegate through the shared web-fetch
-handler; the remote `repo_fetch` path and CLI `eggsearch fetch` use the same orchestration. Each
-fetch-path solve uses the ledger label `fetch` and is bounded by `max_difficulty`,
-`max_attempts`, `timeout_ms`, and the remaining call deadline.
+When `[search.challenge].enabled` is true, a detected Anubis or ALTCHA page can be solved
+and replayed once. `src/challenge_replay/` owns the shared fetch-path detect → solve → replay →
+classify sequence, combining the bounded fetch client with the solvers in
+`src/meta/challenge/anubis.rs` and `src/meta/challenge/altcha.rs`. `web_fetch`, `batch_fetch`,
+and unified `fetch` web items delegate through the shared web-fetch handler; the remote
+`repo_fetch` path and CLI `eggsearch fetch` use the same orchestration. Each fetch-path solve
+uses the ledger label `fetch` and is bounded by `max_attempts`, `timeout_ms`, and the remaining
+call deadline. `max_difficulty` gates the Anubis family only; an ALTCHA solve publishes no
+difficulty and is bounded by its PBKDF2 `cost`, the attempt ceiling, and the wall clock.
 
 The solve replays the same request once with the cookie pairs the pass response issued, joined with
 `; `. The pair set is opaque — its names are whatever the deployment publishes (`spchal-auth`,
 `techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and is sent on
-the first hop only, so a redirect cannot forward it to another origin. It is never stored. A
+the first hop only, so a redirect cannot forward it to another origin. It is never stored. An
+ALTCHA solve replays with the `chllg` pass cookie its verification endpoint issued. A
 successful replay returns the document with `manual_interaction_required: false` and no
 `fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a refusal at
 any ceiling, an error, an exhausted deadline, or a replay that is itself a challenge all leave the
 original response marking unchanged, with at most one solve and one replay per call. For web fetch,
 the browser path keeps priority: a successful `render: "auto"` render replaces the payload before
 the solver runs. `batch_fetch` inherits solve behavior through the shared web-fetch handler.
+
+### ALTCHA endpoint derivation
+
+An ALTCHA wall publishes its proof-of-work material in the widget markup, so a general fetch has to
+derive two things from the page itself: the challenge document, and the endpoint that verifies a
+solution. `src/challenge_replay/altcha.rs` owns both. The rule is fixed and bounded, and every
+refusal happens before a request is issued.
+
+**Accepted publication.** The page must carry an `altcha-widget` element, the upstream web
+component. Two attributes are read from it:
+
+| Purpose | Accepted attributes |
+|---|---|
+| Challenge material | `challenge` (upstream v2+: inline JSON or a URL), `challengeurl` (upstream v1) |
+| Verification endpoint | `verifyurl` (upstream v1), `data-verify-url` |
+
+A `challenge` value that starts with `{` is the published challenge document itself, read inline
+and bounded to 64 KiB. Any other `challenge` value, and any `challengeurl` value, is a published
+challenge endpoint. A page that publishes neither carries no solvable challenge.
+
+**Endpoint form.** A published endpoint is accepted only when every one of these holds:
+
+1. The trimmed value is at most 256 characters.
+2. It resolves — with `Url::join` against the challenge page's own URL, never by string
+   concatenation — to an absolute URL.
+3. The resolved scheme is the challenge page's own scheme, and that scheme is `http` or `https`.
+   A scheme change fails closed.
+4. The resolved URL carries no credentials, no query, and no fragment.
+5. The resolved origin — host and effective port — is the challenge page's own origin. A
+   cross-origin target fails closed, which is what stops a page from steering a solve at another
+   site.
+6. The resolved path matches the fixed allowed shape: one to four segments, each at most 32
+   characters drawn from `[A-Za-z0-9._~-]`, whose last segment is exactly `challenge` for a
+   challenge endpoint and exactly `verify` for a verification endpoint.
+
+A challenge endpoint that passes is requested with `Accept: application/json` and a bounded body of
+at most 64 KiB.
+
+**Verification endpoint.** A published verification endpoint is used as published, under the same
+six rules. When the page publishes none, the verification endpoint is derived from the published
+challenge endpoint by replacing its final `challenge` segment with `verify`, keeping the origin
+and the prefix; a page that publishes an inline challenge and no verification endpoint falls back
+to the canonical `/captcha/verify` on its own origin. The request URL is rebuilt from the
+resolved URL's own parsed components; no page text is spliced into a URL string.
+
+**Refusals.** A cross-origin, scheme-changing, credentialed, query-bearing, unparseable, or
+over-long endpoint, and an unsupported published algorithm, fail closed as `unsupported scheme`. A
+published challenge document that does not parse into the documented parameter set fails closed as
+`malformed parameters`. The published PBKDF2 `cost` is part of that parameter set: it is the work
+factor of one counter iteration, so a cost above the solver's ceiling is refused rather than
+started. Both are existing refusal keys; the vocabulary does not grow. Every refusal leaves the
+original response exactly as it was.
 
 ### Profiles: opaque IDs, origin-scoped logins
 

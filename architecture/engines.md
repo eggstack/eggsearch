@@ -292,6 +292,13 @@ Implementation:
   offline, pure-computation dependencies and no network, TLS, browser, or service dependency was
   added. The verify POST hand-builds its `multipart/form-data` body with a fixed boundary because
   the guard `eggfetch_feature_budget_stays_bounded` forbids the `multipart` eggfetch feature.
+- One ALTCHA solve implementation serves both callers. `src/meta/challenge/altcha.rs` owns the
+  parse, the counter search, and the verification POST; the engine-side caller fetches the
+  challenge document first, and the fetch-path caller in `src/challenge_replay/altcha.rs` may hand
+  over a document the page published inline. The published PBKDF2 `cost` is the work factor of a
+  single counter iteration, so it is the one published parameter that can overrun the wall-clock
+  ceiling on its own; a `cost` above `MAX_PBKDF2_COST` is refused as `malformed parameters`
+  rather than started.
 - Every solve runs under four ceilings: a challenge-difficulty ceiling, a total candidate/iteration
   ceiling, a wall-clock ceiling, and one solve per provider per cookie TTL. A solve that reaches a
   ceiling fails; it never loops. The ceilings are configuration, not constants. The shipped

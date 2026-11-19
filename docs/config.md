@@ -342,11 +342,18 @@ configured limit fail with a structured `blocked` outcome. The solver does not
 attempt interactive CAPTCHA, OCR, third-party solving services, or unsupported
 challenge methods.
 
+`max_difficulty` gates the Anubis family only. An ALTCHA challenge publishes no
+difficulty: it is bounded by `max_attempts`, which counts PBKDF2 counter
+iterations, and by `timeout_ms`. The published PBKDF2 `cost` multiplies the work
+each iteration performs, so a challenge with a very large `cost` is refused as
+malformed rather than started.
+
 Search pass cookies are held in process memory only, bounded by
 `cookie_ttl_seconds`, and never written to disk or logs. On the HTTP path,
-`web_fetch` can solve one Anubis challenge when enabled. Set `render = "http_only"`
-to avoid automatic browser escalation for that request. Fetch-side pass cookies
-are used for one replay and not stored. `batch_fetch` does not solve challenges.
+`web_fetch` can solve one Anubis or ALTCHA challenge when enabled. Set
+`render = "http_only"` to avoid automatic browser escalation for that request.
+Fetch-side pass cookies are used for one replay and not stored. `batch_fetch`
+inherits the same solve behavior through the shared web-fetch handler.
 See [Capabilities and Optional Features](features.md#bounded-challenge-solving)
 for the supported methods and safety limits.
 

@@ -2626,3 +2626,64 @@ fn challenge_solve_orchestration_has_one_owner() {
         "src/challenge_replay/mod.rs must record every fetch-path solve under one label"
     );
 }
+
+#[test]
+fn altcha_fetch_solve_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut owners = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if rel.starts_with("src/meta/") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        if rel.starts_with("src/challenge_replay/") {
+            if clean.contains("solve_document_and_verify") {
+                owners += 1;
+            }
+            continue;
+        }
+        for forbidden in ["solve_document_and_verify", "altcha::"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not call the ALTCHA solver (`{forbidden}`); the shared module \
+                 in src/challenge_replay/ owns the fetch-path ALTCHA solve"
+            );
+        }
+    }
+    assert_eq!(
+        owners, 1,
+        "exactly one file must own the fetch-path ALTCHA solve"
+    );
+}
+
+#[test]
+fn altcha_endpoint_derivation_is_same_origin_only() {
+    let source = read_source("src/challenge_replay/altcha.rs");
+    let clean = production_code_clean(&source);
+    assert!(
+        clean.contains("same_origin"),
+        "the ALTCHA endpoint derivation must gate every published endpoint on the page origin"
+    );
+    assert!(
+        clean.contains("BOUND_UNSUPPORTED_SCHEME"),
+        "a refused ALTCHA endpoint must use the existing unsupported-scheme key"
+    );
+    assert!(
+        clean.contains("BOUND_MALFORMED"),
+        "an unusable ALTCHA publication must use the existing malformed-parameters key"
+    );
+    assert!(
+        !clean.contains("http://"),
+        "the ALTCHA derivation must not carry a hardcoded request target"
+    );
+    assert!(
+        !clean.contains("https://"),
+        "the ALTCHA derivation must not carry a hardcoded request target"
+    );
+}

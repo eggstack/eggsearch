@@ -9,6 +9,12 @@
 //! solve and one replay per fetch call, inside the operator's difficulty,
 //! attempt, and wall-clock ceilings; the replayed cookie is sent on the first
 //! hop only; and every other outcome leaves the original response untouched.
+//!
+//! The Anubis and ALTCHA branches share that sequence. The ALTCHA branch
+//! lives in `altcha`, which owns the page-shaped endpoint derivation the
+//! ALTCHA solve needs.
+
+pub mod altcha;
 
 use std::time::{Duration, Instant};
 
@@ -83,13 +89,26 @@ pub async fn replay_challenge(
     challenge_cookies: Option<String>,
     plan: &ChallengePlan<'_>,
 ) -> Option<WebFetchResponse> {
+    if !plan.challenge.enabled {
+        return None;
+    }
+    match response_challenge(response) {
+        Some(ChallengeKind::Anubis) => {
+            replay_anubis(client, url, response, challenge_cookies, plan).await
+        }
+        Some(ChallengeKind::Altcha) => altcha::replay(client, url, response, plan).await,
+        _ => None,
+    }
+}
+
+async fn replay_anubis(
+    client: &FetchClient,
+    url: &str,
+    response: &WebFetchResponse,
+    challenge_cookies: Option<String>,
+    plan: &ChallengePlan<'_>,
+) -> Option<WebFetchResponse> {
     let settings = plan.challenge;
-    if !settings.enabled {
-        return None;
-    }
-    if response_challenge(response) != Some(ChallengeKind::Anubis) {
-        return None;
-    }
     let remaining = plan.deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return None;

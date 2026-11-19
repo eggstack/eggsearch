@@ -4507,6 +4507,96 @@ async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
     );
 }
 
+const ALTCHA_PASS_COOKIE: &str = "altcha-pass-cookie";
+
+const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
+
+#[tokio::test]
+async fn repo_fetch_remote_solves_a_published_altcha_challenge() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/src/lib.rs")
+            .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n");
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                "<html><body><div class=\"captcha-wrap\"><altcha-widget challenge=\"/captcha/challenge\"></altcha-widget></div></body></html>",
+            );
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+            )
+            .body("");
+    });
+
+    let state = repo_fetch_state_with_challenge();
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should solve the challenge");
+
+    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(
+        replay.hits(),
+        1,
+        "repo_fetch must replay with the issued cookie"
+    );
+    assert_eq!(v["manual_interaction_required"], false);
+    let text = v["text"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("pub fn add"),
+        "repo_fetch must return the replayed source: {text}"
+    );
+}
+
 fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;

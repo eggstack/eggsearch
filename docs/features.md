@@ -116,7 +116,8 @@ enabled = true
 
 - Solves the methods the engine set actually encounters: Anubis `fast`, `slow` (an alias of `fast`), `preact`, `metarefresh`, and WASM `sha256`, plus ALTCHA `PBKDF2/SHA-256` (Mojeek); `argon2id` and `hashx` stay unsupported
 - Search engines share the solver in `src/meta/challenge/`; fetch-path detect/solve/replay is owned by `src/challenge_replay/`
-- With solving enabled, `web_fetch`, `batch_fetch`, unified `fetch` web items, remote `repo_fetch`, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis challenge
+- With solving enabled, `web_fetch`, `batch_fetch`, unified `fetch` web items, remote `repo_fetch`, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
+- A fetch-path ALTCHA solve takes its challenge document and its verification endpoint from the page's own `altcha-widget` publication, same-origin only; a cross-origin, scheme-changing, or malformed publication is refused before any request is issued
 - Fetch-path solves use the `fetch` label in `provider_status.challenge_solver.providers`; search upstreams retain their own labels
 - At most one solve per provider per search request, and one per `cookie_ttl_seconds`
 - A solved search request runs through the normal parser and the normal four-outcome classification
@@ -124,6 +125,7 @@ enabled = true
 ### Limits
 
 - Four ceilings apply to every solve: `max_difficulty`, `max_attempts`, `timeout_ms`, and the `cookie_ttl_seconds` reuse window
+- `max_difficulty` gates the Anubis family only. An ALTCHA challenge publishes no difficulty: it is bounded by `max_attempts`, which counts PBKDF2 counter iterations, and by `timeout_ms`. The published PBKDF2 `cost` multiplies the work each iteration performs, and a cost above the solver's ceiling is refused as malformed rather than started
 - A solve that reaches any ceiling fails; it never loops or retries
 - Pass cookies are held in process memory only and never appear in logs, `provider_status`, diagnostics, or fixtures
 - The solver sends the operator's configured user agent unchanged and adds no evasion headers

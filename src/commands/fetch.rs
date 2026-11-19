@@ -380,4 +380,123 @@ mod tests {
             "got: {warnings:?}"
         );
     }
+
+    const ALTCHA_PASS_COOKIE: &str = "altcha-pass-cookie";
+
+    const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
+
+    #[tokio::test]
+    async fn fetch_response_solves_a_published_altcha_challenge_when_enabled() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let replay = server.mock(|when, then| {
+            when.method(GET)
+                .path("/")
+                .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(
+                    "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+                );
+        });
+        let wall = server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(
+                    "<html><body><div class=\"captcha-wrap\"><altcha-widget challenge=\"/captcha/challenge\"></altcha-widget></div></body></html>",
+                );
+        });
+        let challenge = server.mock(|when, then| {
+            when.method(GET).path("/captcha/challenge");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(ALTCHA_SOLVABLE_DOCUMENT);
+        });
+        let verify = server.mock(|when, then| {
+            when.method(POST).path("/captcha/verify");
+            then.status(200)
+                .header(
+                    "set-cookie",
+                    format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+                )
+                .body("");
+        });
+
+        let cfg = challenge_config(true);
+        let response = fetch_response(&cfg, &server.url("/"), None, None, false, false, false)
+            .await
+            .expect("cli fetch solves the challenge");
+
+        assert_eq!(wall.hits(), 1, "the wall is fetched once");
+        assert_eq!(
+            challenge.hits(),
+            1,
+            "the published challenge is fetched once"
+        );
+        assert_eq!(verify.hits(), 1, "the solution is verified once");
+        assert_eq!(
+            replay.hits(),
+            1,
+            "the cli must replay with the issued cookie"
+        );
+        assert!(!response.manual_interaction_required);
+        let text = response.text.clone().unwrap_or_default();
+        assert!(
+            text.contains("Rust programming language"),
+            "the replayed document must be returned: {text}"
+        );
+        let payload = json_payload(&response);
+        assert_eq!(payload["manual_interaction_required"], false);
+    }
+
+    #[tokio::test]
+    async fn fetch_response_marks_the_altcha_challenge_when_solving_is_disabled() {
+        use httpmock::prelude::*;
+        let server = MockServer::start();
+        let wall = server.mock(|when, then| {
+            when.method(GET).path("/");
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(
+                    "<html><body><div class=\"captcha-wrap\"><altcha-widget challenge=\"/captcha/challenge\"></altcha-widget></div></body></html>",
+                );
+        });
+        let challenge = server.mock(|when, then| {
+            when.method(GET).path("/captcha/challenge");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(ALTCHA_SOLVABLE_DOCUMENT);
+        });
+        let verify = server.mock(|when, then| {
+            when.method(POST).path("/captcha/verify");
+            then.status(200).body("");
+        });
+
+        let cfg = challenge_config(false);
+        let response = fetch_response(&cfg, &server.url("/"), None, None, false, false, false)
+            .await
+            .expect("cli fetch returns the marked wall");
+
+        assert_eq!(wall.hits(), 1);
+        assert_eq!(
+            challenge.hits(),
+            0,
+            "a disabled solver must not fetch the published challenge"
+        );
+        assert_eq!(verify.hits(), 0);
+        assert!(response.manual_interaction_required);
+        let payload = json_payload(&response);
+        assert_eq!(payload["manual_interaction_required"], true);
+        let warnings = payload["structured_warnings"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning["code"] == "fetch_challenge_page"),
+            "got: {warnings:?}"
+        );
+    }
 }
