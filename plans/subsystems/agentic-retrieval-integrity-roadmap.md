@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M034 closed)
+Status: active (M001–M034 closed; M035 ready)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -113,6 +113,8 @@ ADR-0016 ──> M029 unified fetch discovery and legacy aliases
 ADR-0017 ──> M031 fetch-path challenge solve parity ──> M032 ALTCHA on the general fetch path
 M031 ──> M033 fetch-side pass-cookie reuse ──> M034 fetch-side stale pass-cookie recovery
 ADR-0018 ──> M034 fetch-side stale pass-cookie recovery
+ADR-0019 ──> M035 browser challenge completion
+ADR-0019 ──> puzzle-class and identity milestones not yet registered
 M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
@@ -155,6 +157,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M032 — ALTCHA on the general fetch path | capability | `plans/implementation/agentic-retrieval-integrity/032-altcha-on-the-general-fetch-path.md` | hard ADR-0017 (accepted); hard M031 | A general fetch that meets a published ALTCHA PBKDF2 challenge solves it under the same ceilings and replays once; a challenge or verify endpoint that cannot be derived same-origin fails closed as `unsupported scheme` |
 | M033 — fetch-side pass-cookie reuse | capability | `plans/implementation/agentic-retrieval-integrity/033-fetch-side-pass-cookie-reuse.md` | hard ADR-0017 (accepted); hard M031; interface M014 | A fetch-side pass cookie is reused for the issuing origin only, within its published lifetime and the operator ceiling, never past expiry, and is evicted when the upstream rejects it |
 | M034 — fetch-side stale pass-cookie recovery | capability | `plans/implementation/agentic-retrieval-integrity/034-fetch-side-stale-pass-cookie-recovery.md` | hard ADR-0017 (accepted); hard ADR-0018 (accepted); hard M031; hard M033 | A fetch that meets a refused cached pass cookie evicts it and recovers in the same call, so the caller never has to await a second fetch to get a document; one solve and one replay of a solved pair set per call still hold |
+| M035 — browser challenge completion | capability | `plans/implementation/agentic-retrieval-integrity/035-browser-challenge-completion.md` | hard ADR-0019 (accepted); hard M031, M034 | Under `policy = auto` a solvable wall reaches the solver instead of Chrome, a script-driven wall completes in the browser and returns the document, and an unresolved wall is returned marked rather than as a bare wall |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -181,7 +184,7 @@ with a self-describing cursor that needs no negotiation.
 
 Upstream HTML drift is continuous; the fidelity contract reduces the blast radius but does not remove maintenance. Captured fixtures go stale by design and need a refresh path. Markdown negotiation depends on origin cooperation and may reduce table fidelity for some pages. Search caching risks serving stale results to a freshness-sensitive caller if the TTL is unbounded. Intent routing can regress exact queries if precedence is wrong. Advertisement presets can strand a model that needs a hidden tool if `next_actions` are not filtered. The Tasks extension may not be available through the current rmcp version.
 
-Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation, and any default-feature change. Also deferred: Anubis `argon2id` and `hashx` (each needs a separate ADR and cost evidence), the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays). Under ADR-0017's proposed decision two further items are recorded as deferred rather than undecided. Anubis `argon2id` and `hashx` remain `unsupported scheme`, because upstream v1.28.2 (2026-10-23) ships them disabled by default with stated intent to enable them by default in a later version, so an upstream default flip is a known coverage risk rather than a solved item. Moving the solver into `src/core` is deferred until a consumer appears outside the MCP tool and CLI surfaces, because `core` is the pure, HTTP-free foundation and the solver needs transport.
+Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation. ADR-0019 authorizes a default-on solver and a wider member set, but no implementation milestone is registered, so no default change has landed yet. Also deferred: the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays). Under ADR-0017's proposed decision two further items are recorded as deferred rather than undecided. ADR-0019 now authorizes Anubis `argon2id` and `hashx`, ALTCHA's wider digest set, browser challenge completion, and browser-like identity, but none is implemented: both Anubis WASM methods still report `unsupported scheme`. Upstream v1.28.2 (2026-10-23) ships them disabled by default while stating intent to enable them later, and no live deployment was observed publishing either, so demand is unproven; per-member cost evidence is still owed. Moving the solver into `src/core` is deferred until a consumer appears outside the MCP tool and CLI surfaces, because `core` is the pure, HTTP-free foundation and the solver needs transport.
 
 ## 9. Closure and status
 
