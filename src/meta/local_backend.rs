@@ -24,7 +24,7 @@ use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{RankReason, SourceCard, SourceKind, SourceMetadata};
 use crate::meta::local_ignore::IgnoreStack;
 use crate::meta::local_inventory_cache::{
-    build_inventory, find_symbols_in_text, needs_rebuild, probe_needs_rebuild,
+    build_inventory, find_symbols_in_text, has_relevance, needs_rebuild, probe_needs_rebuild,
     score_inventory_entry, validate_entry, InventoryEntry, WorkspaceInventory,
     FRESHNESS_PROBE_INTERVAL, INVENTORY_REBUILD_TTL,
 };
@@ -600,6 +600,7 @@ impl LocalWorkspaceBackend {
             telemetry.used_inventory = true;
             telemetry.inventory_fresh = true;
             telemetry.inventory_entries = inv.roots.iter().map(|r| r.entries.len()).sum();
+            let inventory_truncated = inv.roots.iter().any(|root| root.truncated);
 
             let age_secs = inv.built_at.elapsed().as_secs();
             telemetry.freshness_confidence = if age_secs < FRESHNESS_PROBE_INTERVAL.as_secs() {
@@ -683,7 +684,17 @@ impl LocalWorkspaceBackend {
                         config,
                     );
 
-                    if score <= 0.0 {
+                    if score <= 0.0
+                        || !has_relevance(
+                            &entry.relative_path,
+                            &query_lower,
+                            &query_tokens,
+                            content_text.as_deref(),
+                            path_hint_lower.as_deref(),
+                            file_hint,
+                            symbol_provenance.is_some(),
+                        )
+                    {
                         continue;
                     }
 
@@ -796,6 +807,9 @@ impl LocalWorkspaceBackend {
                     });
                 }
             }
+            if inventory_truncated {
+                truncated = true;
+            }
         } else {
             let is_stale = inventory
                 .as_ref()
@@ -807,6 +821,7 @@ impl LocalWorkspaceBackend {
             let build_time = build_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
 
             let total_entries: usize = new_inventory.roots.iter().map(|r| r.entry_count).sum();
+            let inventory_truncated = new_inventory.roots.iter().any(|root| root.truncated);
 
             if total_entries == 0 {
                 telemetry.fallback_walk = true;
@@ -848,6 +863,9 @@ impl LocalWorkspaceBackend {
                         break;
                     }
                 }
+                if inventory_truncated {
+                    truncated = true;
+                }
             } else {
                 {
                     if let Ok(mut cache) = inventory_cache.write() {
@@ -867,8 +885,6 @@ impl LocalWorkspaceBackend {
                 if total_untracked > 0 {
                     telemetry.untracked_file_count = Some(total_untracked);
                 }
-                let inventory_truncated = inv.roots.iter().any(|r| r.truncated);
-
                 for root_inv in &inv.roots {
                     if start.elapsed() > timeout {
                         timed_out = true;
@@ -942,7 +958,17 @@ impl LocalWorkspaceBackend {
                             config,
                         );
 
-                        if score <= 0.0 {
+                        if score <= 0.0
+                            || !has_relevance(
+                                &entry.relative_path,
+                                &query_lower,
+                                &query_tokens,
+                                content_text.as_deref(),
+                                path_hint_lower.as_deref(),
+                                file_hint,
+                                symbol_provenance.is_some(),
+                            )
+                        {
                             continue;
                         }
 
@@ -1229,7 +1255,7 @@ impl LocalWorkspaceBackend {
                 *timed_out = true;
                 return;
             }
-            if *truncated || matches.len() >= max_results {
+            if *truncated || matches.len() > max_results {
                 *truncated = true;
                 return;
             }
@@ -1447,6 +1473,18 @@ impl LocalWorkspaceBackend {
             } else {
                 (None, None, None, None, None, score)
             };
+
+        if !has_relevance(
+            &relative_path,
+            query_lower,
+            query_tokens,
+            content_text.as_deref(),
+            path_hint,
+            file_hint,
+            matched_symbol.is_some(),
+        ) {
+            return false;
+        }
 
         let has_symbol = matched_symbol.is_some();
         let provenance = if has_symbol {

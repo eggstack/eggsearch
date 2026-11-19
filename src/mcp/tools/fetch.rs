@@ -135,11 +135,82 @@ pub(crate) struct FetchRepoItem {
 #[serde(transparent)]
 pub(crate) struct NonEmptyFetchItems(#[schemars(length(min = 1))] Vec<FetchItem>);
 
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub(crate) enum FetchItems {
     One(Box<FetchItem>),
     Many(NonEmptyFetchItems),
+}
+
+impl<'de> Deserialize<'de> for FetchItems {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            One(Box<FetchItem>),
+            Many(NonEmptyFetchItems),
+        }
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match &value {
+            serde_json::Value::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    validate_fetch_item_shape(item, Some(index))
+                        .map_err(serde::de::Error::custom)?;
+                }
+            }
+            item => validate_fetch_item_shape(item, None).map_err(serde::de::Error::custom)?,
+        }
+        serde_json::from_value::<Repr>(value)
+            .map(|repr| match repr {
+                Repr::One(item) => FetchItems::One(item),
+                Repr::Many(items) => FetchItems::Many(items),
+            })
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+fn validate_fetch_item_shape(
+    value: &serde_json::Value,
+    index: Option<usize>,
+) -> Result<(), String> {
+    let prefix = index
+        .map(|index| format!("items[{index}]: "))
+        .unwrap_or_default();
+    let Some(object) = value.as_object() else {
+        return Ok(());
+    };
+    match object.get("type").and_then(|kind| kind.as_str()) {
+        Some("repo") => {
+            for field in ["owner", "repo", "path"] {
+                let present = object
+                    .get(field)
+                    .and_then(|field| field.as_str())
+                    .is_some_and(|text| !text.trim().is_empty());
+                if !present {
+                    return Err(format!(
+                        r#"{prefix}repo item is missing the required `{field}` field; accepted shape: {{"type":"repo","owner":"<owner>","repo":"<repo>","path":"<path>"}} (optional: host, ref_name, commit_sha, line_start, line_end, context_before, context_after, max_chars, focus, focus_max_chunks, focus_max_chars, symbol, symbol_kind, match_text, expand_to_block, max_block_lines, prefer_local)"#
+                    ));
+                }
+            }
+        }
+        Some("web") => {
+            let present = object
+                .get("url")
+                .and_then(|url| url.as_str())
+                .is_some_and(|text| !text.trim().is_empty());
+            if !present {
+                return Err(format!(
+                    r#"{prefix}web item is missing the required `url` field; accepted shape: {{"type":"web","url":"https://example.com"}}"#
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 impl FetchItems {
@@ -338,6 +409,27 @@ mod tests {
                 "malformed fetch target must fail before dispatch"
             );
         }
+    }
+
+    #[test]
+    fn fetch_locator_errors_name_the_missing_field() {
+        let error = serde_json::from_value::<FetchArgs>(serde_json::json!({
+            "items": [{"type": "repo", "owner": "owner", "path": "src/lib.rs"}]
+        }))
+        .expect_err("repo item without repo must fail");
+        let message = error.to_string();
+        assert!(message.contains("required `repo` field"), "{message}");
+        assert!(message.contains("accepted shape"), "{message}");
+        assert!(message.contains("items[0]"), "{message}");
+
+        let error = serde_json::from_value::<FetchArgs>(serde_json::json!({
+            "items": {"type": "web"}
+        }))
+        .expect_err("web item without url must fail");
+        assert!(
+            error.to_string().contains("required `url` field"),
+            "{error}"
+        );
     }
 
     #[tokio::test]

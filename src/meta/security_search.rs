@@ -512,19 +512,13 @@ pub async fn run_security_search_plan(
         derived_intent_reasons: None,
     };
 
-    // 3. Check whether any selected provider exposes native advisory capability.
-    let has_native_advisory = adapter
-        .advisory_provider_capabilities(&effective_providers)
-        .into_iter()
-        .any(|(_, capabilities)| capabilities.lookup_by_id || capabilities.query_by_package);
-
     let mut warnings: Vec<SearchWarning> = web_resp.warnings;
 
-    if !has_native_advisory {
+    if adapter.enabled_native_advisory_provider_ids().is_empty() {
         warnings.push(SearchWarning::new(
             "_system",
-            "native_advisory_search_unavailable: only generic web search was used; \
-             enable the 'osv' provider for native advisory lookups",
+            "native_advisory_search_unavailable: no enabled native advisory provider is available; \
+             the 'osv' provider is disabled or not instantiated in the active provider set",
         ));
     }
 
@@ -536,13 +530,6 @@ pub async fn run_security_search_plan(
              discussion, not authoritative advisory facts",
         ));
     }
-
-    // Severity may be unavailable from generic search
-    warnings.push(SearchWarning::new(
-        "_system",
-        "severity_unavailable: severity levels may not be available \
-         from generic web search results; use native advisory providers for severity data",
-    ));
 
     // 4. Native advisory ID lookups for identified CVE/GHSA/RustSec/OSV IDs
     let mut vulnerabilities: Vec<VulnerabilityMetadata> = Vec::new();
@@ -743,9 +730,10 @@ pub async fn run_security_search_plan(
         warnings.push(SearchWarning::new(
             "_system",
             format!(
-                "native_advisory_provider_operation_cap_reached: dispatched {} provider operations; {} capable provider operations were skipped by policy after the provider-operation cap was reached",
+                "native_advisory_provider_operation_cap_reached: dispatched {} provider operations; {} capable provider operations were skipped by policy after the {}-operation provider-operation cap was reached",
                 budget_summary.provider_operations_dispatched,
-                budget_summary.provider_operations_skipped_by_budget
+                budget_summary.provider_operations_skipped_by_budget,
+                MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS
             ),
         ));
     }
@@ -1114,6 +1102,16 @@ pub async fn run_security_search_plan(
                 ),
             ));
         }
+    }
+
+    if !vulnerabilities
+        .iter()
+        .any(|vulnerability| vulnerability.severity.is_some())
+    {
+        warnings.push(SearchWarning::new(
+            "_system",
+            "severity_unavailable: no returned vulnerability carries severity data",
+        ));
     }
 
     let suggested_fetches = generate_security_suggested_fetches(
@@ -1613,8 +1611,7 @@ mod tests {
     #[test]
     fn warning_prefix_native_advisory_search_unavailable() {
         // Verify the warning message format uses the stable prefix
-        let msg = "native_advisory_search_unavailable: only generic web search was used; \
-                    enable the 'osv' provider for native advisory lookups";
+        let msg = "native_advisory_search_unavailable: no enabled native advisory provider is available; the 'osv' provider is disabled or not instantiated in the active provider set";
         assert!(
             msg.starts_with("native_advisory_search_unavailable:"),
             "native advisory warning must use stable prefix: {msg}"

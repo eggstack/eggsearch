@@ -599,11 +599,22 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         .collect();
     let mut total_chars: usize = 0;
     let mut budget_exhausted = false;
+    let mut budget_warning: Option<String> = None;
     let mut aborted = false;
 
     for wave_start in (0..effective_items.len()).step_by(effective_concurrency) {
         // Pre-wave checks: skip remaining items if aborted or budget exhausted
         if aborted || budget_exhausted {
+            if budget_exhausted && budget_warning.is_none() {
+                if let Some(item) = effective_items.get(wave_start) {
+                    budget_warning = Some(batch_total_budget_warning(
+                        &item.label(),
+                        "was skipped",
+                        0,
+                        total_cap,
+                    ));
+                }
+            }
             for (i, item) in effective_items.iter().enumerate().skip(wave_start) {
                 let msg = if budget_exhausted {
                     "total character budget exhausted".to_string()
@@ -659,6 +670,14 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
             .skip(wave_start)
         {
             if budget_exhausted || spawned_in_wave >= launchable {
+                if budget_warning.is_none() {
+                    budget_warning = Some(batch_total_budget_warning(
+                        &item.label(),
+                        "was skipped",
+                        total_cap.saturating_sub(total_chars),
+                        total_cap,
+                    ));
+                }
                 results[i] = Some(BatchFetchResult {
                     index: window.from + i,
                     item_type: match item {
@@ -733,15 +752,36 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         for idx in &wave_indices {
             match wave_results.remove(idx) {
                 Some((mut batch_result, image)) => {
-                    if !batch_result.ok && !continue_on_error {
-                        aborted = true;
-                    }
                     let remaining = total_cap.saturating_sub(total_chars);
                     if batch_result.chars_returned > remaining {
                         batch_result =
                             truncate_batch_result_to_budget(batch_result, remaining, total_cap);
+                        if budget_warning.is_none() {
+                            let outcome = if batch_result.ok {
+                                "was truncated"
+                            } else {
+                                "was omitted"
+                            };
+                            budget_warning = Some(batch_total_budget_warning(
+                                &batch_result.label,
+                                outcome,
+                                remaining,
+                                total_cap,
+                            ));
+                        }
+                    }
+                    if !batch_result.ok && !continue_on_error {
+                        aborted = true;
                     }
                     total_chars += batch_result.chars_returned;
+                    if total_chars >= total_cap && budget_warning.is_none() {
+                        budget_warning = Some(batch_total_budget_warning(
+                            &batch_result.label,
+                            "reached the batch limit",
+                            0,
+                            total_cap,
+                        ));
+                    }
                     if batch_result.ok {
                         if let Some(mut image) = image {
                             let (label, _) =
@@ -790,10 +830,8 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     // synthesized as a failure), so flattening yields input order.
     let results: Vec<BatchFetchResult> = results.into_iter().flatten().collect();
 
-    if budget_exhausted {
-        warnings.push(format!(
-            "batch_total_budget_exhausted: total character budget of {total_cap} was reached; remaining items skipped"
-        ));
+    if let Some(warning) = budget_warning {
+        warnings.push(warning);
     }
 
     let fetched = results.iter().filter(|r| r.ok).count();
@@ -913,35 +951,53 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     })
 }
 
-/// Trim a `BatchFetchResult`'s embedded `response` payload so that
-/// `chars_returned` does not exceed `remaining` and the aggregate
-/// total stays within `total_cap`. Text is truncated first (cheapest
-/// and typically the largest field), then metadata fields are dropped
-/// in priority order until the budget is satisfied. When the payload
-/// cannot be trimmed (e.g. zero remaining budget), the embedded
-/// response is replaced with `null` and `truncated` is set so callers
-/// can see the item was omitted from the aggregate budget.
+/// Apply an item's remaining aggregate character budget to its text and visible metadata.
+/// Repo locators and metadata remain intact; structural `document` and `lines` copies
+/// are excluded from returned-character accounting. An item whose required metadata
+/// cannot fit is omitted as a failed, truncated result.
 pub(crate) fn truncate_batch_result_to_budget(
     mut result: crate::core::batch_fetch::BatchFetchResult,
     remaining: usize,
     total_cap: usize,
 ) -> crate::core::batch_fetch::BatchFetchResult {
     if remaining == 0 {
-        result.response = None;
-        result.error = Some(format!(
-            "batch_total_budget_exhausted: item truncated to fit remaining budget of 0 of max_total_chars={total_cap}"
-        ));
-        result.chars_returned = 0;
-        result.truncated = true;
-        return result;
+        return omit_batch_result_for_budget(result, remaining, total_cap);
     }
 
     let Some(mut payload) = result.response.take() else {
-        result.chars_returned = 0;
-        return result;
+        return omit_batch_result_for_budget(result, remaining, total_cap);
     };
 
     let budget = remaining;
+
+    if result.item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {
+        let metadata_chars = batch_payload_metadata_chars(&payload, result.item_type);
+        if metadata_chars > budget {
+            return omit_batch_result_for_budget(result, budget, total_cap);
+        }
+        let text_budget = budget - metadata_chars;
+        let truncated_text = payload
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .filter(|text| text.chars().count() > text_budget)
+            .map(|text| text.chars().take(text_budget).collect::<String>());
+        if let Some(truncated_text) = truncated_text {
+            if let Some(object) = payload.as_object_mut() {
+                object.insert(
+                    "text".to_string(),
+                    serde_json::Value::String(truncated_text),
+                );
+                object.insert("truncated".to_string(), serde_json::Value::Bool(true));
+            }
+            result.truncated = true;
+        }
+        result.chars_returned = batch_returned_chars(&payload, result.item_type);
+        if result.chars_returned > budget {
+            return omit_batch_result_for_budget(result, budget, total_cap);
+        }
+        result.response = Some(payload);
+        return result;
+    }
 
     if let Some(text) = payload
         .get_mut("text")
@@ -1023,26 +1079,14 @@ pub(crate) fn truncate_batch_result_to_budget(
         }
         if current > budget {
             obj.remove("title");
-            current = text_chars(obj) + meta_chars(obj);
         }
-        result.chars_returned =
-            if result.item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {
-                batch_payload_chars(&payload)
-            } else {
-                current
-            };
+        result.chars_returned = batch_returned_chars(&payload, result.item_type);
     } else {
         result.chars_returned = 0;
     }
 
     if result.chars_returned > budget {
-        result.response = None;
-        result.error = Some(format!(
-            "batch_total_budget_exhausted: item omitted because its response metadata exceeds the remaining budget of {budget} of max_total_chars={total_cap}"
-        ));
-        result.chars_returned = 0;
-        result.truncated = true;
-        return result;
+        return omit_batch_result_for_budget(result, budget, total_cap);
     }
 
     result.response = Some(payload);
@@ -1050,8 +1094,87 @@ pub(crate) fn truncate_batch_result_to_budget(
     result
 }
 
-pub(crate) fn batch_payload_chars(payload: &serde_json::Value) -> usize {
-    serde_json::to_string(payload)
-        .map(|serialized| serialized.chars().count())
-        .unwrap_or(usize::MAX)
+fn batch_string_chars(value: Option<&serde_json::Value>) -> usize {
+    value
+        .and_then(serde_json::Value::as_str)
+        .map(str::chars)
+        .map(Iterator::count)
+        .unwrap_or(0)
+}
+
+fn batch_payload_metadata_chars(
+    payload: &serde_json::Value,
+    item_type: crate::core::batch_fetch::BatchFetchItemType,
+) -> usize {
+    let mut chars = batch_string_chars(payload.get("title"))
+        .saturating_add(batch_string_chars(payload.get("description")));
+    if let Some(links) = payload.get("links").and_then(serde_json::Value::as_array) {
+        for link in links {
+            chars = chars
+                .saturating_add(batch_string_chars(link.get("url")))
+                .saturating_add(batch_string_chars(link.get("text")));
+        }
+    }
+    if item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {
+        if let Some(locator) = payload
+            .get("locator")
+            .and_then(serde_json::Value::as_object)
+        {
+            for value in locator.values() {
+                chars = chars.saturating_add(batch_string_chars(Some(value)));
+            }
+        }
+        for key in [
+            "browser_url",
+            "raw_url",
+            "permalink_url",
+            "raw_permalink_url",
+            "fetched_url",
+        ] {
+            chars = chars.saturating_add(batch_string_chars(payload.get(key)));
+        }
+    }
+    chars
+}
+
+pub(crate) fn batch_returned_chars(
+    payload: &serde_json::Value,
+    item_type: crate::core::batch_fetch::BatchFetchItemType,
+) -> usize {
+    batch_string_chars(payload.get("text"))
+        .saturating_add(batch_payload_metadata_chars(payload, item_type))
+}
+
+fn safe_batch_item_label(label: &str) -> String {
+    let (label, _) = crate::core::sanitize::strip_control_chars(label);
+    let (label, _) = crate::core::sanitize::bound_text(&label, 200);
+    label
+}
+
+fn batch_total_budget_warning(
+    label: &str,
+    outcome: &str,
+    remaining: usize,
+    total_cap: usize,
+) -> String {
+    format!(
+        "batch_total_budget_exhausted: item {} {outcome}; remaining budget={remaining}; max_total_chars={total_cap}",
+        safe_batch_item_label(label)
+    )
+}
+
+fn omit_batch_result_for_budget(
+    mut result: crate::core::batch_fetch::BatchFetchResult,
+    remaining: usize,
+    total_cap: usize,
+) -> crate::core::batch_fetch::BatchFetchResult {
+    let label = safe_batch_item_label(&result.label);
+    result.ok = false;
+    result.response = Some(serde_json::Value::Null);
+    result.error = Some(format!(
+        "batch_total_budget_exhausted: item {label} omitted because its locator and metadata exceed remaining budget of {remaining} (max_total_chars={total_cap})"
+    ));
+    result.chars_returned = 0;
+    result.truncated = true;
+    result
 }

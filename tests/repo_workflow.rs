@@ -188,6 +188,88 @@ async fn repo_search_query_hint_triggers_local_matching() {
 
 #[cfg(feature = "mock")]
 #[tokio::test]
+async fn repo_search_remote_scope_requires_explicit_local_opt_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    setup_git_repo_with_remote(
+        root,
+        "https://github.com/test-owner/test-repo.git",
+        "test-owner",
+        "test-repo",
+    );
+    fs::write(root.join("README.md"), "unrelated workspace readme").unwrap();
+
+    let query = "repo:test-owner/test-repo main.rs".to_string();
+    let omitted = run_repo_search(
+        state_with_local_backend(root),
+        RepoSearchArgs {
+            query: query.clone(),
+            providers: vec!["mock_a".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search without local opt-in");
+    assert!(omitted["providers_queried"]
+        .as_array()
+        .is_none_or(|providers| providers.iter().all(|id| id != "local_workspace")));
+    assert!(omitted["groups"].as_array().is_none_or(|groups| {
+        groups.iter().all(|group| {
+            group["results"]
+                .as_array()
+                .is_none_or(|results| results.is_empty())
+        })
+    }));
+
+    let included = run_repo_search(
+        state_with_local_backend(root),
+        RepoSearchArgs {
+            query: query.clone(),
+            providers: vec!["mock_a".to_string()],
+            include_local: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search with local opt-in");
+    assert!(included["providers_queried"]
+        .as_array()
+        .is_some_and(|providers| providers.iter().any(|id| id == "local_workspace")));
+    let mut titles = Vec::new();
+    for group in included["groups"].as_array().expect("groups array") {
+        if let Some(results) = group["results"].as_array() {
+            for result in results {
+                titles.push(result["title"].as_str().unwrap_or_default().to_string());
+            }
+        }
+    }
+    assert_eq!(titles, vec!["main.rs".to_string()]);
+
+    let disabled = run_repo_search(
+        state_with_local_backend(root),
+        RepoSearchArgs {
+            query,
+            providers: vec!["mock_a".to_string()],
+            include_local: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search with local disabled");
+    assert!(disabled["providers_queried"]
+        .as_array()
+        .is_none_or(|providers| providers.iter().all(|id| id != "local_workspace")));
+    assert!(disabled["groups"].as_array().is_none_or(|groups| {
+        groups.iter().all(|group| {
+            group["results"]
+                .as_array()
+                .is_none_or(|results| results.is_empty())
+        })
+    }));
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
 async fn repo_search_explicit_owner_repo_overrides_query_hint() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

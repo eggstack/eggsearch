@@ -1,4 +1,4 @@
-use super::batch_fetch::{batch_payload_chars, inject_repo_focus_into_payload};
+use super::batch_fetch::{batch_returned_chars, inject_repo_focus_into_payload};
 use super::common::{ImageAttachment, ToolError};
 use super::repo_fetch::{run_repo_fetch_with_host_scope, RepoFetchArgs};
 use crate::fetch::FetchClient;
@@ -105,53 +105,8 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                     Ok(outcome) => {
                         let image = outcome.images.into_iter().next();
                         let payload = outcome.value;
-                        let body_chars = payload
-                            .get("document")
-                            .and_then(|document| document.get("text_chars_returned"))
-                            .and_then(serde_json::Value::as_u64)
-                            .map(|chars| chars as usize)
-                            .unwrap_or_else(|| {
-                                payload
-                                    .get("text")
-                                    .and_then(serde_json::Value::as_str)
-                                    .map(str::chars)
-                                    .map(Iterator::count)
-                                    .unwrap_or(0)
-                            });
-                        let meta_chars = payload
-                            .get("title")
-                            .and_then(serde_json::Value::as_str)
-                            .map(str::chars)
-                            .map(Iterator::count)
-                            .unwrap_or(0)
-                            + payload
-                                .get("description")
-                                .and_then(serde_json::Value::as_str)
-                                .map(str::chars)
-                                .map(Iterator::count)
-                                .unwrap_or(0)
-                            + payload
-                                .get("links")
-                                .and_then(serde_json::Value::as_array)
-                                .map(|links| {
-                                    links
-                                        .iter()
-                                        .map(|link| {
-                                            link.get("url")
-                                                .and_then(serde_json::Value::as_str)
-                                                .map(str::chars)
-                                                .map(Iterator::count)
-                                                .unwrap_or(0)
-                                                + link
-                                                    .get("text")
-                                                    .and_then(serde_json::Value::as_str)
-                                                    .map(str::chars)
-                                                    .map(Iterator::count)
-                                                    .unwrap_or(0)
-                                        })
-                                        .sum::<usize>()
-                                })
-                                .unwrap_or(0);
+                        let returned_chars =
+                            batch_returned_chars(&payload, BatchFetchItemType::Web);
                         let truncated = payload
                             .get("truncated")
                             .and_then(serde_json::Value::as_bool)
@@ -165,7 +120,7 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                                 ok: true,
                                 response: Some(payload),
                                 error: None,
-                                chars_returned: body_chars + meta_chars,
+                                chars_returned: returned_chars,
                                 truncated,
                             },
                             image,
@@ -263,7 +218,8 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                             repo_max_cap,
                             &repo_label,
                         );
-                        let text_len = batch_payload_chars(&payload);
+                        let returned_chars =
+                            batch_returned_chars(&payload, BatchFetchItemType::Repo);
                         let truncated = payload
                             .get("truncated")
                             .and_then(|t| t.as_bool())
@@ -277,7 +233,7 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                                 ok: true,
                                 response: Some(payload),
                                 error: None,
-                                chars_returned: text_len,
+                                chars_returned: returned_chars,
                                 truncated,
                             },
                             None,

@@ -26,19 +26,23 @@ and cannot construct independent HTTP clients or weaken the common policy.
 `KevClient` enrichment — then groups, severity-filters, and annotates
 results. The entry point is `run_security_search_plan()` in
 `src/meta/security_search.rs`; the MCP wrapper is `run_security_search` in
-`src/mcp/tools/security_search.rs`. Every native operation ends in a
-recorded terminal status; nothing is silently omitted.
+`src/mcp/tools/security_search.rs`. For identifier-bearing requests with no
+explicit provider list, the wrapper adds the adapter's enabled native advisory
+providers to the resolved default/profile selection before running the workflow.
+An explicit provider list remains authoritative. Every native operation ends in
+a recorded terminal status; nothing is silently omitted.
 
 ---
 
 ## Core Types (`src/core/security.rs`)
 
 `VulnerabilityMetadata` is the normalized advisory record: `cve_ids` /
-`ghsa_ids` / `osv_ids` / `rustsec_ids`, `ecosystem` / `package`,
-`affected_ranges` / `patched_ranges`, `vulnerable_versions` /
-`patched_versions`, `severity`, `cvss_score`, `cvss_vector`, `epss_score`,
-`kev` (`KevMetadata`), `published_at` / `modified_at` / `withdrawn_at`,
-`references` (`VulnerabilityReference`), and `source`
+`ghsa_ids` / `osv_ids` / `rustsec_ids`, optional bounded `summary`,
+`ecosystem` / `package`, `affected_ranges` / `patched_ranges`,
+`vulnerable_versions` / `patched_versions`, `severity`, `cvss_score`,
+`cvss_vector`, `epss_score`, `kev` (`KevMetadata`), `published_at` /
+`modified_at` / `withdrawn_at`, `references` (`VulnerabilityReference`), and
+`source`
 (`VulnerabilitySource`: `Osv`, `GithubAdvisory`, `Nvd`, `Rustsec`,
 `CisaKev`, `Generic` with `as_str()`).
 
@@ -74,14 +78,20 @@ The tool requires a non-empty query, package, or id field, and validates
 ## Orchestration (`run_security_search_plan()`)
 
 1. Parse identifiers from fields plus free-text query.
-2. Run `security_search_subqueries()` — a `build_search_plan()` generic
+2. Resolve the generic web selection. For requests with `cve_id`, `ghsa_id`,
+   `osv_id`, `rustsec_id`, or `package`, and no explicit `providers`, the MCP
+   wrapper appends every enabled provider returned by
+   `enabled_native_advisory_provider_ids()` to the selected set. The adapter
+   derives this list from instantiated engines advertising `lookup_by_id` or
+   `query_by_package`, preserving engine order; it never enables providers.
+   Explicit `providers` are not extended. The updated selection is used for
+   generic dispatch, native operations, the routing decision, and selection-stage
+   attempts.
+3. Run `security_search_subqueries()` — a `build_search_plan()` generic
    query plus `vendor` (`"{query} vendor advisory security bulletin"`) and
    `defensive` (`"{query} mitigation workaround fix patch"`) lanes through
    `dispatch_subqueries()`, returning cards, warnings, `providers_failed`,
    trust markers, and the raw `RetrievalAttempt` vec.
-3. Check `advisory_provider_capabilities()`; without any native capability,
-   push `native_advisory_search_unavailable` plus the standing
-   `generic_context_untrusted` and `severity_unavailable` advisories.
 4. Plan deduplicated identifiers in family order (CVE, GHSA, OSV, RustSec)
    via `plan_unique_advisory_identifiers()`, then execute bounded native
    lookups under `NativeOperationBudget`: `MAX_NATIVE_ADVISORY_IDENTIFIERS`
@@ -89,7 +99,12 @@ The tool requires a non-empty query, package, or id field, and validates
    `MAX_NATIVE_ADVISORY_PROVIDER_OPERATIONS` (64 provider calls), surfaced
    as `NativeAdvisoryBudgetSummary` and
    `native_advisory_identifier_cap_reached` /
-   `native_advisory_provider_operation_cap_reached` warnings.
+   `native_advisory_provider_operation_cap_reached` warnings. A skipped native
+   operation reports the provider-operation cap.
+Warning conditions: emit `native_advisory_search_unavailable` only when no
+enabled provider advertises either advisory capability. Provider-operation
+budget skips name that cap. Emit `severity_unavailable` only after assembly
+when the final vulnerability list has no severity-bearing record.
 5. Query advisories by package coordinate and enrich CVEs through
    `KevClient`.
 6. Assess version applicability and parse dependency files when package /
@@ -150,8 +165,12 @@ appear in the retrieval summary instead of vanishing.
   `lookup_advisory()` synthesizes `VulnerabilityMetadata` with
   `source: VulnerabilitySource::CisaKev` for CVE ids.
 
-`VulnerabilityMetadata::merge()` deduplicates id/range/reference vectors
-across providers and collapses mismatched sources to `Generic`.
+OSV's `summary` is retained as optional `VulnerabilityMetadata.summary`,
+sanitized as external untrusted text and bounded to 500 characters. The optional
+field is omitted when absent and kept by compact and standard MCP projections.
+`VulnerabilityMetadata::merge()` deduplicates id/range/reference vectors and
+keeps the first available summary across providers while collapsing mismatched
+sources to `Generic`.
 
 ---
 

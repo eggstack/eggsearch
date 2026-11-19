@@ -342,6 +342,144 @@ fn count_entries(v: &serde_json::Value) -> usize {
 }
 
 #[tokio::test]
+async fn non_empty_workspace_without_query_match_returns_no_cards_without_false_truncation() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    for i in 0..5 {
+        std::fs::write(
+            root.join(format!("file{i}.rs")),
+            format!("fn fixture_{i}() {{}}"),
+        )
+        .unwrap();
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
+    let response = run_repo_search(
+        mode_off_counting_state(root, calls.clone(), other_calls.clone()),
+        RepoSearchArgs {
+            query: "zzzzqqqxx".into(),
+            owner: Some("test-owner".into()),
+            repo: Some("test-repo".into()),
+            language: Some("rust".into()),
+            max_results: Some(2),
+            providers: vec!["mock_a".into()],
+            include_local: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("no-match repo_search");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    assert!(response["groups"].as_array().is_none_or(|groups| {
+        groups.iter().all(|group| {
+            group["results"]
+                .as_array()
+                .is_none_or(|results| results.is_empty())
+        })
+    }));
+    let warnings = response["warnings"].as_array().expect("warnings array");
+    assert!(warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("local_search_completed_no_matches"))
+    }));
+    assert!(!warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("local_search_truncated"))
+    }));
+}
+
+#[tokio::test]
+async fn local_symbol_only_match_preserves_structured_provenance() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub struct LocalRelevanceFixture { value: i32 }\n",
+    )
+    .unwrap();
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(
+        eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let result = backend
+        .search(&eggsearch::core::local::LocalSearchRequest {
+            symbol: Some("LocalRelevanceFixture".into()),
+            max_results: Some(5),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        })
+        .await;
+
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(
+        result.matches[0].symbol_provenance.as_deref(),
+        Some("structured")
+    );
+    assert_eq!(result.matches[0].is_exact_definition, Some(true));
+    let cards = eggsearch::meta::local_backend::LocalWorkspaceBackend::to_source_cards(
+        &result.matches,
+        &backend.roots(),
+        false,
+        None,
+    );
+    assert_eq!(cards.len(), 1);
+}
+
+#[tokio::test]
+async fn local_search_warns_when_admitted_matches_are_truncated() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("local_truncation_fixture_a.rs"), "fn a() {}").unwrap();
+    std::fs::write(root.join("local_truncation_fixture_b.rs"), "fn b() {}").unwrap();
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
+    let response = run_repo_search(
+        mode_off_counting_state(root, calls.clone(), other_calls.clone()),
+        RepoSearchArgs {
+            query: "local_truncation_fixture".into(),
+            max_results: Some(2),
+            providers: vec!["mock_a".into()],
+            include_local: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("truncated local repo_search");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    let result_count: usize = response["groups"]
+        .as_array()
+        .into_iter()
+        .flat_map(|groups| groups.iter())
+        .map(|group| {
+            group["results"]
+                .as_array()
+                .map_or(0, |results| results.len())
+        })
+        .sum();
+    assert_eq!(result_count, 1);
+    assert!(response["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().any(|warning| {
+            warning["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("local_search_truncated"))
+        })
+    }));
+}
+
+#[tokio::test]
 async fn local_repo_search_finds_source_files() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
@@ -356,9 +494,10 @@ async fn local_repo_search_finds_source_files() {
     init_git_repo(root);
     git_add_and_commit(root, "initial commit");
 
-    let state = integration_state(root);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
     let v = run_repo_search(
-        state,
+        mode_off_counting_state(root, calls.clone(), other_calls.clone()),
         RepoSearchArgs {
             query: "helper".into(),
             providers: vec![],
@@ -367,15 +506,19 @@ async fn local_repo_search_finds_source_files() {
     )
     .await
     .expect("local repo_search");
-    let has_results = v["results"].as_array().is_some_and(|a| !a.is_empty());
-    let has_warnings = v["structured_warnings"]
-        .as_array()
-        .is_some_and(|a| !a.is_empty());
-    assert!(
-        has_results || has_warnings,
-        "should find helper in local source files or have warnings: {}",
-        serde_json::to_string_pretty(&v).unwrap_or_default()
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        v["providers_queried"],
+        serde_json::json!(["local_workspace"])
     );
+    assert!(v["groups"].as_array().is_some_and(|groups| {
+        groups.iter().any(|group| {
+            group["results"]
+                .as_array()
+                .is_some_and(|results| !results.is_empty())
+        })
+    }));
 }
 
 #[tokio::test]

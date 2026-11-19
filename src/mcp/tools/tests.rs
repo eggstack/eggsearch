@@ -1,5 +1,5 @@
 use super::batch_fetch::{
-    batch_payload_chars, prepare_batch_fetch_client, truncate_batch_result_to_budget,
+    batch_returned_chars, prepare_batch_fetch_client, truncate_batch_result_to_budget,
 };
 use super::repo_fetch::workspace_relative_path_arg;
 use super::*;
@@ -141,7 +141,7 @@ async fn invalid_unicode_url_scheme_returns_validation_errors() {
 }
 
 #[test]
-fn repo_batch_budget_counts_serialized_metadata() {
+fn repo_batch_budget_counts_readable_metadata() {
     let payload = serde_json::json!({
         "text": "x",
         "raw_url": "https://example.com/a-very-long-path"
@@ -154,7 +154,10 @@ fn repo_batch_budget_counts_serialized_metadata() {
         ok: true,
         response: Some(payload.clone()),
         error: None,
-        chars_returned: batch_payload_chars(&payload),
+        chars_returned: batch_returned_chars(
+            &payload,
+            crate::core::batch_fetch::BatchFetchItemType::Repo,
+        ),
         truncated: false,
     };
     assert!(result.chars_returned > 1);

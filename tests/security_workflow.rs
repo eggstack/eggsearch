@@ -1036,3 +1036,212 @@ fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: 
         .output()
         .ok();
 }
+
+#[cfg(feature = "mock")]
+struct MockOsvAdvisoryEngine;
+
+#[cfg(feature = "mock")]
+impl eggsearch::meta::engines::SearchEngine for MockOsvAdvisoryEngine {
+    fn name(&self) -> &'static str {
+        "osv"
+    }
+
+    fn search<'a>(
+        &'a self,
+        _request: &'a eggsearch::meta::engines::EngineSearchRequest,
+    ) -> eggsearch::meta::engines::BoxFuture<
+        'a,
+        Result<
+            Vec<eggsearch::meta::engines::models::SearchResult>,
+            eggsearch::meta::engines::error::EngineError,
+        >,
+    > {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn advisory_capabilities(&self) -> eggsearch::meta::engines::AdvisoryCapabilities {
+        eggsearch::meta::engines::AdvisoryCapabilities {
+            lookup_by_id: true,
+            query_by_package: true,
+        }
+    }
+
+    fn lookup_advisory<'a>(
+        &'a self,
+        _vuln_id: &'a str,
+        _timeout: Duration,
+    ) -> eggsearch::meta::engines::BoxFuture<
+        'a,
+        Result<
+            Option<eggsearch::core::security::VulnerabilityMetadata>,
+            eggsearch::meta::engines::error::EngineError,
+        >,
+    > {
+        Box::pin(async {
+            Ok(Some(eggsearch::core::security::VulnerabilityMetadata {
+                cve_ids: vec!["CVE-2024-3094".to_string()],
+                summary: Some("XZ Utils backdoor advisory".to_string()),
+                severity: Some(eggsearch::core::security::SeverityLevel::Critical),
+                cvss_score: Some(10.0),
+                source: eggsearch::core::security::VulnerabilitySource::Osv,
+                ..Default::default()
+            }))
+        })
+    }
+}
+
+#[cfg(feature = "mock")]
+fn state_with_test_osv(osv_enabled: bool) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("osv".to_string(), osv_enabled);
+    let mut engines = mock_engines(vec![
+        MockEngine::success("duckduckgo", Vec::new()),
+        MockEngine::success("brave", Vec::new()),
+        MockEngine::success("yahoo", Vec::new()),
+    ]);
+    if osv_enabled {
+        engines.push(Arc::new(MockOsvAdvisoryEngine));
+    }
+    state_with_arc_engines(cfg, engines, Duration::from_secs(5))
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn identifier_default_routing_selects_osv_and_returns_advisory_summary() {
+    let value = run_security_search(
+        state_with_test_osv(true),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    let selected = value["routing_decision"]["selected_providers"]
+        .as_array()
+        .expect("selected providers");
+    assert!(selected.iter().any(|provider| provider == "osv"));
+    let vulnerabilities = value["vulnerabilities"]
+        .as_array()
+        .expect("vulnerabilities");
+    assert!(vulnerabilities.iter().any(|vulnerability| {
+        vulnerability["severity"].is_string()
+            && vulnerability["summary"] == "XZ Utils backdoor advisory"
+    }));
+    let warnings = value["warnings"].as_array().expect("warnings");
+    assert!(!warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("native_advisory_search_unavailable")
+    }));
+    assert!(!warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("severity_unavailable")
+    }));
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn explicit_generic_provider_selection_does_not_add_osv() {
+    let value = run_security_search(
+        state_with_test_osv(true),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            providers: vec!["duckduckgo".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    let selected = value["routing_decision"]["selected_providers"]
+        .as_array()
+        .expect("selected providers");
+    assert_eq!(selected, &[serde_json::json!("duckduckgo")]);
+    assert!(value["vulnerabilities"].as_array().unwrap().is_empty());
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn disabled_osv_has_no_native_results_and_warning_names_provider() {
+    let value = run_security_search(
+        state_with_test_osv(false),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    assert!(value["vulnerabilities"].as_array().unwrap().is_empty());
+    let warning = value["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|warning| warning["message"].as_str())
+        .find(|message| message.contains("native_advisory_search_unavailable"))
+        .expect("native advisory warning");
+    assert!(warning.contains("osv"));
+    assert!(warning.contains("disabled"));
+    assert!(!warning.contains("enable the"));
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn advisory_summary_survives_compact_and_standard_projections() {
+    for detail in [
+        eggsearch::mcp::projection::ResponseDetail::Compact,
+        eggsearch::mcp::projection::ResponseDetail::Standard,
+    ] {
+        let value = run_security_search(
+            state_with_test_osv(true),
+            SecuritySearchArgs {
+                query: Some("CVE-2024-3094".to_string()),
+                cve_id: Some("CVE-2024-3094".to_string()),
+                response_detail: Some(detail),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("security_search succeeds");
+        assert_eq!(
+            value["vulnerabilities"][0]["summary"],
+            "XZ Utils backdoor advisory"
+        );
+    }
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn generic_only_search_without_severity_keeps_severity_warning() {
+    let value = run_security_search(
+        state_with_engines(
+            test_cfg(),
+            vec![MockEngine::success("mock_a", Vec::new())],
+            Duration::from_secs(5),
+        ),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            providers: vec!["mock_a".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("severity_unavailable")
+    }));
+}

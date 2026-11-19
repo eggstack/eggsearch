@@ -102,6 +102,82 @@ fn batch_args(items: Vec<BatchFetchItem>) -> BatchFetchArgs {
     }
 }
 
+fn workspace_state(root: &std::path::Path) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![root.to_path_buf()];
+    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
+        .expect("backend");
+    backend.get_or_build_inventory();
+    let mut state = ServerState::build(cfg).expect("state builds");
+    state.local_backend = Some(Arc::new(backend));
+    Arc::new(state)
+}
+
+fn workspace_root_name(root: &std::path::Path) -> String {
+    root.file_name().unwrap().to_str().unwrap().to_string()
+}
+
+fn workspace_repo_item(owner: &str, path: &str, max_chars: Option<usize>) -> BatchFetchItem {
+    serde_json::from_value(serde_json::json!({
+        "type": "repo",
+        "host": "workspace",
+        "owner": owner,
+        "repo": path,
+        "path": path,
+        "max_chars": max_chars
+    }))
+    .expect("workspace repo item")
+}
+
+fn visible_string_chars(value: Option<&serde_json::Value>) -> usize {
+    value
+        .and_then(serde_json::Value::as_str)
+        .map_or(0, |text| text.chars().count())
+}
+
+fn expected_batch_returned_chars(payload: &serde_json::Value, repo: bool) -> usize {
+    let mut chars = ["text", "title", "description"]
+        .iter()
+        .map(|key| visible_string_chars(payload.get(key)))
+        .sum::<usize>();
+    chars += payload
+        .get("links")
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, |links| {
+            links
+                .iter()
+                .map(|link| {
+                    visible_string_chars(link.get("url")) + visible_string_chars(link.get("text"))
+                })
+                .sum()
+        });
+    if repo {
+        chars += payload
+            .get("locator")
+            .and_then(serde_json::Value::as_object)
+            .map_or(0, |locator| {
+                locator
+                    .values()
+                    .map(|value| visible_string_chars(Some(value)))
+                    .sum()
+            });
+        chars += [
+            "browser_url",
+            "raw_url",
+            "permalink_url",
+            "raw_permalink_url",
+            "fetched_url",
+        ]
+        .iter()
+        .map(|key| visible_string_chars(payload.get(key)))
+        .sum::<usize>();
+    }
+    chars
+}
+
 #[tokio::test]
 async fn mixed_focused_unfocused_batch_items() {
     use httpmock::prelude::*;
@@ -493,6 +569,72 @@ async fn batch_aggregate_truncation_is_explicit() {
 }
 
 #[tokio::test]
+async fn batch_repo_large_workspace_file_is_clipped_to_default_total_budget() {
+    let dir = tempfile::tempdir().expect("workspace root");
+    let root_name = workspace_root_name(dir.path());
+    let content = "pub fn routine() { let value = 1; }\n".repeat(3000);
+    std::fs::write(dir.path().join("large.rs"), content).expect("write large workspace file");
+    let item = workspace_repo_item(&root_name, "large.rs", Some(50_000));
+    let mut args = batch_args(vec![item]);
+    args.max_chars_per_item = Some(50_000);
+    let batch = run_batch_fetch(workspace_state(dir.path()), args)
+        .await
+        .expect("large workspace batch");
+    let result = &batch["results"][0];
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["truncated"], true);
+    assert!(!result["response"]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .is_empty());
+    assert!(batch["total_chars_returned"].as_u64().unwrap() <= 50_000);
+    let budget_warning = batch["structured_warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|warning| warning["code"] == "fetch_content_truncated")
+        .expect("aggregate budget warning");
+    assert!(budget_warning["message"]
+        .as_str()
+        .unwrap()
+        .contains("large.rs"));
+}
+
+#[tokio::test]
+async fn batch_repo_metadata_budget_omission_is_a_failed_item() {
+    let dir = tempfile::tempdir().expect("workspace root");
+    let root_name = workspace_root_name(dir.path());
+    std::fs::write(dir.path().join("small.rs"), "pub fn ready() {}\n").expect("write");
+    let mut args = batch_args(vec![workspace_repo_item(&root_name, "small.rs", None)]);
+    args.max_chars_per_item = Some(1000);
+    args.max_total_chars = Some(1);
+    let batch = run_batch_fetch(workspace_state(dir.path()), args)
+        .await
+        .expect("small budget batch");
+    let result = &batch["results"][0];
+    assert_eq!(result["ok"], false);
+    assert!(result.as_object().unwrap().contains_key("response"));
+    assert!(result["response"].is_null());
+    assert_eq!(result["chars_returned"], 0);
+    assert_eq!(result["truncated"], true);
+    let error = result["error"].as_str().unwrap();
+    assert!(error.contains("small.rs") && error.contains("max_total_chars=1"));
+    assert_eq!(batch["fetched"], 0);
+    assert_eq!(batch["failed"], 1);
+    assert_eq!(batch["telemetry"]["items_completed"], 0);
+    assert_eq!(batch["telemetry"]["items_failed"], 1);
+    let budget_warnings = batch["structured_warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|warning| warning["code"] == "fetch_content_truncated")
+        .collect::<Vec<_>>();
+    assert_eq!(budget_warnings.len(), 1);
+    let warning = budget_warnings[0]["message"].as_str().unwrap();
+    assert!(warning.contains(&root_name) && warning.contains("max_total_chars=1"));
+}
+
+#[tokio::test]
 async fn batch_focus_utf8_boundaries() {
     use httpmock::prelude::*;
     let server = MockServer::start();
@@ -710,32 +852,13 @@ async fn batch_web_and_workspace_repo_in_one_batch() {
             .body(article_body());
     });
     let dir = tempfile::tempdir().expect("tempdir");
-    let root_name = dir
-        .path()
-        .file_name()
-        .and_then(|n| n.to_str())
-        .expect("root name")
-        .to_string();
+    let root_name = workspace_root_name(dir.path());
     std::fs::write(
         dir.path().join("lib.rs"),
         "pub fn tokio_runtime() {}\n// tokio runtime scheduler drives tasks\npub fn other() {}\n",
     )
     .expect("write");
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter =
-        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
-    let mut cfg = AppConfig::default();
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.fetch.allow_localhost = true;
-    cfg.fetch.allow_private_network = true;
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![dir.path().to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    let state = Arc::new(state);
+    let state = workspace_state(dir.path());
 
     let v = run_batch_fetch(
         state,
@@ -768,6 +891,24 @@ async fn batch_web_and_workspace_repo_in_one_batch() {
     .await
     .expect("mixed batch works");
     assert_eq!(v["fetched"], 2);
+    let web_response = &v["results"][0]["response"];
+    let repo_result = &v["results"][1];
+    let repo_response = &repo_result["response"];
+    assert!(repo_response["text"]
+        .as_str()
+        .unwrap()
+        .contains("tokio_runtime"));
+    assert_eq!(repo_response["trust"], "local_trusted");
+    let expected_web_chars = expected_batch_returned_chars(web_response, false) as u64;
+    assert_eq!(
+        v["results"][0]["chars_returned"].as_u64(),
+        Some(expected_web_chars)
+    );
+    let expected_repo_chars = expected_batch_returned_chars(repo_response, true) as u64;
+    assert_eq!(
+        repo_result["chars_returned"].as_u64(),
+        Some(expected_repo_chars)
+    );
     assert!(v["results"][0]["response"]["focus"].is_object());
     assert!(v["results"][1]["response"]["focus"].is_object());
     assert_eq!(v["telemetry"]["focused_items"], 2);
@@ -1184,12 +1325,7 @@ async fn batch_workspace_pdf_matches_repo_fetch() {
 #[tokio::test]
 async fn batch_repo_span_options_match_workspace_repo_fetch() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let root_name = dir
-        .path()
-        .file_name()
-        .and_then(|name| name.to_str())
-        .expect("root name")
-        .to_string();
+    let root_name = workspace_root_name(dir.path());
     let source = "pub struct Router {\n    pub enabled: bool,\n}\n\npub fn unrelated() {}\n";
     std::fs::write(dir.path().join("lib.rs"), source).expect("write source");
     let engines = vec![MockEngine::success("mock_a", vec![])];

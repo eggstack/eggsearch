@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6359 | 28 |
-| `--features mock` | 6332 | 5 |
+| `--all-features` | 6445 | 28 |
+| `--features mock` | 6418 | 5 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -22,21 +22,21 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
-| `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling |
+| `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling, default identifier routing through an enabled native advisory provider, conditional availability/severity warnings, and the bounded advisory summary |
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
 | `pdf_fidelity` | `pdf` | Committed synthetic PDF corpus (8 cases, one per document class, 15,890 bytes): line-shape floors/ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification and image counts, running-head repetition, outline count/depth; 116 baseline assertions and 15 recorded ADR-0008 target statuses; join-lines-and-strip-spaces negative control over 25 metric groups; 16 tests plus 1 ignored opt-in recorder into `target/pdf-corpus/`, including one that pins document-scoped chunks against window-bounded legacy text |
 | `evidence_contract` | `mock` (mostly) | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
 | `config_validation` | None | Config rules and validation, including `[search]` search-cache TTL/entry bounds |
 | `keyless_core` | None | Keyless-core runtime invariant |
-| `local_workspace_integration` | `mock` | Local workspace search backend, local PDF extension/magic detection, size budget, feature/config gates, explicit empty outcome, trust/sanitization, and non-PDF binary rejection |
+| `local_workspace_integration` | `mock` | Local workspace search backend, local PDF extension/magic detection, size budget, feature/config gates, explicit empty outcome, trust/sanitization, non-PDF binary rejection, relevance admission (role bonuses never admit), scoped include_local, and truncation meaning |
 | `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
 | `retrieval_attempt_ledger` | None | Attempt ledger validation |
 | `retrieval_quality` | `mock` (live observation and recorder ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, candidate-snapshot replay through the production selection path (tier-1 synthetic, tier-2 recorded, tier-3 recorded into `target/snapshots/`), duplicate-slot/domain/authoritative-survival metrics, three seeded negative controls, derived-intent rollout gate, shipped-default-set routing gate (one case per disclosed intent, keyword-query admission predicate, re-pointed `security-nvd-first` negative control), opt-in bounded provider observations |
 | `conflict_source_attribution` | None | Conflict source attribution |
 | `bounded_command` | `mock` | Bounded git command execution (caps, timeout, termination) |
 | `firecrawl_developer` | None | Developer-index adapter behavior |
-| `native_security_attempts` | None | Native advisory attempt preservation |
+| `native_security_attempts` | None | Native advisory attempt preservation and advisory summary mapping |
 | `codegg_evidence_contract` | None | CodeGG evidence handoff shape |
 | `browser_profiles` | `browser` | Browser profile management |
 | `browser_transport` | `browser` | Browser transport orchestration |
@@ -93,7 +93,7 @@ Every case is generated synthetically by this repository; no third-party documen
 | `adversarial_corpus` | None | 28 | Structural validation of adversarial corpus JSON files, plus (feature `pdf`) pre-parse decompression-bound bombs for content, object, xref and chained-filter streams, `/W` geometry and `LZWDecode` refusals, the `/FlateDecode`-then-unknown-filter chain, and the `/Encrypt` with/without-password matrix |
 | `provider_request_contract` | `mock` | 36 | Engine request migration, date/domain validation, Brave params/news endpoint, telemetry, legacy fixtures, automatic gzip/br advertisement, searxng wire compression, chunked gzip/Brotli bounded-body regression with transfer-shape control, decoded-body limits, compressed-response deadlines, keyless source-provider wire contracts (Wikipedia/HN/arXiv/PubMed/GitHub repositories) incl. arXiv pacing gate, credentialed-provider wire contracts (SerpApi pinned engine/no extra verticals/query-parameter credential; Kagi v1 POST + bearer + search-only collection, terminal quota), provider-scoped failures, credential redaction in every error path, and oversized-body rejection |
 | `extract_fetch_contract` | `mock` (1 test) | 24 | Excerpt bounds/merge/sanitization, Brave excerpts/timestamps, focus ranking/caps/validation, cache policy/max-age/refresh/bypass, batch cache controls, markdown-first negotiation (Accept policy, cache-key isolation, bounded fallback, `Vary: Accept`, markdown link extraction, controlled A/B) |
-| `batch_fetch_retrieval` | `mock` | 22 with PDF/browser; 17 without | Mixed web/repo/workspace parity, per-URL PDF page validation/selection/cache isolation and metadata-only/HTML behavior, local workspace PDF parity, render/profile and cache controls, repo source selection and `prefer_local`, host-local-scope authorization, preflight, order/aggregate truncation, UTF-8 boundaries, focus, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, and per-item challenge marking |
+| `batch_fetch_retrieval` | `mock` | 25 with PDF/browser; 20 without | Mixed web/repo/workspace parity, per-URL PDF page validation/selection/cache isolation and metadata-only/HTML behavior, local workspace PDF parity, render/profile and cache controls, repo source selection and `prefer_local`, host-local-scope authorization, preflight, order/aggregate truncation, UTF-8 boundaries, focus, metadata-only rejection, failure isolation, locator safety, suggested-fetch round-trip, batch next-actions, per-item challenge marking, and repo readable-text budget clipping/omission accounting |
 | `provider_capability_contract` | None | 23 | Provider native-capability enforcement (brave_api/exa/tavily/firecrawl/serpapi/kagi), HTML-scraper none, domain-filter exclusivity, keyless source-provider inventory/keyless/default-exclusion/timestamp/freshness claims (incl. `nvd` freshness non-enforcement), credentialed-provider required-key posture/opt-in exclusion/engine-builder reachability with typed missing-key skips, `structured_api` exclusivity, AGENTS.md prose agreement |
 | `provider_workstream_regression` | `mock` | 7 | Provider inventory (44 IDs), capability descriptors, constraint enforcement matrix, keyless vs optional-credential posture, URL dedup with stable IDs, Tavily sanitization, CodeGG backward-compatible deserialization |
 | `egress_routing` | None (proxy composition under `egress`) | 35 | Egress config validation (incl. IPv6 literals), credential redaction, custom-dialer SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, handshake cancellation/deadline, HTTPS TLS/SNI through CONNECT, gzip/Brotli decode with decoded-body limits, authenticated HTTP/SOCKS with credential non-forwarding, malformed-proxy fail-closed, routed redirects |
@@ -195,7 +195,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `mcp_tool_contract` | 21 | Canonical registry parity, sanitization, deterministic fingerprints, and compact-profile size/all-name contract |
 | `mcp_schema_slimming` | 21 | Full/compact schema budgets, batch per-target option advertisement, and legacy-field acceptance |
 | `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
-| `mcp_projection` | 34 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, intact over-800-character document extraction within budget, 15-task byte/retention trace, bundle identity |
+| `mcp_projection` | 34 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, intact over-800-character document extraction within budget, native advisory summary retention, 15-task byte/retention trace, bundle identity |
 
 ## Tool-Surface Evaluation (2 suites)
 

@@ -365,3 +365,27 @@ fn d8_17_codegg_fixture_distinguishes_no_advisory_from_provider_failed() {
         "zero-result and failure must produce different absence kinds"
     );
 }
+
+#[test]
+fn d8_18_native_success_does_not_mask_another_provider_failure() {
+    let attempts = vec![
+        native_attempt(
+            "github_advisory",
+            "advisory_by_cve",
+            RetrievalAttemptOutcome::Failed,
+            vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            0,
+        ),
+        native_attempt(
+            "osv",
+            "advisory_by_cve",
+            RetrievalAttemptOutcome::SuccessWithResults,
+            vec![EvidenceRole::AuthoritativeSecurityAdvisory],
+            1,
+        ),
+    ];
+    let summary = build_retrieval_summary_from_attempts(&attempts);
+    assert!(summary.has_failures);
+    assert_eq!(summary.dimensions.len(), 2);
+    assert_eq!(attempts_to_failures(&attempts).len(), 1);
+}

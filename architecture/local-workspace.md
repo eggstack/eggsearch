@@ -23,11 +23,13 @@ child only; it does not establish authority for HTTP or remote MCP clients.
 The local workspace backend searches operator-configured filesystem roots
 without cloning or indexing services. Each call ensures a cached inventory,
 selects a bounded deterministic candidate set, reads files through
-race-resistant opening, scores path/text/language/symbol matches, and emits
-`SourceCard`s with `TrustLevel::LocalTrusted`. The `src/meta/local/mod.rs`
-facade records the ownership split: orchestration in `local_backend`, git
-discovery in `local_inventory`, caching and the git runner in
-`local_inventory_cache`, parsing in `local_symbols`, ignore matching in
+race-resistant opening, and emits `SourceCard`s with
+`TrustLevel::LocalTrusted`. A query, path/file, or symbol match is required to
+admit a file; source-role bonuses only rank candidates, while language and
+repository identity are filters or boosts, never admission signals. The
+`src/meta/local/mod.rs` facade records the ownership split: orchestration in
+`local_backend`, git discovery in `local_inventory`, caching and the git runner
+in `local_inventory_cache`, parsing in `local_symbols`, ignore matching in
 `local_ignore`, safe opening in `safe_open`. No workspace code is executed
 and no native plugins are loaded.
 
@@ -78,8 +80,13 @@ Search flow per call:
    (`FreshnessConfidence`: `High`, `Medium`, `Low`).
 
 `local_result_budget()` caps local merging at half the effective max
-results. The `SymbolBackend` trait defines `find_symbols()`,
-`capabilities()`, `find_definition()`, `find_references()` (defaulting to
+results. A completed search that admits no cards reports
+`local_search_completed_no_matches`, even if inventory candidates existed or
+truncation is possible. `local_search_truncated` means admitted matches were
+dropped by the result cap or inventory truncation could have hidden a match;
+bounded candidate pruning alone is not reported as truncation. The
+`SymbolBackend` trait defines `find_symbols()`, `capabilities()`,
+`find_definition()`, `find_references()` (defaulting to
 `local_symbols::find_references()`), and `find_enclosing()` /
 `find_implementors()` where supported. `RegexSymbolBackend` preserves the
 compiled-pattern behavior; `StructuredSymbolBackend` runs the deterministic
@@ -256,11 +263,12 @@ are already `prof_<16-hex>`). `build_raw_cache_key()`
 scopes raw fetch entries so profiles never share cached bodies.
 
 Local results enter mixed-provider flows only through the `include_local`
-flag: `RepoSearchRequest.include_local` (and `repo_search` tool arg
-`include_local: Option<bool>`) defaults on via `include_local_enabled()`
-(`unwrap_or(true)`), and the repo adapter merges local cards only when the
-backend `is_enabled()` and `req.include_local_enabled()` both hold, inside
-`local_result_budget()`.
+flag. For unscoped requests, an omitted value includes local results by
+default; when resolved hints name a host, owner, repository, or organization
+(including a `repo:owner/name` token), local search runs only when
+`include_local: true` is explicit. Explicit `false` suppresses local search in
+every scope, and the backend must also be enabled. The repo adapter merges
+local cards inside `local_result_budget()`.
 
 When `[search].mode = "off"`, `repo_search` may run only if the local backend
 is enabled and local results were not explicitly disabled. The MCP endpoint

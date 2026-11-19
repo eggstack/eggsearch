@@ -115,24 +115,68 @@ Using the pinned Rust 1.89 toolchain on candidate `55180790c6dc5dbb2ce0d94c186ef
 Nothing was deliberately skipped. The suite total moved from 6,422 to 6,430: six new behavioral
 tests, one classification unit test, and one ledger unit test.
 
-## What was demonstrated live, and what was not
+## Live browser record
 
-Nothing in M035 was demonstrated against a real browser. The completion wait, the 500 ms polling
-cadence, the reload detection, and the re-read of the main-document status are exercised only when
-Chrome renders a real wall, and the default gate is browser-free by design (the plan's stop
-condition). The completion **decision** and the **counting** are covered deterministically with the
-mock browser override; the polling loop around them is not.
+Taken on 2026-11-19 against the candidate, with a `target/debug/eggsearch` built
+`--locked --all-features` from it. Chrome was auto-discovered from
+`/Applications/Google Chrome.app`; no executable path was configured. The harness drove MCP
+`web_fetch` over `mcp stdio` with a local `/tmp` config, a Chrome-shaped `[fetch].user_agent`
+(the same property of the qualification origins the M034 record describes), and
+`[search.challenge].enabled = false` unless noted. Wall-clock is measured from the
+`tools/call` write to its response. Every request was `cache_policy: "bypass"`.
 
-No live browser record is claimed. A live attempt remains optional, and the M034 record's origin
-behaviour ("Oh noes!" toward headless Chrome) makes a live completion demonstration dependent on a
-wall that Chrome can actually pass.
+| # | Target | Render | `verification_wait_ms` | Wall clock | Result |
+|---|---|---|---|---|---|
+| 1 | `https://git.disroot.org/` | `http_only` | — | 856 ms | Anubis wall, `status: 200`, `fetch_challenge_page` names `anubis`, `manual_interaction_required: true` |
+| 2 | `https://git.disroot.org/` | `auto` | 8000 | 3843 ms | `transport: browser`, `browser_escalated: true`, title **"Oh noes!"** (Anubis's own failure page), returned **marked** with one `fetch_challenge_page` warning |
+| 3 | `https://anubis.techaro.lol/` | `http_only` | — | 276 ms | Anubis wall, marked |
+| 4 | `https://anubis.techaro.lol/` | `auto` | 8000 | 2713 ms | Browser render, "Oh noes!" page, returned marked |
+| 5 | `https://www.canva.com/` | `browser` | **0** | 2327 ms | Cloudflare "Just a moment...", `NonInteractiveVerification`, returned marked with one `verification` warning |
+| 6 | `https://www.canva.com/` | `browser` | **5000** | 7636 ms | Same page, same marking; the extra **5,309 ms** is the polling budget being spent |
+| 7 | `https://excalidraw.com/` | `browser` | 0 vs 8000 | 1157 ms vs 1856 ms | JS shell: a ~700 ms difference consistent with one 500 ms poll, then `UsefulContent`; not a wall, so not marked |
+
+What this establishes:
+
+- **The wait is classification-driven and bounded by `verification_wait_ms`.** Observations 5 and
+  6 are the same wall, the same page, and the same marking; only the budget differs, and the wall
+  clock differs by that budget. The page never left `NonInteractiveVerification`, so the full
+  budget was spent and the wall was then returned marked — never as a bare document.
+- **The wait stops early when the page stops being a wall.** Observations 2 and 4 entered the wait
+  on the detected Anubis family and left it on the first resample, well inside the 8 s budget,
+  because Chrome was already showing the wall's failure page. Observation 7's timing is consistent
+  with one 500 ms poll before the shell became useful content, but the poll count itself is not
+  externally observable.
+- **The real Anubis walls never yield their document to this browser.** Both origins serve their
+  own "Oh noes! / Access Denied: error code …" failure page to headless Chrome. That page carries
+  Anubis markers, so `src/fetch/challenge.rs` detects it and M035 returns it **marked**, with
+  `manual_interaction_required: true` — the invariant holds, but the document does not arrive.
+  This is the same upstream behaviour M034 recorded; the ordering fix only means a solvable wall no
+  longer reaches Chrome first.
+- **`auto` escalation reaches the same code.** Observation 2 is the auto path: HTTP detects the
+  wall, the solver is disabled, the browser escalates, and the wait and marking above are the
+  browser path's own.
+
+What this does **not** establish: no live wall was observed **completing into its document**. Both
+reachable Anubis deployments fail in headless Chrome, and the Cloudflare wall never resolves for it.
+The completion branch (`challenge_completed: true` and `browser_completions`) is therefore still
+covered only by the mock-browser test and the ledger unit test, not by a live document. That is
+recorded as an open limit, not as satisfied live evidence.
+
+One harness artifact is worth recording because it is operational rather than test-only: an
+abruptly killed MCP process can leave Chromium's `SingletonLock` in the shared
+`$TMPDIR/chromiumoxide-runner` profile, after which every later launch fails with "Failed to
+create … SingletonLock: File exists" until that directory is removed. The live runs hit it once and
+recovered after cleaning the directory; graceful shutdown (stdin close, then wait) avoided it.
+This is a browser-lifecycle robustness observation, not an M035 regression: the milestone did not
+change process startup, shutdown, or profile handling.
 
 ## Known limitations and residual risk
 
 1. The browser's completion wait is not covered by any test in the default gate. The loop runs
    only inside `navigate_and_extract`, which needs a real Chrome; the pure decision
-   (`is_script_wall`) and the outcome marking are covered, the loop is not. A defect in the
-   polling cadence or in the status re-read would be caught only by a live run.
+   (`is_script_wall`) and the outcome marking are covered, the loop is not. It was exercised live
+   on 2026-11-19 (see the live record), which is not a substitute for a test, and a defect in the
+   polling cadence or in the status re-read would still surface only in a live run.
 2. A wall whose own failure page presents ordinary content is returned as a document. Anubis's
    "Oh noes!" page is the known example: after rendering, nothing in the content distinguishes it
    from a document, so the render reports `UsefulContent`. The architecture rule records this case
@@ -171,6 +215,30 @@ wall that Chrome can actually pass.
 - `Cargo.toml` is unchanged, so no dependency moved and no new feature was introduced.
 - The refusal vocabulary in `src/meta/challenge/ledger.rs` keeps its ten keys.
 
+## Page-scraping surface audit
+
+Every tool that scrapes an arbitrary web page shares the one challenge module in
+`src/challenge_replay/`. The browser-completion half of M035 is carried by the web-fetch family
+only, because it is the only surface that renders at all.
+
+| Surface | Entry point | Solver | Browser completion |
+|---|---|---|---|
+| MCP `web_fetch` | `run_web_fetch_inner` in `src/mcp/tools/web_fetch.rs` | yes | yes (`auto` escalation and explicit `browser`) |
+| MCP `batch_fetch`, web items | `batch_fetch_item` → `run_web_fetch_with_prepared_client` | yes | yes, through the same handler |
+| MCP `fetch`, web items | `run_fetch_with_host_scope_and_progress` → `batch_fetch` | yes | yes, through the same handler |
+| SDK `ToolName::WebFetch` | delegates to `run_web_fetch` | inherited | inherited |
+| MCP `repo_fetch`, remote URL | `challenge_replay::fetch_with_challenge_replay` | yes | no: no `render` argument, no browser lifecycle |
+| CLI `eggsearch fetch` | `challenge_replay::fetch_with_challenge_replay` | yes | no: same reason |
+| SDK `ToolName::RepoFetch` | delegates to `run_repo_fetch` | inherited | no |
+| `build_evidence_bundle` | consumes fetch responses | — | — (no network of its own) |
+| `web_search`, `research_search`, `security_search` | engine/dispatch layer | engine-level solver | — (searches provider APIs and SERPs, not pages) |
+| `repo_map`, `repo_search` | local workspace and code-host APIs | — | — |
+
+So "all page-scraping tools on the unified path" is true for the challenge solver and false for
+browser completion: `repo_fetch` and the CLI fetch never launch the browser, by the current surface
+design, and M035 did not change them. A wall that only a browser can pass therefore stays marked on
+those two surfaces while the web-fetch family may complete it.
+
 ## Security evidence
 
 - The permitted class did not widen. No interactive CAPTCHA, OCR, third-party solver, credential
@@ -190,5 +258,6 @@ Accept M035 and close it. The criteria are met with deterministic loopback evide
 wall never reaches Chrome, an unresolved wall is returned marked instead of as a bare document, an
 interactive challenge stays manual, one completion is counted exactly once and reported through
 `provider_status`, and the deadline and browser-unavailable paths keep the marked wall. The
-completion polling loop itself remains proven only by construction and a live run is not claimed;
+completion polling loop itself is proven by construction and by the live record above, which did
+  not observe a wall completing into its document;
 that is recorded above as residual risk 1, not as a satisfied acceptance criterion.

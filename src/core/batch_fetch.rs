@@ -214,7 +214,7 @@ pub struct BatchFetchResult {
     /// Whether this item was fetched successfully.
     pub ok: bool,
     /// Serialized response payload (fetch or repo_fetch response shape).
-    /// Present only when `ok = true`.
+    /// Budget-omitted items carry `null`; successful items carry their payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<serde_json::Value>,
     /// Error message. Present only when `ok = false`.

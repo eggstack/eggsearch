@@ -319,7 +319,7 @@ pub struct RepoSearchRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_migration_guides: Option<bool>,
     /// Optional. Include local workspace results when local backend is enabled.
-    /// Default: None (uses profile-based default).
+    /// When omitted, local results are included for unscoped requests only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_local: Option<bool>,
     /// Optional. Search mode. `"normal"` (default) uses standard repo-search
@@ -505,9 +505,15 @@ impl RepoSearchRequest {
         self.include_security_context.unwrap_or(false)
     }
 
-    /// Whether local results should be included (default true when local backend is available).
+    /// Whether local results should be included under the resolved repository scope.
     pub fn include_local_enabled(&self) -> bool {
-        self.include_local.unwrap_or(true)
+        self.include_local.unwrap_or_else(|| {
+            let hints = self.resolved_hints();
+            hints.host.is_none()
+                && hints.owner.is_none()
+                && hints.repo.is_none()
+                && hints.org.is_none()
+        })
     }
 
     /// Build a PackageCoordinate from the request fields if package fields are present.

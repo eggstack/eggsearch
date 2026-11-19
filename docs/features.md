@@ -2,6 +2,46 @@
 
 eggsearch provides keyless web, fetch, advisory, registry, and scholarly paths by default. Current source builds also enable PDF extraction and browser rendering by default. The published `v0.4.4` binaries predate that change and include neither feature. Other optional capabilities require Cargo features or config changes.
 
+## Retrieval Integrity Contracts
+
+These contracts are always on in current builds; they need no feature flag or
+configuration.
+
+### Unified fetch budget
+
+`fetch` measures every item with one readable-text rule: Unicode scalar values in
+the returned `text` plus bounded visible metadata. A repo item is not charged for
+its serialized JSON or for the structural `document`/`lines` copy of the same
+text. Oversized text is clipped with `truncated: true` before an item is omitted,
+and an item that cannot fit its locator and metadata is a failed item
+(`ok: false`, `response: null`, `chars_returned: 0`) with an attributable
+`batch_total_budget_exhausted` error and warning. A repo item missing `owner`,
+`repo`, or `path` fails before dispatch with an error that names the field and
+the accepted shape.
+
+### Local search admission and scope
+
+A local workspace file is a `repo_search` result only when the query, its path or
+file name, its content, or a requested symbol matches. Source-role bonuses rank
+candidates but never admit one. When local search admits nothing, the response
+carries `local_search_completed_no_matches`; `local_search_truncated` means
+admitted matches were dropped or the inventory cap could have hidden a match. An
+unscoped request includes local results by default; a request that names a host,
+owner, repository, or organization includes them only with explicit
+`include_local: true`, and `include_local: false` disables them everywhere.
+
+### Native security advisories
+
+For identifier-bearing security requests (`cve_id`, `ghsa_id`, `osv_id`,
+`rustsec_id`, or `package`) with no explicit `providers`, `security_search`
+adds every provider the configuration already enables and that advertises native
+advisory lookup. It never enables a provider and never changes
+`default_providers`. Native vulnerabilities carry an optional bounded `summary`
+(500 characters, sanitized), and the availability and severity warnings describe
+what actually happened: `native_advisory_search_unavailable` only when no enabled
+provider advertises a native operation, `severity_unavailable` only when no
+returned vulnerability carries severity.
+
 ---
 
 ## PDF Extraction

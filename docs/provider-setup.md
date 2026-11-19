@@ -481,6 +481,7 @@ SearXNG returns `403` when a requested format is disabled, and many public insta
 - Enabled by default: yes
 - No API key needed
 - Used primarily by `security_search` for vulnerability lookups
+- Identifier-bearing `security_search` requests (`cve_id`, `ghsa_id`, `osv_id`, `rustsec_id`, or `package`) select OSV automatically when it is enabled; no `providers` list is needed, and an explicit list stays authoritative. Disabling `osv` removes the native lane and the response reports that no enabled native advisory provider is available.
 
 ## Security Advisory Providers
 

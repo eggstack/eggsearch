@@ -46,6 +46,27 @@ workspace reads retain the same authorized root and root-relative path boundary
 as `repo_fetch`. Batch order, per-item failures, and aggregate budgets remain
 owned by the batch envelope.
 
+### Batch returned-character budget
+
+The unified `fetch` envelope measures web and repo items with one deterministic
+returned-character rule: Unicode scalar values in the top-level `text`, plus
+`title`, `description`, and visible link URL/text metadata. Repo items also count
+the string-valued locator and returned URL fields. The measure is applied to each
+item before the caller's `response_detail` projection. Repo `document` and `lines`
+are structural representations of the same text and are not counted a second
+time.
+
+When an item exceeds the remaining `max_total_chars`, its text is clipped
+UTF-8-safely before omission. Repo locator and bounded metadata are retained;
+only the top-level `text` is clipped, while the structural `document` and `lines`
+remain unchanged. If the repo locator and metadata alone cannot fit, the item is
+omitted with `response: null`, `ok: false`, `chars_returned: 0`, an item-specific
+budget error, and `truncated: true`. Aggregate fetched/failed and telemetry counts
+follow those item outcomes. A single `batch_total_budget_exhausted` warning (the
+raw prefix; the structured entry carries the existing `fetch_content_truncated`
+code) names the first item affected and the `max_total_chars` budget;
+budget-limited truncation and omission are never silent.
+
 1. **Validate.** `limits::validate_url` (sync shape check) runs first;
    `limits::validate_fetch_target` / `validate_fetch_target_with_resolved_addrs`
    (async full check + DNS) runs per attempt and per redirect hop.

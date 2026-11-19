@@ -96,12 +96,12 @@ fn tool_surface_live_report_contract() {
     let deltas = &report["token_byte_deltas_from_baseline"];
     assert_eq!(
         deltas["total_definition_bytes"].as_i64(),
-        Some(-8_176),
+        Some(-8_139),
         "candidate tool definitions must record the measured M029 byte reduction: {deltas}"
     );
     assert_eq!(
         deltas["estimated_tokens"].as_i64(),
-        Some(-2_044),
+        Some(-2_035),
         "candidate tool definitions must record the measured M029 token reduction: {deltas}"
     );
 }

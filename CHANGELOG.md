@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `security_search` selects every provider that configuration already enables and that
+  advertises native advisory lookup for identifier-bearing requests (`cve_id`, `ghsa_id`,
+  `osv_id`, `rustsec_id`, or `package`), so an enabled OSV provider answers a CVE query by
+  default instead of being silently skipped. An explicit `providers` list is unchanged and
+  stays authoritative; no provider is enabled by the code and `default_providers` is
+  untouched. A native vulnerability now carries an optional `summary` (sanitized as external
+  untrusted text and bounded to 500 characters, omitted when the provider publishes none), so
+  the response can say what an advisory is without a second fetch. The
+  `native_advisory_search_unavailable` warning appears only when no enabled provider
+  advertises a native operation, `severity_unavailable` appears only when no returned
+  vulnerability carries severity, and a provider-operation budget skip names its cap.
 - A pass cookie the fetch path is issued is now reused for a later fetch to the same origin
   instead of being solved again every time. The cache is process-local and keyed by origin
   (scheme, host, effective port), holds at most 32 origins and 64 KiB, and is never written to
@@ -211,6 +222,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The unified `fetch` envelope charges a repo item for its readable text and bounded metadata
+  instead of its whole serialized response. A repository file that `repo_fetch` returns at
+  default settings is returnable through `fetch` at the default 50,000-character budget:
+  oversized text is clipped with `truncated: true` before an item is omitted, and structural
+  `document`/`lines` copies are not charged twice. An item that cannot fit even its locator
+  and metadata is `ok: false` with `response: null`, `chars_returned: 0`, a
+  `batch_total_budget_exhausted` error and warning, and it counts in `failed` and
+  `telemetry.items_failed` instead of reporting an empty success. A fetch item missing a
+  required locator field now names the field and the accepted shape instead of the
+  untagged-enum deserialization message.
+- Local `repo_search` admits a file only when the query, its path or file name, its content,
+  or a requested symbol matches; source-role bonuses still rank candidates but no longer admit
+  them, so a query that matches nothing in a non-empty workspace returns zero local cards with
+  `local_search_completed_no_matches` instead of README inventory cards. A request that names
+  a remote repository (`host`, `owner`, `repo`, `org`, or a resolved `repo:owner/name`
+  token) adds local results only when `include_local: true` is explicit; an omitted value
+  still includes them for unscoped requests, and `false` still suppresses them everywhere.
+  `local_search_truncated` now means admitted matches were dropped or inventory truncation
+  could have hidden a match, never candidate pruning alone.
 - PDF pre-parse scanning resolves indirect `/Length` references from their object headers instead of refusing every filtered stream that uses them, so ordinary generated PDFs extract in default builds.
 - `web_fetch` `render = "auto"` classifies JavaScript shells from document text rather than the sanitized framing text or the HTML source length, so escalation actually triggers on empty mount-point pages.
 
