@@ -196,6 +196,106 @@ async fn batch_marks_challenge_pages_per_item() {
     );
 }
 
+const ANUBIS_PASS_COOKIE: &str = "pass-cookie-123";
+
+fn anubis_fast_challenge_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "fast", "difficulty": 2},
+        "challenge": {
+            "issuedAt": "2026-11-11T00:00:00Z",
+            "metadata": {"User-Agent": "eggsearch"},
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "fast",
+            "randomData": "abc123def456",
+            "redir": "/",
+            "policyRuleHash": "00",
+            "difficulty": 2,
+            "spent": false
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+fn localhost_state_with_challenge() -> Arc<ServerState> {
+    let engines = vec![MockEngine::success("mock_a", vec![])];
+    let adapter =
+        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
+    let mut cfg = AppConfig::default();
+    cfg.search.providers.insert("mock_a".to_string(), true);
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
+}
+
+#[tokio::test]
+async fn batch_inherits_the_fetch_side_anubis_solve() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("spchal-auth={ANUBIS_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(article_body());
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("set-cookie", "sp_pow=pow-1; Path=/")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("spchal-auth={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly"),
+            )
+            .body("");
+    });
+
+    let state = localhost_state_with_challenge();
+    let v = run_batch_fetch(state, batch_args(vec![web_item(server.url("/"))]))
+        .await
+        .expect("batch works");
+
+    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(
+        pass.hits(),
+        1,
+        "the batch path must attempt the published challenge"
+    );
+    assert_eq!(
+        replay.hits(),
+        1,
+        "the batch path must replay with the issued cookie"
+    );
+
+    let item = &v["results"][0]["response"];
+    assert_eq!(item["manual_interaction_required"], false);
+    let warnings = item["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !warnings
+            .iter()
+            .any(|warning| warning["code"] == "fetch_challenge_page"),
+        "a solved wall must not keep the challenge warning: {warnings:?}"
+    );
+    let title = item["title"].as_str().unwrap_or_default();
+    assert!(
+        title.contains("Tokio Guide"),
+        "the batch path must return the replayed document: {title}"
+    );
+}
+
 #[tokio::test]
 async fn batch_focus_validation_aligned_to_web_fetch() {
     let state = localhost_state();

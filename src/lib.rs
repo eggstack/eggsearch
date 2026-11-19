@@ -16,6 +16,8 @@
 //! execution, or depend only on `core` types and the MCP/CLI contract, not
 //! on engines, adapters, tool internals, or deployment/update machinery.
 //!
+//! - [`challenge_replay`]: shared bounded challenge solve and replay for
+//!   every fetch surface.
 //! - [`core`]:    source card model, config, error, query types.
 //! - [`meta`]:    metasearch adapter with vendored search engines.
 //! - [`mcp`]:     MCP server (rmcp) exposing nine canonical tools:
@@ -46,6 +48,7 @@
 #![warn(missing_docs)]
 #![deny(unsafe_code)]
 
+pub mod challenge_replay;
 pub mod core;
 pub mod fetch;
 pub mod integrations;

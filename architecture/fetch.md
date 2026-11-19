@@ -613,22 +613,29 @@ bounded body, `status`, and `fetched: true` — it is not a transport failure �
 the family. Detection adds no request, retry, or delay, and ordinary pages, markdown bodies, and
 PDFs are never marked. Under `render: "auto"` the same classification is an escalation trigger, so
 a detected Anubis or ALTCHA wall is rendered by the browser when one is available instead of being
-returned as a stub; `render: "http_only"` keeps the marked body.
+returned as a stub; `render: "http_only"` keeps the marked body. The remote
+`repo_fetch` response always serializes `manual_interaction_required`; when a challenge page
+is returned, `fetch_challenge_page` is surfaced through `structured_warnings`. Its workspace
+path always sets the flag to false.
 
-When `[search.challenge].enabled` is true, a detected Anubis page is not merely marked.
-`src/mcp/tools/web_fetch.rs` — the one module allowed to depend on both trees — solves the
-published challenge once through the shared solver in `src/meta/challenge/anubis.rs` under
-`max_difficulty`, `max_attempts`, `timeout_ms`, and the remaining call deadline, then replays the
-same request once with the cookie pairs the pass response issued, joined with `; `. The pair set is
-opaque — its names are whatever the deployment publishes (`spchal-auth`,
-`techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and it is sent on
-the first hop only, so a redirect cannot forward it to another origin. It is never stored: the
-response returned and cached is the replay's document, with `transport: "http"`,
-`manual_interaction_required: false`, and no `fetch_challenge_page` warning. Solving disabled, no
-parseable published challenge, a refusal at any ceiling, an error, an exhausted deadline, or a
-replay that is itself a challenge all leave today's marking exactly as it was, at most one solve and
-one replay per call. The browser path keeps priority: a successful `render: "auto"` render replaces
-the payload before the solver runs. `batch_fetch` does not solve (residual).
+When `[search.challenge].enabled` is true, a detected Anubis page can be solved and replayed
+once. `src/challenge_replay/` owns the shared fetch-path detect → solve → replay → classify
+sequence, combining the bounded fetch client with the solver in `src/meta/challenge/anubis.rs`.
+`web_fetch`, `batch_fetch`, and unified `fetch` web items delegate through the shared web-fetch
+handler; the remote `repo_fetch` path and CLI `eggsearch fetch` use the same orchestration. Each
+fetch-path solve uses the ledger label `fetch` and is bounded by `max_difficulty`,
+`max_attempts`, `timeout_ms`, and the remaining call deadline.
+
+The solve replays the same request once with the cookie pairs the pass response issued, joined with
+`; `. The pair set is opaque — its names are whatever the deployment publishes (`spchal-auth`,
+`techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and is sent on
+the first hop only, so a redirect cannot forward it to another origin. It is never stored. A
+successful replay returns the document with `manual_interaction_required: false` and no
+`fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a refusal at
+any ceiling, an error, an exhausted deadline, or a replay that is itself a challenge all leave the
+original response marking unchanged, with at most one solve and one replay per call. For web fetch,
+the browser path keeps priority: a successful `render: "auto"` render replaces the payload before
+the solver runs. `batch_fetch` inherits solve behavior through the shared web-fetch handler.
 
 ### Profiles: opaque IDs, origin-scoped logins
 

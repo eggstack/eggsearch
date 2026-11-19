@@ -4398,6 +4398,115 @@ fn repo_fetch_state() -> Arc<ServerState> {
     Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
 }
 
+fn repo_fetch_state_with_challenge() -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.search.challenge.enabled = true;
+    Arc::new(ServerState::build(cfg).expect("repo_fetch challenge state"))
+}
+
+const ANUBIS_PASS_COOKIE: &str = "pass-cookie-123";
+
+fn anubis_fast_challenge_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "fast", "difficulty": 2},
+        "challenge": {
+            "issuedAt": "2026-11-11T00:00:00Z",
+            "metadata": {"User-Agent": "eggsearch"},
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "fast",
+            "randomData": "abc123def456",
+            "redir": "/",
+            "policyRuleHash": "00",
+            "difficulty": 2,
+            "spent": false
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+#[tokio::test]
+async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/src/lib.rs")
+            .header("cookie", format!("spchal-auth={ANUBIS_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n");
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("spchal-auth={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly"),
+            )
+            .body("");
+    });
+
+    let state = repo_fetch_state_with_challenge();
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should solve the challenge");
+
+    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(
+        pass.hits(),
+        1,
+        "repo_fetch must attempt the published challenge"
+    );
+    assert_eq!(
+        replay.hits(),
+        1,
+        "repo_fetch must replay with the issued cookie"
+    );
+    assert_eq!(v["manual_interaction_required"], false);
+    let text = v["text"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("pub fn add"),
+        "repo_fetch must return the replayed source: {text}"
+    );
+}
+
 fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;

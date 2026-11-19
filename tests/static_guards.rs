@@ -2534,3 +2534,95 @@ fn no_retired_replay_cursor_in_mcp_tree_or_docs() {
         }
     }
 }
+#[test]
+fn fetch_layer_never_imports_the_challenge_solver() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/fetch/") {
+            continue;
+        }
+        checked += 1;
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        for forbidden in [
+            "challenge_replay",
+            "crate::meta",
+            "anubis::",
+            "altcha::",
+            "solve_and_verify",
+        ] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not reference the challenge solver (`{forbidden}`); the fetch \
+                 layer detects and marks a challenge page and never solves one"
+            );
+        }
+    }
+    assert!(
+        checked >= 20,
+        "the src/fetch walk must not be vacuous, checked {checked} files"
+    );
+}
+
+#[test]
+fn challenge_solve_orchestration_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/mcp/") && !rel.starts_with("src/commands/") {
+            continue;
+        }
+        checked += 1;
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        for forbidden in ["solve_and_verify", "anubis::", "altcha::"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not call the challenge solver (`{forbidden}`); the shared \
+                 module in src/challenge_replay/ owns the solve and replay sequence"
+            );
+        }
+    }
+    assert!(
+        checked >= 20,
+        "the src/mcp and src/commands walk must not be vacuous, checked {checked} files"
+    );
+
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/meta/") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        assert!(
+            !production_code_clean(&source).contains("challenge_replay"),
+            "{rel} must not depend on the shared replay module; the solver owns the \
+             engine side and the shared module depends on it, never the reverse"
+        );
+    }
+
+    let shared = read_source("src/challenge_replay/mod.rs");
+    assert!(
+        shared.contains("solve_and_verify"),
+        "src/challenge_replay/mod.rs must own the solve call"
+    );
+    assert!(
+        shared.contains("FETCH_LEDGER_LABEL"),
+        "src/challenge_replay/mod.rs must record every fetch-path solve under one label"
+    );
+}

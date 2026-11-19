@@ -433,15 +433,24 @@ pub async fn run_repo_fetch_with_host_scope(
     // `resp.text` (Tier 2 framed) so trust markers don't shift line
     // numbers.
     let fetch_max_chars = state.config.fetch.max_chars_cap;
-    let response = client
-        .fetch(
-            fetch_url,
-            Some(fetch_max_chars),
-            ExtractMode::Text,
-            false,
-            None,
-        )
-        .await;
+    let challenge_deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(req.timeout_ms.unwrap_or(state.config.fetch.timeout_ms));
+    let challenge_plan = crate::challenge_replay::ChallengePlan {
+        challenge: &state.config.search.challenge,
+        user_agent: &state.config.fetch.user_agent,
+        origin_controller: state.origin_controller.as_deref(),
+        max_chars: Some(fetch_max_chars),
+        extract_mode: ExtractMode::Text,
+        include_links: false,
+        pdf_options: None,
+        deadline: challenge_deadline,
+    };
+    let response = crate::challenge_replay::fetch_with_challenge_replay(
+        client.as_ref(),
+        fetch_url,
+        &challenge_plan,
+    )
+    .await;
 
     match response {
         Ok(resp) => {
@@ -616,6 +625,16 @@ pub async fn run_repo_fetch_with_host_scope(
                 }
             });
 
+            let mut structured_warnings = crate::core::warning::convert_fetch_warnings(&warnings);
+            structured_warnings.extend(
+                resp.structured_warnings
+                    .iter()
+                    .filter(|warning| {
+                        warning.code == crate::core::warning::WarningCode::FetchChallengePage
+                    })
+                    .cloned(),
+            );
+
             let fetch_response = RepoFetchResponse {
                 locator: locator.clone(),
                 stable_id: Some(crate::core::identity::fetch_id(
@@ -646,8 +665,9 @@ pub async fn run_repo_fetch_with_host_scope(
                 lines: clamped_lines,
                 document: resp.document,
                 truncated,
-                structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
+                structured_warnings,
                 warnings,
+                manual_interaction_required: resp.manual_interaction_required,
                 trust: FetchTrust::ExternalUntrusted,
                 trust_markers,
                 selected_span,
@@ -1022,6 +1042,7 @@ async fn run_workspace_fetch(
         truncated,
         structured_warnings: crate::core::warning::convert_fetch_warnings(&warnings),
         warnings,
+        manual_interaction_required: false,
         trust: FetchTrust::LocalTrusted,
         trust_markers,
         selected_span,
@@ -1254,6 +1275,7 @@ async fn run_workspace_pdf_fetch(
             truncated: char_truncated || pdf_text_truncated,
             structured_warnings,
             warnings,
+            manual_interaction_required: false,
             trust: crate::core::repo_fetch::FetchTrust::LocalTrusted,
             trust_markers,
             selected_span: None,
