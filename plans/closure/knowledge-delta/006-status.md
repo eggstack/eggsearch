@@ -127,7 +127,33 @@ permission rules, and the live-call behavior are unchanged. A consumer that trea
 `offline` as "everything not open" must now read `disabled` too; the tool matrix and
 architecture docs say so.
 
+## Hosted qualification
+
+The candidate was pushed to `origin/feat/auto-20261117-044c4885`. On `bc52970` (this closure
+commit, which differs from the candidate only in planning documents), CI run
+`44812224641` needed three attempts:
+
+1. The `ci` and `windows portability` jobs succeeded. The
+   `macOS canonical verification and local filesystem portability` job failed on
+   `tests/local_workspace_integration.rs::local_repo_search_finds_source_files`
+   (`tests/local_workspace_integration.rs:793`), a temporary-git-repository fixture that this
+   milestone does not touch.
+2. `gh run rerun --failed` failed at the same assertion.
+3. A third attempt passed all three jobs, including macOS canonical verification.
+
+The compiled test binary in both failing attempts hashes `3ace87ef457959f8`, the same binary
+that passed this test in the `a9fc806` macOS job (`44797522795`). A byte-identical test binary
+cannot be changed by this milestone's source, so the two failures are environment-dependent
+rather than a regression introduced here. Locally the exact test passes 8 of 8 repeats and the
+full `make check` passes on the same tree. `Egress feature qualification` and
+`Release drift guard` succeeded on the candidate in the same push.
+
+The hosted pipeline is green on the final attempt; the two earlier macOS failures are recorded
+rather than omitted.
+
 ## Recommendation
 
 Accept M006 on `e817dfde35372aa307f5580a144d7ededcb55574`. An operator can now tell off from
 broken, empty from expired, and seeded from matching, without a new tool or a default change.
+
+This acceptance includes a green hosted CI run on the third attempt; the two earlier macOS failures on an unrelated environment-sensitive test are recorded above rather than omitted.

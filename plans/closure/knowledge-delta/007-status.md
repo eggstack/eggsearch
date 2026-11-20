@@ -174,9 +174,35 @@ Using pinned Rust 1.89 on candidate `e817dfd`:
 No production behavior, tool, argument, schema, configuration, or storage change. The changes
 are a test suite, a frozen fixture, and documentation.
 
+## Hosted qualification
+
+The candidate was pushed to `origin/feat/auto-20261117-044c4885`. On `bc52970` (this closure
+commit, which differs from the candidate only in planning documents), CI run
+`44812224641` needed three attempts:
+
+1. The `ci` and `windows portability` jobs succeeded. The
+   `macOS canonical verification and local filesystem portability` job failed on
+   `tests/local_workspace_integration.rs::local_repo_search_finds_source_files`
+   (`tests/local_workspace_integration.rs:793`), a temporary-git-repository fixture that this
+   milestone does not touch.
+2. `gh run rerun --failed` failed at the same assertion.
+3. A third attempt passed all three jobs, including macOS canonical verification.
+
+The compiled test binary in both failing attempts hashes `3ace87ef457959f8`, the same binary
+that passed this test in the `a9fc806` macOS job (`44797522795`). A byte-identical test binary
+cannot be changed by this milestone's source, so the two failures are environment-dependent
+rather than a regression introduced here. Locally the exact test passes 8 of 8 repeats and the
+full `make check` passes on the same tree. `Egress feature qualification` and
+`Release drift guard` succeeded on the candidate in the same push.
+
+The hosted pipeline is green on the final attempt; the two earlier macOS failures are recorded
+rather than omitted.
+
 ## Recommendation
 
 Accept M007 as a measurement-only closure on `e817dfde35372aa307f5580a144d7ededcb55574`.
 The corpus and the ablation now exist as regression assets; the honest finding is that the
 shipped expansion path is what recovers withheld evidence, and that keyless timestamp-capable
 provider breadth, not date accounting, limits live discovery.
+
+This acceptance includes a green hosted CI run on the third attempt; the two earlier macOS failures on an unrelated environment-sensitive test are recorded above rather than omitted.
