@@ -138,6 +138,7 @@ M006 repo workflow ──> M037 local repo-search relevance and scope
 M006 routing ──> M038 security-search native advisory routing
 M036 ──> M039 fetch emitted-payload budget (corrective)
 M037 ──> M040 local content-aware candidate generation (corrective)
+M037 + M040 ──> M043 local repo-search empty-result determinism (corrective; registered by the 2026-11-20 hosted qualification)
 ADR-0019 ──> puzzle-class and identity milestones not yet registered
 M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text

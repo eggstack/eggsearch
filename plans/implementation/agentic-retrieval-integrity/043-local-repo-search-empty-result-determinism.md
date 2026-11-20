@@ -25,6 +25,31 @@ The user-visible contract M037 and M040 established is that a local result needs
 file, or symbol match, and that an incomplete scan must not be reported as "no match". This
 milestone closes the remaining case: a content-only match whose bounded pass did not complete.
 
+## Non-goals and compatibility
+
+- No new tool, argument, schema property, configuration key, provider, or dependency.
+- No change to local ranking, admission rules, result ordering, or global RRF behavior; no
+  unbounded scan and no new host or remote dispatch.
+- No amendment to the M037 or M040 closure records, and no reopening of their closed scope.
+- Any added signal is response-only and additive; a consumer that ignores warnings is
+  unaffected. No storage or migration change.
+
+## Code pointers
+
+Verified at the baseline, for the implementer:
+
+- `src/meta/local/scan.rs:20` — `should_run_second_pass`, the gate that can suppress the
+  content pass.
+- `src/meta/local_backend.rs:1217` — the call site that decides whether to run the second pass.
+- `src/meta/local_backend.rs:1276` — `run_second_pass`, bounded by `SECOND_PASS_MAX_FILES`,
+  `SECOND_PASS_MAX_BYTES`, and `SECOND_PASS_TIME_BUDGET` from `src/meta/local/scan.rs`.
+- `src/meta/local_backend.rs:944` and following — the inventory build, its
+  `total_entries == 0` fallback walk, and the telemetry fields this milestone should read.
+- `src/meta/local_inventory_cache.rs` — `INVENTORY_BUILD_TIMEOUT` (5 s),
+  `FRESHNESS_PROBE_INTERVAL` (30 s), `INVENTORY_REBUILD_TTL` (300 s).
+- `tests/local_workspace_integration.rs:772` — the fixture; the failing assertion is at
+  `:793`, and `:155` is `mode_off_counting_state`.
+
 ## Evidence
 
 Observed on 2026-11-20 during the M005–M007 hosted qualification, candidate
