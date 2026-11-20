@@ -1,6 +1,6 @@
 # M040 — Local Content-Aware Candidate Generation and Symbol Recall
 
-Status: ready
+Status: closed
 Date: 2026-11-19
 Subsystem: agentic retrieval integrity
 Milestone class: capability (corrective to M037)

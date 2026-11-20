@@ -1,6 +1,6 @@
 # M039 — Fetch Emitted-Payload Budget and Structural Degradation
 
-Status: ready
+Status: closed
 Date: 2026-11-19
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective to M036)

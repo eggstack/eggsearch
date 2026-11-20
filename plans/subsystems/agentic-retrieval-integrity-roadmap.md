@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M038 closed; M039–M040 ready)
+Status: active (M001–M040 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -279,10 +279,15 @@ exposed M011's mandatory-`redir` defect.
   fingerprint `517d279f73742d36`; compact unchanged). Pinned Rust 1.89 `make check` passed with 85
   suites and 6,445 tests. Evidence:
   `plans/closure/agentic-retrieval-integrity/038-status.md`.
-- M039–M040 are `ready` corrective plans registered from the 2026-11-19 follow-up review: M039
-  makes the fetch budget bound the emitted payload and degrade optional structure before the
-  requested text, and M040 makes local content and symbol queries scan beyond the path-ranked
-  candidate window inside a time/byte bound. Their measured evidence is in each plan.
+- M039 and M040 are `closed` on implementation candidate
+  `10ed7ed08ac47d80e39ca676ea157ecf0728518c`. M039 bounds the emitted fetch payload: the
+  three-item probe fell from 186,812 bytes to 37,313 measured characters while the requested
+  text stayed intact, and structural drops are marked and warned. M040 adds the bounded local
+  second pass: `has_relevance` went from 0 to 4 cards, a symbol hint found `src/process.rs:12`
+  without a path hint, and a true miss reports no-match without truncation. Pinned Rust 1.89
+  `make check` passed with 85 suites and 6,453 tests. Evidence:
+  `plans/closure/agentic-retrieval-integrity/039-status.md` and
+  `plans/closure/agentic-retrieval-integrity/040-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.
