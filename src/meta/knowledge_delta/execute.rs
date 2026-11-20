@@ -5,7 +5,9 @@ use std::pin::Pin;
 use chrono::Utc;
 
 use super::discovery::extract_subjects;
-use super::index::{database_path, EvidenceIndex, IndexHit, IndexRecord};
+use super::index::{
+    classify_index_freshness, database_path, EvidenceIndex, IndexFreshness, IndexHit, IndexRecord,
+};
 use super::plan::{day_search_window, plan_subqueries, EmptyStateReason};
 use super::snapshot::BUNDLED_CUTOFF_SNAPSHOT;
 use crate::core::config::AppConfig;
@@ -265,46 +267,75 @@ pub async fn run_knowledge_brief(
     let mut index_status = "not_opened";
     let mut expanded_count = 0usize;
     let mut index_matches = 0usize;
+    let mut index_freshness = None;
     let reads_index = query.refresh.reads_index() || query.related_topics;
     let writes_index = query.retain;
     let mut index_to_retain = None;
     if reads_index || writes_index {
-        match open_index(run, &query.partition) {
-            Ok(index) => {
-                index_status = "open";
-                if query.refresh.reads_index() {
-                    match index.lookup(&query.partition, &query.topic, query.max_items) {
-                        Ok(hits) => {
-                            index_matches +=
-                                merge_index_hits(&mut deltas, hits, query.refresh, cutoff.as_ref());
-                        }
-                        Err(err) => {
-                            index_status = "degraded";
-                            warnings.push(err.message());
-                        }
-                    }
-                }
-                if query.related_topics {
-                    let from = expansion_subjects(&query.topic, &deltas);
-                    match index.expand(&query.partition, &from, query.max_items) {
-                        Ok(hits) => {
-                            let before = deltas.len();
-                            merge_expanded(&mut deltas, hits, cutoff.as_ref());
-                            expanded_count = deltas.len().saturating_sub(before);
-                        }
-                        Err(err) => warnings.push(err.message()),
-                    }
-                }
-                if writes_index {
-                    index_to_retain = Some(index);
-                }
+        if !run.config.knowledge_delta.index.enabled {
+            index_status = "disabled";
+            warnings.push(
+                "knowledge_brief_index_disabled: the local index is disabled; set [knowledge_delta.index].enabled = true to read or retain evidence".into(),
+            );
+            if query.refresh == RefreshMode::Index {
+                warnings.push("index refresh did not search live; freshness is unverified".into());
             }
-            Err(err) => {
-                index_status = "offline";
-                warnings.push(err.message());
-                if query.refresh == RefreshMode::Index {
-                    warnings
-                        .push("index refresh did not search live; freshness is unverified".into());
+        } else {
+            match open_index(run, &query.partition) {
+                Ok(index) => {
+                    index_status = "open";
+                    if query.refresh.reads_index() {
+                        match index.status(&query.partition) {
+                            Ok(status) => {
+                                index_freshness = Some(classify_index_freshness(
+                                    &status,
+                                    run.config.knowledge_delta.index.retention_days,
+                                    Utc::now().timestamp(),
+                                ));
+                            }
+                            Err(err) => {
+                                index_status = "degraded";
+                                warnings.push(err.message());
+                            }
+                        }
+                        match index.lookup(&query.partition, &query.topic, query.max_items) {
+                            Ok(hits) => {
+                                index_matches += merge_index_hits(
+                                    &mut deltas,
+                                    hits,
+                                    query.refresh,
+                                    cutoff.as_ref(),
+                                );
+                            }
+                            Err(err) => {
+                                index_status = "degraded";
+                                warnings.push(err.message());
+                            }
+                        }
+                    }
+                    if query.related_topics {
+                        let from = expansion_subjects(&query.topic, &deltas);
+                        match index.expand(&query.partition, &from, query.max_items) {
+                            Ok(hits) => {
+                                let before = deltas.len();
+                                merge_expanded(&mut deltas, hits, cutoff.as_ref());
+                                expanded_count = deltas.len().saturating_sub(before);
+                            }
+                            Err(err) => warnings.push(err.message()),
+                        }
+                    }
+                    if writes_index {
+                        index_to_retain = Some(index);
+                    }
+                }
+                Err(err) => {
+                    index_status = "offline";
+                    warnings.push(err.message());
+                    if query.refresh == RefreshMode::Index {
+                        warnings.push(
+                            "index refresh did not search live; freshness is unverified".into(),
+                        );
+                    }
                 }
             }
         }
@@ -318,6 +349,8 @@ pub async fn run_knowledge_brief(
         candidate_delta_count,
         index_matches,
         query.refresh,
+        index_status,
+        index_freshness,
     );
     if empty_state_reason != EmptyStateReason::DeltasEmitted {
         warnings.push(empty_state_warning(empty_state_reason, index_status));
@@ -495,13 +528,23 @@ fn empty_state_reason(
     candidate_delta_count: usize,
     index_matches: usize,
     refresh: RefreshMode,
+    index_status: &str,
+    index_freshness: Option<IndexFreshness>,
 ) -> EmptyStateReason {
     if cutoff.is_none() {
         EmptyStateReason::NoCutoffResolved
     } else if candidate_delta_count > 0 {
         EmptyStateReason::DeltasEmitted
     } else if refresh == RefreshMode::Index && index_matches == 0 {
-        EmptyStateReason::NoMatchingIndexHits
+        if index_status == "open" {
+            match index_freshness {
+                Some(IndexFreshness::NeverSeeded) => EmptyStateReason::IndexNotSeeded,
+                Some(IndexFreshness::Stale) => EmptyStateReason::IndexStale,
+                Some(IndexFreshness::Fresh) | None => EmptyStateReason::NoMatchingIndexHits,
+            }
+        } else {
+            EmptyStateReason::NoMatchingIndexHits
+        }
     } else if accounting.dated == 0 {
         EmptyStateReason::NoDatedSources
     } else {
@@ -524,6 +567,12 @@ fn empty_state_warning(reason: EmptyStateReason, index_status: &str) -> String {
         EmptyStateReason::NoMatchingIndexHits => format!(
             "index refresh returned no matching post-cutoff delta (index status: {index_status})"
         ),
+        EmptyStateReason::IndexNotSeeded => {
+            "the enabled index holds no retained documents for this partition; retain: true after a live call is the seeding step".to_string()
+        }
+        EmptyStateReason::IndexStale => {
+            "every retained document is older than the retention window; a fresh retain renews it".to_string()
+        }
         EmptyStateReason::DeltasEmitted => "a matching delta candidate was selected".to_string(),
     };
     format!("knowledge_brief_{}: {message}", reason.as_str())
@@ -830,12 +879,17 @@ fn expansion_subjects(topic: &str, deltas: &[SelectedDelta]) -> Vec<String> {
 }
 
 fn model_resolution(model_id: Option<&str>, cutoff: Option<&ResolvedCutoff>) -> serde_json::Value {
+    let catalog_as_of = BUNDLED_CUTOFF_SNAPSHOT
+        .iter()
+        .map(|row| row.verified_at)
+        .max();
     let Some(cutoff) = cutoff else {
         return serde_json::json!({
             "model_id": model_id,
             "status": "unknown",
             "origin": "unknown",
             "provider_official": false,
+            "catalog_as_of": catalog_as_of,
         });
     };
     serde_json::json!({
@@ -849,6 +903,7 @@ fn model_resolution(model_id: Option<&str>, cutoff: Option<&ResolvedCutoff>) -> 
         "verified_at": cutoff.verified_at,
         "reason": cutoff.reason,
         "provider_official": cutoff.origin == crate::core::knowledge_delta::CutoffOrigin::ProviderOfficial,
+        "catalog_as_of": catalog_as_of,
     })
 }
 

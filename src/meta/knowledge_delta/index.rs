@@ -36,6 +36,41 @@ pub struct IndexRecord {
     pub temporal_relationship: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IndexStatus {
+    pub documents: u64,
+    pub newest_indexed_at: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IndexFreshness {
+    NeverSeeded,
+    Fresh,
+    Stale,
+}
+
+pub fn classify_index_freshness(
+    status: &IndexStatus,
+    retention_days: u32,
+    now_unix: i64,
+) -> IndexFreshness {
+    if status.documents == 0 {
+        return IndexFreshness::NeverSeeded;
+    }
+    if retention_days == 0 {
+        return IndexFreshness::Fresh;
+    }
+    let Some(newest_indexed_at) = status.newest_indexed_at else {
+        return IndexFreshness::Fresh;
+    };
+    let cutoff = now_unix.saturating_sub(i64::from(retention_days) * 86_400);
+    if newest_indexed_at < cutoff {
+        IndexFreshness::Stale
+    } else {
+        IndexFreshness::Fresh
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IndexHit {
     pub record: IndexRecord,
@@ -173,6 +208,26 @@ impl EvidenceIndex {
         self.evict(&tx)?;
         tx.commit().map_err(map_sqlite)?;
         Ok(())
+    }
+
+    pub fn status(&self, partition: &str) -> Result<IndexStatus, IndexError> {
+        if !valid_partition(partition) {
+            return Err(IndexError::InvalidPartition);
+        }
+        let (documents, newest_indexed_at): (i64, Option<i64>) = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*), MAX(indexed_at) FROM candidate_events WHERE partition = ?1",
+                [partition],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(map_sqlite)?;
+        let documents = u64::try_from(documents)
+            .map_err(|_| IndexError::Corrupt("document count is negative".into()))?;
+        Ok(IndexStatus {
+            documents,
+            newest_indexed_at,
+        })
     }
 
     pub fn lookup(
@@ -878,5 +933,88 @@ mod tests {
             })
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn freshness_classifies_never_seeded_index() {
+        assert_eq!(
+            classify_index_freshness(
+                &IndexStatus {
+                    documents: 0,
+                    newest_indexed_at: None,
+                },
+                30,
+                1_000_000,
+            ),
+            IndexFreshness::NeverSeeded
+        );
+    }
+
+    #[test]
+    fn freshness_with_zero_retention_is_always_fresh() {
+        assert_eq!(
+            classify_index_freshness(
+                &IndexStatus {
+                    documents: 1,
+                    newest_indexed_at: Some(1),
+                },
+                0,
+                1_000_000,
+            ),
+            IndexFreshness::Fresh
+        );
+    }
+
+    #[test]
+    fn freshness_at_retention_boundary_is_fresh() {
+        let now = 1_000_000;
+        let boundary = now - 2 * 86_400;
+        assert_eq!(
+            classify_index_freshness(
+                &IndexStatus {
+                    documents: 1,
+                    newest_indexed_at: Some(boundary),
+                },
+                2,
+                now,
+            ),
+            IndexFreshness::Fresh
+        );
+    }
+
+    #[test]
+    fn freshness_just_past_retention_boundary_is_stale() {
+        let now = 1_000_000;
+        let boundary = now - 2 * 86_400;
+        assert_eq!(
+            classify_index_freshness(
+                &IndexStatus {
+                    documents: 1,
+                    newest_indexed_at: Some(boundary - 1),
+                },
+                2,
+                now,
+            ),
+            IndexFreshness::Stale
+        );
+    }
+
+    #[test]
+    fn status_counts_empty_and_retained_partitions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("index.sqlite");
+        let index = EvidenceIndex::open(&path, &config()).unwrap();
+        assert_eq!(
+            index.status("anonymous").unwrap(),
+            IndexStatus {
+                documents: 0,
+                newest_indexed_at: None,
+            }
+        );
+        index.retain(&[record("status")]).unwrap();
+        let retained = index.status("anonymous").unwrap();
+        assert_eq!(retained.documents, 1);
+        assert!(retained.newest_indexed_at.is_some());
+        assert_eq!(index.status("prof_0123456789abcdef").unwrap().documents, 0);
     }
 }

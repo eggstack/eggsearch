@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `knowledge_brief` resolves model cutoffs from a bundled, source-verified catalog that now
+  covers 11 models across OpenAI, Anthropic, and xAI instead of a single row, and reports
+  `model_resolution.catalog_as_of` so a stale catalog is visible. Every shipped row carries the
+  vendor page it was read from and the date it was verified; a model whose vendor publishes no
+  cutoff stays explicitly unresolved rather than guessed. The manifest is validated against the
+  bundled snapshot, so an alias collision, a precision mismatch, or a row missing from either
+  side fails a test. Operator and caller overrides keep precedence.
+- The local evidence index now reports `coverage.index_status: disabled` when a request asks to
+  read or retain while the index is switched off, instead of reusing `offline` for both, and a
+  disabled request never opens or creates the database. An `index` refresh that emits nothing
+  separates `index_not_seeded` from `index_stale` and from a genuine
+  `no_matching_index_hits`, so an operator can tell an empty index from an expired one.
 - `knowledge_brief` coverage now accounts for selected cards as dated/undated and cutoff-relative,
   reports selected providers that advertise result timestamps, and explains empty delta sets with
   reason-specific warnings. Dates remain provider-declared publication timestamps only; prose,

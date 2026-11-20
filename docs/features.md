@@ -4,10 +4,16 @@ eggsearch provides keyless web, fetch, advisory, registry, and scholarly paths b
 
 ## Knowledge delta
 
-`knowledge_brief` is in the default binary. It needs no Cargo feature.
-The local evidence index is bundled rusqlite and is off until
-`[knowledge_delta.index].enabled` is set. There is no second SKU and no
-system SQLite link. Linux and Windows default-binary footprint measurements
+`knowledge_brief` is in the default binary. It needs no Cargo feature. A
+bundled, source-verified model-cutoff catalog ships with it, and operator or
+caller overrides take precedence. The local evidence index is bundled rusqlite
+and is off until `[knowledge_delta.index].enabled` is set; enabling it is the
+first of two documented steps, the second being an explicit `retain` call that
+seeds public evidence for later index or related-topic reads. `coverage`
+reports whether the index was `not_opened`, `disabled`, `open`, `degraded`, or
+`offline`, and an index refresh that finds nothing distinguishes an unseeded
+index from a stale one and from a genuine no-match. There is no second SKU and
+no system SQLite link. Linux and Windows default-binary footprint measurements
 are still unrun; that is an operational gate, not a separate build.
 
 ## Retrieval Integrity Contracts

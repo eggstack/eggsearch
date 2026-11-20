@@ -12,7 +12,7 @@ use eggsearch::mcp::tools::{run_knowledge_brief, KnowledgeBriefArgs};
 use eggsearch::meta::adapter::MetadataSearchAdapter;
 use eggsearch::meta::knowledge_delta::{
     run_knowledge_brief as run_meta_brief, BriefQuery, BriefRun, EvidenceFetchFuture,
-    EvidenceIndex, FetchedEvidence, KnowledgeEvidenceFetcher,
+    EvidenceIndex, FetchedEvidence, IndexRecord, KnowledgeEvidenceFetcher,
 };
 use eggsearch::meta::mock::{mock_engines, MockEngine, MockFailure, MockResult};
 
@@ -51,6 +51,59 @@ fn brief(topic: &str, cutoff: Option<CutoffOverrideInput>) -> KnowledgeBriefArgs
     }
 }
 
+fn meta_query(refresh: &str, cutoff: &str, retain: bool, related_topics: bool) -> BriefQuery {
+    BriefQuery {
+        topic: "widget-runtime".into(),
+        model_id: None,
+        caller_cutoff: Some(parse_caller_override(&override_day(cutoff)).unwrap()),
+        max_items: 8,
+        max_chars: 6000,
+        refresh: parse_refresh(Some(refresh)).unwrap(),
+        retain,
+        related_topics,
+        language: None,
+        partition: "anonymous".into(),
+    }
+}
+
+async fn meta_brief(
+    server: &ServerState,
+    config: &AppConfig,
+    config_dir: &std::path::Path,
+    query: &BriefQuery,
+    evidence_fetcher: Option<&dyn KnowledgeEvidenceFetcher>,
+) -> serde_json::Value {
+    run_meta_brief(
+        &BriefRun {
+            adapter: server.adapter.as_ref(),
+            config,
+            max_results_cap: config.search.max_results_cap,
+            config_dir: config_dir.to_path_buf(),
+            evidence_fetcher,
+        },
+        query,
+    )
+    .await
+    .expect("meta brief")
+}
+
+fn index_record(id: &str, title: &str, excerpt: &str, date: &str) -> IndexRecord {
+    IndexRecord {
+        partition: "anonymous".into(),
+        canonical_url: format!("https://example.com/{id}"),
+        source_id: format!("src_{id}"),
+        title: title.into(),
+        excerpt: excerpt.into(),
+        trust: "external_untrusted".into(),
+        basis: "publication".into(),
+        precision: "day".into(),
+        normalized_date: Some(date.into()),
+        kdelta_id: format!("kdelta_{id}"),
+        conflicted: false,
+        temporal_relationship: "after_cutoff".into(),
+    }
+}
+
 fn private_index_path(root: &std::path::Path) -> std::path::PathBuf {
     let parent = root.join("private-index");
     std::fs::create_dir(&parent).unwrap();
@@ -82,6 +135,22 @@ impl KnowledgeEvidenceFetcher for FixedFetcher {
                     "block_end": 0,
                 })],
                 cacheable,
+                source_truncated: false,
+            })
+        })
+    }
+}
+
+struct BridgeFetcher;
+
+impl KnowledgeEvidenceFetcher for BridgeFetcher {
+    fn fetch<'a>(&'a self, _url: &'a str, _topic: &'a str) -> EvidenceFetchFuture<'a> {
+        Box::pin(async {
+            Ok(FetchedEvidence {
+                excerpt: "pkg:widget-runtime bridges to pkg:zebra-lib evidence".into(),
+                source_title: Some("Widget runtime bridge".into()),
+                spans: vec![serde_json::json!({"kind": "document_chunk", "span": "bridge"})],
+                cacheable: true,
                 source_truncated: false,
             })
         })
@@ -123,6 +192,14 @@ async fn after_cutoff_publication_is_emitted_and_labeled() {
         serde_json::json!(["hn_algolia"])
     );
     assert_eq!(value["coverage"]["empty_state_reason"], "deltas_emitted");
+    let catalog_as_of = eggsearch::meta::knowledge_delta::BUNDLED_CUTOFF_SNAPSHOT
+        .iter()
+        .map(|row| row.verified_at)
+        .max();
+    assert_eq!(
+        value["model_resolution"]["catalog_as_of"],
+        serde_json::json!(catalog_as_of)
+    );
     assert_eq!(value["coverage"]["no_temporal_claim"], false);
     assert_eq!(value["coverage"]["selected_cards"], 1);
     assert_eq!(value["coverage"]["dated"], 1);
@@ -257,6 +334,14 @@ async fn same_day_and_unknown_model_make_no_temporal_claim() {
     .await
     .expect("unknown model is not an error");
     assert_eq!(unknown["model_resolution"]["status"], "unknown");
+    let catalog_as_of = eggsearch::meta::knowledge_delta::BUNDLED_CUTOFF_SNAPSHOT
+        .iter()
+        .map(|row| row.verified_at)
+        .max();
+    assert_eq!(
+        unknown["model_resolution"]["catalog_as_of"],
+        serde_json::json!(catalog_as_of)
+    );
     assert!(unknown["deltas"].as_array().unwrap().is_empty());
     assert_eq!(unknown["coverage"]["no_temporal_claim"], true);
     assert_eq!(
@@ -381,28 +466,114 @@ async fn date_accounting_matches_selected_cards_and_emitted_deltas() {
 }
 
 #[tokio::test]
-async fn empty_index_refresh_reports_no_matching_hits() {
+async fn disabled_index_refresh_reports_disabled_and_creates_no_file() {
     let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config");
+    let cfg = AppConfig::default();
+    let server = state(vec![MockEngine::success("mock", vec![])], cfg.clone());
+    let query = meta_query("index", "2024-06-01", false, false);
+    let value = meta_brief(&server, &cfg, &config_dir, &query, None).await;
+    assert!(value["deltas"].as_array().unwrap().is_empty());
+    assert_eq!(value["coverage"]["index_status"], "disabled");
+    assert_ne!(value["coverage"]["empty_state_reason"], "deltas_emitted");
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("knowledge_brief_index_disabled:")
+    }));
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning.as_str().unwrap_or_default()
+            == "index refresh did not search live; freshness is unverified"
+    }));
+    assert!(!config_dir.join("knowledge-delta").exists());
+}
+
+#[tokio::test]
+async fn enabled_but_unseeded_index_reports_not_seeded() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config");
     let path = private_index_path(dir.path());
     let mut cfg = AppConfig::default();
     cfg.knowledge_delta.index.enabled = true;
     cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
-    let mut args = brief("widget-runtime", Some(override_day("2024-06-01")));
-    args.refresh = Some("index".into());
-    let value = run_knowledge_brief(state(vec![MockEngine::success("mock", vec![])], cfg), args)
-        .await
-        .expect("empty index refresh");
+    let server = state(vec![MockEngine::success("mock", vec![])], cfg.clone());
+    let query = meta_query("index", "2024-06-01", false, false);
+    let value = meta_brief(&server, &cfg, &config_dir, &query, None).await;
+    assert_eq!(value["coverage"]["index_status"], "open");
+    assert_eq!(value["coverage"]["empty_state_reason"], "index_not_seeded");
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("knowledge_brief_index_not_seeded:")
+    }));
+}
+
+#[tokio::test]
+async fn seeded_index_without_a_post_cutoff_match_reports_no_matching_hits() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config");
+    let path = private_index_path(dir.path());
+    let mut cfg = AppConfig::default();
+    cfg.knowledge_delta.index.enabled = true;
+    cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
+    let index = EvidenceIndex::open(&path, &cfg.knowledge_delta.index).unwrap();
+    index
+        .retain(&[index_record(
+            "before-cutoff",
+            "Widget runtime old record",
+            "old widget-runtime evidence",
+            "2024-05-31",
+        )])
+        .unwrap();
+    drop(index);
+    let server = state(vec![MockEngine::success("mock", vec![])], cfg.clone());
+    let query = meta_query("index", "2024-06-01", false, false);
+    let value = meta_brief(&server, &cfg, &config_dir, &query, None).await;
     assert_eq!(value["coverage"]["index_status"], "open");
     assert_eq!(
         value["coverage"]["empty_state_reason"],
         "no_matching_index_hits"
     );
-    assert_eq!(value["coverage"]["no_temporal_claim"], false);
+}
+
+#[tokio::test]
+async fn stale_retained_index_reports_index_stale() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config");
+    let path = private_index_path(dir.path());
+    let mut cfg = AppConfig::default();
+    cfg.knowledge_delta.index.enabled = true;
+    cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
+    cfg.knowledge_delta.index.retention_days = 1;
+    let index = EvidenceIndex::open(&path, &cfg.knowledge_delta.index).unwrap();
+    index
+        .retain(&[index_record(
+            "stale-record",
+            "Widget runtime old record",
+            "old widget-runtime evidence",
+            "2024-05-31",
+        )])
+        .unwrap();
+    drop(index);
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute(
+        "UPDATE candidate_events SET indexed_at = 1 WHERE kdelta_id = ?1",
+        ["kdelta_stale-record"],
+    )
+    .unwrap();
+    drop(conn);
+    let server = state(vec![MockEngine::success("mock", vec![])], cfg.clone());
+    let query = meta_query("index", "2024-06-01", false, false);
+    let value = meta_brief(&server, &cfg, &config_dir, &query, None).await;
+    assert_eq!(value["coverage"]["index_status"], "open");
+    assert_eq!(value["coverage"]["empty_state_reason"], "index_stale");
     assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
         warning
             .as_str()
             .unwrap_or_default()
-            .starts_with("knowledge_brief_no_matching_index_hits:")
+            .starts_with("knowledge_brief_index_stale:")
     }));
 }
 
@@ -638,4 +809,112 @@ async fn retain_skips_fetched_evidence_not_marked_cacheable() {
         .lookup("anonymous", "widget-runtime", 10)
         .unwrap()
         .is_empty());
+}
+
+#[tokio::test]
+async fn cold_start_enable_seed_restart_and_related_reuse() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config");
+    let disabled_cfg = AppConfig::default();
+    let disabled_server = state(
+        vec![MockEngine::success("hn_algolia", vec![])],
+        disabled_cfg.clone(),
+    );
+    let rejected = run_knowledge_brief(
+        Arc::clone(&disabled_server),
+        KnowledgeBriefArgs {
+            retain: true,
+            ..brief("widget-runtime", Some(override_day("2024-06-01")))
+        },
+    )
+    .await;
+    assert!(rejected.is_err());
+    let disabled_query = meta_query("live", "2024-06-01", true, false);
+    let disabled = meta_brief(
+        &disabled_server,
+        &disabled_cfg,
+        &config_dir,
+        &disabled_query,
+        None,
+    )
+    .await;
+    assert_eq!(disabled["coverage"]["index_status"], "disabled");
+    assert!(!config_dir.join("knowledge-delta").exists());
+
+    let path = private_index_path(dir.path());
+    let mut cfg = disabled_cfg;
+    cfg.knowledge_delta.index.enabled = true;
+    cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
+    let server = state(
+        vec![MockEngine::success(
+            "hn_algolia",
+            vec![dated("https://example.com/bridge", "2024-06-02")],
+        )],
+        cfg.clone(),
+    );
+    let fetcher = BridgeFetcher;
+    let live_query = meta_query("live", "2024-06-01", true, false);
+    let live = meta_brief(&server, &cfg, &config_dir, &live_query, Some(&fetcher)).await;
+    assert_eq!(live["deltas"].as_array().unwrap().len(), 1);
+    assert!(path.exists());
+    let live_delta = &live["deltas"][0];
+    let retained_id = live_delta["id"].as_str().unwrap().to_string();
+    assert_eq!(live_delta["trust"], "external_untrusted");
+    assert_eq!(live_delta["date_basis"], "publication");
+    drop(live);
+    drop(server);
+
+    let index = EvidenceIndex::open(&path, &cfg.knowledge_delta.index).unwrap();
+    index
+        .retain(&[index_record(
+            "neighbor",
+            "Zebra-lib companion update",
+            "pkg:zebra-lib provides a standalone dependency feature",
+            "2024-06-03",
+        )])
+        .unwrap();
+    drop(index);
+
+    let restarted_server = state(vec![MockEngine::success("hn_algolia", vec![])], cfg.clone());
+    let index_query = meta_query("index", "2024-06-01", false, false);
+    let indexed = meta_brief(&restarted_server, &cfg, &config_dir, &index_query, None).await;
+    assert_eq!(indexed["deltas"][0]["id"], retained_id);
+    assert_eq!(indexed["deltas"][0]["provenance"], "index_only");
+    assert_eq!(indexed["deltas"][0]["trust"], "external_untrusted");
+    assert_eq!(indexed["deltas"][0]["date_basis"], "publication");
+    assert_eq!(indexed["deltas"][0]["precision"], "day");
+
+    let related_query = meta_query("index", "2024-06-01", false, true);
+    let related = meta_brief(&restarted_server, &cfg, &config_dir, &related_query, None).await;
+    assert_eq!(related["coverage"]["expansion"], "added");
+    let neighbor = related["deltas"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|delta| delta["expanded"] == true)
+        .expect("related indexed neighbor");
+    assert!(!neighbor["spans"].as_array().unwrap().is_empty());
+    assert!(neighbor["spans"][0]["span"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn ordinary_live_call_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_dir = dir.path().join("config");
+    let cfg = AppConfig::default();
+    let server = state(
+        vec![MockEngine::success(
+            "hn_algolia",
+            vec![dated("https://example.com/new", "2024-06-02")],
+        )],
+        cfg.clone(),
+    );
+    let query = meta_query("live", "2024-06-01", false, false);
+    let value = meta_brief(&server, &cfg, &config_dir, &query, None).await;
+    assert_eq!(value["coverage"]["index_status"], "not_opened");
+    assert!(!config_dir
+        .join("knowledge-delta")
+        .join("anonymous")
+        .join("index.sqlite")
+        .exists());
 }

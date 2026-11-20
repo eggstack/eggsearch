@@ -706,18 +706,26 @@ When `allow_private_network = false` (the default), eggsearch blocks fetches to 
 
 ## Knowledge Delta
 
-Optional `[knowledge_delta]` section for model-cutoff overrides and the local
-evidence index. A live `knowledge_brief` does not open the index unless the
-caller sets `retain`, `refresh` to `prefer_live` or `index`, or
-`related_topics`. The index is disabled by default. An explicit `path` ending
-in `.sqlite` or `.db` is the database file; any other path, or the default,
-is `<config_dir>/knowledge-delta/<partition>/index.sqlite`. Partitions are
-`anonymous` or an opaque `prof_` id, never a display name.
+Optional `[knowledge_delta]` section for model cutoffs and the local evidence
+index. Both are opt-in: a live `knowledge_brief` resolves a cutoff if it can,
+reads no index, and writes nothing.
+
+### Model cutoffs
+
+Resolution order is caller `cutoff_override`, then
+`[knowledge_delta.cutoffs.<model>]`, then the bundled verified catalog in
+`src/meta/knowledge_delta/catalog.json`. A bundled row exists only after its
+date was checked against the vendor's own publication, and every row carries
+`source`, `source_url` and `verified_at`;
+`model_resolution.catalog_as_of` reports the newest verification date in the
+shipped catalog. An unrecognized model resolves to `unknown` and is not an
+error. Operator and caller entries keep precedence over bundled rows and are
+validated at load. See [model cutoffs](knowledge-delta-cutoffs.md) for the
+manifest format, entry statuses and the update procedure.
 
 Caller `max_items` defaults to 8 and is capped at 8. Caller `max_chars`
 defaults to 6000 and is capped at 6000. Operator cutoffs are not index
-settings. Invalid cutoff precision or date fails closed at load. Bundled
-snapshot rows stay empty until a cutoff date is verified.
+settings. Invalid cutoff precision or date fails closed at load.
 
 ```toml eggsearch-config
 [knowledge_delta.cutoffs.example-model]
@@ -733,6 +741,38 @@ max_documents = 10000
 max_excerpt_chars = 500
 retention_days = 365
 ```
+
+### Local evidence index
+
+The index is disabled by default, and `retain` is rejected while it is
+disabled. An explicit `path` ending in `.sqlite` or `.db` is the database
+file; any other path, or the default, is
+`<config_dir>/knowledge-delta/<partition>/index.sqlite`. Partitions are
+`anonymous` or an opaque `prof_` id, never a display name.
+
+A clean setup is two calls. First enable the index, then seed it with public,
+cacheable evidence by calling `knowledge_brief` with `refresh: "live"` and
+`retain: true` for a topic whose sources carry provider-declared timestamps.
+Then read it back with `refresh: "index"` (index only) or
+`refresh: "prefer_live"` (live search plus index hits), optionally with
+`related_topics: true` to follow one source-backed edge. `retain` persists
+only bounded excerpts and spans from already selected, fetch-verified deltas; a
+search snippet alone is never retained.
+
+`coverage.index_status` distinguishes the index states: `not_opened` (the
+call did not touch it), `disabled` (the call asked to read or retain while
+`enabled = false`), `open`, `degraded` (opened, but a lookup or status probe
+failed), and `offline` (the file could not be opened at all). `degraded` and
+`offline` also return a warning naming the failure, and an `index` refresh
+reports `freshness_unverified: true` because no live search ran.
+
+When an `index` refresh emits nothing, `coverage.empty_state_reason` names
+the cause: `index_not_seeded` when the partition holds no retained documents
+at all, `index_stale` when every retained document is older than
+`retention_days`, and `no_matching_index_hits` when retained documents exist
+but none matches the topic after the cutoff. The live reasons are
+`no_cutoff_resolved`, `no_dated_sources`,
+`all_sources_at_or_before_cutoff`, and `deltas_emitted`.
 
 Disable the index by setting `enabled = false` or removing the section; a live brief then neither reads nor writes it. `retain` is rejected while the index is disabled. Delete the database file to drop retained evidence. Schema v1 migrates atomically to v2: evidence rows are preserved while caller-topic fields are cleared and subject edges are rebuilt from public titles and excerpts; newer schemas are refused without erasure. Back up by copying the `.sqlite` file and its `-wal`/`-shm` siblings while no writer is active. On Unix, partition directories use owner-only mode `0700` and database files use `0600`; an explicitly configured database file under an existing parent directory with group/other permissions is refused. Its warning names that directory and current mode and states that it needs mode `0700`; this remains fail-closed. On Windows, files inherit the selected directory's ACL, so keep configured paths user-private. The index never stores the caller's topic. The brief retains selected public evidence only; it refuses private, `no-store`, pass-cookie, and profile-scoped bodies and does not copy fetch-cache bodies.
 

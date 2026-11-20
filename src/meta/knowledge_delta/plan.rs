@@ -12,6 +12,8 @@ pub enum EmptyStateReason {
     NoDatedSources,
     AllSourcesAtOrBeforeCutoff,
     NoMatchingIndexHits,
+    IndexNotSeeded,
+    IndexStale,
     DeltasEmitted,
 }
 
@@ -22,6 +24,8 @@ impl EmptyStateReason {
             Self::NoDatedSources => "no_dated_sources",
             Self::AllSourcesAtOrBeforeCutoff => "all_sources_at_or_before_cutoff",
             Self::NoMatchingIndexHits => "no_matching_index_hits",
+            Self::IndexNotSeeded => "index_not_seeded",
+            Self::IndexStale => "index_stale",
             Self::DeltasEmitted => "deltas_emitted",
         }
     }

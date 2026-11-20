@@ -46,6 +46,8 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `knowledge_delta_brief` | Cutoff-aware brief: comparison labeling, unknown cutoff, provider failure, and live-versus-index modes |
 | `knowledge_delta_index` | Optional local evidence index: precision, partitions, refusal, and restart |
 | `knowledge_delta_discovery` | One-step source-backed topic expansion and negative controls |
+| `knowledge_delta_catalog` | Bundled cutoff catalog: manifest/snapshot agreement, alias collisions, precision fidelity, and resolver coverage |
+| `knowledge_delta_quality` | Frozen-corpus discovery qualification: per-variant precision, temporal correctness, duplicates, and output budget (see `docs/knowledge-delta-evaluation.md`) |
 | `security_workflow` | Advisory retrieval, applicability assessment, safety handling |
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |

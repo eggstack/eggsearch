@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6520 | 28 |
-| `--features mock` | 6493 | 5 |
+| `--all-features` | 6549 | 28 |
+| `--features mock` | 6522 | 5 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -22,9 +22,11 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey, prefer_local linked-worktree local redirect with no remote fetch, and no-match remote fallback with an explicit local-skip reason |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
-| `knowledge_delta_brief` | `mock` | Cutoff-aware `knowledge_brief`: publication-after-cutoff emission, unknown-model non-claim, rejected provider-official override, total provider failure, undated-provider diagnosis and capability reporting, date accounting and empty-state reasons, retained/index refresh behavior, excerpt selection without leading site chrome, and no index open on a live call |
+| `knowledge_delta_brief` | `mock` | Cutoff-aware `knowledge_brief`: publication-after-cutoff emission, unknown-model non-claim, rejected provider-official override, total provider failure, undated-provider diagnosis and capability reporting, date accounting and empty-state reasons, disabled/unseeded/stale/seeded index states, cold-start enable-seed-restart-reuse, catalog-as-of reporting, excerpt selection without leading site chrome, and no index open or file created on an ordinary live call |
 | `knowledge_delta_index` | None | Local evidence index: precision preservation, partition isolation, private-body rollback, corrupt-file refusal, a second connection reading a committed batch, and the actionable permission rejection that names the rejected directory and its required mode |
 | `knowledge_delta_discovery` | `mock` | Source-backed omission fixture: an unnamed neighbor appears only when `related_topics` is set and an indexed edge cites it; generic text adds no expanded delta |
+| `knowledge_delta_catalog` | None | Bundled cutoff catalog: manifest/snapshot field agreement, alias collisions, precision fidelity, resolver coverage for every verified row, unknown models, and operator precedence |
+| `knowledge_delta_quality` | `mock` | Frozen 88-case discovery corpus (`docs/knowledge-delta-evaluation.md`): direct-live, indexed-lexical, and indexed-expansion variants measured for expectation rate, gold recall, false temporal claims, duplicate yield, span coverage, payload budget, and deterministic replay |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling, default identifier routing through an enabled native advisory provider, conditional availability/severity warnings, and the bounded advisory summary |
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
 | `pdf_fidelity` | `pdf` | Committed synthetic PDF corpus (8 cases, one per document class, 15,890 bytes): line-shape floors/ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification and image counts, running-head repetition, outline count/depth; 116 baseline assertions and 15 recorded ADR-0008 target statuses; join-lines-and-strip-spaces negative control over 25 metric groups; 16 tests plus 1 ignored opt-in recorder into `target/pdf-corpus/`, including one that pins document-scoped chunks against window-bounded legacy text |

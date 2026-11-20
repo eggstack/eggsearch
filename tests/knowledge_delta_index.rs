@@ -423,6 +423,36 @@ fn schema_v1_migration_bounds_rebuilt_subjects_near_page_limit() {
 }
 
 #[test]
+fn status_reports_partition_scoped_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("index.sqlite");
+    let index = EvidenceIndex::open(&path, &config()).unwrap();
+    let empty = index.status("anonymous").unwrap();
+    assert_eq!(empty.documents, 0);
+    assert_eq!(empty.newest_indexed_at, None);
+
+    index.retain(&[record("status", "anonymous")]).unwrap();
+    let retained = index.status("anonymous").unwrap();
+    assert_eq!(retained.documents, 1);
+    assert!(retained.newest_indexed_at.is_some());
+
+    let unknown = index.status("prof_0123456789abcdef").unwrap();
+    assert_eq!(unknown.documents, 0);
+    assert_eq!(unknown.newest_indexed_at, None);
+}
+
+#[test]
+fn status_rejects_an_invalid_partition() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("index.sqlite");
+    let index = EvidenceIndex::open(&path, &config()).unwrap();
+    assert!(matches!(
+        index.status("alice"),
+        Err(IndexError::InvalidPartition)
+    ));
+}
+
+#[test]
 fn corrupt_file_is_refused_and_a_second_connection_can_read() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("index.sqlite");
