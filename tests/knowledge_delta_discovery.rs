@@ -25,12 +25,23 @@ fn index_config(path: &std::path::Path) -> KnowledgeIndexConfig {
     }
 }
 
-fn record(id: &str, url: &str, topic: &str, excerpt: &str, subject: &str) -> IndexRecord {
+fn private_index_path(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let parent = root.join(name);
+    std::fs::create_dir(&parent).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    parent.join("index.sqlite")
+}
+
+fn record(id: &str, url: &str, _topic: &str, excerpt: &str, subject: &str) -> IndexRecord {
     IndexRecord {
         partition: "anonymous".into(),
         canonical_url: url.into(),
         source_id: format!("src_{id}"),
-        title: topic.into(),
+        title: subject.into(),
         excerpt: excerpt.into(),
         trust: "external_untrusted".into(),
         basis: "publication".into(),
@@ -39,8 +50,6 @@ fn record(id: &str, url: &str, topic: &str, excerpt: &str, subject: &str) -> Ind
         kdelta_id: knowledge_delta_id(url, "publication", "day", "2024-07-02"),
         conflicted: false,
         temporal_relationship: "after_cutoff".into(),
-        topic: topic.into(),
-        primary_subject: Some(subject.into()),
     }
 }
 
@@ -73,14 +82,14 @@ fn args(related: bool) -> KnowledgeBriefArgs {
 #[tokio::test]
 async fn omitted_name_is_found_only_through_a_source_backed_edge() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path(), "index");
     let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
     let neighbor = record(
         "neighbor",
-        "https://example.com/left-pad",
+        "https://github.com/left-pad/wheels",
         "left-pad",
         "wheels published after the cutoff",
-        "left-pad",
+        "github.com/left-pad/wheels",
     );
     let expected = neighbor.kdelta_id.clone();
     index
@@ -89,7 +98,7 @@ async fn omitted_name_is_found_only_through_a_source_backed_edge() {
                 "bridge",
                 "https://example.com/bridge",
                 "widget-runtime",
-                "see `left-pad` wheels",
+                "pkg:widget-runtime references github.com/left-pad/wheels",
                 "widget-runtime",
             ),
             neighbor,
@@ -98,6 +107,7 @@ async fn omitted_name_is_found_only_through_a_source_backed_edge() {
     drop(index);
 
     let mut cfg = AppConfig::default();
+    cfg.fetch.sanitize_output = false;
     cfg.knowledge_delta.index = index_config(&path);
     let direct = run_knowledge_brief(state(cfg.clone()), args(false))
         .await
@@ -121,6 +131,7 @@ async fn omitted_name_is_found_only_through_a_source_backed_edge() {
         .find(|item| item["id"] == expected)
         .expect("expanded delta");
     assert_eq!(hit["expanded"], true);
+    assert_eq!(hit["trust"], "external_untrusted");
     assert!(!hit["edge_source_ids"].as_array().unwrap().is_empty());
     let spans = hit["spans"].as_array().unwrap();
     assert!(!spans.is_empty());
@@ -132,7 +143,7 @@ async fn omitted_name_is_found_only_through_a_source_backed_edge() {
 #[tokio::test]
 async fn missing_edge_adds_no_expanded_delta() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path(), "index");
     let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
     index
         .retain(&[record(
@@ -156,7 +167,7 @@ async fn missing_edge_adds_no_expanded_delta() {
 #[tokio::test]
 async fn generic_text_and_missing_edge_add_no_expanded_delta() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path(), "index");
     let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
     index
         .retain(&[record(
@@ -180,14 +191,14 @@ async fn generic_text_and_missing_edge_add_no_expanded_delta() {
 #[tokio::test]
 async fn unchanged_direct_topic_result_is_not_counted_as_expansion() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path(), "index");
     let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
     let neighbor = record(
         "neighbor",
-        "https://example.com/left-pad",
+        "https://github.com/left-pad/wheels",
         "left-pad",
         "wheels published after the cutoff",
-        "left-pad",
+        "github.com/left-pad/wheels",
     );
     let expected = neighbor.kdelta_id.clone();
     index
@@ -196,7 +207,7 @@ async fn unchanged_direct_topic_result_is_not_counted_as_expansion() {
                 "bridge",
                 "https://example.com/bridge",
                 "widget-runtime",
-                "pkg:left-pad is compatible",
+                "pkg:widget-runtime references github.com/left-pad/wheels",
                 "widget-runtime",
             ),
             neighbor,
@@ -206,7 +217,11 @@ async fn unchanged_direct_topic_result_is_not_counted_as_expansion() {
 
     let mut cfg = AppConfig::default();
     cfg.knowledge_delta.index = index_config(&path);
-    let mut result = MockResult::new("left-pad release", "https://example.com/left-pad", "mock");
+    let mut result = MockResult::new(
+        "left-pad release",
+        "https://github.com/left-pad/wheels",
+        "mock",
+    );
     result.snippet = Some("wheels published after the cutoff".into());
     result.published_at = Some("2024-07-02".into());
     let value = run_knowledge_brief(state_with_results(cfg, vec![result]), args(true))
@@ -222,7 +237,7 @@ async fn unchanged_direct_topic_result_is_not_counted_as_expansion() {
 #[tokio::test]
 async fn longer_identifier_prefix_does_not_alias_the_exact_topic() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path(), "index");
     let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
     index
         .retain(&[
@@ -283,7 +298,7 @@ proptest! {
     #[test]
     fn expansion_fanout_stays_bounded(edge_count in 33usize..80) {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("index.sqlite");
+        let path = private_index_path(dir.path(), "index");
         let mut cfg = index_config(&path);
         cfg.max_bytes = 8 * 1024 * 1024;
         cfg.max_documents = 256;
@@ -291,19 +306,19 @@ proptest! {
         let index = EvidenceIndex::open(&path, &cfg).unwrap();
         let mut records = Vec::new();
         for number in 0..edge_count {
-            let token = format!("package-{number:03}");
+            let token = format!("z-package-{number:03}");
             records.push(record(
                 &format!("bridge-{number:03}"),
                 &format!("https://example.com/bridge/{number}"),
                 "widget-runtime",
-                &format!("pkg:{token} update"),
+                &format!("pkg:widget-runtime references pkg:{token} update"),
                 "widget-runtime",
             ));
             records.push(record(
                 &format!("target-{number:03}"),
                 &format!("https://example.com/target/{number}"),
                 &token,
-                "indexed candidate event",
+                &format!("pkg:{token} indexed candidate event"),
                 &token,
             ));
         }
@@ -320,20 +335,20 @@ proptest! {
     #[test]
     fn edge_pruning_is_independent_of_insertion_order(edge_count in 65usize..90) {
         let dir = tempfile::tempdir().unwrap();
-        let forward_path = dir.path().join("forward.sqlite");
-        let reverse_path = dir.path().join("reverse.sqlite");
+        let forward_path = private_index_path(dir.path(), "forward");
+        let reverse_path = private_index_path(dir.path(), "reverse");
         let mut cfg = index_config(&forward_path);
         cfg.max_bytes = 8 * 1024 * 1024;
         cfg.max_documents = 256;
         cfg.max_excerpt_chars = 256;
         let mut records = Vec::new();
         for number in 0..edge_count {
-            let token = format!("package-{number:03}");
+            let token = format!("z-package-{number:03}");
             records.push(record(
                 &format!("bridge-{number:03}"),
                 &format!("https://example.com/bridge/{number}"),
                 "widget-runtime",
-                &format!("pkg:{token} update"),
+                &format!("pkg:widget-runtime references pkg:{token} update"),
                 "widget-runtime",
             ));
         }

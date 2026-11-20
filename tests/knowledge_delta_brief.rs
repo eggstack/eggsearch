@@ -46,6 +46,17 @@ fn brief(topic: &str, cutoff: Option<CutoffOverrideInput>) -> KnowledgeBriefArgs
     }
 }
 
+fn private_index_path(root: &std::path::Path) -> std::path::PathBuf {
+    let parent = root.join("private-index");
+    std::fs::create_dir(&parent).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    parent.join("index.sqlite")
+}
+
 struct FixedFetcher {
     calls: AtomicUsize,
     cacheable: bool,
@@ -58,7 +69,7 @@ impl KnowledgeEvidenceFetcher for FixedFetcher {
         Box::pin(async move {
             Ok(FetchedEvidence {
                 excerpt: "fetched public evidence passage".into(),
-                source_title: Some("Fetched source title".into()),
+                source_title: Some("Widget runtime evidence source".into()),
                 spans: vec![serde_json::json!({
                     "kind": "document_chunk",
                     "chunk_id": "chunk_fixture",
@@ -88,6 +99,7 @@ async fn after_cutoff_publication_is_emitted_and_labeled() {
     assert_eq!(deltas.len(), 1);
     assert_eq!(deltas[0]["date_basis"], "publication");
     assert_eq!(deltas[0]["temporal_relationship"], "after_cutoff");
+    assert_eq!(deltas[0]["trust"], "external_untrusted");
     assert!(deltas[0]["id"].as_str().unwrap().starts_with("kdelta_"));
     let tools: Vec<_> = value["next_actions"]
         .as_array()
@@ -184,8 +196,9 @@ async fn malformed_override_and_total_failure_are_explicit() {
 #[tokio::test]
 async fn retain_uses_fetched_public_evidence_and_index_mode_is_offline() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path());
     let mut cfg = AppConfig::default();
+    cfg.fetch.sanitize_output = false;
     cfg.knowledge_delta.index.enabled = true;
     cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
     let server = state(
@@ -237,8 +250,24 @@ async fn retain_uses_fetched_public_evidence_and_index_mode_is_offline() {
     let index = EvidenceIndex::open(&path, &cfg.knowledge_delta.index).unwrap();
     let hits = index.lookup("anonymous", "widget-runtime", 10).unwrap();
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].record.title, "Fetched source title");
+    assert_eq!(hits[0].record.title, "Widget runtime evidence source");
     assert_eq!(hits[0].record.excerpt, "fetched public evidence passage");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let (stored_topic, stored_subject): (String, Option<String>) = conn
+        .query_row(
+            "SELECT topic, primary_subject FROM candidate_events WHERE kdelta_id = ?1",
+            [&hits[0].record.kdelta_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(stored_topic, "");
+    assert_ne!(stored_subject.as_deref(), Some("widget-runtime"));
+    conn.execute(
+        "UPDATE candidate_events SET trust = 'trusted' WHERE kdelta_id = ?1",
+        [&hits[0].record.kdelta_id],
+    )
+    .unwrap();
+    drop(conn);
     drop(index);
 
     let offline = state(
@@ -264,6 +293,7 @@ async fn retain_uses_fetched_public_evidence_and_index_mode_is_offline() {
     assert_eq!(indexed["coverage"]["index_status"], "open");
     assert_eq!(indexed["deltas"][0]["provenance"], "index_only");
     assert_eq!(indexed["deltas"][0]["precision"], "day");
+    assert_eq!(indexed["deltas"][0]["trust"], "external_untrusted");
 }
 
 #[tokio::test]
@@ -311,7 +341,7 @@ async fn live_call_does_not_open_the_index_and_disabled_retain_is_rejected() {
 #[tokio::test]
 async fn retain_skips_fetched_evidence_not_marked_cacheable() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("index.sqlite");
+    let path = private_index_path(dir.path());
     let mut cfg = AppConfig::default();
     cfg.knowledge_delta.index.enabled = true;
     cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());

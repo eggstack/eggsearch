@@ -298,7 +298,19 @@ selected public search-card excerpts when `[knowledge_delta.index]` is
 enabled. `prefer_live` unions index hits and labels them `index_only`.
 `index` does not search live. `related_topics` reads one source-backed
 index step and does not open a new host. Expanded deltas carry
-`edge_source_ids`. An edge without a stored span is not created.
+`edge_source_ids`. An edge without a stored span is not created. Every
+delta explicitly carries `trust: external_untrusted`, including index hits
+and responses with `sanitize_output = false`; disabling framing does not
+change the trust classification.
+
+The index never persists the caller's topic. Its legacy topic column stays
+empty; primary subjects and expansion edges are derived from indexed public
+titles and excerpts. Schema v1 is atomically scrubbed to v2, preserving
+evidence rows while clearing caller-topic fields and rebuilding derived
+subjects and edges. On Unix, partition directories are restricted to mode
+0700 and database files to 0600. An explicitly configured database file
+under a shared parent is refused. On Windows, the index inherits the ACL of
+its parent directory, so configured paths should remain user-private.
 
 ---
 

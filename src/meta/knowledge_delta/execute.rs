@@ -45,6 +45,7 @@ pub struct BriefQuery {
 pub struct SelectedDelta {
     pub id: String,
     pub excerpt: String,
+    pub trust: String,
     pub source_ids: Vec<String>,
     pub urls: Vec<String>,
     pub date_basis: String,
@@ -275,7 +276,7 @@ pub async fn run_knowledge_brief(
     let (emitted, budget_exhausted, truncated) =
         budget_deltas(deltas, query.max_items, query.max_chars);
     if let Some(index) = index_to_retain {
-        let records = index_records(&emitted, &query.topic, &query.partition);
+        let records = index_records(&emitted, &query.partition);
         if let Err(err) = index.retain(&records) {
             warnings.push(err.message());
         }
@@ -480,6 +481,7 @@ fn package_deltas(
         let mut delta = SelectedDelta {
             id,
             excerpt,
+            trust: "external_untrusted".into(),
             source_ids: vec![source_id],
             urls: vec![card.url.clone()],
             date_basis: basis.as_str().to_string(),
@@ -541,6 +543,7 @@ fn hit_delta(hit: IndexHit, provenance: &str, expanded: bool) -> SelectedDelta {
     let mut delta = SelectedDelta {
         id: hit.record.kdelta_id,
         excerpt: hit.record.excerpt,
+        trust: "external_untrusted".into(),
         source_ids: vec![hit.record.source_id],
         urls: vec![hit.record.canonical_url],
         date_basis: hit.record.basis,
@@ -566,7 +569,7 @@ fn hit_delta(hit: IndexHit, provenance: &str, expanded: bool) -> SelectedDelta {
     delta
 }
 
-fn index_records(deltas: &[SelectedDelta], topic: &str, partition: &str) -> Vec<IndexRecord> {
+fn index_records(deltas: &[SelectedDelta], partition: &str) -> Vec<IndexRecord> {
     deltas
         .iter()
         .filter(|delta| !delta.expanded && delta.provenance == "live_checked" && delta.indexable)
@@ -574,21 +577,15 @@ fn index_records(deltas: &[SelectedDelta], topic: &str, partition: &str) -> Vec<
             partition: partition.to_string(),
             canonical_url: canonicalize_url(delta.urls.first().map(String::as_str).unwrap_or("")),
             source_id: delta.source_ids.first().cloned().unwrap_or_default(),
-            title: if delta.source_title.is_empty() {
-                topic.to_string()
-            } else {
-                delta.source_title.clone()
-            },
+            title: delta.source_title.clone(),
             excerpt: delta.excerpt.clone(),
-            trust: "external_untrusted".into(),
+            trust: delta.trust.clone(),
             basis: delta.date_basis.clone(),
             precision: delta.precision.clone(),
             normalized_date: delta.normalized_date.clone(),
             kdelta_id: delta.id.clone(),
             conflicted: delta.conflicted,
             temporal_relationship: delta.temporal_relationship.clone(),
-            topic: topic.to_string(),
-            primary_subject: Some(topic.to_string()),
         })
         .collect()
 }
@@ -608,6 +605,7 @@ fn delta_json(delta: &SelectedDelta) -> serde_json::Value {
     serde_json::json!({
         "id": delta.id,
         "excerpt": delta.excerpt,
+        "trust": delta.trust,
         "source_ids": delta.source_ids,
         "urls": delta.urls,
         "spans": delta.spans,

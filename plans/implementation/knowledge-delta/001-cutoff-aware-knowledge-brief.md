@@ -191,9 +191,9 @@ Omitting a delta sets `budget_exhausted` and does not set
 `src/core/warning/prefixes.rs`.
 
 Output contains `topic`, `model_resolution`, `deltas` (a `kdelta_`
-ID, bounded excerpt, `source_ids`, URLs, spans, `date_basis`,
-`precision`, `temporal_relationship`, conflict markers, and
-`payload_chars`), `total_payload_chars`, `retrieval_summary`,
+ID, bounded excerpt, explicit `trust: external_untrusted`, `source_ids`,
+URLs, spans, `date_basis`, `precision`, `temporal_relationship`,
+conflict markers, and `payload_chars`), `total_payload_chars`, `retrieval_summary`,
 `coverage`, `warnings`, `truncated`, and bounded `next_actions`.
 The static `next_tools` contract and the response `next_actions`
 field may name `fetch` and `research_search` only. No confidence

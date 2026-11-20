@@ -734,7 +734,7 @@ max_excerpt_chars = 500
 retention_days = 365
 ```
 
-Disable the index by setting `enabled = false` or removing the section; a live brief then neither reads nor writes it. `retain` is rejected while the index is disabled. Delete the database file to drop retained evidence; eggsearch does not migrate by deleting rows, and a newer schema is refused without erasure. Back up by copying the `.sqlite` file and its `-wal`/`-shm` siblings while no writer is active. The file should be readable only by the operator. The brief indexes selected public search-card excerpts only. It refuses private, `no-store`, pass-cookie, and profile-scoped bodies, and it does not copy fetch-cache bodies.
+Disable the index by setting `enabled = false` or removing the section; a live brief then neither reads nor writes it. `retain` is rejected while the index is disabled. Delete the database file to drop retained evidence. Schema v1 migrates atomically to v2: evidence rows are preserved while caller-topic fields are cleared and subject edges are rebuilt from public titles and excerpts; newer schemas are refused without erasure. Back up by copying the `.sqlite` file and its `-wal`/`-shm` siblings while no writer is active. On Unix, partition directories use owner-only mode `0700` and database files use `0600`; an explicitly configured database file under a shared parent is refused. On Windows, files inherit the selected directory's ACL, so keep configured paths user-private. The index never stores the caller's topic. The brief retains selected public evidence only; it refuses private, `no-store`, pass-cookie, and profile-scoped bodies and does not copy fetch-cache bodies.
 
 ## Reserved Live Settings
 

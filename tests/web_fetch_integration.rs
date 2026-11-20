@@ -4220,6 +4220,49 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
 }
 
 #[tokio::test]
+async fn web_fetch_304_policy_update_blocks_index_cacheability() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    for (path, policy) in [
+        ("/revalidate-no-store", "no-store"),
+        ("/revalidate-private", "private"),
+    ] {
+        let mut initial = server.mock(|when, then| {
+            when.method(GET).path(path);
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .header("cache-control", "max-age=0")
+                .header("etag", "\"etag-v1\"")
+                .body("<html><body>cached public evidence</body></html>");
+        });
+        let first = run_web_fetch(state.clone(), fetch_args_for(server.url(path)))
+            .await
+            .expect("initial fetch");
+        assert_eq!(first["cache_status"], "miss");
+        initial.delete();
+
+        let validation = server.mock(|when, then| {
+            when.method(GET)
+                .path(path)
+                .header("if-none-match", "\"etag-v1\"");
+            then.status(304).header("cache-control", policy);
+        });
+        let revalidated = run_web_fetch(state.clone(), fetch_args_for(server.url(path)))
+            .await
+            .expect("304 revalidation");
+        assert_eq!(revalidated["cache_status"], "not_cacheable");
+        validation.assert();
+    }
+}
+
+#[tokio::test]
 async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     use httpmock::prelude::*;
 

@@ -103,10 +103,12 @@ omit `refresh` stay live and write nothing.
    accepted ADR-0021. Do not re-run the footprint spike here. Do not add
    an eggsearch Cargo feature, a second SKU, or a system SQLite link.
 2. **Schema and transactions.** Version the schema. Persist M001 IDs,
-   `canonicalize_url`, and the original basis and precision. Atomic
-   inserts, idempotent replay, concurrent readers, one writer, crash
-   recovery, and deterministic refusal of a newer schema. Do not fold
-   a month or year to midnight UTC.
+   `canonicalize_url`, and the original basis and precision. Schema v1
+   migrates atomically to v2 by clearing caller-topic fields and rebuilding
+   subjects and edges solely from stored public titles and excerpts; evidence
+   rows remain. Atomic inserts, idempotent replay, concurrent readers, one
+   writer, crash recovery, and deterministic refusal of a newer schema. Do
+   not fold a month or year to midnight UTC.
 3. **Ingestion.** Index only public evidence an already completed
    `knowledge_brief` selected, and only when the caller set `retain`.
    Enabling the index is not a write. No link following and no

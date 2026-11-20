@@ -603,40 +603,50 @@ async fn run_web_fetch_inner(
                         include_media,
                         state.config.fetch.sanitize_output,
                     );
-                    let derive = || async {
-                        let mut derived = client.derive_from_raw(
-                            trimmed_url,
-                            raw_entry.final_url.clone(),
-                            raw_entry.status,
-                            raw_entry.content_type.clone(),
-                            raw_entry.headers.clone(),
-                            raw_entry.content_length_header,
-                            raw_entry.redirect_count,
-                            raw_entry.body.to_vec(),
-                            raw_entry.truncated,
-                            budgets,
-                            extract_mode,
-                            include_links,
-                            args.pdf.as_ref(),
-                            None,
-                        )?;
-                        derived.transport = Some(
-                            match raw_entry.representation {
-                                crate::fetch::cache::RawRepresentation::Http => "http",
-                                crate::fetch::cache::RawRepresentation::BrowserDom => "browser",
+                    let derive = |cache_derived: bool| {
+                        let client = &client;
+                        let raw_entry = &raw_entry;
+                        let derived_key = &derived_key;
+                        let pdf = args.pdf.as_ref();
+                        async move {
+                            let mut derived = client.derive_from_raw(
+                                trimmed_url,
+                                raw_entry.final_url.clone(),
+                                raw_entry.status,
+                                raw_entry.content_type.clone(),
+                                raw_entry.headers.clone(),
+                                raw_entry.content_length_header,
+                                raw_entry.redirect_count,
+                                raw_entry.body.to_vec(),
+                                raw_entry.truncated,
+                                budgets,
+                                extract_mode,
+                                include_links,
+                                pdf,
+                                None,
+                            )?;
+                            derived.transport = Some(
+                                match raw_entry.representation {
+                                    crate::fetch::cache::RawRepresentation::Http => "http",
+                                    crate::fetch::cache::RawRepresentation::BrowserDom => "browser",
+                                }
+                                .to_string(),
+                            );
+                            derived.browser_escalated = raw_entry.browser_escalated;
+                            if cache_derived {
+                                cache
+                                    .insert_derived(
+                                        derived_key.clone(),
+                                        derived_cache_entry(raw_hash, derived_key, &derived),
+                                    )
+                                    .await;
                             }
-                            .to_string(),
-                        );
-                        derived.browser_escalated = raw_entry.browser_escalated;
-                        cache
-                            .insert_derived(
-                                derived_key.clone(),
-                                derived_cache_entry(raw_hash, &derived_key, &derived),
-                            )
-                            .await;
-                        Ok::<_, crate::fetch::FetchError>(derived)
+                            Ok::<_, crate::fetch::FetchError>(derived)
+                        }
                     };
                     let locally_fresh = raw_entry.freshness.is_fresh()
+                        && (!raw_entry.freshness.private
+                            || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
                         && entry_satisfies_caller_max_age(&raw_entry);
                     let force_revalidation =
                         cache_policy == crate::core::fetch::FetchCachePolicy::Refresh;
@@ -652,13 +662,15 @@ async fn run_web_fetch_inner(
                                     state.config.fetch.sanitize_output,
                                 ))
                             } else {
-                                derive().await.ok()
+                                derive(true).await.ok()
                             };
                     } else if matches!(
                         raw_entry.representation,
                         crate::fetch::cache::RawRepresentation::Http
                     ) && !raw_entry.freshness.no_store
                         && !raw_entry.freshness.no_cache
+                        && (!raw_entry.freshness.private
+                            || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
                         && (raw_entry.validators.etag.is_some()
                             || raw_entry.validators.last_modified.is_some())
                     {
@@ -682,7 +694,6 @@ async fn run_web_fetch_inner(
                                     .await
                                 {
                                     Ok((304, reval_headers, _, _)) => {
-                                        metadata.cache_status = CacheStatus::Revalidated;
                                         let mut updated_freshness = raw_entry.freshness.clone();
                                         let mut updated_validators = raw_entry.validators.clone();
                                         crate::fetch::cache::apply_304_headers(
@@ -690,6 +701,19 @@ async fn run_web_fetch_inner(
                                             &mut updated_validators,
                                             &reval_headers,
                                         );
+                                        let revalidated_cacheable =
+                                            crate::fetch::cache::should_cache_response(
+                                                raw_entry.status,
+                                                raw_entry.content_type.as_deref(),
+                                                &updated_freshness,
+                                                &scope,
+                                            );
+                                        let revalidated_status = if revalidated_cacheable {
+                                            CacheStatus::Revalidated
+                                        } else {
+                                            CacheStatus::NotCacheable
+                                        };
+                                        metadata.cache_status = revalidated_status;
                                         updated_freshness.fetched_at =
                                             Some(std::time::SystemTime::now());
                                         cache
@@ -712,11 +736,10 @@ async fn run_web_fetch_inner(
                                                 budgets.window_chars(),
                                                 state.config.fetch.sanitize_output,
                                             );
-                                            resp.cache_status =
-                                                crate::fetch::cache::CacheStatus::Revalidated;
+                                            resp.cache_status = revalidated_status;
                                             Some(resp)
                                         } else {
-                                            derive().await.ok()
+                                            derive(revalidated_cacheable).await.ok()
                                         };
                                     }
                                     Ok(_) => {}
@@ -741,7 +764,7 @@ async fn run_web_fetch_inner(
                                                     budgets.window_chars(),
                                                     state.config.fetch.sanitize_output,
                                                 )),
-                                                None => derive().await.ok(),
+                                                None => derive(true).await.ok(),
                                             };
                                         if let Some(mut resp) = cached {
                                             metadata.cache_status = CacheStatus::Hit;

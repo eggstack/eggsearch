@@ -30,8 +30,6 @@ fn record(id: &str, partition: &str) -> IndexRecord {
         kdelta_id: format!("kdelta_{id}"),
         conflicted: false,
         temporal_relationship: "after_cutoff".into(),
-        topic: "widget-runtime".into(),
-        primary_subject: Some("widget-runtime".into()),
     }
 }
 
@@ -88,7 +86,6 @@ fn fts_search_is_bounded_and_urls_use_shared_canonicalization() {
     let index = EvidenceIndex::open(&path, &config()).unwrap();
     let mut item = record("fts", "anonymous");
     item.canonical_url = "https://WWW.Example.COM:443/articles/new#fragment".into();
-    item.topic = "widget-runtime".into();
     item.title = "Widget runtime notes".into();
     item.excerpt = "bounded public excerpt".into();
     index.retain(&[item.clone()]).unwrap();
@@ -218,6 +215,138 @@ fn two_processes_serialize_writes_and_read_the_same_database() {
     assert!(child.wait_with_output().unwrap().status.success());
     let hits = index.lookup("anonymous", "widget-runtime", 10).unwrap();
     assert_eq!(hits.len(), 2);
+}
+
+#[cfg(unix)]
+#[test]
+fn index_database_and_partition_directory_are_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("knowledge-delta").join("anonymous");
+    let path = parent.join("index.sqlite");
+    let index = EvidenceIndex::open(&path, &config()).unwrap();
+    drop(index);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let reopened = EvidenceIndex::open(&path, &config()).unwrap();
+    drop(reopened);
+    assert_eq!(
+        std::fs::metadata(parent).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert_eq!(
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn explicitly_configured_database_rejects_a_shared_parent() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("shared");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = parent.join("index.sqlite");
+    let mut cfg = config();
+    cfg.path = Some(path.to_string_lossy().into_owned());
+    assert!(matches!(
+        EvidenceIndex::open(&path, &cfg),
+        Err(IndexError::InsecurePermissions)
+    ));
+}
+
+#[test]
+fn schema_v1_scrubs_query_text_and_rebuilds_source_subjects() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("index.sqlite");
+    let index = EvidenceIndex::open(&path, &config()).unwrap();
+    index.retain(&[record("legacy", "anonymous")]).unwrap();
+    drop(index);
+
+    let secret = "private customer roadmap query";
+    let conn = Connection::open(&path).unwrap();
+    let rowid: i64 = conn
+        .query_row(
+            "SELECT rowid FROM candidate_events WHERE kdelta_id = 'kdelta_legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    conn.execute(
+        "UPDATE candidate_events SET topic = ?1, primary_subject = ?1, title = ?1, excerpt = 'pkg:public-package dated public evidence' WHERE rowid = ?2",
+        rusqlite::params![secret, rowid],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE documents SET title = ?1 WHERE source_id = 'src_legacy'",
+        [secret],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE candidate_events_fts SET topic = ?1, title = ?1, primary_subject = ?1 WHERE rowid = ?2",
+        rusqlite::params![secret, rowid],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO subject_evidence_edges (partition, edge_id, from_subject, to_subject, source_id, span) VALUES ('anonymous', 'legacy-edge', ?1, ?1, 'src_legacy', 'span')",
+        [secret],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE schema_meta SET value = '1' WHERE key = 'version'",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let migrated = EvidenceIndex::open(&path, &config()).unwrap();
+    let conn = Connection::open(&path).unwrap();
+    let (version, topic, title, primary): (String, String, String, Option<String>) = conn
+        .query_row(
+            "SELECT (SELECT value FROM schema_meta WHERE key = 'version'), topic, title, primary_subject FROM candidate_events WHERE rowid = ?1",
+            [rowid],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(version, "2");
+    assert_eq!(topic, "");
+    assert!(!title.contains(secret));
+    assert_eq!(primary.as_deref(), Some("public-package"));
+    let document_title: String = conn
+        .query_row(
+            "SELECT title FROM documents WHERE source_id = 'src_legacy'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!document_title.contains(secret));
+    let edge_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM subject_evidence_edges WHERE from_subject = ?1 OR to_subject = ?1",
+            [secret],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(edge_count, 0);
+    let rebuilt_subjects: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM subjects WHERE token = 'public-package' AND verified = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(rebuilt_subjects, 1);
+    assert_eq!(
+        migrated
+            .lookup("anonymous", "public-package", 10)
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(migrated.lookup("anonymous", secret, 10).unwrap().is_empty());
 }
 
 #[test]

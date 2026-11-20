@@ -94,8 +94,11 @@ def footprint_steps(target, platform, artifact):
             $stdout = $process.StandardOutput.ReadToEnd()
             $stderr = $process.StandardError.ReadToEnd()
             $process.WaitForExit()
+            $process.Refresh()
             if ($process.ExitCode -ne 0) { throw "--version exited with $($process.ExitCode): $stderr" }
-            $rssSamples += [long]$process.PeakWorkingSet64
+            $rssSample = [long]$process.PeakWorkingSet64
+            if ($rssSample -le 0) { throw "Peak working set sample was invalid: $rssSample" }
+            $rssSamples += $rssSample
             $process.Dispose()
           }
           $record = [ordered]@{ candidate_sha = $candidateSha; target = $target; binary_bytes = $binaryBytes; probe = "eggsearch --version"; peak_working_set_bytes_samples = $rssSamples; threshold_applied = $false }

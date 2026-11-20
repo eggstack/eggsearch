@@ -2,13 +2,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(unix)]
+use std::fs::OpenOptions;
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
 use rusqlite::{params, Connection, OptionalExtension};
 
 use super::discovery::{edge_id, extract_subjects, subject_id};
 use crate::core::identity::canonicalize_url;
 use crate::core::knowledge_delta::KnowledgeIndexConfig;
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 const MAX_EDGES_PER_SUBJECT: usize = 64;
 const MAX_EXPANSION_SUBJECTS: usize = 16;
 const MAX_EXPANSION_NEIGHBORS: usize = 32;
@@ -27,8 +32,6 @@ pub struct IndexRecord {
     pub kdelta_id: String,
     pub conflicted: bool,
     pub temporal_relationship: String,
-    pub topic: String,
-    pub primary_subject: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +55,7 @@ pub enum IndexError {
     Corrupt(String),
     ReadOnly(String),
     Full(String),
+    InsecurePermissions,
     InvalidPartition,
 }
 
@@ -65,6 +69,9 @@ impl IndexError {
             Self::Corrupt(detail) => format!("knowledge index corrupt: {detail}"),
             Self::ReadOnly(detail) => format!("knowledge index read-only: {detail}"),
             Self::Full(detail) => format!("knowledge index full: {detail}"),
+            Self::InsecurePermissions => {
+                "knowledge index path must be private to the current user".to_string()
+            }
             Self::InvalidPartition => {
                 "knowledge index partition is not anonymous or prof_<16 hex>".to_string()
             }
@@ -105,10 +112,10 @@ pub struct EvidenceIndex {
 
 impl EvidenceIndex {
     pub fn open(path: &Path, config: &KnowledgeIndexConfig) -> Result<Self, IndexError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(map_io)?;
-        }
+        prepare_index_path(path, config)?;
         let conn = Connection::open(path).map_err(map_sqlite)?;
+        #[cfg(unix)]
+        protect_database_file(path)?;
         conn.busy_timeout(std::time::Duration::from_millis(500))
             .map_err(map_sqlite)?;
         conn.pragma_update(None, "journal_mode", "DELETE")
@@ -171,7 +178,7 @@ impl EvidenceIndex {
             return Ok(Vec::new());
         };
         let mut stmt = self.conn.prepare(
-            "SELECT c.canonical_url, c.source_id, c.title, c.excerpt, c.trust, c.basis, c.precision, c.normalized_date, c.kdelta_id, c.conflicted, c.temporal_relationship, c.topic, c.primary_subject
+            "SELECT c.canonical_url, c.source_id, c.title, c.excerpt, c.trust, c.basis, c.precision, c.normalized_date, c.kdelta_id, c.conflicted, c.temporal_relationship
              FROM candidate_events_fts f
              JOIN candidate_events c ON c.rowid = f.rowid AND c.partition = f.partition
              WHERE candidate_events_fts MATCH ?1 AND f.partition = ?2
@@ -251,7 +258,7 @@ impl EvidenceIndex {
                 continue;
             };
             let mut stmt = self.conn.prepare(
-                "SELECT c.canonical_url, c.source_id, c.title, c.excerpt, c.trust, c.basis, c.precision, c.normalized_date, c.kdelta_id, c.conflicted, c.temporal_relationship, c.topic, c.primary_subject
+                "SELECT c.canonical_url, c.source_id, c.title, c.excerpt, c.trust, c.basis, c.precision, c.normalized_date, c.kdelta_id, c.conflicted, c.temporal_relationship
                  FROM candidate_events_fts
                  JOIN candidate_events c ON c.rowid = candidate_events_fts.rowid
                  WHERE candidate_events_fts MATCH ?1 AND c.partition = ?2 AND c.primary_subject = ?3
@@ -300,11 +307,12 @@ impl EvidenceIndex {
         let canonical_url = canonicalize_url(&record.canonical_url);
         let excerpt = clip(&record.excerpt, self.max_excerpt_chars);
         let title = clip(&record.title, 512);
-        let topic = clip(&record.topic, 512);
-        let primary_subject = record
-            .primary_subject
-            .as_deref()
-            .map(|value| clip(value, 80));
+        let topic = "";
+        let subjects = extract_subjects(&title, &excerpt);
+        let primary_subject = subjects
+            .iter()
+            .find(|subject| subject.verified)
+            .map(|subject| subject.token.clone());
         let now = unix_now();
         tx.execute(
             "INSERT OR REPLACE INTO documents (partition, canonical_url, source_id, title, excerpt, trust, basis, precision, normalized_date, indexed_at)
@@ -348,8 +356,7 @@ impl EvidenceIndex {
             params![rowid, record.partition, record.kdelta_id, topic, title, excerpt, primary_subject],
         )
         .map_err(map_sqlite)?;
-        let subjects = extract_subjects(&title, &excerpt);
-        let from = primary_subject.clone().unwrap_or_else(|| topic.clone());
+        let from = primary_subject.clone().unwrap_or_default();
         for subject in subjects.iter().take(16) {
             let id = subject_id(subject.kind, &subject.token);
             tx.execute(
@@ -358,7 +365,7 @@ impl EvidenceIndex {
             ).map_err(map_sqlite)?;
         }
         for subject in subjects.into_iter().filter(|item| item.verified).take(8) {
-            if subject.token.eq_ignore_ascii_case(&from) {
+            if from.is_empty() || subject.token.eq_ignore_ascii_case(&from) {
                 continue;
             }
             let edge = edge_id(&record.source_id, &from, &subject.token, &subject.span);
@@ -421,6 +428,61 @@ impl EvidenceIndex {
     }
 }
 
+fn prepare_index_path(path: &Path, config: &KnowledgeIndexConfig) -> Result<(), IndexError> {
+    if let Some(parent) = path.parent() {
+        #[cfg(unix)]
+        let parent_existed = std::fs::symlink_metadata(parent).is_ok();
+        std::fs::create_dir_all(parent).map_err(map_io)?;
+        #[cfg(unix)]
+        protect_index_directory(parent, parent_existed, config)?;
+    }
+    #[cfg(unix)]
+    protect_database_file(path)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn protect_index_directory(
+    path: &Path,
+    existed: bool,
+    config: &KnowledgeIndexConfig,
+) -> Result<(), IndexError> {
+    let metadata = std::fs::symlink_metadata(path).map_err(map_io)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(IndexError::InsecurePermissions);
+    }
+    let mode = metadata.permissions().mode() & 0o777;
+    let explicit_file = config
+        .path
+        .as_deref()
+        .is_some_and(|configured| configured.ends_with(".sqlite") || configured.ends_with(".db"));
+    if explicit_file && existed && mode & 0o077 != 0 {
+        return Err(IndexError::InsecurePermissions);
+    }
+    if !explicit_file || !existed {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o700))
+            .map_err(map_io)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn protect_database_file(path: &Path) -> Result<(), IndexError> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create_new(true).mode(0o600);
+    match options.open(path) {
+        Ok(_) => return Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(map_io(error)),
+    }
+    let metadata = std::fs::symlink_metadata(path).map_err(map_io)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(IndexError::InsecurePermissions);
+    }
+    let mode = metadata.permissions().mode() & 0o600;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).map_err(map_io)
+}
+
 fn build_fts_query(input: &str) -> Option<String> {
     let mut terms = BTreeSet::new();
     for token in input.split(|ch: char| !ch.is_alphanumeric()) {
@@ -462,6 +524,90 @@ fn cleanup_orphans(tx: &Connection) -> Result<(), IndexError> {
     Ok(())
 }
 
+fn migrate_schema_v1(conn: &Connection) -> Result<(), IndexError> {
+    let tx = conn.unchecked_transaction().map_err(map_sqlite)?;
+    tx.execute(
+        "UPDATE candidate_events SET title = '' WHERE topic <> '' AND title = topic",
+        [],
+    )
+    .map_err(map_sqlite)?;
+    tx.execute(
+        "UPDATE documents SET title = '' WHERE EXISTS (SELECT 1 FROM candidate_events c WHERE c.partition = documents.partition AND c.canonical_url = documents.canonical_url AND c.basis = documents.basis AND c.precision = documents.precision AND c.normalized_date IS documents.normalized_date AND c.topic <> '' AND documents.title = c.topic)",
+        [],
+    )
+    .map_err(map_sqlite)?;
+    tx.execute(
+        "UPDATE candidate_events SET topic = '', primary_subject = NULL",
+        [],
+    )
+    .map_err(map_sqlite)?;
+    tx.execute("DELETE FROM candidate_events_fts", [])
+        .map_err(map_sqlite)?;
+    tx.execute("DELETE FROM subject_evidence_edges", [])
+        .map_err(map_sqlite)?;
+    tx.execute("DELETE FROM subjects", []).map_err(map_sqlite)?;
+    let records = {
+        let mut statement = tx
+            .prepare("SELECT rowid, partition, source_id, title, excerpt FROM candidate_events")
+            .map_err(map_sqlite)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })
+            .map_err(map_sqlite)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(map_sqlite)?
+    };
+    for (rowid, partition, source_id, title, excerpt) in records {
+        let subjects = extract_subjects(&title, &excerpt);
+        let primary = subjects
+            .iter()
+            .find(|subject| subject.verified)
+            .map(|subject| subject.token.clone());
+        tx.execute(
+            "UPDATE candidate_events SET primary_subject = ?1 WHERE rowid = ?2",
+            params![primary, rowid],
+        )
+        .map_err(map_sqlite)?;
+        for subject in &subjects {
+            let id = subject_id(subject.kind, &subject.token);
+            tx.execute(
+                "INSERT OR REPLACE INTO subjects (partition, subject_id, kind, token, verified, source_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![partition, id, subject.kind, subject.token, i64::from(subject.verified), source_id],
+            )
+            .map_err(map_sqlite)?;
+        }
+        if let Some(from) = primary {
+            for subject in subjects
+                .into_iter()
+                .filter(|subject| subject.verified)
+                .take(8)
+            {
+                if subject.token.eq_ignore_ascii_case(&from) {
+                    continue;
+                }
+                let edge = edge_id(&source_id, &from, &subject.token, &subject.span);
+                tx.execute(
+                    "INSERT OR REPLACE INTO subject_evidence_edges (partition, edge_id, from_subject, to_subject, source_id, span) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![partition, edge, from, subject.token, source_id, subject.span],
+                )
+                .map_err(map_sqlite)?;
+            }
+        }
+    }
+    tx.execute_batch(
+        "INSERT INTO candidate_events_fts (rowid, partition, kdelta_id, topic, title, excerpt, primary_subject) SELECT rowid, partition, kdelta_id, topic, title, excerpt, primary_subject FROM candidate_events;
+         UPDATE schema_meta SET value = '2' WHERE key = 'version';",
+    )
+    .map_err(map_sqlite)?;
+    tx.commit().map_err(map_sqlite)
+}
+
 fn ensure_schema(conn: &Connection) -> Result<(), IndexError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
@@ -481,6 +627,10 @@ fn ensure_schema(conn: &Connection) -> Result<(), IndexError> {
             .map_err(|_| IndexError::Corrupt("schema version is not an integer".into()))?;
         if version > SCHEMA_VERSION {
             return Err(IndexError::NewerSchema(version));
+        }
+        if version == 1 {
+            migrate_schema_v1(conn)?;
+            return Ok(());
         }
         if version < SCHEMA_VERSION {
             return Err(IndexError::Corrupt(format!(
@@ -541,7 +691,7 @@ fn ensure_schema(conn: &Connection) -> Result<(), IndexError> {
            PRIMARY KEY (partition, edge_id)
          );
          CREATE VIRTUAL TABLE candidate_events_fts USING fts5(partition UNINDEXED, kdelta_id UNINDEXED, topic, title, excerpt, primary_subject, tokenize = 'unicode61 remove_diacritics 2');
-         INSERT INTO schema_meta (key, value) VALUES ('version', '1');
+         INSERT INTO schema_meta (key, value) VALUES ('version', '2');
          COMMIT;",
     )
     .map_err(map_sqlite)?;
@@ -562,8 +712,6 @@ fn row_record(partition: &str, row: &rusqlite::Row<'_>) -> rusqlite::Result<Inde
         kdelta_id: row.get(8)?,
         conflicted: row.get::<_, i64>(9)? != 0,
         temporal_relationship: row.get(10)?,
-        topic: row.get(11)?,
-        primary_subject: row.get(12)?,
     })
 }
 
@@ -632,8 +780,6 @@ mod tests {
             kdelta_id: format!("kdelta_{id}"),
             conflicted: false,
             temporal_relationship: "after_cutoff".into(),
-            topic: "widget-runtime".into(),
-            primary_subject: Some("widget-runtime".into()),
         }
     }
 
