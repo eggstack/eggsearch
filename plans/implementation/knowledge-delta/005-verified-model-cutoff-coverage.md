@@ -1,4 +1,4 @@
-# M004 — Verified Model-Cutoff Coverage and Provenance
+# M005 — Verified Model-Cutoff Coverage and Provenance
 
 Status: proposed
 Draft: yes — corrective plan, implementation not started
@@ -6,7 +6,7 @@ Date: 2026-11-20
 Subsystem: knowledge-delta
 Milestone class: capability
 Planning baseline: `16b4c2888206caeb6654ffebaa039862fc143712` on `feat/auto-20261117-044c4885`
-Source addendum: `plans/subsystems/knowledge-delta-corrective-addendum.md` M004
+Source addendum: `plans/subsystems/knowledge-delta-corrective-addendum.md` M005
 Closed predecessor: M001 (`plans/archive/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md`), `plans/closure/knowledge-delta/001-status.md`, candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`.
 Authority: `plans/000-long-term-specification.md` §§1–4, 7–9; accepted ADR-0006, ADR-0020; `plans/003-planning-process.md` §7.
 
@@ -55,4 +55,4 @@ Add a network-free `tests/knowledge_delta_catalog.rs` suite or equivalent with m
 
 ## Required closure evidence
 
-Write `plans/closure/knowledge-delta/004-status.md` with source-manifest hash, model coverage table (including unknowns), actual source verification dates, conflicting evidence, changed snapshot rows, tests/guards and offline startup, docs/SDK evidence, candidate SHA and residual risks. Update the corrective addendum and registry together. Do not alter M001's historical closure.
+Write `plans/closure/knowledge-delta/005-status.md` with source-manifest hash, model coverage table (including unknowns), actual source verification dates, conflicting evidence, changed snapshot rows, tests/guards and offline startup, docs/SDK evidence, candidate SHA and residual risks. Update the corrective addendum and registry together. Do not alter M001's historical closure.

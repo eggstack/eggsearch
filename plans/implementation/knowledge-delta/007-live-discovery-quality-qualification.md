@@ -1,4 +1,4 @@
-# M006 — Real-World Discovery Quality Qualification and Bounded Corrections
+# M007 — Real-World Discovery Quality Qualification and Bounded Corrections
 
 Status: proposed
 Draft: yes — corrective plan, implementation not started
@@ -6,7 +6,7 @@ Date: 2026-11-20
 Subsystem: knowledge-delta
 Milestone class: capability
 Planning baseline: `16b4c2888206caeb6654ffebaa039862fc143712` on `feat/auto-20261117-044c4885`
-Source addendum: `plans/subsystems/knowledge-delta-corrective-addendum.md` M006
+Source addendum: `plans/subsystems/knowledge-delta-corrective-addendum.md` M007
 Closed predecessor: M003 (`plans/archive/implementation/knowledge-delta/003-source-driven-topic-discovery.md`), `plans/closure/knowledge-delta/003-status.md`; also M001/M002 closures; candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`.
 Authority: accepted ADR-0006/ADR-0020/ADR-0021; `plans/000-long-term-specification.md` §§3–4, 7–9; `plans/003-planning-process.md` §7.
 
@@ -20,7 +20,7 @@ This is a **missing evaluation and possible ranking/coverage correction**, not a
 
 Publish reproducible evidence of real-world source-backed discovery, including after-cutoff date classification, novel related-topic recall, precision/no-change controls and network/context costs. Apply only small deterministic domain-specific changes proven to improve performance without altering the existing metasearch engine, global RRF scoring, URL safety or public MCP contracts.
 
-**Hard:** M001–M003 closed, ADRs accepted — satisfied. **Interface:** existing `knowledge_brief` result and cutoff/refresh/related schema. **Soft:** incorporate M004 and M005 when their changes are ready, or explicitly document that M006 was tested on the older exact candidate. This milestone has an independent quality gate.
+**Hard:** M001–M003 closed, ADRs accepted — satisfied. **Interface:** existing `knowledge_brief` result and cutoff/refresh/related schema. **Soft:** incorporate M005 and M006 when their changes are ready, or explicitly document that M007 was tested on the older exact candidate. This milestone has an independent quality gate.
 
 ## Evaluation contract (write fixtures and pass/fail rule before tuning)
 
@@ -61,4 +61,4 @@ For any changed ranking/expansion implementation, pre-register these qualificati
 
 If a tuning change increases false positives or weakens date/provenance validity, revert that part while retaining the measurement harness and report the failure. A no-improvement result is a valid research finding, not an excuse to overstate closure.
 
-Write `plans/closure/knowledge-delta/006-status.md` with candidate SHA, frozen manifest hashes, corpus composition, metrics tables including baseline and ablations, prospective live-study results and failures, guard/test outcomes, request/latency/context costs, security findings, and remaining limits. Update addendum and registry together. Do not reopen M003's closed fixture evidence.
+Write `plans/closure/knowledge-delta/007-status.md` with candidate SHA, frozen manifest hashes, corpus composition, metrics tables including baseline and ablations, prospective live-study results and failures, guard/test outcomes, request/latency/context costs, security findings, and remaining limits. Update addendum and registry together. Do not reopen M003's closed fixture evidence.

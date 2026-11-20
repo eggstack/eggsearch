@@ -1,4 +1,4 @@
-# M005 — Opt-In Index Onboarding, Diagnostics and Safe Seeding
+# M006 — Opt-In Index Onboarding, Diagnostics and Safe Seeding
 
 Status: proposed
 Draft: yes — corrective plan, implementation not started
@@ -6,7 +6,7 @@ Date: 2026-11-20
 Subsystem: knowledge-delta
 Milestone class: capability
 Planning baseline: `16b4c2888206caeb6654ffebaa039862fc143712` on `feat/auto-20261117-044c4885`
-Source addendum: `plans/subsystems/knowledge-delta-corrective-addendum.md` M005
+Source addendum: `plans/subsystems/knowledge-delta-corrective-addendum.md` M006
 Closed predecessors: M002/M003 (`plans/archive/implementation/knowledge-delta/002-local-evidence-index.md`, `003-source-driven-topic-discovery.md`), `plans/closure/knowledge-delta/002-status.md`, `003-status.md`; candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`.
 Authority: accepted ADR-0021 (opt-in, public-only retained evidence, no implicit write or feed crawler); `plans/000-long-term-specification.md` §§3–4, 7–9; `plans/003-planning-process.md` §7.
 
@@ -18,7 +18,7 @@ The index is correctly disabled by default. A plain `knowledge_brief` call uses 
 
 Make the index's consent model and empty/ready/stale states immediately understandable and demonstrate successful bounded evidence retention and related-topic reuse with an ordinary end-to-end procedure. Keep `live` strictly no-read/no-write.
 
-**Hard dependencies:** M002 and M003 closed, ADR-0021 accepted — satisfied. **Interface:** existing `KnowledgeBriefArgs` fields `retain`, `refresh` (`live | prefer_live | index`), `related_topics`, and `[knowledge_delta.index]`. Independent of M004.
+**Hard dependencies:** M002 and M003 closed, ADR-0021 accepted — satisfied. **Interface:** existing `KnowledgeBriefArgs` fields `retain`, `refresh` (`live | prefer_live | index`), `related_topics`, and `[knowledge_delta.index]`. Independent of M005.
 
 In scope: a documented minimal configuration and example calls; precise diagnostic state/repair messages; an optional read-only local index status/doctor command if simpler documentation and existing response diagnostics do not suffice; a deterministic seeding/restart integration test; security guardrails for zero-write and local permissions.
 
@@ -58,4 +58,4 @@ Extend `tests/knowledge_delta_index.rs`, `tests/knowledge_delta_brief.rs`, `test
 
 ## Closure evidence
 
-`plans/closure/knowledge-delta/005-status.md`: steps from empty config through explicit retain/restart/retrieval, status/warning samples, zero-write and rejection tests, security and migration results, docs/consumer contract diff, code and candidate SHA, test outputs and residual gaps. Update addendum and registry; leave M002/M003 closure evidence untouched.
+`plans/closure/knowledge-delta/006-status.md`: steps from empty config through explicit retain/restart/retrieval, status/warning samples, zero-write and rejection tests, security and migration results, docs/consumer contract diff, code and candidate SHA, test outputs and residual gaps. Update addendum and registry; leave M002/M003 closure evidence untouched.

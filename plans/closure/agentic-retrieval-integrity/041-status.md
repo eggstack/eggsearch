@@ -36,8 +36,12 @@ The paper-first contract is in `architecture/local-workspace.md` and `docs/featu
 
 ## Exact code candidate
 
-Implementation candidate `d6e6b479eae88ca96a3a607a23ac646c0059854a` (parent `16b4c288`).
-Every command and probe below ran against that tree. This closure commit carries this
+Implementation candidate `380a55cd7ea7c0b37dc6eff53851926e96e894d0` (parent
+`688948b40394563315bbaea6ef9680cc94af3676`). Every command and probe below ran against
+that tree. The candidate was rebased onto the concurrently drafted planning commit
+`688948b` so that this milestone and the concurrently drafted knowledge-delta proposals share
+one linear branch; the rebased candidate carries the same source, test, and documentation tree
+as the tree that was qualified, and `688948b` touches planning documents only. This closure commit carries this
 record, the plan status, the roadmap status, and the registry rows together.
 
 ## Requirement-to-evidence mapping
@@ -60,7 +64,7 @@ Probes used the candidate debug binary and the baseline `16b4c288` debug binary,
 entry. Request: `{owner: "eggstack", repo: "eggsearch", path: "AGENTS.md", prefer_local: true,
 max_chars: 300}`.
 
-| Root | Before (`16b4c288`) | After (`d6e6b47`) |
+| Root | Before (`16b4c288`) | After (`380a55c`) |
 |---|---|---|
 | Main clone `/Users/davidbowman/projects/eggsearch` | `locator: {"kind": "workspace", "path": "AGENTS.md", "workspace_root": "eggsearch"}` | `locator: {"kind": "workspace", "path": "AGENTS.md", "workspace_root": "eggsearch"}` — unchanged |
 | Linked worktree `.../.worktrees/feat-auto-20261117-044c4885` | `locator: {"kind": "remote", "owner": "eggstack", "repo": "eggsearch"}`, `fetched_url: https://raw.githubusercontent.com/eggstack/eggsearch/main/AGENTS.md` | `locator: {"kind": "workspace", "path": "AGENTS.md", "workspace_root": "feat-auto-20261117-044c4885"}`, `raw_url: workspace://feat-auto-20261117-044c4885/AGENTS.md`, trust `local_trusted`, no remote URL fetched |
@@ -70,7 +74,7 @@ The main-clone row is the control: the fix does not change an already-resolvable
 
 ## Verification
 
-Using the pinned Rust 1.89 toolchain on the candidate `d6e6b47`:
+Using the pinned Rust 1.89 toolchain on the candidate `380a55c`:
 
 - `make check`: exit 0 — 90 suites, 6,520 passed, 0 failed, 28 ignored.
 - `make docs-check`: exit 0.
@@ -112,6 +116,6 @@ Hosted CI was not a requirement of this milestone plan, so the local gate above 
 closure evidence; the hosted run is recorded here when it completes.
 ## Recommendation
 
-Accept M041 on `d6e6b479eae88ca96a3a607a23ac646c0059854a`. Every acceptance criterion has
+Accept M041 on `380a55cd7ea7c0b37dc6eff53851926e96e894d0`. Every acceptance criterion has
 deterministic test evidence, the live probe shows the linked worktree resolving locally while
 the normal clone is unchanged, and the residual bounds are explicit.

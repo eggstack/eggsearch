@@ -291,7 +291,7 @@ exposed M011's mandatory-`redir` defect.
   `plans/closure/agentic-retrieval-integrity/039-status.md` and
   `plans/closure/agentic-retrieval-integrity/040-status.md`.
 - M041 and M042 are `closed` on implementation candidate
-  `d6e6b479eae88ca96a3a607a23ac646c0059854a`. M041 resolves a linked git worktree's remote
+  `380a55cd7ea7c0b37dc6eff53851926e96e894d0`. M041 resolves a linked git worktree's remote
   identity through the shared `commondir` configuration, so `repo_fetch` with `prefer_local`
   returned the local copy instead of a silent remote fetch, and a skipped local copy is now
   stated; the normal clone is unchanged. M042 makes a malformed `fetch` item name the accepted

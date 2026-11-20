@@ -36,10 +36,19 @@ not say why. The correction is diagnostic, not a capability expansion:
 The paper-first contract is in `architecture/research.md`, `architecture/evidence-workflow.md`,
 `docs/agent-workflows.md`, and `docs/config.md`.
 
+The concurrently drafted knowledge-delta proposals that also used the number M004 were
+renumbered to M005, M006, and M007 at the operator's direction, so this milestone keeps M004
+and the closure record path `plans/closure/knowledge-delta/004-status.md`. The drafts remain
+`proposed` and are not implemented by this milestone.
+
 ## Exact code candidate
 
-Implementation candidate `d6e6b479eae88ca96a3a607a23ac646c0059854a` (parent `16b4c288`).
-Every command and probe below ran against that tree. This closure commit carries this
+Implementation candidate `380a55cd7ea7c0b37dc6eff53851926e96e894d0` (parent
+`688948b40394563315bbaea6ef9680cc94af3676`). Every command and probe below ran against
+that tree. The candidate was rebased onto the concurrently drafted planning commit
+`688948b` so that this milestone and the concurrently drafted knowledge-delta proposals share
+one linear branch; the rebased candidate carries the same source, test, and documentation tree
+as the tree that was qualified, and `688948b` touches planning documents only. This closure commit carries this
 record, the plan status, the roadmap status, and the registry rows together.
 
 ## Requirement-to-evidence mapping
@@ -62,7 +71,7 @@ Probes used the candidate debug binary and the baseline `16b4c288` debug binary,
 `stdio`, and a configuration that pins the provider set. Topic `rust ownership`; the cutoff
 case passes `cutoff_override` `2020-01-01`, day precision.
 
-| Probe | Before (`16b4c288`) | After (`d6e6b47`) |
+| Probe | Before (`16b4c288`) | After (`380a55c`) |
 |---|---|---|
 | Shipped default set (`duckduckgo`, `brave`, `yahoo`), no cutoff | `deltas: []`; no `empty_state_reason`; no date accounting; warnings named only provider failures | `deltas: []`; `empty_state_reason: no_cutoff_resolved`; 8 selected cards, 0 dated, 8 undated; `timestamp_capable_providers: []`; warning `knowledge_brief_no_cutoff_resolved: ...` |
 | Shipped default set, resolved cutoff | `deltas: []`; no reason; warnings named only provider failures | `deltas: []`; `empty_state_reason: no_dated_sources`; 8 selected cards, 0 dated, 8 undated; warning `knowledge_brief_no_dated_sources: ...` |
@@ -75,7 +84,7 @@ post-cutoff items the upstream index held at that moment.
 
 ## Verification
 
-Using the pinned Rust 1.89 toolchain on the candidate `d6e6b47`:
+Using the pinned Rust 1.89 toolchain on the candidate `380a55c`:
 
 - `make check`: exit 0 — 90 suites, 6,520 passed, 0 failed, 28 ignored.
 - `make docs-check`: exit 0.
@@ -135,6 +144,6 @@ Hosted CI was not a requirement of this milestone plan, so the local gate above 
 closure evidence; the hosted run is recorded here when it completes.
 ## Recommendation
 
-Accept M004 on `d6e6b479eae88ca96a3a607a23ac646c0059854a`. Every acceptance criterion has
+Accept M004 on `380a55cd7ea7c0b37dc6eff53851926e96e894d0`. Every acceptance criterion has
 deterministic test evidence, the live probe shows the bare empty delta list replaced by a
 named reason, the dated-source identity is unchanged, and the residual bounds are explicit.
