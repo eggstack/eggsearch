@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M042 closed)
+Status: active (M001–M042 closed; M043 ready)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -189,6 +189,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M040 — local content-aware candidate generation | capability (corrective to M037) | `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md` | hard M037 (closed) | A content or symbol query finds matches beyond the path-ranked window inside a scan bound; truncation and no-match describe the scan honestly |
 | M041 — linked worktree identity resolution and prefer-local honesty | capability (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/041-linked-worktree-identity-resolution.md` | hard M037 (closed); hard M040 (closed) | A checkout in a linked git worktree resolves its remote identity through the common directory, so `prefer_local` returns the local copy instead of silently falling back to a remote fetch; a skipped local copy is stated |
 | M042 — fetch item shape diagnostics | invariant (corrective to M029) | `plans/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md` | hard M029 (closed) | A `fetch` item with a missing or unknown `type` tag returns an actionable error naming the accepted shapes; no fetch error names a private Rust type |
+| M043 — local repo-search empty-result determinism | invariant (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md` | hard M037 (closed); hard M040 (closed); interface M041 (closed) | A local `repo_search` whose bounded content pass did not run or was clipped is distinguishable from a true no-match, and the content-only positive fixture is deterministic under saturated parallel load |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
