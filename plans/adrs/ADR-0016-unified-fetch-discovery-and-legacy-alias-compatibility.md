@@ -41,6 +41,8 @@ The decision must make the common fetch path obvious, support explicit web and r
 
 This ADR supersedes only the exact-ten inventory, no-removal/rename, and fixed-name constraints of ADR-0001 and ADR-0006 to the extent necessary to replace the advertised web_fetch and batch_fetch entries with fetch. It does not reopen or amend the closed tool-surface-consolidation roadmap or its M001–M007 closure records. It does not change any other canonical tool or authorize future tool additions, removals, or renames. The nine-tool target and alias boundary are implemented and qualified only through M029.
 
+ADR-0020, accepted 2026-11-20, supersedes only the clause that fixes the canonical advertised count at nine, and only to permit one added tool, `knowledge_brief`. Fetch unification, alias behavior, tool ownership, and the M029 qualification are unchanged. This record is not otherwise rewritten.
+
 The long-term specification is amended to state the nine-tool target. Historical plans and closure records that describe the former ten-tool baseline remain accurate historical evidence and are not rewritten.
 
 ## Consequences and tradeoffs

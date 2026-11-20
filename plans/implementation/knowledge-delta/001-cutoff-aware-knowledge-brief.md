@@ -1,8 +1,8 @@
 # M001 — Cutoff-Aware Knowledge Brief
 
-Status: proposed
+Status: ready
 Date: 2026-11-19
-Revised: 2026-11-20 — proposed contract. Not implementation authorization.
+Revised: 2026-11-20 — ADR-0020 accepted. Dependency-ready. Not started.
 Subsystem: knowledge-delta
 Milestone class: capability
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
@@ -11,7 +11,7 @@ Roadmap: `plans/subsystems/knowledge-delta-roadmap.md` M001
 References: `plans/000-long-term-specification.md` §§1–4, 7–8;
 `plans/001-terminology-and-domain-model.md` §§1–3;
 `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016;
-proposed ADR-0020.
+accepted ADR-0020.
 Design owners: `architecture/research.md`, `architecture/mcp.md`,
 `architecture/codegg-contract.md`, `architecture/evidence-workflow.md`,
 `architecture/fetch.md` (emitted-payload measure only).
@@ -25,9 +25,10 @@ published cutoff, with source spans, date basis and precision, evidence
 gaps, and retrieval accounting. There is no embedded LLM, index, crawler,
 or prose date parser.
 
-**Hard dependency:** ADR-0020 must be accepted, including authorization to
-change the advertised inventory from nine to ten. If ADR-0020 is rejected
-or altered, stop and revise this plan before touching code.
+**Hard dependency:** satisfied. ADR-0020 was accepted 2026-11-20,
+including authorization to change the advertised inventory from nine to
+ten. If that acceptance is superseded, stop and revise this plan before
+touching code.
 **Interface dependencies:** existing adapter, search, fetch, and evidence
 contracts are stable on this baseline. CodeGG and eggui may pass
 `model_id` against this request schema. They must not send `scope` or a
@@ -166,9 +167,9 @@ error, and the call remains usable without a temporal claim.
 `precision`, `source`, and `reason`. It must not be labeled
 provider-official. A malformed override, an invalid date, or an unknown
 `refresh` value is a repairable error. Omitted `refresh` and
-`refresh: "live"` are the only accepted forms. `prefer_live` and
-`index` are rejected until ADR-0021. There is no `retain` field
-and no `scope` field.
+`refresh: "live"` are the only accepted forms. `prefer_live`,
+`index`, and `retain` belong to accepted ADR-0021 and are not M001
+fields. There is no `scope` field.
 
 Operator overrides are `[knowledge_delta.cutoffs]` entries of model
 alias to `{date, precision, source, verified_at}`. They are not index

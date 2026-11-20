@@ -1,8 +1,8 @@
 # Knowledge-Delta Research Roadmap
 
-Status: proposed
+Status: M001 ready; M002 and M003 proposed
 Date: 2026-11-19
-Revised: 2026-11-20 — proposed contract. Not implementation authorization.
+Revised: 2026-11-20 — ADR-0020 and ADR-0021 accepted. M001 is not started. M002 stays proposed.
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 Owner: research retrieval and evidence handoff, with optional local evidence persistence
 
@@ -10,7 +10,7 @@ References: `plans/000-long-term-specification.md` §§1–4, 6–8;
 `plans/001-terminology-and-domain-model.md` §§1–3;
 `plans/002-long-term-roadmap.md`;
 `plans/003-planning-process.md`;
-ADR-0001, ADR-0006, ADR-0016; proposed ADR-0020 and ADR-0021.
+ADR-0001, ADR-0006, ADR-0016; accepted ADR-0020; accepted ADR-0021.
 
 ## 1. Purpose and ownership boundary
 
@@ -80,27 +80,28 @@ cutoff filters dated evidence. It is not proof of what a model knows.
 ## 5. Dependency graph
 
 ```text
-footprint spike recorded ── hard ──> ADR-0021 may be accepted
-proposed ADR-0020 accepted ── hard ──> M001 knowledge brief
+ADR-0020 accepted 2026-11-20 ── hard ──> M001 knowledge brief
 M001 closed ───────────────── hard ──> M002 local index
-ADR-0021 accepted ─────────── hard ──> M002 local index
+ADR-0021 accepted 2026-11-20 ─ hard ──> M002 local index
 M002 closed ───────────────── hard ──> M003 topic discovery
 M001 request schema ──────── interface ──> CodeGG and eggui consumers
 default-target footprint ──── operational ──> calling M002 shippable
 ```
 
-The spike is a precondition of accepting ADR-0021. It is not M002 work.
-All three plans are `proposed`, not ready, while their hard dependencies
-remain open. CodeGG and eggui may pass `model_id` against the M001
-schema. They must not send `scope` or a non-live `refresh`. That
+ADR-0021 was accepted 2026-11-20. The engine is bundled rusqlite. The
+macOS spike did not qualify Linux or Windows; that waiver is in the ADR
+and is not M002 work. Those unrun targets remain the operational
+footprint gate. ADR-0020 is accepted, so M001 is `ready` and not started.
+M002 stays `proposed` because M001 is not closed. M003 stays `proposed`. CodeGG and
+eggui may pass `model_id` against the M001 schema. They must not send `scope` or a non-live `refresh`. That
 parallel work is not asserted complete.
 
 ## 6. Ordered milestones
 
 | Milestone | Primary class | Status | Handoff plan | Dependency and visible exit |
 |---|---|---|---|---|
-| M001 — Cutoff-aware knowledge brief | capability | proposed | `plans/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md` | Hard: ADR-0020 accepted. A bounded source-backed brief applies the ADR-0020 date rule and is callable over MCP. |
-| M002 — Optional local evidence index | infrastructure | proposed | `plans/implementation/knowledge-delta/002-local-evidence-index.md` | Hard: M001 closed and ADR-0021 accepted, including its spike. The accepted engine survives restart, does not change a live call, and refuses authenticated bodies. |
+| M001 — Cutoff-aware knowledge brief | capability | ready | `plans/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md` | Hard dependency satisfied: ADR-0020 accepted 2026-11-20. Not started. Exit remains a bounded source-backed brief that applies the ADR-0020 date rule and is callable over MCP. |
+| M002 — Optional local evidence index | infrastructure | proposed | `plans/implementation/knowledge-delta/002-local-evidence-index.md` | Hard: M001 closed. ADR-0021 accepted 2026-11-20 names bundled rusqlite. Not started. The accepted engine survives restart, does not change a live call, and refuses authenticated bodies. |
 | M003 — Source-driven topic discovery | capability | proposed | `plans/implementation/knowledge-delta/003-source-driven-topic-discovery.md` | Hard: M002 closed. The omission fixture returns the labeled indexed delta that direct retrieval missed. Negative controls add none. No crawler or LLM. |
 
 ## 7. Cross-cutting requirements
@@ -167,5 +168,7 @@ A milestone is closed only after its exact-candidate implementation meets
 the stated exit, the focused and broad gates, the security evidence that
 applies, a closure record under
 `plans/closure/knowledge-delta/NNN-status.md`, and synchronized registry
-and roadmap updates. This roadmap remains proposed until ADR-0020 is
-accepted and, for M002, until ADR-0021 is accepted with its spike record.
+and roadmap updates. ADR-0020 was accepted 2026-11-20. M001 is ready and
+not started. ADR-0021 was accepted 2026-11-20 with bundled rusqlite.
+M002 remains proposed until M001 is closed. The incomplete spike does
+not reopen that acceptance.

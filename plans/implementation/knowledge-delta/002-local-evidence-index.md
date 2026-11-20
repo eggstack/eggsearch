@@ -2,7 +2,7 @@
 
 Status: proposed
 Date: 2026-11-19
-Revised: 2026-11-20 — proposed contract. Not implementation authorization.
+Revised: 2026-11-20 — ADR-0021 accepted bundled rusqlite. Not implementation authorization.
 Subsystem: knowledge-delta
 Milestone class: infrastructure
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
@@ -11,7 +11,7 @@ Roadmap: `plans/subsystems/knowledge-delta-roadmap.md` M002
 References: `plans/000-long-term-specification.md` §§3–4, 6–8;
 `plans/001-terminology-and-domain-model.md` §§1–3;
 `plans/003-planning-process.md`; ADR-0002, ADR-0006;
-proposed ADR-0020 and ADR-0021.
+accepted ADR-0020; accepted ADR-0021.
 
 ## Objective and readiness
 
@@ -21,12 +21,11 @@ freshness state. A caller can read historical evidence without an LLM.
 The index must not claim current coverage, and enabling it must not
 change an M001 `live` call.
 
-**Hard:** M001 closed, and ADR-0021 accepted. Acceptance of ADR-0021
-requires the footprint spike recorded in that ADR. This milestone does
-not run that spike and does not choose the storage engine. If the
-accepted ADR names JSON instead of SQLite, revise this plan before
-writing a SQLite schema. **Operational:** default-target footprint
-evidence before calling the feature shippable in the default binary.
+**Hard:** M001 closed. ADR-0021 was accepted 2026-11-20 and names
+bundled rusqlite. This milestone does not choose the engine and does
+not re-run the footprint spike. **Operational:** default-target
+footprint evidence, including the unrun Linux and Windows targets,
+before calling the feature shippable in the default binary.
 The experimental ARMv7 wheel is not a hard gate; mark that physical
 run unrun. This plan is proposed, not ready.
 
@@ -100,9 +99,9 @@ omit `refresh` stay live and write nothing.
 
 ## Ordered work packages
 
-1. **Accepted engine.** Implement the engine named by accepted
-   ADR-0021. Do not re-run the footprint spike here. If the ADR names
-   JSON, stop and revise this plan before adding a C dependency.
+1. **Accepted engine.** Implement bundled rusqlite as named by
+   accepted ADR-0021. Do not re-run the footprint spike here. Do not add
+   an eggsearch Cargo feature, a second SKU, or a system SQLite link.
 2. **Schema and transactions.** Version the schema. Persist M001 IDs,
    `canonicalize_url`, and the original basis and precision. Atomic
    inserts, idempotent replay, concurrent readers, one writer, crash

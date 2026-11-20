@@ -1,8 +1,9 @@
 # ADR-0020: Cutoff-Aware Knowledge Brief as a Canonical MCP Tool
 
-Status: proposed
+Status: accepted
 Date: 2026-11-19
-Revised: 2026-11-20 — proposed contract. Not implementation authorization.
+Accepted: 2026-11-20
+Revised: 2026-11-20 — accepted. This record does not implement the tool.
 Decision owners: project maintainers
 Baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 
@@ -112,16 +113,13 @@ silently reused as the comparison rule below.
 
 ## Spec and implementation gate
 
-This ADR is **proposed**, not accepted. M001 has a hard dependency on its
-acceptance. If rejected, revise the roadmap and M001 to use a bounded
-`research_search` extension or a separate experimental server; do not ship
-an unapproved tenth tool.
-
-If accepted, this ADR will supersede ADR-0016 only where it fixes the
-canonical count at nine, and ADR-0001 only to permit the reviewed addition.
-It will not reopen ADR-0016's `fetch` unification, alias behavior, or tool
-ownership. It does not amend `plans/002-long-term-roadmap.md` while
-proposed.
+Accepted 2026-11-20. The rejection path, a bounded `research_search`
+extension or a separate experimental server, was not chosen. This
+acceptance supersedes ADR-0016 only where it fixes the canonical count
+at nine, and ADR-0001 only to permit the reviewed addition. It does not
+reopen ADR-0016's `fetch` unification, alias behavior, or tool ownership.
+It does not amend `plans/002-long-term-roadmap.md`; the implementation
+change does that.
 
 Upon acceptance, the **implementation change**, not this ADR, must amend
 `plans/000-long-term-specification.md` §§1–2 and §7, add the subsystem

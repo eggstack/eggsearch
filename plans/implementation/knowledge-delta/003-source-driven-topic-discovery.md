@@ -11,7 +11,7 @@ Roadmap: `plans/subsystems/knowledge-delta-roadmap.md` M003
 References: `plans/000-long-term-specification.md` §§3–4, 7–8;
 `plans/001-terminology-and-domain-model.md` §§1–3;
 `plans/003-planning-process.md`; ADR-0006, ADR-0016;
-proposed ADR-0020 and ADR-0021.
+accepted ADR-0020; accepted ADR-0021.
 
 ## Objective and readiness
 
