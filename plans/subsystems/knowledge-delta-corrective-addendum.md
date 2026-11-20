@@ -40,7 +40,7 @@ The original workstream owns bounded evidence retrieval and the index implementa
 | M006 — Opt-in index setup and seeding | capability | closed | `plans/implementation/knowledge-delta/006-opt-in-index-onboarding-and-seeding.md` | Hard: closed M002/M003 and accepted ADR-0021; all satisfied. Independent of M005. | Operator can explicitly enable index, retain approved evidence, inspect state, restart and retrieve related-topic hits with no implicit persistence. |
 | M007 — Live discovery quality qualification | capability | closed | `plans/implementation/knowledge-delta/007-live-discovery-quality-qualification.md` | Hard: closed M001–M003; satisfied. Interface: existing live/index/related schema. Soft: M005 catalog and M006 setup for realistic evaluations. | Quantified precision/recall, dating and cost on held-out and live cases; any change to ranking/expansion has measured gain and guard-bounded regression. |
 
-M005 and M006 may be implemented in parallel; M007 may build its offline corpus in parallel but its final live qualification should use the candidate behavior after M005/M006 changes, or clearly record its own exact candidate and the missing integration. All remain **proposed** until assigned; none is implicitly active merely because hard prerequisites are closed.
+M005 and M006 were implemented together and closed on the same candidate; M007 built its corpus in parallel but qualified the behavior after both changes, so no integration gap has to be recorded. All three are **closed** on implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574`.
 
 ## 5. Cross-cutting requirements
 
