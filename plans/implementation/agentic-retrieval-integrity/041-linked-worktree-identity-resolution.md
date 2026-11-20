@@ -1,6 +1,6 @@
 # M041 — Linked Worktree Identity Resolution and Prefer-Local Honesty
 
-Status: ready
+Status: closed
 Date: 2026-11-20
 Subsystem: agentic retrieval integrity
 Milestone class: capability (corrective to M037 and M040, local workspace scope)

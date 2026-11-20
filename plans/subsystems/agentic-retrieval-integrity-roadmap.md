@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M040 closed; M041 and M042 corrective registered)
+Status: active (M001–M042 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -290,6 +290,15 @@ exposed M011's mandatory-`redir` defect.
   `make check` passed with 85 suites and 6,453 tests. Evidence:
   `plans/closure/agentic-retrieval-integrity/039-status.md` and
   `plans/closure/agentic-retrieval-integrity/040-status.md`.
+- M041 and M042 are `closed` on implementation candidate
+  `d6e6b479eae88ca96a3a607a23ac646c0059854a`. M041 resolves a linked git worktree's remote
+  identity through the shared `commondir` configuration, so `repo_fetch` with `prefer_local`
+  returned the local copy instead of a silent remote fetch, and a skipped local copy is now
+  stated; the normal clone is unchanged. M042 makes a malformed `fetch` item name the accepted
+  web and repo shapes instead of a serde untagged-enum detail that named a private Rust type.
+  Pinned Rust 1.89 `make check` and `make docs-check` passed. Evidence:
+  `plans/closure/agentic-retrieval-integrity/041-status.md` and
+  `plans/closure/agentic-retrieval-integrity/042-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.

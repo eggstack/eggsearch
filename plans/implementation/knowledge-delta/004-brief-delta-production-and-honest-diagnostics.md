@@ -1,6 +1,6 @@
 # M004 — Brief Delta Production and Honest Diagnostics
 
-Status: ready
+Status: closed
 Date: 2026-11-20
 Subsystem: knowledge delta
 Milestone class: capability (corrective to M001)

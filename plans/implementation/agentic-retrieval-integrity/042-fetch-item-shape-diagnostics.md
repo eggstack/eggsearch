@@ -1,6 +1,6 @@
 # M042 — Fetch Item Shape Diagnostics
 
-Status: ready
+Status: closed
 Date: 2026-11-20
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective to M029, fetch tool argument contract)
