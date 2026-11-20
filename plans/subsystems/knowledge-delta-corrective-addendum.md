@@ -1,8 +1,8 @@
 # Knowledge-Delta Coverage and Quality — Corrective Addendum
 
-Status: proposed
-Draft: yes — proposed M005–M007; M001–M004 remain closed
+Status: closed — M005–M007 closed on implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574`; M001–M004 remain closed
 Date: 2026-11-20
+Revised: 2026-11-20 — M005, M006, and M007 closed on the same candidate; M007 is a measurement-only closure and claims no recall improvement.
 Planning baseline: `16b4c2888206caeb6654ffebaa039862fc143712` on `feat/auto-20261117-044c4885`; reconciled after M004 closed on `380a55cd7ea7c0b37dc6eff53851926e96e894d0`
 Owner: model-cutoff metadata, knowledge-index operability, and evidence-quality evaluation
 
@@ -36,9 +36,9 @@ The original workstream owns bounded evidence retrieval and the index implementa
 
 | Milestone | Primary class | Status | Handoff | Dependencies | User-visible exit |
 |---|---|---|---|---|---|
-| M005 — Verified model-cutoff coverage | capability | proposed | `plans/implementation/knowledge-delta/005-verified-model-cutoff-coverage.md` | Hard: closed M001 and accepted ADR-0020; all satisfied. No unresolved architectural decision. | Priority model IDs resolve to sourced, precision-preserving verified cutoffs or explicit, auditable unknowns, with more than the existing single verified record. |
-| M006 — Opt-in index setup and seeding | capability | proposed | `plans/implementation/knowledge-delta/006-opt-in-index-onboarding-and-seeding.md` | Hard: closed M002/M003 and accepted ADR-0021; all satisfied. Independent of M005. | Operator can explicitly enable index, retain approved evidence, inspect state, restart and retrieve related-topic hits with no implicit persistence. |
-| M007 — Live discovery quality qualification | capability | proposed | `plans/implementation/knowledge-delta/007-live-discovery-quality-qualification.md` | Hard: closed M001–M003; satisfied. Interface: existing live/index/related schema. Soft: M005 catalog and M006 setup for realistic evaluations. | Quantified precision/recall, dating and cost on held-out and live cases; any change to ranking/expansion has measured gain and guard-bounded regression. |
+| M005 — Verified model-cutoff coverage | capability | closed | `plans/implementation/knowledge-delta/005-verified-model-cutoff-coverage.md` | Hard: closed M001 and accepted ADR-0020; all satisfied. No unresolved architectural decision. | Priority model IDs resolve to sourced, precision-preserving verified cutoffs or explicit, auditable unknowns, with more than the existing single verified record. |
+| M006 — Opt-in index setup and seeding | capability | closed | `plans/implementation/knowledge-delta/006-opt-in-index-onboarding-and-seeding.md` | Hard: closed M002/M003 and accepted ADR-0021; all satisfied. Independent of M005. | Operator can explicitly enable index, retain approved evidence, inspect state, restart and retrieve related-topic hits with no implicit persistence. |
+| M007 — Live discovery quality qualification | capability | closed | `plans/implementation/knowledge-delta/007-live-discovery-quality-qualification.md` | Hard: closed M001–M003; satisfied. Interface: existing live/index/related schema. Soft: M005 catalog and M006 setup for realistic evaluations. | Quantified precision/recall, dating and cost on held-out and live cases; any change to ranking/expansion has measured gain and guard-bounded regression. |
 
 M005 and M006 may be implemented in parallel; M007 may build its offline corpus in parallel but its final live qualification should use the candidate behavior after M005/M006 changes, or clearly record its own exact candidate and the missing integration. All remain **proposed** until assigned; none is implicitly active merely because hard prerequisites are closed.
 
@@ -65,3 +65,5 @@ Risks include catalog terms and stale metadata, alias confusion across model edi
 ## 7. Completion and status
 
 These corrective milestones close independently on an exact implementation SHA with the focused and broad tests in their handoffs, doc/SDK impacts, security and failure evidence, and `plans/closure/knowledge-delta/005-status.md` through `007-status.md`. Update this addendum and `plans/registry.md` on each closure; do not modify predecessor closure records. A missing or non-reproducible live evaluation keeps M007 open rather than converting the fixture into a production recall claim.
+
+All three closed on implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574`: M005 publishes eleven source-verified cutoffs across three provider families with an explicit disposition for five more; M006 makes disabled, unseeded, stale, no-match, and unreadable index states distinguishable without changing defaults; M007 publishes a frozen 88-case corpus and a 15-topic live study and makes no production change, so it claims measurement rather than improved recall.

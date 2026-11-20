@@ -1,8 +1,8 @@
 # Knowledge-Delta Research Roadmap
 
-Status: active (M001–M004 closed)
+Status: active (M001–M007 closed)
 Date: 2026-11-19
-Revised: 2026-11-20 — M001–M003 closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5; Linux/Windows footprint evidence has threshold_applied=false and no numeric budget pass is claimed. A live default-configuration review on 2026-11-20 registered corrective M004 (brief delta production and honest diagnostics) against M001; M004 is closed on exact implementation candidate `380a55cd7ea7c0b37dc6eff53851926e96e894d0`.
+Revised: 2026-11-20 — M005–M007 closed on implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574` through the corrective addendum; M007 is measurement-only. M001–M003 closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5; Linux/Windows footprint evidence has threshold_applied=false and no numeric budget pass is claimed. A live default-configuration review on 2026-11-20 registered corrective M004 (brief delta production and honest diagnostics) against M001; M004 is closed on exact implementation candidate `380a55cd7ea7c0b37dc6eff53851926e96e894d0`.
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 Owner: research retrieval and evidence handoff, with optional local evidence persistence
 
@@ -107,6 +107,9 @@ not asserted complete.
 | M002 — Optional local evidence index | infrastructure | closed | `plans/archive/implementation/knowledge-delta/002-local-evidence-index.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; Linux/Windows records and target qualification are in `plans/closure/knowledge-delta/002-status.md`; no numeric threshold pass is claimed. |
 | M003 — Source-driven topic discovery | capability | closed | `plans/archive/implementation/knowledge-delta/003-source-driven-topic-discovery.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; omission fixture and negative controls are in `plans/closure/knowledge-delta/003-status.md`. |
 | M004 — Brief delta production and honest diagnostics | capability (corrective to M001) | closed | `plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md` | Closed on candidate `380a55cd7ea7c0b37dc6eff53851926e96e894d0`; see `plans/closure/knowledge-delta/004-status.md`. Hard dependency M001 (closed); interface ADR-0020 and ADR-0021 (both accepted). A brief over a provider set with no result timestamps names that reason instead of returning a bare empty delta list; a resolved cutoff over dated sources still emits deltas with unchanged `kdelta_` identities; a live brief still does not open the index. |
+| M005 — Verified model-cutoff coverage | capability (corrective to M001) | closed | `plans/implementation/knowledge-delta/005-verified-model-cutoff-coverage.md` | Closed on candidate `e817dfde35372aa307f5580a144d7ededcb55574`; see `plans/closure/knowledge-delta/005-status.md`. Eleven verified cutoffs across OpenAI, Anthropic, and xAI, five explicit no-published-cutoff dispositions, a manifest validated against the bundled snapshot in both directions, and `model_resolution.catalog_as_of`. |
+| M006 — Opt-in index onboarding and seeding | capability (corrective to M002 and M003) | closed | `plans/implementation/knowledge-delta/006-opt-in-index-onboarding-and-seeding.md` | Closed on candidate `e817dfde35372aa307f5580a144d7ededcb55574`; see `plans/closure/knowledge-delta/006-status.md`. `index_status: disabled` is distinct from `offline`; an index refresh separates `index_not_seeded` and `index_stale` from `no_matching_index_hits`; the disabled path never opens the database. No default or schema change. |
+| M007 — Live discovery quality qualification | capability (corrective to M003) | closed (measurement-only) | `plans/implementation/knowledge-delta/007-live-discovery-quality-qualification.md` | Closed on candidate `e817dfde35372aa307f5580a144d7ededcb55574`; see `plans/closure/knowledge-delta/007-status.md`. Frozen 88-case corpus plus a 15-topic live study. No production change and no recall-improvement claim; the ablation shows the shipped index expansion is what recovers withheld evidence, and provider breadth limits live discovery. |
 
 ## 7. Cross-cutting requirements
 
@@ -178,6 +181,10 @@ under `plans/closure/knowledge-delta/`. M004 is a corrective pass to M001 and is
 closed on exact implementation candidate
 `380a55cd7ea7c0b37dc6eff53851926e96e894d0`; see
 `plans/closure/knowledge-delta/004-status.md`.
+M005, M006, and M007 close the coverage, operability, and evaluation gaps recorded in
+`plans/subsystems/knowledge-delta-corrective-addendum.md`; all three are closed on
+implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574`, and M007 asserts no
+production behavior change.
 ADR-0020 and ADR-0021 remain
 accepted. Linux/Windows measurements state `threshold_applied=false`;
 no numeric budget pass is claimed. ARMv7 physical evidence remains

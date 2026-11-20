@@ -93,7 +93,7 @@ release provenance, remaining reqwest elimination behind eggfetch ownership,
 bounded process/unsafe consolidation, and security-sensitive forge maintenance.
 Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 
-### 9. Knowledge delta — M001–M004 closed; M005–M007 proposed
+### 9. Knowledge delta — M001–M007 closed
 
 Cutoff-aware `knowledge_brief`, the bundled rusqlite local evidence index, and
 source-driven topic discovery closed on exact candidate
@@ -106,10 +106,12 @@ default-configuration review on 2026-11-20 and closed on exact candidate
 `380a55cd7ea7c0b37dc6eff53851926e96e894d0`; its plan is
 `plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`
 and its closure record is `plans/closure/knowledge-delta/004-status.md`.
-Three further corrective proposals remain `proposed` in
-`plans/subsystems/knowledge-delta-corrective-addendum.md`: M005 verified
-model-cutoff coverage, M006 opt-in index onboarding and seeding, and M007 live
-discovery quality qualification. None is active.
+The three further correctives in
+`plans/subsystems/knowledge-delta-corrective-addendum.md` are closed on
+implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574`: M005
+verified model-cutoff coverage, M006 opt-in index onboarding and seeding, and
+M007 live discovery quality qualification. M007 is a measurement-only closure
+and claims no production behavior change.
 Roadmap: `plans/subsystems/knowledge-delta-roadmap.md`.
 
 ## Dependency notes

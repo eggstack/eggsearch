@@ -1,7 +1,7 @@
 # M007 — Real-World Discovery Quality Qualification and Bounded Corrections
 
-Status: proposed
-Draft: yes — corrective plan, implementation not started
+Status: closed
+Closure: `plans/closure/knowledge-delta/007-status.md` on implementation candidate `e817dfde35372aa307f5580a144d7ededcb55574`
 Date: 2026-11-20
 Subsystem: knowledge-delta
 Milestone class: capability
