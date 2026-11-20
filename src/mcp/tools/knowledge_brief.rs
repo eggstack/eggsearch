@@ -92,14 +92,7 @@ impl KnowledgeEvidenceFetcher for BriefToolFetcher {
                     "offset_end": excerpt.chars().count(),
                 }));
             }
-            let status = value["status"].as_u64().unwrap_or_default();
-            let cache_status = value["cache_status"].as_str().unwrap_or_default();
-            let cacheable = (200..300).contains(&status)
-                && matches!(cache_status, "miss" | "hit" | "revalidated")
-                && value["trust"] == "external_untrusted"
-                && value["browser_profile"].is_null()
-                && value["transport"] == "http"
-                && value["manual_interaction_required"].is_null();
+            let cacheable = fetched_evidence_is_cacheable(&value);
             let source_truncated = value["truncated"].as_bool().unwrap_or(false)
                 || value["document"]["document_truncated"]
                     .as_bool()
@@ -113,6 +106,17 @@ impl KnowledgeEvidenceFetcher for BriefToolFetcher {
             })
         })
     }
+}
+
+fn fetched_evidence_is_cacheable(value: &serde_json::Value) -> bool {
+    let status = value["status"].as_u64().unwrap_or_default();
+    let cache_status = value["cache_status"].as_str().unwrap_or_default();
+    (200..300).contains(&status)
+        && matches!(cache_status, "miss" | "hit" | "revalidated")
+        && value["trust"] == "external_untrusted"
+        && value["browser_profile"].is_null()
+        && value["transport"] == "http"
+        && value["manual_interaction_required"].as_bool() == Some(false)
 }
 
 pub async fn run_knowledge_brief(
@@ -169,6 +173,9 @@ pub async fn run_knowledge_brief(
     crate::meta::knowledge_delta::run_knowledge_brief(&run, &query)
         .await
         .map_err(|failure| match failure {
+            crate::meta::knowledge_delta::BriefFailure::InvalidInput(message) => {
+                ToolError::Validation(message)
+            }
             crate::meta::knowledge_delta::BriefFailure::RetrievalFailed(message) => {
                 ToolError::execution_with_data(
                     ToolErrorCode::UpstreamFailed,
@@ -188,5 +195,21 @@ fn input_error(error: BriefInputError) -> ToolError {
             ToolError::invalid_semantic_value("refresh", &value, &["live", "prefer_live", "index"])
         }
         other => ToolError::Validation(other.message()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn ordinary_http_response_with_false_manual_interaction_flag_is_cacheable() {
+        let response = serde_json::json!({
+            "status": 200,
+            "cache_status": "miss",
+            "trust": "external_untrusted",
+            "browser_profile": null,
+            "transport": "http",
+            "manual_interaction_required": false,
+        });
+        assert!(super::fetched_evidence_is_cacheable(&response));
     }
 }

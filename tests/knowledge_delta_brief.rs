@@ -100,6 +100,10 @@ async fn after_cutoff_publication_is_emitted_and_labeled() {
     assert_eq!(deltas[0]["date_basis"], "publication");
     assert_eq!(deltas[0]["temporal_relationship"], "after_cutoff");
     assert_eq!(deltas[0]["trust"], "external_untrusted");
+    assert_eq!(
+        deltas[0]["payload_chars"].as_u64().unwrap() as usize,
+        deltas[0].to_string().chars().count()
+    );
     assert!(deltas[0]["id"].as_str().unwrap().starts_with("kdelta_"));
     let tools: Vec<_> = value["next_actions"]
         .as_array()
@@ -119,6 +123,56 @@ async fn after_cutoff_publication_is_emitted_and_labeled() {
     );
     assert!(projected.get("deltas").is_some());
     assert!(projected.get("model_resolution").is_some());
+}
+
+#[tokio::test]
+async fn configured_query_limit_bounds_topic_and_generated_hints() {
+    let mut cfg = AppConfig::default();
+    cfg.search.max_query_chars = 15;
+    let value = run_knowledge_brief(
+        state(vec![MockEngine::success("mock", vec![])], cfg.clone()),
+        brief("topic", Some(override_day("2024-06-01"))),
+    )
+    .await
+    .expect("bounded subqueries");
+    assert_eq!(value["coverage"]["subqueries"], 2);
+
+    let mut too_long = brief("0123456789abcdef", None);
+    too_long.refresh = Some("index".into());
+    assert!(run_knowledge_brief(
+        state(vec![MockEngine::success("mock", vec![])], cfg),
+        too_long,
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
+async fn emitted_payload_budget_includes_the_payload_chars_field() {
+    let engines = || {
+        vec![MockEngine::success(
+            "mock",
+            vec![dated("https://example.com/new", "2024-06-02")],
+        )]
+    };
+    let cutoff = Some(override_day("2024-06-01"));
+    let full = run_knowledge_brief(
+        state(engines(), AppConfig::default()),
+        brief("widget-runtime", cutoff.clone()),
+    )
+    .await
+    .expect("unbounded delta");
+    let delta_chars = full["deltas"][0]["payload_chars"].as_u64().unwrap() as usize;
+    assert_eq!(delta_chars, full["deltas"][0].to_string().chars().count());
+
+    let mut bounded = brief("widget-runtime", cutoff);
+    bounded.max_chars = Some(delta_chars - 1);
+    let limited = run_knowledge_brief(state(engines(), AppConfig::default()), bounded)
+        .await
+        .expect("delta beyond the budget is omitted");
+    assert!(limited["deltas"].as_array().unwrap().is_empty());
+    assert_eq!(limited["budget_exhausted"], true);
+    assert_eq!(limited["truncated"], false);
 }
 
 #[tokio::test]

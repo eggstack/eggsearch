@@ -1180,17 +1180,12 @@ async fn run_web_fetch_inner(
     if cache_policy == crate::core::fetch::FetchCachePolicy::Bypass {
         metadata.cache_status = CacheStatus::Bypassed;
     } else if metadata.cache_status == CacheStatus::default() {
-        let default_freshness = crate::fetch::cache::CacheFreshness::default();
-        metadata.cache_status = if should_cache_response(
+        metadata.cache_status = crate::fetch::cache::response_cache_status(
             resp.status,
             resp.content_type.as_deref(),
-            &default_freshness,
+            resp.response_headers.as_ref(),
             &scope,
-        ) {
-            CacheStatus::Miss
-        } else {
-            CacheStatus::NotCacheable
-        };
+        );
     }
 
     if !include_screenshot

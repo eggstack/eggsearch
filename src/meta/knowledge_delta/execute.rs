@@ -12,8 +12,9 @@ use crate::core::config::AppConfig;
 use crate::core::evidence_postprocess::build_retrieval_summary_from_attempts;
 use crate::core::identity::{canonicalize_url, knowledge_delta_id};
 use crate::core::knowledge_delta::{
-    calendar_date_from_provider_timestamp, classify, reported_after_cutoff, resolve_cutoff,
-    DateBasis, DatedEvidence, RefreshMode, ResolvedCutoff, EXCERPT_CHAR_CAP,
+    calendar_date_from_provider_timestamp, classify, parse_calendar_date, reported_after_cutoff,
+    resolve_cutoff, DateBasis, DatePrecision, DatedEvidence, RefreshMode, ResolvedCutoff,
+    EXCERPT_CHAR_CAP,
 };
 use crate::core::query::{Freshness, SearchDateRange, WebSearchRequest};
 use crate::core::retrieval_status::{
@@ -82,6 +83,7 @@ pub trait KnowledgeEvidenceFetcher: Send + Sync {
 
 #[derive(Debug)]
 pub enum BriefFailure {
+    InvalidInput(String),
     RetrievalFailed(String),
 }
 
@@ -97,6 +99,8 @@ pub async fn run_knowledge_brief(
     run: &BriefRun<'_>,
     query: &BriefQuery,
 ) -> Result<serde_json::Value, BriefFailure> {
+    let planned = plan_subqueries(&query.topic, None, run.config.search.max_query_chars)
+        .map_err(BriefFailure::InvalidInput)?;
     let cutoff = resolve_cutoff(
         query.model_id.as_deref(),
         query.caller_cutoff.as_ref(),
@@ -114,7 +118,6 @@ pub async fn run_knowledge_brief(
     let deadline = tokio::time::Instant::now()
         + std::time::Duration::from_millis(run.config.search.timeout_ms.max(1));
     if query.refresh.searches_live() {
-        let planned = plan_subqueries(&query.topic, None);
         for (index, planned_query) in planned.iter().enumerate() {
             let mut request = WebSearchRequest::new(planned_query.query.clone());
             request.max_results = Some(query.max_items);
@@ -216,7 +219,7 @@ pub async fn run_knowledge_brief(
                                 delta.id
                             ));
                         }
-                        delta.payload_chars = measure(delta);
+                        measure(delta);
                     }
                     Ok(Err(_)) => {
                         warnings.push(format!("bounded source fetch failed: {}", delta.id))
@@ -241,7 +244,9 @@ pub async fn run_knowledge_brief(
                 index_status = "open";
                 if query.refresh.reads_index() {
                     match index.lookup(&query.partition, &query.topic, query.max_items) {
-                        Ok(hits) => merge_index_hits(&mut deltas, hits, query.refresh),
+                        Ok(hits) => {
+                            merge_index_hits(&mut deltas, hits, query.refresh, cutoff.as_ref())
+                        }
                         Err(err) => {
                             index_status = "degraded";
                             warnings.push(err.message());
@@ -253,7 +258,7 @@ pub async fn run_knowledge_brief(
                     match index.expand(&query.partition, &from, query.max_items) {
                         Ok(hits) => {
                             let before = deltas.len();
-                            merge_expanded(&mut deltas, hits);
+                            merge_expanded(&mut deltas, hits, cutoff.as_ref());
                             expanded_count = deltas.len().saturating_sub(before);
                         }
                         Err(err) => warnings.push(err.message()),
@@ -309,7 +314,7 @@ pub async fn run_knowledge_brief(
         "total_payload_chars": emitted.iter().map(|item| item.payload_chars).sum::<usize>(),
         "retrieval_summary": summary,
         "coverage": {
-            "subqueries": if query.refresh.searches_live() { plan_subqueries(&query.topic, None).len() } else { 0 },
+            "subqueries": if query.refresh.searches_live() { planned.len() } else { 0 },
             "english_hints": true,
             "hints_are_not_translation": true,
             "date_range_applied": date_range_applied,
@@ -499,7 +504,7 @@ fn package_deltas(
             spans: Vec::new(),
             indexable: false,
         };
-        delta.payload_chars = measure(&delta);
+        measure(&mut delta);
         let _ = query;
         deltas.push(delta);
     }
@@ -508,7 +513,12 @@ fn package_deltas(
     deltas
 }
 
-fn merge_index_hits(deltas: &mut Vec<SelectedDelta>, hits: Vec<IndexHit>, refresh: RefreshMode) {
+fn merge_index_hits(
+    deltas: &mut Vec<SelectedDelta>,
+    hits: Vec<IndexHit>,
+    refresh: RefreshMode,
+    cutoff: Option<&ResolvedCutoff>,
+) {
     let live: BTreeSet<_> = deltas.iter().map(|item| item.id.clone()).collect();
     for hit in hits {
         if live.contains(&hit.record.kdelta_id) {
@@ -523,38 +533,67 @@ fn merge_index_hits(deltas: &mut Vec<SelectedDelta>, hits: Vec<IndexHit>, refres
         if refresh == RefreshMode::Live {
             continue;
         }
-        deltas.push(hit_delta(hit, "index_only", false));
+        let Some(cutoff) = cutoff else {
+            continue;
+        };
+        if let Some(delta) = hit_delta(hit, "index_only", false, cutoff) {
+            deltas.push(delta);
+        }
     }
     deltas.sort_by(|left, right| left.id.cmp(&right.id));
 }
 
-fn merge_expanded(deltas: &mut Vec<SelectedDelta>, hits: Vec<IndexHit>) {
+fn merge_expanded(
+    deltas: &mut Vec<SelectedDelta>,
+    hits: Vec<IndexHit>,
+    cutoff: Option<&ResolvedCutoff>,
+) {
     let known: BTreeSet<_> = deltas.iter().map(|item| item.id.clone()).collect();
     for hit in hits {
         if known.contains(&hit.record.kdelta_id) {
             continue;
         }
-        deltas.push(hit_delta(hit, "index_only", true));
+        let Some(cutoff) = cutoff else {
+            continue;
+        };
+        if let Some(delta) = hit_delta(hit, "index_only", true, cutoff) {
+            deltas.push(delta);
+        }
     }
     deltas.sort_by(|left, right| left.id.cmp(&right.id));
 }
 
-fn hit_delta(hit: IndexHit, provenance: &str, expanded: bool) -> SelectedDelta {
+fn hit_delta(
+    hit: IndexHit,
+    provenance: &str,
+    expanded: bool,
+    cutoff: &ResolvedCutoff,
+) -> Option<SelectedDelta> {
+    if hit.record.conflicted {
+        return None;
+    }
+    let basis = DateBasis::parse(&hit.record.basis)?;
+    let precision = DatePrecision::parse(&hit.record.precision)?;
+    let normalized = hit.record.normalized_date.as_deref()?;
+    let date = parse_calendar_date(normalized, precision)?;
+    let classified = classify(&[DatedEvidence { date, basis }], &cutoff.date);
+    let (basis, date) = reported_after_cutoff(&classified)?;
+    let normalized_date = date.normalized()?;
     let mut delta = SelectedDelta {
         id: hit.record.kdelta_id,
         excerpt: hit.record.excerpt,
         trust: "external_untrusted".into(),
         source_ids: vec![hit.record.source_id],
         urls: vec![hit.record.canonical_url],
-        date_basis: hit.record.basis,
-        precision: hit.record.precision,
-        temporal_relationship: hit.record.temporal_relationship,
-        conflicted: hit.record.conflicted,
+        date_basis: basis.as_str().into(),
+        precision: date.precision.as_str().into(),
+        temporal_relationship: "after_cutoff".into(),
+        conflicted: false,
         payload_chars: 0,
         provenance: provenance.to_string(),
         edge_source_ids: hit.edge_source_ids,
         expanded,
-        normalized_date: hit.record.normalized_date,
+        normalized_date: Some(normalized_date),
         excerpt_clipped: false,
         source_truncated: false,
         source_title: hit.record.title,
@@ -565,8 +604,8 @@ fn hit_delta(hit: IndexHit, provenance: &str, expanded: bool) -> SelectedDelta {
             .collect(),
         indexable: false,
     };
-    delta.payload_chars = measure(&delta);
-    delta
+    measure(&mut delta);
+    Some(delta)
 }
 
 fn index_records(deltas: &[SelectedDelta], partition: &str) -> Vec<IndexRecord> {
@@ -597,8 +636,14 @@ fn excerpt_for(card: &SourceCard) -> (String, bool) {
     (bounded, clipped)
 }
 
-fn measure(delta: &SelectedDelta) -> usize {
-    delta_json(delta).to_string().chars().count()
+fn measure(delta: &mut SelectedDelta) {
+    loop {
+        let measured = delta_json(delta).to_string().chars().count();
+        if measured == delta.payload_chars {
+            break;
+        }
+        delta.payload_chars = measured;
+    }
 }
 
 fn delta_json(delta: &SelectedDelta) -> serde_json::Value {

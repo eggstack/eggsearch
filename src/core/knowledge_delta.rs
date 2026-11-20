@@ -500,7 +500,7 @@ impl CutoffOrigin {
 
 #[derive(Clone, Debug)]
 pub struct SnapshotRow {
-    pub model_id: String,
+    pub model_id: &'static str,
     pub aliases: &'static [&'static str],
     pub date: &'static str,
     pub precision: DatePrecision,

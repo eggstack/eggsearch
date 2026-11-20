@@ -189,6 +189,123 @@ async fn generic_text_and_missing_edge_add_no_expanded_delta() {
 }
 
 #[tokio::test]
+async fn indexed_deltas_are_rechecked_against_the_current_cutoff() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = private_index_path(dir.path(), "index");
+    let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
+    let on_cutoff_url = "https://example.com/on-cutoff";
+    let on_cutoff = record(
+        "on-cutoff",
+        on_cutoff_url,
+        "widget-runtime",
+        "widget-runtime update published on the cutoff",
+        "widget-runtime release",
+    );
+    let after_url = "https://example.com/after-cutoff";
+    let mut after_cutoff = record(
+        "after-cutoff",
+        after_url,
+        "widget-runtime",
+        "widget-runtime update published after the cutoff",
+        "widget-runtime release",
+    );
+    after_cutoff.normalized_date = Some("2024-07-03".into());
+    after_cutoff.kdelta_id = knowledge_delta_id(after_url, "publication", "day", "2024-07-03");
+    let expected_id = after_cutoff.kdelta_id.clone();
+    index.retain(&[on_cutoff, after_cutoff]).unwrap();
+    drop(index);
+
+    let mut cfg = AppConfig::default();
+    cfg.knowledge_delta.index = index_config(&path);
+    let mut request = args(false);
+    request.refresh = Some("index".into());
+    request.cutoff_override = Some(CutoffOverrideInput {
+        date: "2024-07-02".into(),
+        precision: "day".into(),
+        source: "caller".into(),
+        reason: "recheck stored dates".into(),
+    });
+    let current = run_knowledge_brief(state(cfg.clone()), request.clone())
+        .await
+        .expect("current cutoff filters the index");
+    let deltas = current["deltas"].as_array().unwrap();
+    assert_eq!(deltas.len(), 1);
+    assert_eq!(deltas[0]["id"], expected_id);
+    assert_eq!(deltas[0]["temporal_relationship"], "after_cutoff");
+
+    request.cutoff_override = None;
+    let unknown = run_knowledge_brief(state(cfg), request)
+        .await
+        .expect("unknown cutoff does not make a temporal claim");
+    assert!(unknown["deltas"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn expanded_index_hits_are_rechecked_against_the_current_cutoff() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = private_index_path(dir.path(), "index");
+    let index = EvidenceIndex::open(&path, &index_config(&path)).unwrap();
+    let bridge_url = "https://example.com/bridge";
+    let mut bridge = record(
+        "bridge",
+        bridge_url,
+        "widget-runtime",
+        "pkg:widget-runtime references github.com/left-pad/wheels",
+        "widget-runtime",
+    );
+    bridge.normalized_date = Some("2024-07-02".into());
+    bridge.kdelta_id = knowledge_delta_id(bridge_url, "publication", "day", "2024-07-02");
+    let neighbor_url = "https://github.com/left-pad/wheels";
+    let mut neighbor = record(
+        "neighbor",
+        neighbor_url,
+        "left-pad",
+        "wheels published after the cutoff",
+        "github.com/left-pad/wheels",
+    );
+    neighbor.normalized_date = Some("2024-07-02".into());
+    neighbor.kdelta_id = knowledge_delta_id(neighbor_url, "publication", "day", "2024-07-02");
+    let expected_id = neighbor.kdelta_id.clone();
+    index.retain(&[bridge, neighbor]).unwrap();
+    drop(index);
+
+    let mut cfg = AppConfig::default();
+    cfg.knowledge_delta.index = index_config(&path);
+    let mut request = args(true);
+    request.refresh = Some("index".into());
+    request.cutoff_override = Some(CutoffOverrideInput {
+        date: "2024-07-01".into(),
+        precision: "day".into(),
+        source: "caller".into(),
+        reason: "initial cutoff".into(),
+    });
+    let before = run_knowledge_brief(state(cfg.clone()), request.clone())
+        .await
+        .expect("expanded hit is after the initial cutoff");
+    assert!(before["deltas"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == expected_id && item["expanded"] == true));
+
+    request.cutoff_override = Some(CutoffOverrideInput {
+        date: "2024-07-02".into(),
+        precision: "day".into(),
+        source: "caller".into(),
+        reason: "updated cutoff".into(),
+    });
+    let after = run_knowledge_brief(state(cfg), request)
+        .await
+        .expect("expanded hit is rechecked against the current cutoff");
+    assert!(after["deltas"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["id"] != expected_id));
+    assert_eq!(after["coverage"]["expansion"], "no_new_evidence");
+}
+
+#[tokio::test]
 async fn unchanged_direct_topic_result_is_not_counted_as_expansion() {
     let dir = tempfile::tempdir().unwrap();
     let path = private_index_path(dir.path(), "index");

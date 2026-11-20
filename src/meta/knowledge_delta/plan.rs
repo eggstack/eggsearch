@@ -13,7 +13,18 @@ pub struct PlannedQuery {
     pub english_hint: Option<&'static str>,
 }
 
-pub fn plan_subqueries(topic: &str, requested: Option<usize>) -> Vec<PlannedQuery> {
+pub fn plan_subqueries(
+    topic: &str,
+    requested: Option<usize>,
+    max_query_chars: usize,
+) -> Result<Vec<PlannedQuery>, String> {
+    if topic.trim().is_empty() {
+        return Err("topic must be non-empty".to_string());
+    }
+    let topic_chars = topic.chars().count();
+    if topic_chars > max_query_chars {
+        return Err(format!("topic must be <= {max_query_chars} characters"));
+    }
     let cap = requested
         .unwrap_or(DEFAULT_SUBQUERIES)
         .clamp(1, MAX_SUBQUERIES);
@@ -26,13 +37,17 @@ pub fn plan_subqueries(topic: &str, requested: Option<usize>) -> Vec<PlannedQuer
         if planned.len() >= cap {
             break;
         }
+        let query = format!("{topic} {hint}");
+        if query.chars().count() > max_query_chars {
+            continue;
+        }
         planned.push(PlannedQuery {
-            query: format!("{topic} {hint}"),
+            query,
             topic_unchanged: false,
             english_hint: Some(hint),
         });
     }
-    planned
+    Ok(planned)
 }
 
 pub fn day_search_window(
@@ -58,13 +73,24 @@ mod tests {
 
     #[test]
     fn topic_is_first_and_unchanged() {
-        let planned = plan_subqueries("free-threaded Python", None);
+        let planned = plan_subqueries("free-threaded Python", None, 512).unwrap();
         assert_eq!(planned.len(), 4);
         assert_eq!(planned[0].query, "free-threaded Python");
         assert!(planned[0].topic_unchanged);
         assert!(planned[1].query.ends_with(" release"));
-        assert_eq!(plan_subqueries("topic", Some(1)).len(), 1);
-        assert_eq!(plan_subqueries("topic", Some(99)).len(), 4);
+        assert_eq!(plan_subqueries("topic", Some(1), 512).unwrap().len(), 1);
+        assert_eq!(plan_subqueries("topic", Some(99), 512).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn topic_and_generated_hints_respect_the_configured_query_bound() {
+        let planned = plan_subqueries("topic", None, 15).unwrap();
+        assert_eq!(planned.len(), 2);
+        assert_eq!(planned[0].query, "topic");
+        assert!(planned
+            .iter()
+            .all(|query| query.query.chars().count() <= 15));
+        assert!(plan_subqueries("0123456789abcdef", None, 15).is_err());
     }
 
     #[test]

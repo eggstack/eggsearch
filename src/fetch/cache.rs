@@ -745,6 +745,31 @@ pub fn should_cache_response(
     true
 }
 
+pub fn response_cache_status(
+    status: u16,
+    content_type: Option<&str>,
+    response_headers: Option<&HashMap<String, String>>,
+    scope: &CacheScope,
+) -> CacheStatus {
+    let mut headers = http::HeaderMap::new();
+    if let Some(response_headers) = response_headers {
+        for (name, value) in response_headers {
+            if let (Ok(name), Ok(value)) = (
+                http::header::HeaderName::from_bytes(name.as_bytes()),
+                http::header::HeaderValue::from_str(value),
+            ) {
+                headers.insert(name, value);
+            }
+        }
+    }
+    let (freshness, _) = CacheFreshness::from_headers(&headers);
+    if should_cache_response(status, content_type, &freshness, scope) {
+        CacheStatus::Miss
+    } else {
+        CacheStatus::NotCacheable
+    }
+}
+
 pub fn build_request_conditional_headers(validators: &CacheValidators) -> Vec<(String, String)> {
     let mut headers = Vec::new();
     if let Some(ref etag) = validators.etag {
