@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6549 | 28 |
-| `--features mock` | 6522 | 5 |
+| `--all-features` | 6553 | 28 |
+| `--features mock` | 6526 | 5 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -34,7 +34,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
 | `config_validation` | None | Config rules and validation, including `[search]` search-cache TTL/entry bounds |
 | `keyless_core` | None | Keyless-core runtime invariant |
-| `local_workspace_integration` | `mock` | Local workspace search backend, local PDF extension/magic detection, size budget, feature/config gates, explicit empty outcome, trust/sanitization, non-PDF binary rejection, relevance admission (role bonuses never admit), scoped include_local, truncation meaning, second-pass content and symbol recall beyond the first candidate window, bounded git-hint versus walk parity, exhausted-versus-cut-short signalling, and linked-worktree shared-remote identity parity with a normal clone |
+| `local_workspace_integration` | `mock` | Local workspace search backend, local PDF extension/magic detection, size budget, feature/config gates, explicit empty outcome, trust/sanitization, non-PDF binary rejection, relevance admission (role bonuses never admit), scoped include_local, truncation meaning, second-pass content and symbol recall beyond the first candidate window, bounded git-hint versus walk parity, exhausted-versus-cut-short signalling, linked-worktree shared-remote identity parity with a normal clone, a content-only match found after a cold inventory build that consumed more than the request budget, and timeout and file-cap outcomes that state the reason instead of claiming a completed no-match |
 | `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
 | `retrieval_attempt_ledger` | None | Attempt ledger validation |
 | `retrieval_quality` | `mock` (live observation and recorder ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, candidate-snapshot replay through the production selection path (tier-1 synthetic, tier-2 recorded, tier-3 recorded into `target/snapshots/`), duplicate-slot/domain/authoritative-survival metrics, three seeded negative controls, derived-intent rollout gate, shipped-default-set routing gate (one case per disclosed intent, keyword-query admission predicate, re-pointed `security-nvd-first` negative control), opt-in bounded provider observations |

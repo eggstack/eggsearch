@@ -157,6 +157,15 @@ fn mode_off_counting_state(
     calls: Arc<AtomicUsize>,
     other_calls: Arc<AtomicUsize>,
 ) -> Arc<ServerState> {
+    mode_off_counting_state_with_file_cap(root, calls, other_calls, 50_000)
+}
+
+fn mode_off_counting_state_with_file_cap(
+    root: &std::path::Path,
+    calls: Arc<AtomicUsize>,
+    other_calls: Arc<AtomicUsize>,
+    max_indexed_files: usize,
+) -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.search.mode = Mode::Off;
     cfg.search.providers.insert("mock_a".into(), true);
@@ -166,7 +175,7 @@ fn mode_off_counting_state(
     cfg.local.respect_gitignore = true;
     cfg.local.follow_symlinks = false;
     cfg.local.max_file_bytes = 1_048_576;
-    cfg.local.max_indexed_files = 50_000;
+    cfg.local.max_indexed_files = max_indexed_files;
     let adapter = MetadataSearchAdapter::from_engines(
         vec![
             Arc::new(CountingEngine {
@@ -436,6 +445,29 @@ fn linked_worktree_resolves_the_same_remote_identity_as_main_checkout() {
             main_identity.current_commit.as_deref(),
         )
     );
+}
+
+fn result_count(v: &serde_json::Value) -> usize {
+    v["groups"]
+        .as_array()
+        .into_iter()
+        .flat_map(|groups| groups.iter())
+        .map(|group| {
+            group["results"]
+                .as_array()
+                .map_or(0, |results| results.len())
+        })
+        .sum()
+}
+
+fn has_warning(v: &serde_json::Value, code: &str) -> bool {
+    v["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().any(|warning| {
+            warning["message"]
+                .as_str()
+                .is_some_and(|message| message.contains(code))
+        })
+    })
 }
 
 fn count_entries(v: &serde_json::Value) -> usize {
@@ -790,13 +822,100 @@ async fn local_repo_search_finds_source_files() {
         v["providers_queried"],
         serde_json::json!(["local_workspace"])
     );
-    assert!(v["groups"].as_array().is_some_and(|groups| {
+    let matched_lib = v["groups"].as_array().is_some_and(|groups| {
         groups.iter().any(|group| {
-            group["results"]
-                .as_array()
-                .is_some_and(|results| !results.is_empty())
+            group["results"].as_array().is_some_and(|results| {
+                results.iter().any(|result| {
+                    result["url"]
+                        .as_str()
+                        .is_some_and(|url| url.ends_with("lib.rs"))
+                })
+            })
         })
-    }));
+    });
+    assert!(
+        matched_lib,
+        "a content-only match in lib.rs must be returned: {v}"
+    );
+    assert!(
+        !has_warning(&v, "local_search_timeout"),
+        "the content pass must not run out of budget: {v}"
+    );
+}
+
+#[tokio::test]
+async fn local_repo_search_reports_timeout_instead_of_no_match() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    for index in 0..200 {
+        let marker = if index == 199 {
+            "pub fn m043_tail_marker() -> i32 { 7 }"
+        } else {
+            "pub fn filler() -> i32 { 0 }"
+        };
+        std::fs::write(root.join(format!("f{index:03}.rs")), marker).unwrap();
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
+    let v = run_repo_search(
+        mode_off_counting_state(root, calls.clone(), other_calls.clone()),
+        RepoSearchArgs {
+            query: "m043_tail_marker".into(),
+            timeout_ms: Some(1),
+            providers: vec![],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("local repo_search");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(result_count(&v), 0);
+    assert!(
+        has_warning(&v, "local_search_timeout"),
+        "an expired scan budget must be stated: {v}"
+    );
+    assert!(
+        !has_warning(&v, "local_search_completed_no_matches"),
+        "an incomplete scan must not claim a completed no-match: {v}"
+    );
+}
+
+#[tokio::test]
+async fn local_repo_search_reports_file_cap_truncation() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(root.join("alpha.rs"), "pub fn alpha() -> i32 { 1 }").unwrap();
+    std::fs::write(root.join("beta.rs"), "pub fn beta() -> i32 { 2 }").unwrap();
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
+    let v = run_repo_search(
+        mode_off_counting_state_with_file_cap(root, calls.clone(), other_calls.clone(), 1),
+        RepoSearchArgs {
+            query: "alpha".into(),
+            timeout_ms: Some(10_000),
+            providers: vec![],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("local repo_search");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    assert!(
+        has_warning(&v, "local_search_truncated"),
+        "a file-capped scan must be stated as truncated: {v}"
+    );
+    assert!(
+        !has_warning(&v, "local_search_completed_no_matches"),
+        "a capped scan must not claim a completed no-match: {v}"
+    );
 }
 
 #[tokio::test]

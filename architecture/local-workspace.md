@@ -94,7 +94,11 @@ completed; `ScanOutcome::CutShort` means a scan bound stopped it.
 matches, or inventory truncation. A completed scan with zero cards reports
 `local_search_completed_no_matches`; timeout remains a separate warning and
 prevents the no-match warning. Bounded first-pass candidate selection alone is
-not truncation when the second pass completes. The `SymbolBackend` trait
+not truncation when the second pass completes. The request deadline bounds the
+scan, not the inventory build: a cold build is bounded by
+`INVENTORY_BUILD_TIMEOUT`/`GIT_OP_TIMEOUT` and the scan clock starts when it
+finishes, so a one-time build cannot consume a caller's whole budget and turn a
+match into an empty timeout result. The `SymbolBackend` trait
 defines `find_symbols()`, `capabilities()`, `find_definition()`,
 `find_references()` (defaulting to `local_symbols::find_references()`), and
 `find_enclosing()` / `find_implementors()` where supported.
@@ -127,7 +131,9 @@ The second-pass literal hint is built with bounded `git grep -l -z -i -F
 `--no-exclude-standard`, and `-e` patterns for the lowercased query, query
 tokens (up to eight patterns), and symbol hint. Its 2s configured maximum is
 further capped to half of the 1.5s second-pass budget for each hint, with a
-4 MiB stdout cap. NUL-separated paths are only a skip filter: every admitted entry
+4 MiB stdout cap. The hint is skipped when fewer than 32 candidates remain
+unscanned (`GIT_HINT_MIN_CANDIDATES`), because walking a small set costs less
+than one git spawn. NUL-separated paths are only a skip filter: every admitted entry
 still passes `validate_entry()` and `safe_read_file()`. A path outside the hint
 set remains eligible if a query token appears in its lowercased relative path
 or a path/file hint was provided. Non-git roots, spawn/status/timeout/cap

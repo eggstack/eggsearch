@@ -6,8 +6,8 @@ use std::time::Duration;
 use crate::process::{run_bounded_command, CommandTermination};
 
 pub(crate) use crate::core::local::{
-    GIT_GREP_MAX_PATTERNS, GIT_GREP_STDOUT_CAP, GIT_GREP_TIMEOUT, SECOND_PASS_MAX_BYTES,
-    SECOND_PASS_MAX_FILES, SECOND_PASS_TIME_BUDGET,
+    GIT_GREP_MAX_PATTERNS, GIT_GREP_STDOUT_CAP, GIT_GREP_TIMEOUT, GIT_HINT_MIN_CANDIDATES,
+    SECOND_PASS_MAX_BYTES, SECOND_PASS_MAX_FILES, SECOND_PASS_TIME_BUDGET,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +35,10 @@ pub(crate) fn should_run_second_pass(
             || path_hint.is_some_and(|hint| !hint.is_empty())
             || file_hint.is_some_and(|hint| !hint.is_empty())
             || symbol_hint.is_some_and(|hint| !hint.is_empty()))
+}
+
+pub(crate) fn should_use_git_hint(unscanned_entries: usize) -> bool {
+    unscanned_entries >= GIT_HINT_MIN_CANDIDATES
 }
 
 pub(crate) fn should_skip_git_candidate(
@@ -120,4 +124,16 @@ pub(crate) fn git_literal_hint(
             .map(|path| String::from_utf8_lossy(path).into_owned())
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_hint_is_skipped_below_the_candidate_threshold() {
+        assert!(!should_use_git_hint(0));
+        assert!(!should_use_git_hint(GIT_HINT_MIN_CANDIDATES - 1));
+        assert!(should_use_git_hint(GIT_HINT_MIN_CANDIDATES));
+    }
 }

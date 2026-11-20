@@ -817,3 +817,44 @@ fn test_search_auto_builds_inventory_on_first_search() {
     );
     assert!(telemetry.cold_build, "first search should be a cold build");
 }
+
+#[test]
+fn content_pass_budget_starts_after_the_inventory_build() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(root.join("lib.rs"), "pub fn helper() -> i32 { 42 }").unwrap();
+    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+
+    let backend = LocalWorkspaceBackend {
+        config: LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        },
+        roots: vec![(0, root.to_path_buf())],
+        inventory_cache: Arc::new(RwLock::new(None)),
+        symbol_backend: Arc::new(RegexSymbolBackend),
+    };
+    let start = Instant::now().checked_sub(Duration::from_secs(10)).unwrap();
+
+    let result = LocalWorkspaceBackend::search_sync(
+        &backend.config,
+        &backend.roots,
+        "helper",
+        None,
+        None,
+        None,
+        None,
+        10,
+        Duration::from_millis(500),
+        start,
+        &backend.inventory_cache,
+        &RegexSymbolBackend,
+    );
+
+    assert!(
+        !result.matches.is_empty(),
+        "pre-scan elapsed time must not consume the content-pass budget"
+    );
+    assert!(!result.timed_out, "the content pass must complete");
+}

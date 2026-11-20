@@ -314,6 +314,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `duckduckgo` skips sponsored containers (`result--ad`) instead of returning
   paid placements as organic results, and `startpage` classifies the Anubis
   challenge page (`#anubis_challenge`) as `blocked` instead of `parse_error`.
+- A cold local `repo_search` no longer spends its whole request budget on the
+  first inventory build: the scan deadline starts when that build finishes, and
+  the build keeps its own 5-second git bound. A content-only query in a small
+  checkout therefore returns its match on a loaded machine instead of an empty
+  result labelled `local_search_timeout`. The second pass also skips its
+  `git grep` hint when fewer than 32 candidates remain unscanned, since walking
+  a small set costs less than one git spawn.
 
 ## [0.4.4] - 2026-10-19
 

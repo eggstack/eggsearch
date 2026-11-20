@@ -53,8 +53,10 @@ the requested results, one bounded second pass scans the remaining inventory in
 deterministic relative-path order and fills the remaining slots. A bounded
 `git grep` literal hint skips files that cannot match when the root is a git
 checkout; every candidate is still validated and read locally, and a git failure
-falls back to the walk. The pass stops at the result cap, 512 files read, 8 MiB of
-content, 1.5 seconds, or the request deadline.
+falls back to the walk, and the hint is skipped when fewer than 32 candidates
+remain unscanned. The pass stops at the result cap, 512 files read, 8 MiB of
+content, 1.5 seconds, or the request deadline. The deadline bounds the scan; a
+one-time inventory build is bounded separately and does not consume it.
 
 A completed scan with no matches carries `local_search_completed_no_matches`;
 `local_search_truncated` means a scan bound cut the scan short, admitted matches

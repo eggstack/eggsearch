@@ -715,6 +715,7 @@ impl LocalWorkspaceBackend {
             cache.and_then(|c| c.as_ref().map(Arc::clone))
         };
         let mut second_pass_inventory = None;
+        let mut scan_start = start;
 
         if let Some(inv) = inventory
             .as_ref()
@@ -736,7 +737,7 @@ impl LocalWorkspaceBackend {
             };
 
             for root_inv in &inv.roots {
-                if start.elapsed() > timeout {
+                if scan_start.elapsed() > timeout {
                     timed_out = true;
                     break;
                 }
@@ -753,7 +754,7 @@ impl LocalWorkspaceBackend {
                 telemetry.candidates_filtered += candidates.len();
 
                 for entry in candidates {
-                    if start.elapsed() > timeout {
+                    if scan_start.elapsed() > timeout {
                         timed_out = true;
                         break;
                     }
@@ -944,6 +945,7 @@ impl LocalWorkspaceBackend {
             let build_start = Instant::now();
             let new_inventory = Arc::new(build_inventory(config, roots));
             let build_time = build_start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
+            scan_start = Instant::now();
 
             let total_entries: usize = new_inventory.roots.iter().map(|r| r.entry_count).sum();
             let inventory_truncated = new_inventory.roots.iter().any(|root| root.truncated);
@@ -953,7 +955,7 @@ impl LocalWorkspaceBackend {
                 telemetry.inventory_build_time_ms = build_time;
 
                 for &(root_index, ref root_path) in roots {
-                    if start.elapsed() > timeout {
+                    if scan_start.elapsed() > timeout {
                         timed_out = true;
                         break;
                     }
@@ -978,7 +980,7 @@ impl LocalWorkspaceBackend {
                         &mut matches,
                         &mut files_scanned,
                         max_results,
-                        &start,
+                        &scan_start,
                         timeout,
                         &mut timed_out,
                         &mut truncated,
@@ -1012,7 +1014,7 @@ impl LocalWorkspaceBackend {
                     telemetry.untracked_file_count = Some(total_untracked);
                 }
                 for root_inv in &inv.roots {
-                    if start.elapsed() > timeout {
+                    if scan_start.elapsed() > timeout {
                         timed_out = true;
                         break;
                     }
@@ -1029,7 +1031,7 @@ impl LocalWorkspaceBackend {
                     telemetry.candidates_filtered += candidates.len();
 
                     for entry in candidates {
-                        if start.elapsed() > timeout {
+                        if scan_start.elapsed() > timeout {
                             timed_out = true;
                             break;
                         }
@@ -1238,7 +1240,7 @@ impl LocalWorkspaceBackend {
                     symbol_hint,
                     max_results,
                     timeout,
-                    &start,
+                    &scan_start,
                     &mut scanned_paths,
                     &mut matches,
                     &mut files_scanned,
@@ -1310,32 +1312,40 @@ impl LocalWorkspaceBackend {
 
             let mut entries: Vec<_> = root_inv.entries.iter().collect();
             entries.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
-            if !entries.iter().any(|entry| {
-                !scanned_paths.contains(&(root_inv.root_index, entry.relative_path.clone()))
-            }) {
+            let unscanned = entries
+                .iter()
+                .filter(|entry| {
+                    !scanned_paths.contains(&(root_inv.root_index, entry.relative_path.clone()))
+                })
+                .count();
+            if unscanned == 0 {
                 continue;
             }
 
-            let pass_remaining = SECOND_PASS_TIME_BUDGET.saturating_sub(pass_start.elapsed());
-            let request_remaining = timeout.saturating_sub(start.elapsed());
-            let git_timeout = GIT_GREP_TIMEOUT
-                .min(SECOND_PASS_TIME_BUDGET / 2)
-                .min(pass_remaining)
-                .min(request_remaining);
-            if git_timeout.is_zero() {
-                if start.elapsed() > timeout {
-                    *timed_out = true;
+            let hint_paths = if scan::should_use_git_hint(unscanned) {
+                let pass_remaining = SECOND_PASS_TIME_BUDGET.saturating_sub(pass_start.elapsed());
+                let request_remaining = timeout.saturating_sub(start.elapsed());
+                let git_timeout = GIT_GREP_TIMEOUT
+                    .min(SECOND_PASS_TIME_BUDGET / 2)
+                    .min(pass_remaining)
+                    .min(request_remaining);
+                if git_timeout.is_zero() {
+                    if start.elapsed() > timeout {
+                        *timed_out = true;
+                    }
+                    return ScanOutcome::CutShort;
                 }
-                return ScanOutcome::CutShort;
-            }
-            let hint_paths = scan::git_literal_hint(
-                &root_inv.root_path,
-                query_lower,
-                query_tokens,
-                symbol_hint,
-                config.respect_gitignore,
-                git_timeout,
-            );
+                scan::git_literal_hint(
+                    &root_inv.root_path,
+                    query_lower,
+                    query_tokens,
+                    symbol_hint,
+                    config.respect_gitignore,
+                    git_timeout,
+                )
+            } else {
+                None
+            };
             if start.elapsed() > timeout {
                 *timed_out = true;
                 return ScanOutcome::CutShort;
