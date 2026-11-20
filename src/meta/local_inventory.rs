@@ -8,6 +8,7 @@
 //! cloning, indexing, or running build commands.
 
 use std::collections::HashSet;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -19,6 +20,8 @@ use crate::core::local::LocalConfig;
 
 const GIT_OP_TIMEOUT: Duration = Duration::from_secs(5);
 const GIT_OP_STDOUT_CAP: usize = 64 * 1024;
+const GIT_POINTER_READ_CAP: usize = 4 * 1024;
+const GIT_CONFIG_READ_CAP: usize = 256 * 1024;
 
 fn run_bounded(cmd: &mut Command) -> Option<(bool, Vec<u8>)> {
     crate::meta::local_inventory_cache::run_bounded_for_discovery(
@@ -325,6 +328,75 @@ pub fn detect_git_worktree(path: &Path) -> bool {
     git_path.exists()
 }
 
+fn is_regular_file(path: &Path) -> bool {
+    std::fs::symlink_metadata(path)
+        .ok()
+        .is_some_and(|metadata| metadata.file_type().is_file())
+}
+
+fn read_bounded_git_file(path: &Path, max_bytes: usize) -> Option<String> {
+    use std::io::Read;
+
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if !metadata.file_type().is_file() || metadata.len() > max_bytes as u64 {
+        return None;
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path).ok()?;
+    let mut content = String::new();
+    file.take(max_bytes as u64 + 1)
+        .read_to_string(&mut content)
+        .ok()?;
+    (content.len() <= max_bytes).then_some(content)
+}
+
+fn resolve_git_config_path(repo_root: &Path) -> Option<PathBuf> {
+    let git_path = repo_root.join(".git");
+    let git_dir = resolve_git_dir(repo_root)?;
+    let git_dir = git_dir.canonicalize().unwrap_or(git_dir);
+    let git_config_path = git_dir.join("config");
+
+    if git_path.is_dir() {
+        return Some(git_config_path);
+    }
+
+    if std::fs::symlink_metadata(&git_path)
+        .ok()
+        .is_some_and(|metadata| metadata.file_type().is_file())
+    {
+        if is_regular_file(&git_config_path) {
+            return Some(git_config_path);
+        }
+        if let Some(commondir) =
+            read_bounded_git_file(&git_dir.join("commondir"), GIT_POINTER_READ_CAP)
+        {
+            let commondir = commondir.trim();
+            if !commondir.is_empty() && !commondir.contains('\0') {
+                let common_path = Path::new(commondir);
+                let common_path = if common_path.is_absolute() {
+                    common_path.to_path_buf()
+                } else {
+                    git_dir.join(common_path)
+                };
+                if let Ok(common_dir) = common_path.canonicalize() {
+                    let common_config_path = common_dir.join("config");
+                    if is_regular_file(&common_config_path) {
+                        return Some(common_config_path);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(git_config_path)
+}
+
 /// Resolve the actual `.git` directory for a repository.
 ///
 /// For normal repositories, `.git` is a directory. For worktrees and
@@ -339,17 +411,14 @@ pub(crate) fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
     if git_path.is_dir() {
         return Some(git_path);
     }
-    // .git is a file (gitfile) — read the gitdir reference
-    let content = std::fs::read_to_string(&git_path).ok()?;
+    let content = read_bounded_git_file(&git_path, GIT_POINTER_READ_CAP)?;
     let gitdir_line = content.lines().find(|l| l.starts_with("gitdir:"))?;
     let git_dir_str = gitdir_line.strip_prefix("gitdir:")?.trim();
-    // Resolve relative to the repo root
     let resolved = if Path::new(git_dir_str).is_absolute() {
         PathBuf::from(git_dir_str)
     } else {
         repo_root.join(git_dir_str)
     };
-    // Canonicalize if possible, otherwise use as-is
     resolved.canonicalize().ok().or(Some(resolved))
 }
 
@@ -360,14 +429,13 @@ pub(crate) fn resolve_git_dir(repo_root: &Path) -> Option<PathBuf> {
 /// worktree/submodule checkouts (`.git` is a gitfile).
 /// Returns a list of `(remote_name, normalized_url)` pairs.
 pub fn read_remotes_from_config(repo_root: &Path) -> Vec<(String, NormalizedRepoId)> {
-    let git_dir = match resolve_git_dir(repo_root) {
-        Some(d) => d,
+    let config_path = match resolve_git_config_path(repo_root) {
+        Some(path) => path,
         None => return Vec::new(),
     };
-    let config_path = git_dir.join("config");
-    let content = match std::fs::read_to_string(&config_path) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
+    let content = match read_bounded_git_file(&config_path, GIT_CONFIG_READ_CAP) {
+        Some(content) => content,
+        None => return Vec::new(),
     };
 
     let mut remotes = Vec::new();

@@ -291,6 +291,46 @@ fn structured_search_telemetry_distinguishes_provenance() {
 }
 
 #[test]
+fn linked_worktree_structured_search_keeps_repository_relative_path() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("linked");
+    std::fs::create_dir_all(&root).unwrap();
+    write_rust_workspace(&root);
+
+    let common_dir = parent.path().join("common.git");
+    let git_dir = common_dir.join("worktrees/linked");
+    std::fs::create_dir_all(&git_dir).unwrap();
+    std::fs::write(
+        common_dir.join("config"),
+        "[remote \"origin\"]\n\turl = https://github.com/test-owner/test-repo.git\n",
+    )
+    .unwrap();
+    std::fs::write(git_dir.join("commondir"), "../..\n").unwrap();
+    std::fs::write(
+        root.join(".git"),
+        format!("gitdir: {}\n", git_dir.display()),
+    )
+    .unwrap();
+
+    let backend = LocalWorkspaceBackend::new(structured_config(&root)).unwrap();
+    let req = LocalSearchRequest {
+        query: "Engine".to_string(),
+        symbol: Some("Engine".to_string()),
+        timeout_ms: Some(10_000),
+        ..Default::default()
+    };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let result = rt.block_on(backend.search(&req));
+    let hit = result
+        .matches
+        .iter()
+        .find(|matched| matched.file.relative_path == "src/lib.rs")
+        .expect("structured match should retain its repository-relative path");
+    assert_eq!(hit.matched_symbol.as_deref(), Some("Engine"));
+    assert_eq!(hit.symbol_provenance.as_deref(), Some("structured"));
+}
+
+#[test]
 fn no_workspace_code_execution_in_parsing() {
     let text = "fn evil() { std::process::Command::new(\"rm\").spawn(); }\n";
     let start = Instant::now();

@@ -348,6 +348,96 @@ fn git_add_and_commit(root: &std::path::Path, msg: &str) {
         .expect("git commit");
 }
 
+#[test]
+fn linked_worktree_resolves_the_same_remote_identity_as_main_checkout() {
+    let parent = TempDir::new().unwrap();
+    let main = parent.path().join("main");
+    let linked = parent.path().join("linked");
+    std::fs::create_dir_all(&main).unwrap();
+    std::fs::write(main.join("lib.rs"), "pub fn linked_identity_fixture() {}").unwrap();
+    init_git_repo(&main);
+    git_add_and_commit(&main, "linked identity fixture");
+
+    let remote = std::process::Command::new("git")
+        .args([
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/test-owner/test-repo.git",
+        ])
+        .current_dir(&main)
+        .output()
+        .unwrap();
+    assert!(remote.status.success());
+    let worktree = std::process::Command::new("git")
+        .args(["worktree", "add", "-b", "linked-fixture"])
+        .arg(&linked)
+        .arg("HEAD")
+        .current_dir(&main)
+        .output()
+        .unwrap();
+    assert!(worktree.status.success());
+
+    let gitfile = std::fs::read_to_string(linked.join(".git")).unwrap();
+    let gitdir = gitfile
+        .lines()
+        .find_map(|line| line.strip_prefix("gitdir: "))
+        .map(std::path::PathBuf::from)
+        .unwrap();
+    assert!(!gitdir.join("config").exists());
+    assert!(gitdir.join("commondir").is_file());
+
+    let canonical_main = main.canonicalize().unwrap();
+    let canonical_linked = linked.canonicalize().unwrap();
+    let config = eggsearch::core::local::LocalConfig {
+        enabled: true,
+        roots: vec![main, linked],
+        ..Default::default()
+    };
+    let identities = eggsearch::meta::local_inventory::discover_local_repos(&config, 0);
+    let main_identity = identities
+        .iter()
+        .find(|identity| identity.root_path == canonical_main)
+        .unwrap();
+    let linked_identity = identities
+        .iter()
+        .find(|identity| identity.root_path == canonical_linked)
+        .unwrap();
+
+    assert_eq!(linked_identity.matched_host, main_identity.matched_host);
+    assert_eq!(
+        linked_identity.matched_host,
+        Some(eggsearch::core::code_metadata::CodeHost::Github)
+    );
+    assert_eq!(linked_identity.matched_owner, main_identity.matched_owner);
+    assert_eq!(linked_identity.matched_owner.as_deref(), Some("test-owner"));
+    assert_eq!(linked_identity.matched_repo, main_identity.matched_repo);
+    assert_eq!(linked_identity.matched_repo.as_deref(), Some("test-repo"));
+    assert_eq!(linked_identity.remotes, main_identity.remotes);
+    assert!(linked_identity.matches(
+        Some(&eggsearch::core::code_metadata::CodeHost::Github),
+        "test-owner",
+        "test-repo"
+    ));
+    assert_eq!(linked_identity.worktree_path, linked_identity.root_path);
+    assert_eq!(
+        linked_identity.workspace_id,
+        eggsearch::meta::local_inventory::compute_workspace_id(
+            &linked_identity.root_path,
+            &linked_identity.remotes,
+            linked_identity.current_commit.as_deref(),
+        )
+    );
+    assert_eq!(
+        main_identity.workspace_id,
+        eggsearch::meta::local_inventory::compute_workspace_id(
+            &main_identity.root_path,
+            &main_identity.remotes,
+            main_identity.current_commit.as_deref(),
+        )
+    );
+}
+
 fn count_entries(v: &serde_json::Value) -> usize {
     let root_count = v["root_entries"].as_array().map_or(0, |a| a.len());
     let entries_count = v["entries"].as_array().map_or(0, |a| a.len());

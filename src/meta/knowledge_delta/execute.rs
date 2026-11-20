@@ -6,15 +6,15 @@ use chrono::Utc;
 
 use super::discovery::extract_subjects;
 use super::index::{database_path, EvidenceIndex, IndexHit, IndexRecord};
-use super::plan::{day_search_window, plan_subqueries};
+use super::plan::{day_search_window, plan_subqueries, EmptyStateReason};
 use super::snapshot::BUNDLED_CUTOFF_SNAPSHOT;
 use crate::core::config::AppConfig;
 use crate::core::evidence_postprocess::build_retrieval_summary_from_attempts;
 use crate::core::identity::{canonicalize_url, knowledge_delta_id};
 use crate::core::knowledge_delta::{
-    calendar_date_from_provider_timestamp, classify, parse_calendar_date, reported_after_cutoff,
-    resolve_cutoff, DateBasis, DatePrecision, DatedEvidence, RefreshMode, ResolvedCutoff,
-    EXCERPT_CHAR_CAP,
+    calendar_date_from_provider_timestamp, classify, compare_cutoff, parse_calendar_date,
+    reported_after_cutoff, resolve_cutoff, DateBasis, DatePrecision, DatedEvidence, RefreshMode,
+    ResolvedCutoff, TemporalRelationship, EXCERPT_CHAR_CAP,
 };
 use crate::core::query::{Freshness, SearchDateRange, WebSearchRequest};
 use crate::core::retrieval_status::{
@@ -74,6 +74,17 @@ pub struct FetchedEvidence {
     pub source_truncated: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct DateAccounting {
+    selected_cards: usize,
+    dated: usize,
+    undated: usize,
+    at_or_before_cutoff: usize,
+    not_after_cutoff: usize,
+}
+
+const MAX_REPORTED_PROVIDERS: usize = 64;
+
 pub type EvidenceFetchFuture<'a> =
     Pin<Box<dyn Future<Output = Result<FetchedEvidence, String>> + Send + 'a>>;
 
@@ -114,6 +125,7 @@ pub async fn run_knowledge_brief(
     let mut attempts = RetrievalAttemptSet::new();
     let mut warnings = Vec::new();
     let mut cards = Vec::new();
+    let mut selected_provider_ids = BTreeSet::new();
     let mut providers_ok = 0usize;
     let deadline = tokio::time::Instant::now()
         + std::time::Duration::from_millis(run.config.search.timeout_ms.max(1));
@@ -157,6 +169,7 @@ pub async fn run_knowledge_brief(
                     warnings.push(line);
                 }
             }
+            selected_provider_ids.extend(response.providers_queried.iter().cloned());
             record_attempts(
                 &mut attempts,
                 index,
@@ -177,7 +190,23 @@ pub async fn run_knowledge_brief(
         }
     }
     let selected = select_cards(&cards);
+    let date_accounting = account_dates(&selected, cutoff.as_ref());
     let mut deltas = package_deltas(&selected, cutoff.as_ref(), query, "live_checked");
+    let provider_descriptors = run.adapter.provider_status();
+    let selected_providers: Vec<String> = selected_provider_ids
+        .into_iter()
+        .take(MAX_REPORTED_PROVIDERS)
+        .collect();
+    let timestamp_capable_providers: Vec<String> = selected_providers
+        .iter()
+        .filter(|provider_id| {
+            provider_descriptors.iter().any(|descriptor| {
+                descriptor.id.as_str() == provider_id.as_str()
+                    && descriptor.capabilities.supports_result_timestamps
+            })
+        })
+        .cloned()
+        .collect();
     let fetch_candidates = deltas.len();
     let mut fetch_invoked = false;
     let mut fetch_attempted = 0usize;
@@ -235,6 +264,7 @@ pub async fn run_knowledge_brief(
     }
     let mut index_status = "not_opened";
     let mut expanded_count = 0usize;
+    let mut index_matches = 0usize;
     let reads_index = query.refresh.reads_index() || query.related_topics;
     let writes_index = query.retain;
     let mut index_to_retain = None;
@@ -245,7 +275,8 @@ pub async fn run_knowledge_brief(
                 if query.refresh.reads_index() {
                     match index.lookup(&query.partition, &query.topic, query.max_items) {
                         Ok(hits) => {
-                            merge_index_hits(&mut deltas, hits, query.refresh, cutoff.as_ref())
+                            index_matches +=
+                                merge_index_hits(&mut deltas, hits, query.refresh, cutoff.as_ref());
                         }
                         Err(err) => {
                             index_status = "degraded";
@@ -278,8 +309,23 @@ pub async fn run_knowledge_brief(
             }
         }
     }
+    let candidate_delta_count = deltas.len();
     let (emitted, budget_exhausted, truncated) =
         budget_deltas(deltas, query.max_items, query.max_chars);
+    let empty_state_reason = empty_state_reason(
+        cutoff.as_ref(),
+        &date_accounting,
+        candidate_delta_count,
+        index_matches,
+        query.refresh,
+    );
+    if empty_state_reason != EmptyStateReason::DeltasEmitted {
+        warnings.push(empty_state_warning(empty_state_reason, index_status));
+    } else if emitted.is_empty() && budget_exhausted {
+        warnings.push(
+            "knowledge_brief_deltas_emitted: matching delta candidates were omitted because the caller output budget was exhausted".into(),
+        );
+    }
     if let Some(index) = index_to_retain {
         let records = index_records(&emitted, &query.partition);
         if let Err(err) = index.retain(&records) {
@@ -324,6 +370,14 @@ pub async fn run_knowledge_brief(
             "direct_vs_expanded": { "direct": emitted.iter().filter(|item| !item.expanded).count(), "expanded": emitted.iter().filter(|item| item.expanded).count() },
             "expansion": expansion,
             "no_temporal_claim": cutoff.is_none(),
+            "selected_cards": date_accounting.selected_cards,
+            "dated": date_accounting.dated,
+            "undated": date_accounting.undated,
+            "at_or_before_cutoff": date_accounting.at_or_before_cutoff,
+            "not_after_cutoff": date_accounting.not_after_cutoff,
+            "empty_state_reason": empty_state_reason.as_str(),
+            "selected_providers": selected_providers,
+            "timestamp_capable_providers": timestamp_capable_providers,
             "fetch_invoked": fetch_invoked,
             "fetch_candidates": fetch_candidates,
             "fetch_attempted": fetch_attempted,
@@ -404,6 +458,75 @@ fn record_attempts(
             duration_ms: None,
         });
     }
+}
+
+fn account_dates(cards: &[SourceCard], cutoff: Option<&ResolvedCutoff>) -> DateAccounting {
+    let mut accounting = DateAccounting {
+        selected_cards: cards.len(),
+        ..DateAccounting::default()
+    };
+    for card in cards {
+        let date = card
+            .metadata
+            .published_at
+            .as_deref()
+            .and_then(calendar_date_from_provider_timestamp);
+        let Some(date) = date else {
+            accounting.undated += 1;
+            continue;
+        };
+        accounting.dated += 1;
+        if let Some(cutoff) = cutoff {
+            let relation = compare_cutoff(&date, DateBasis::Publication, &cutoff.date);
+            if relation == TemporalRelationship::OnOrBeforeCutoff {
+                accounting.at_or_before_cutoff += 1;
+            }
+            if relation != TemporalRelationship::AfterCutoff {
+                accounting.not_after_cutoff += 1;
+            }
+        }
+    }
+    accounting
+}
+
+fn empty_state_reason(
+    cutoff: Option<&ResolvedCutoff>,
+    accounting: &DateAccounting,
+    candidate_delta_count: usize,
+    index_matches: usize,
+    refresh: RefreshMode,
+) -> EmptyStateReason {
+    if cutoff.is_none() {
+        EmptyStateReason::NoCutoffResolved
+    } else if candidate_delta_count > 0 {
+        EmptyStateReason::DeltasEmitted
+    } else if refresh == RefreshMode::Index && index_matches == 0 {
+        EmptyStateReason::NoMatchingIndexHits
+    } else if accounting.dated == 0 {
+        EmptyStateReason::NoDatedSources
+    } else {
+        EmptyStateReason::AllSourcesAtOrBeforeCutoff
+    }
+}
+
+fn empty_state_warning(reason: EmptyStateReason, index_status: &str) -> String {
+    let message = match reason {
+        EmptyStateReason::NoCutoffResolved => {
+            "no model or caller cutoff resolved; dated sources cannot be compared".to_string()
+        }
+        EmptyStateReason::NoDatedSources => {
+            "selected live cards contain no parseable provider-declared publication timestamp"
+                .to_string()
+        }
+        EmptyStateReason::AllSourcesAtOrBeforeCutoff => {
+            "no selected dated source was reported after the resolved cutoff".to_string()
+        }
+        EmptyStateReason::NoMatchingIndexHits => format!(
+            "index refresh returned no matching post-cutoff delta (index status: {index_status})"
+        ),
+        EmptyStateReason::DeltasEmitted => "a matching delta candidate was selected".to_string(),
+    };
+    format!("knowledge_brief_{}: {message}", reason.as_str())
 }
 
 fn select_cards(cards: &[SourceCard]) -> Vec<SourceCard> {
@@ -518,8 +641,9 @@ fn merge_index_hits(
     hits: Vec<IndexHit>,
     refresh: RefreshMode,
     cutoff: Option<&ResolvedCutoff>,
-) {
+) -> usize {
     let live: BTreeSet<_> = deltas.iter().map(|item| item.id.clone()).collect();
+    let mut matched = 0usize;
     for hit in hits {
         if live.contains(&hit.record.kdelta_id) {
             if let Some(existing) = deltas
@@ -527,6 +651,7 @@ fn merge_index_hits(
                 .find(|item| item.id == hit.record.kdelta_id)
             {
                 existing.provenance = "live_checked".into();
+                matched += 1;
             }
             continue;
         }
@@ -537,10 +662,12 @@ fn merge_index_hits(
             continue;
         };
         if let Some(delta) = hit_delta(hit, "index_only", false, cutoff) {
+            matched += 1;
             deltas.push(delta);
         }
     }
     deltas.sort_by(|left, right| left.id.cmp(&right.id));
+    matched
 }
 
 fn merge_expanded(

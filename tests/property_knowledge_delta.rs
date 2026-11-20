@@ -20,6 +20,29 @@ fn year(raw: &str) -> CalendarDate {
     date(raw, DatePrecision::Year)
 }
 
+fn at_precision(year: i32, month: u8, day: u8, precision: u8) -> CalendarDate {
+    match precision {
+        0 => CalendarDate {
+            year,
+            month: Some(month),
+            day: Some(day),
+            precision: DatePrecision::Day,
+        },
+        1 => CalendarDate {
+            year,
+            month: Some(month),
+            day: None,
+            precision: DatePrecision::Month,
+        },
+        _ => CalendarDate {
+            year,
+            month: None,
+            day: None,
+            precision: DatePrecision::Year,
+        },
+    }
+}
+
 #[test]
 fn comparison_fixtures_match_adr_0020() {
     let cases = [
@@ -212,5 +235,36 @@ proptest! {
             compare_cutoff(&yearly, DateBasis::Publication, &yearly),
             TemporalRelationship::Indeterminate
         );
+    }
+
+    #[test]
+    fn date_accounting_relations_partition_dated_sources(
+        dates in prop::collection::vec((1970i32..2100, 1u8..13, 1u8..29, 0u8..3), 0..30),
+        cutoff_year in 1970i32..2100,
+        cutoff_month in 1u8..13,
+        cutoff_day in 1u8..29,
+        cutoff_precision in 0u8..3
+    ) {
+        let cutoff = at_precision(cutoff_year, cutoff_month, cutoff_day, cutoff_precision);
+        let mut dated = 0usize;
+        let mut at_or_before_cutoff = 0usize;
+        let mut not_after_cutoff = 0usize;
+        let mut after_cutoff = 0usize;
+        for &(year, month, day, precision) in &dates {
+            let evidence = at_precision(year, month, day, precision);
+            let relation = compare_cutoff(&evidence, DateBasis::Publication, &cutoff);
+            dated += 1;
+            if relation == TemporalRelationship::OnOrBeforeCutoff {
+                at_or_before_cutoff += 1;
+            }
+            if relation == TemporalRelationship::AfterCutoff {
+                after_cutoff += 1;
+            } else {
+                not_after_cutoff += 1;
+            }
+        }
+        prop_assert_eq!(dated, dates.len());
+        prop_assert_eq!(dated, not_after_cutoff + after_cutoff);
+        prop_assert!(at_or_before_cutoff <= not_after_cutoff);
     }
 }

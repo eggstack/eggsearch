@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `knowledge_brief` coverage now accounts for selected cards as dated/undated and cutoff-relative,
+  reports selected providers that advertise result timestamps, and explains empty delta sets with
+  reason-specific warnings. Dates remain provider-declared publication timestamps only; prose,
+  snippets, and fetched HTML are not used to infer them. Retained excerpts prefer heading-marked
+  chunks over leading site chrome and mark possible residual chrome when heading metadata is absent.
+  Index permission warnings identify the rejected directory, its current mode, and the required
+  `0700` mode.
 - `security_search` selects every provider that configuration already enables and that
   advertises native advisory lookup for identifier-bearing requests (`cve_id`, `ghsa_id`,
   `osv_id`, `rustsec_id`, or `package`), so an enabled OSV provider answers a CVE query by
@@ -244,6 +251,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `fetch` now reports its accepted web and repo item shapes when an item carries a missing or
+  unknown `type` tag, instead of a serde deserialization detail naming an internal Rust type. The
+  accepted shapes, the existing per-field messages for a tagged item, and the advertised schema
+  are unchanged.
+- A checkout that is a linked git worktree now resolves its remote identity through the shared
+  configuration named by the worktree's `commondir`, so `repo_fetch` with `prefer_local: true`
+  returns the local copy instead of silently falling back to a remote fetch. When no local
+  checkout matches, the remote result is still returned and the response states that the local
+  copy was skipped and why.
 - The unified `fetch` envelope charges a repo item for its readable text and bounded metadata
   instead of its whole serialized response. A repository file that `repo_fetch` returns at
   default settings is returnable through `fetch` at the default 50,000-character budget:

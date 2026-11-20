@@ -29,6 +29,11 @@ fn dated(url: &str, published_at: &str) -> MockResult {
     result
 }
 
+fn undated(url: &str) -> MockResult {
+    MockResult::new("widget-runtime notes", url, "duckduckgo")
+        .with_snippet("compatibility notes for widget-runtime")
+}
+
 fn override_day(date: &str) -> CutoffOverrideInput {
     CutoffOverrideInput {
         date: date.into(),
@@ -86,7 +91,7 @@ impl KnowledgeEvidenceFetcher for FixedFetcher {
 #[tokio::test]
 async fn after_cutoff_publication_is_emitted_and_labeled() {
     let engines = vec![MockEngine::success(
-        "mock",
+        "hn_algolia",
         vec![dated("https://example.com/new", "2024-06-02")],
     )];
     let value = run_knowledge_brief(
@@ -100,6 +105,29 @@ async fn after_cutoff_publication_is_emitted_and_labeled() {
     assert_eq!(deltas[0]["date_basis"], "publication");
     assert_eq!(deltas[0]["temporal_relationship"], "after_cutoff");
     assert_eq!(deltas[0]["trust"], "external_untrusted");
+    assert_eq!(
+        deltas[0]["id"],
+        eggsearch::core::identity::knowledge_delta_id(
+            "https://example.com/new",
+            "publication",
+            "day",
+            "2024-06-02"
+        )
+    );
+    assert_eq!(
+        value["coverage"]["selected_providers"],
+        serde_json::json!(["hn_algolia"])
+    );
+    assert_eq!(
+        value["coverage"]["timestamp_capable_providers"],
+        serde_json::json!(["hn_algolia"])
+    );
+    assert_eq!(value["coverage"]["empty_state_reason"], "deltas_emitted");
+    assert_eq!(value["coverage"]["no_temporal_claim"], false);
+    assert_eq!(value["coverage"]["selected_cards"], 1);
+    assert_eq!(value["coverage"]["dated"], 1);
+    assert_eq!(value["coverage"]["undated"], 0);
+    assert_eq!(value["coverage"]["not_after_cutoff"], 0);
     assert_eq!(
         deltas[0]["payload_chars"].as_u64().unwrap() as usize,
         deltas[0].to_string().chars().count()
@@ -171,6 +199,17 @@ async fn emitted_payload_budget_includes_the_payload_chars_field() {
         .await
         .expect("delta beyond the budget is omitted");
     assert!(limited["deltas"].as_array().unwrap().is_empty());
+    assert_eq!(limited["coverage"]["empty_state_reason"], "deltas_emitted");
+    assert!(limited["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| {
+            warning
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("knowledge_brief_deltas_emitted:")
+        }));
     assert_eq!(limited["budget_exhausted"], true);
     assert_eq!(limited["truncated"], false);
 }
@@ -188,6 +227,18 @@ async fn same_day_and_unknown_model_make_no_temporal_claim() {
     .await
     .expect("same day");
     assert!(same["deltas"].as_array().unwrap().is_empty());
+    assert_eq!(
+        same["coverage"]["empty_state_reason"],
+        "all_sources_at_or_before_cutoff"
+    );
+    assert_eq!(same["coverage"]["at_or_before_cutoff"], 1);
+    assert_eq!(same["coverage"]["no_temporal_claim"], false);
+    assert!(same["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("knowledge_brief_all_sources_at_or_before_cutoff:")
+    }));
 
     let unknown = run_knowledge_brief(
         state(
@@ -208,6 +259,20 @@ async fn same_day_and_unknown_model_make_no_temporal_claim() {
     assert_eq!(unknown["model_resolution"]["status"], "unknown");
     assert!(unknown["deltas"].as_array().unwrap().is_empty());
     assert_eq!(unknown["coverage"]["no_temporal_claim"], true);
+    assert_eq!(
+        unknown["coverage"]["empty_state_reason"],
+        "no_cutoff_resolved"
+    );
+    assert!(unknown["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| {
+            warning
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("knowledge_brief_no_cutoff_resolved:")
+        }));
 }
 
 #[tokio::test]
@@ -245,6 +310,134 @@ async fn malformed_override_and_total_failure_are_explicit() {
         failed.is_err(),
         "total provider failure is not an empty success"
     );
+}
+
+#[tokio::test]
+async fn undated_default_provider_reports_date_reason_and_capability() {
+    let value = run_knowledge_brief(
+        state(
+            vec![MockEngine::success(
+                "duckduckgo",
+                vec![undated("https://example.com/undated")],
+            )],
+            AppConfig::default(),
+        ),
+        brief("widget-runtime", Some(override_day("2024-06-01"))),
+    )
+    .await
+    .expect("undated result is a completed search");
+    assert!(value["deltas"].as_array().unwrap().is_empty());
+    assert_eq!(value["coverage"]["selected_cards"], 1);
+    assert_eq!(value["coverage"]["dated"], 0);
+    assert_eq!(value["coverage"]["undated"], 1);
+    assert_eq!(value["coverage"]["at_or_before_cutoff"], 0);
+    assert_eq!(value["coverage"]["not_after_cutoff"], 0);
+    assert_eq!(value["coverage"]["empty_state_reason"], "no_dated_sources");
+    assert_eq!(value["coverage"]["no_temporal_claim"], false);
+    assert_eq!(
+        value["coverage"]["selected_providers"],
+        serde_json::json!(["duckduckgo"])
+    );
+    assert!(value["coverage"]["timestamp_capable_providers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("knowledge_brief_no_dated_sources:")
+    }));
+}
+
+#[tokio::test]
+async fn date_accounting_matches_selected_cards_and_emitted_deltas() {
+    let cards = vec![
+        undated("https://undated.example.com/item"),
+        dated("https://old.example.net/item", "2024-05-31"),
+        dated("https://new.example.org/item", "2024-06-02"),
+    ];
+    let value = run_knowledge_brief(
+        state(
+            vec![MockEngine::success("hn_algolia", cards)],
+            AppConfig::default(),
+        ),
+        brief("widget-runtime", Some(override_day("2024-06-01"))),
+    )
+    .await
+    .expect("dated and undated results");
+    assert_eq!(value["coverage"]["selected_cards"], 3);
+    assert_eq!(value["coverage"]["dated"], 2);
+    assert_eq!(value["coverage"]["undated"], 1);
+    assert_eq!(
+        value["coverage"]["dated"].as_u64().unwrap()
+            + value["coverage"]["undated"].as_u64().unwrap(),
+        3
+    );
+    assert_eq!(value["coverage"]["at_or_before_cutoff"], 1);
+    assert_eq!(value["coverage"]["not_after_cutoff"], 1);
+    assert_eq!(value["deltas"].as_array().unwrap().len(), 1);
+    assert_eq!(value["coverage"]["empty_state_reason"], "deltas_emitted");
+}
+
+#[tokio::test]
+async fn empty_index_refresh_reports_no_matching_hits() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = private_index_path(dir.path());
+    let mut cfg = AppConfig::default();
+    cfg.knowledge_delta.index.enabled = true;
+    cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
+    let mut args = brief("widget-runtime", Some(override_day("2024-06-01")));
+    args.refresh = Some("index".into());
+    let value = run_knowledge_brief(state(vec![MockEngine::success("mock", vec![])], cfg), args)
+        .await
+        .expect("empty index refresh");
+    assert_eq!(value["coverage"]["index_status"], "open");
+    assert_eq!(
+        value["coverage"]["empty_state_reason"],
+        "no_matching_index_hits"
+    );
+    assert_eq!(value["coverage"]["no_temporal_claim"], false);
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("knowledge_brief_no_matching_index_hits:")
+    }));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn index_permission_warning_names_directory_and_required_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let parent = dir.path().join("shared");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = parent.join("index.sqlite");
+    let mut cfg = AppConfig::default();
+    cfg.knowledge_delta.index.enabled = true;
+    cfg.knowledge_delta.index.path = Some(path.to_string_lossy().to_string());
+    let mut args = brief("widget-runtime", Some(override_day("2024-06-01")));
+    args.refresh = Some("prefer_live".into());
+    let value = run_knowledge_brief(
+        state(vec![MockEngine::success("duckduckgo", vec![])], cfg),
+        args,
+    )
+    .await
+    .expect("shared-parent refusal is a warning");
+    assert_eq!(value["coverage"]["index_status"], "offline");
+    let warning = value["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .find(|warning| warning.contains("knowledge index directory"))
+        .expect("directory permission warning");
+    assert!(warning.contains(parent.to_str().unwrap()));
+    assert!(warning.contains("0755"));
+    assert!(warning.contains("0700"));
 }
 
 #[tokio::test]

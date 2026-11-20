@@ -189,6 +189,22 @@ async fn fetch_tool_listed() {
     );
 }
 
+#[test]
+fn fetch_schema_advertises_tagged_web_and_repo_items() {
+    let state = state_with_default();
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let fetch = server
+        .tool_definitions()
+        .into_iter()
+        .find(|tool| tool.name == "fetch")
+        .expect("fetch tool is registered");
+    let schema = serde_json::Value::Object(fetch.input_schema.as_ref().clone()).to_string();
+    for expected in ["items", "type", "web", "repo", "url", "owner", "path"] {
+        assert!(schema.contains(&format!("\"{expected}\"")), "{schema}");
+    }
+    assert!(schema.contains("required"), "{schema}");
+}
+
 #[tokio::test]
 #[cfg(feature = "mock")]
 async fn all_ten_canonical_tools_advertised() {

@@ -851,6 +851,43 @@ fn advertised_schemas_carry_no_replay_cursor_tokens() {
 }
 
 #[test]
+fn fetch_schema_keeps_its_canonical_argument_properties() {
+    let state =
+        Arc::new(eggsearch::mcp::ServerState::build(AppConfig::default()).expect("default state"));
+    let server = eggsearch::mcp::EggsearchServer::new(state);
+    let fetch = server
+        .tool_definitions()
+        .into_iter()
+        .find(|tool| tool.name == "fetch")
+        .expect("fetch tool is registered");
+    let properties = fetch
+        .input_schema
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("fetch schema properties are advertised");
+    let mut names: Vec<String> = properties.keys().cloned().collect();
+    names.sort();
+    let expected: Vec<String> = [
+        "continue_on_error",
+        "items",
+        "limit",
+        "max_chars_per_item",
+        "max_items",
+        "max_total_chars",
+        "offset",
+        "response_detail",
+        "timeout_ms",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect();
+    assert_eq!(
+        names, expected,
+        "fetch input schema must not grow new arguments"
+    );
+}
+
+#[test]
 fn stable_error_codes_include_addressing_failures_and_drop_cursor_mismatch() {
     use eggsearch::mcp::tools::ToolErrorCode;
 

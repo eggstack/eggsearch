@@ -58,6 +58,7 @@ pub enum IndexError {
     ReadOnly(String),
     Full(String),
     InsecurePermissions,
+    InsecureDirectoryPermissions { directory: PathBuf, mode: u32 },
     InvalidPartition,
 }
 
@@ -74,6 +75,11 @@ impl IndexError {
             Self::InsecurePermissions => {
                 "knowledge index path must be private to the current user".to_string()
             }
+            Self::InsecureDirectoryPermissions { directory, mode } => format!(
+                "knowledge index directory {} has mode {:04o}; it must be private to the current user with mode 0700",
+                directory.display(),
+                mode
+            ),
             Self::InvalidPartition => {
                 "knowledge index partition is not anonymous or prof_<16 hex>".to_string()
             }
@@ -468,7 +474,10 @@ fn protect_index_directory(
         .as_deref()
         .is_some_and(|configured| configured.ends_with(".sqlite") || configured.ends_with(".db"));
     if explicit_file && existed && mode & 0o077 != 0 {
-        return Err(IndexError::InsecurePermissions);
+        return Err(IndexError::InsecureDirectoryPermissions {
+            directory: path.to_path_buf(),
+            mode,
+        });
     }
     if !explicit_file || !existed {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode & 0o700))

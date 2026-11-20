@@ -6,6 +6,27 @@ use crate::core::knowledge_delta::{
 
 pub const ENGLISH_HINTS: &[&str] = &["release", "compatibility", "deprecation"];
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EmptyStateReason {
+    NoCutoffResolved,
+    NoDatedSources,
+    AllSourcesAtOrBeforeCutoff,
+    NoMatchingIndexHits,
+    DeltasEmitted,
+}
+
+impl EmptyStateReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoCutoffResolved => "no_cutoff_resolved",
+            Self::NoDatedSources => "no_dated_sources",
+            Self::AllSourcesAtOrBeforeCutoff => "all_sources_at_or_before_cutoff",
+            Self::NoMatchingIndexHits => "no_matching_index_hits",
+            Self::DeltasEmitted => "deltas_emitted",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlannedQuery {
     pub query: String,

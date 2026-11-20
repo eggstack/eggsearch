@@ -169,9 +169,15 @@ impl<'de> Deserialize<'de> for FetchItems {
                 Repr::One(item) => FetchItems::One(item),
                 Repr::Many(items) => FetchItems::Many(items),
             })
-            .map_err(serde::de::Error::custom)
+            .map_err(|_| {
+                serde::de::Error::custom(format!(
+                    "fetch item does not match an accepted shape; {ACCEPTED_FETCH_ITEM_SHAPES}"
+                ))
+            })
     }
 }
+
+const ACCEPTED_FETCH_ITEM_SHAPES: &str = r#"accepted shapes: {"type":"web","url":"<url>"} and {"type":"repo","owner":"<owner>","repo":"<repo>","path":"<path>"}"#;
 
 fn validate_fetch_item_shape(
     value: &serde_json::Value,
@@ -208,7 +214,16 @@ fn validate_fetch_item_shape(
                 ));
             }
         }
-        _ => {}
+        _ if !object.contains_key("type") => {
+            return Err(format!(
+                "{prefix}fetch item is missing the required `type` tag; {ACCEPTED_FETCH_ITEM_SHAPES}"
+            ));
+        }
+        _ => {
+            return Err(format!(
+                "{prefix}fetch item has an unknown `type` tag; accepted values are `web` and `repo`; {ACCEPTED_FETCH_ITEM_SHAPES}"
+            ));
+        }
     }
     Ok(())
 }
@@ -403,11 +418,62 @@ mod tests {
             serde_json::json!({"items": {"type": "filesystem", "path": "/tmp/file"}}),
             serde_json::json!({"items": {"type": "web"}}),
             serde_json::json!({"items": {"type": "repo", "owner": "owner", "repo": "repo"}}),
+            serde_json::json!({
+                "items": {"type": "web", "url": "https://example.com", "max_chars": "many"}
+            }),
         ] {
+            let error = serde_json::from_value::<FetchArgs>(value)
+                .expect_err("malformed fetch target must fail before dispatch");
+            assert!(!error.to_string().contains("Repr"), "{error}");
+        }
+    }
+
+    #[test]
+    fn fetch_item_tag_errors_name_accepted_shapes_for_scalar_and_array() {
+        let cases = [
+            (
+                serde_json::json!({"url": "https://example.com/"}),
+                "missing the required `type` tag",
+            ),
+            (
+                serde_json::json!({"type": "filesystem"}),
+                "unknown `type` tag",
+            ),
+        ];
+        let valid_web = serde_json::json!({"type": "web", "url": "https://example.com/"});
+        for (item, expected) in cases {
+            let scalar_error = serde_json::from_value::<FetchArgs>(serde_json::json!({
+                "items": item.clone()
+            }))
+            .expect_err("invalid item tag must fail");
+            let scalar_message = scalar_error.to_string();
+            assert!(scalar_message.contains(expected), "{scalar_message}");
             assert!(
-                serde_json::from_value::<FetchArgs>(value).is_err(),
-                "malformed fetch target must fail before dispatch"
+                scalar_message.contains(r#"{"type":"web","url":"<url>"}"#),
+                "{scalar_message}"
             );
+            assert!(
+                scalar_message.contains(
+                    r#"{"type":"repo","owner":"<owner>","repo":"<repo>","path":"<path>"}"#
+                ),
+                "{scalar_message}"
+            );
+            assert!(!scalar_message.contains("Repr"), "{scalar_message}");
+            if expected.contains("unknown") {
+                assert!(
+                    scalar_message.contains("accepted values are `web` and `repo`"),
+                    "{scalar_message}"
+                );
+            }
+
+            let array_error = serde_json::from_value::<FetchArgs>(serde_json::json!({
+                "items": [valid_web.clone(), item]
+            }))
+            .expect_err("invalid array item tag must fail");
+            let array_message = array_error.to_string();
+            assert!(array_message.contains("items[1]"), "{array_message}");
+            assert!(array_message.contains(expected), "{array_message}");
+            assert!(!array_message.contains("Repr"), "{array_message}");
         }
     }
 
@@ -418,17 +484,18 @@ mod tests {
         }))
         .expect_err("repo item without repo must fail");
         let message = error.to_string();
-        assert!(message.contains("required `repo` field"), "{message}");
-        assert!(message.contains("accepted shape"), "{message}");
-        assert!(message.contains("items[0]"), "{message}");
+        assert_eq!(
+            message,
+            r#"items[0]: repo item is missing the required `repo` field; accepted shape: {"type":"repo","owner":"<owner>","repo":"<repo>","path":"<path>"} (optional: host, ref_name, commit_sha, line_start, line_end, context_before, context_after, max_chars, focus, focus_max_chunks, focus_max_chars, symbol, symbol_kind, match_text, expand_to_block, max_block_lines, prefer_local)"#
+        );
 
         let error = serde_json::from_value::<FetchArgs>(serde_json::json!({
             "items": {"type": "web"}
         }))
         .expect_err("web item without url must fail");
-        assert!(
-            error.to_string().contains("required `url` field"),
-            "{error}"
+        assert_eq!(
+            error.to_string(),
+            r#"web item is missing the required `url` field; accepted shape: {"type":"web","url":"https://example.com"}"#
         );
     }
 

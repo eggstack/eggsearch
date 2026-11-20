@@ -62,26 +62,10 @@ impl KnowledgeEvidenceFetcher for BriefToolFetcher {
             )
             .await
             .map_err(|_| "bounded web fetch failed".to_string())?;
-            let mut excerpt = String::new();
-            let mut spans = Vec::new();
-            if let Some(chunks) = value["document"]["chunks"].as_array() {
-                for chunk in chunks.iter().take(2) {
-                    let Some(text) = chunk["text"].as_str() else {
-                        continue;
-                    };
-                    if !excerpt.is_empty() {
-                        excerpt.push('\n');
-                    }
-                    excerpt.push_str(text);
-                    spans.push(serde_json::json!({
-                        "kind": "document_chunk",
-                        "chunk_id": chunk["chunk_id"],
-                        "block_start": chunk["block_start"],
-                        "block_end": chunk["block_end"],
-                        "heading_path": chunk["heading_path"],
-                    }));
-                }
-            }
+            let (mut excerpt, mut spans) = value["document"]["chunks"]
+                .as_array()
+                .map(|chunks| extract_brief_excerpt(chunks))
+                .unwrap_or_default();
             if excerpt.is_empty() {
                 excerpt = value["text"].as_str().unwrap_or_default().to_string();
             }
@@ -106,6 +90,52 @@ impl KnowledgeEvidenceFetcher for BriefToolFetcher {
             })
         })
     }
+}
+
+fn extract_brief_excerpt(chunks: &[serde_json::Value]) -> (String, Vec<serde_json::Value>) {
+    let mut ordered: Vec<_> = chunks
+        .iter()
+        .enumerate()
+        .filter(|(_, chunk)| {
+            chunk["text"]
+                .as_str()
+                .is_some_and(|text| !text.trim().is_empty())
+        })
+        .collect();
+    ordered.sort_by_key(|(index, chunk)| {
+        let has_heading_path = chunk["heading_path"]
+            .as_array()
+            .is_some_and(|path| !path.is_empty());
+        (
+            !has_heading_path,
+            chunk["block_start"].as_u64().unwrap_or(u64::MAX),
+            *index,
+        )
+    });
+    let mut excerpt = String::new();
+    let mut spans = Vec::new();
+    for (_, chunk) in ordered.into_iter().take(2) {
+        let Some(text) = chunk["text"].as_str() else {
+            continue;
+        };
+        if !excerpt.is_empty() {
+            excerpt.push('\n');
+        }
+        excerpt.push_str(text);
+        let has_heading_path = chunk["heading_path"]
+            .as_array()
+            .is_some_and(|path| !path.is_empty());
+        spans.push(serde_json::json!({
+            "kind": "document_chunk",
+            "chunk_id": chunk["chunk_id"],
+            "block_start": chunk["block_start"],
+            "block_end": chunk["block_end"],
+            "heading_path": chunk["heading_path"],
+            "selection_basis": if has_heading_path { "heading_path" } else { "block_order" },
+            "chrome_may_remain": !has_heading_path,
+        }));
+    }
+    (excerpt, spans)
 }
 
 fn fetched_evidence_is_cacheable(value: &serde_json::Value) -> bool {
@@ -200,6 +230,33 @@ fn input_error(error: BriefInputError) -> ToolError {
 
 #[cfg(test)]
 mod tests {
+    use super::extract_brief_excerpt;
+
+    #[test]
+    fn brief_fetcher_prefers_heading_chunks_and_records_residual_chrome() {
+        let chunks = vec![
+            serde_json::json!({
+                "text": "| Hacker Newsnew|past|comments|ask|show|jobs|submitlogin |",
+                "chunk_id": "chunk_nav",
+                "heading_path": [],
+                "block_start": 0,
+                "block_end": 0,
+            }),
+            serde_json::json!({
+                "text": "Story: A bounded article passage.",
+                "chunk_id": "chunk_story",
+                "heading_path": ["Story"],
+                "block_start": 4,
+                "block_end": 4,
+            }),
+        ];
+        let (excerpt, spans) = extract_brief_excerpt(&chunks);
+        assert!(excerpt.starts_with("Story: A bounded article passage."));
+        assert_eq!(spans[0]["selection_basis"], "heading_path");
+        assert_eq!(spans[0]["chrome_may_remain"], false);
+        assert_eq!(spans[1]["chrome_may_remain"], true);
+    }
+
     #[test]
     fn ordinary_http_response_with_false_manual_interaction_flag_is_cacheable() {
         let response = serde_json::json!({

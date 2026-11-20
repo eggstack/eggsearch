@@ -294,7 +294,19 @@ cards). Domain planners, grouping, and builders stay typed per
 workflow and are never flattened into one generic path.
 
 `knowledge_brief` reuses those mechanics without joining the research
-workflow enum. Its deltas are candidate evidence, not verified facts.
+workflow enum. Its deltas are candidate evidence, not verified facts. A delta
+requires a resolved cutoff and a provider-declared publication timestamp; no
+date is inferred from prose, snippets, or fetched HTML. The default keyless
+web providers do not advertise `result_timestamps`, so an operator may need a
+selected timestamp-capable provider for a dated result. Coverage reports the
+selected-card date counts (`selected_cards`, `dated`, `undated`,
+`at_or_before_cutoff`, `not_after_cutoff`), selected providers, providers
+advertising result timestamps, and one `empty_state_reason`:
+`no_cutoff_resolved`, `no_dated_sources`,
+`all_sources_at_or_before_cutoff`, `no_matching_index_hits`, or
+`deltas_emitted`. Each non-emitting reason is also returned as a `knowledge_brief_<reason>: ...` warning;
+`no_temporal_claim` is true only with `no_cutoff_resolved`.
+
 Index hits stay external-untrusted. An expanded delta is admissible only
 when an already indexed document supplies the source id and span.
 

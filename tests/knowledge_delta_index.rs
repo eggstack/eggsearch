@@ -212,7 +212,12 @@ fn two_processes_serialize_writes_and_read_the_same_database() {
         .spawn()
         .unwrap();
     index.retain(&[record("parent", "anonymous")]).unwrap();
-    assert!(child.wait_with_output().unwrap().status.success());
+    let child_output = child.wait_with_output().unwrap();
+    assert!(
+        child_output.status.success(),
+        "child index writer failed: {}",
+        String::from_utf8_lossy(&child_output.stderr)
+    );
     let hits = index.lookup("anonymous", "widget-runtime", 10).unwrap();
     assert_eq!(hits.len(), 2);
 }
@@ -252,10 +257,18 @@ fn explicitly_configured_database_rejects_a_shared_parent() {
     let path = parent.join("index.sqlite");
     let mut cfg = config();
     cfg.path = Some(path.to_string_lossy().into_owned());
+    let error = match EvidenceIndex::open(&path, &cfg) {
+        Err(error) => error,
+        Ok(_) => panic!("shared parent must be refused"),
+    };
     assert!(matches!(
-        EvidenceIndex::open(&path, &cfg),
-        Err(IndexError::InsecurePermissions)
+        &error,
+        IndexError::InsecureDirectoryPermissions { .. }
     ));
+    let message = error.message();
+    assert!(message.contains(parent.to_str().unwrap()));
+    assert!(message.contains("0755"));
+    assert!(message.contains("0700"));
 }
 
 #[test]

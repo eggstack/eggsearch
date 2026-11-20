@@ -57,6 +57,12 @@ includes local results by default; a request that names a host, owner, repositor
 or organization includes them only with explicit `include_local: true`, and
 `include_local: false` disables them everywhere.
 
+For `repo_fetch`, `prefer_local: true` tries an enabled local workspace first. A
+matching checkout is fetched locally; otherwise the remote path remains the
+fallback and the response warning explains that the local copy was skipped.
+Authorized host scopes retain their existing error when no matching local
+workspace is available.
+
 ### Native security advisories
 
 For identifier-bearing security requests (`cve_id`, `ghsa_id`, `osv_id`,

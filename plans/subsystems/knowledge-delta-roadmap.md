@@ -1,8 +1,8 @@
 # Knowledge-Delta Research Roadmap
 
-Status: closed (M001–M003)
+Status: active (M001–M003 closed; M004 corrective registered)
 Date: 2026-11-19
-Revised: 2026-11-20 — M001–M003 closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5. Linux/Windows footprint evidence has threshold_applied=false; no numeric budget pass is claimed.
+Revised: 2026-11-20 — M001–M003 closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5; Linux/Windows footprint evidence has threshold_applied=false and no numeric budget pass is claimed. A live default-configuration review on 2026-11-20 registered corrective M004 (brief delta production and honest diagnostics) against M001.
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 Owner: research retrieval and evidence handoff, with optional local evidence persistence
 
@@ -106,6 +106,7 @@ not asserted complete.
 | M001 — Cutoff-aware knowledge brief | capability | closed | `plans/archive/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; see `plans/closure/knowledge-delta/001-status.md`. |
 | M002 — Optional local evidence index | infrastructure | closed | `plans/archive/implementation/knowledge-delta/002-local-evidence-index.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; Linux/Windows records and target qualification are in `plans/closure/knowledge-delta/002-status.md`; no numeric threshold pass is claimed. |
 | M003 — Source-driven topic discovery | capability | closed | `plans/archive/implementation/knowledge-delta/003-source-driven-topic-discovery.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; omission fixture and negative controls are in `plans/closure/knowledge-delta/003-status.md`. |
+| M004 — Brief delta production and honest diagnostics | capability (corrective to M001) | ready | `plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md` | Hard dependency M001 (closed); interface ADR-0020 and ADR-0021 (both accepted). A brief over a provider set with no result timestamps names that reason instead of returning a bare empty delta list; a resolved cutoff over dated sources still emits deltas with unchanged `kdelta_` identities; a live brief still does not open the index. |
 
 ## 7. Cross-cutting requirements
 
@@ -173,7 +174,10 @@ applies, a closure record under
 `plans/closure/knowledge-delta/NNN-status.md`, and synchronized registry
 and roadmap updates. M001, M002, and M003 are closed on exact implementation candidate
 `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; see their closure records
-under `plans/closure/knowledge-delta/`. ADR-0020 and ADR-0021 remain
+under `plans/closure/knowledge-delta/`. M004 is a corrective pass to M001 and
+is not closed; its plan is
+`plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`.
+ADR-0020 and ADR-0021 remain
 accepted. Linux/Windows measurements state `threshold_applied=false`;
 no numeric budget pass is claimed. ARMv7 physical evidence remains
 unrun and non-gating.

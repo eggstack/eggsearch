@@ -288,7 +288,10 @@ only when the adapter produced none. Warnings stay explicit:
 It uses `MetadataSearchAdapter`, `RetrievalAttemptSet`, and
 `FetchCandidateBuilder`. The topic string is one subquery. Further
 subqueries may append a closed English hint list; coverage says those hints
-are not a translation. Dates come from structured provider timestamps.
+are not a translation. Dates come only from provider-declared publication timestamps; prose, snippets, and fetched HTML are never date sources. At least one selected provider must advertise `result_timestamps` and return a declared timestamp for a delta to be possible. The shipped keyless defaults (`duckduckgo`, `brave`, `yahoo`) do not advertise that capability, so a default-only brief may have no dated sources. Provider capability is reported, not used to change routing.
+
+Coverage accounts for selected live cards with `selected_cards`, `dated`, `undated`, `at_or_before_cutoff`, and `not_after_cutoff`; `dated + undated` equals `selected_cards`. The two cutoff counts are zero when no cutoff resolves. `at_or_before_cutoff` counts confirmed on-or-before comparisons, while `not_after_cutoff` also includes dated cards whose precision leaves the comparison indeterminate. `empty_state_reason` is one of `no_cutoff_resolved`, `no_dated_sources`, `all_sources_at_or_before_cutoff`, `no_matching_index_hits`, or `deltas_emitted`. Every non-emitting reason is also a `knowledge_brief_<reason>: ...` warning. A resolved cutoff never has `no_temporal_claim`; without a resolved cutoff the reason is `no_cutoff_resolved`. Coverage lists the selected providers and the subset that advertises `result_timestamps`.
+
 Comparison is at the coarser precision. A publication-only delta is labeled
 publication. The brief performs bounded source fetches for selected candidates
 through the existing fetch path; it does not parse HTML dates. `fetch` may

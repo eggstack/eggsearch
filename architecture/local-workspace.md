@@ -152,15 +152,23 @@ moving under `local/`; bounded process mechanics already moved to
 
 ## Git Worktree Discovery (`src/meta/local_inventory.rs`)
 
-Identity resolution reads `.git/config` directly (no subprocess) and
-normalizes remotes with `normalize_remote_url()` into `NormalizedRepoId`
-(HTTPS, SSH, SCP, and git forms; `parse_url_form()` / `parse_scp_form()`),
-enumerated by `read_remotes_from_config()`. `resolve_git_dir()` locates the
-git directory, and three narrow readers report worktree state:
-`read_head_branch()`, `read_head_commit()` (HEAD SHA, handling detached HEAD,
-packed-refs, and gitfile worktrees), and `detect_dirty_state()`. The inventory
-therefore knows which worktree each root belongs to without shelling out for
-identity on every search.
+Identity resolution reads Git config files directly without invoking Git for
+identity and normalizes remotes with `normalize_remote_url()` into
+`NormalizedRepoId` (HTTPS, SSH, SCP, and git forms; `parse_url_form()` /
+`parse_scp_form()`), enumerated by `read_remotes_from_config()`. Resolution is
+deterministic: a `.git` directory uses its own `config`; a `.git` file first
+resolves the named gitdir and uses its `config` when present; if that
+per-worktree config is absent, its `commondir` file resolves the shared
+configuration directory (relative to the per-worktree gitdir), and the shared
+`config` supplies remote identity. If shared config resolution is unavailable,
+lookup falls back to the per-worktree gitdir config and then to no remotes. The
+small gitfile, commondir, and config reads are bounded; paths are canonicalized
+before following indirections. `resolve_git_dir()` locates the git directory,
+and three narrow readers report worktree state: `read_head_branch()`,
+`read_head_commit()` (HEAD SHA, handling detached HEAD, packed-refs, and
+gitfile worktrees), and `detect_dirty_state()`. The inventory therefore knows
+which worktree each root belongs to without shelling out for identity on every
+search.
 
 ---
 
@@ -261,16 +269,21 @@ the `[local]` budgets; the scan never executes workspace code.
 
 Local `repo_fetch` validates the requested path, then reads it with
 `safe_read_file()` relative to the selected workspace root; it never reopens
-the canonicalized pathname. It identifies PDFs by case-insensitive `.pdf`
-extension or a safely read `%PDF-` prefix. PDF bytes use `pdf_max_file_bytes`
-and the existing PDF feature plus `[fetch].pdf_enabled` gates, then flow through
-the shared byte-slice extractor. `repo_fetch` and batch repo items do not accept
-PDF page selection. PDF remains in `BINARY_EXTENSIONS`, so local indexing and
-repo-map filtering are unchanged. Local `repo_map` structure enrichment uses
-the same bounded opener for manifest, source, and test contents. Its structural
-walk skips symlink entries even when local search permits following symlinks,
-so map enrichment does not enumerate or read a linked tree outside the
-workspace.
+the canonicalized pathname. With `prefer_local: true`, an enabled local backend
+first resolves the requested host/owner/repository against local checkout
+identities and fetches the path from a matching workspace. If no local checkout
+matches, the remote fetch remains the fallback and the response warning states
+that the local copy was skipped and why. An authorized host scope preserves its
+existing validation error when its required local workspace or matching repo is
+not available. It identifies PDFs by case-insensitive `.pdf` extension or a
+safely read `%PDF-` prefix. PDF bytes use `pdf_max_file_bytes` and the existing
+PDF feature plus `[fetch].pdf_enabled` gates, then flow through the shared
+byte-slice extractor. `repo_fetch` and batch repo items do not accept PDF page
+selection. PDF remains in `BINARY_EXTENSIONS`, so local indexing and repo-map
+filtering are unchanged. Local `repo_map` structure enrichment uses the same
+bounded opener for manifest, source, and test contents. Its structural walk
+skips symlink entries even when local search permits following symlinks, so map
+enrichment does not enumerate or read a linked tree outside the workspace.
 
 ---
 

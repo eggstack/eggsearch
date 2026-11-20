@@ -93,15 +93,18 @@ release provenance, remaining reqwest elimination behind eggfetch ownership,
 bounded process/unsafe consolidation, and security-sensitive forge maintenance.
 Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 
-### 9. Knowledge delta — closed (M001–M003)
+### 9. Knowledge delta — M001–M003 closed; M004 corrective open
 
 Cutoff-aware `knowledge_brief`, the bundled rusqlite local evidence index, and
 source-driven topic discovery closed on exact candidate
 `c0f71909cfe2e6016512423e55b9d00fdb7220c5`. Closure evidence: M001
 `plans/closure/knowledge-delta/001-status.md`, M002
 `plans/closure/knowledge-delta/002-status.md`, and M003
-`plans/closure/knowledge-delta/003-status.md`. Roadmap:
-`plans/subsystems/knowledge-delta-roadmap.md`.
+`plans/closure/knowledge-delta/003-status.md`. M004 is a corrective pass to
+M001 for brief delta production and honest diagnostics, registered from a live
+default-configuration review on 2026-11-20; its plan is
+`plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`.
+Roadmap: `plans/subsystems/knowledge-delta-roadmap.md`.
 
 ## Dependency notes
 

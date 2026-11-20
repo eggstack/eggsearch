@@ -2307,6 +2307,206 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
     assert_eq!(batched["selected_span"], v["selected_span"]);
 }
 
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_uses_linked_worktree_without_remote_fetch() {
+    use httpmock::prelude::*;
+
+    let parent = tempfile::tempdir().unwrap();
+    let main = parent.path().join("main");
+    let linked = parent.path().join("linked");
+    fs::create_dir_all(main.join("src")).unwrap();
+    fs::write(
+        main.join("src/lib.rs"),
+        "pub fn linked_worktree_value() -> &'static str { \"local worktree\" }",
+    )
+    .unwrap();
+
+    let mut command = std::process::Command::new("git");
+    command.args(["init", "-b", "main"]).current_dir(&main);
+    run_git_checked(&mut command, "initialize linked-worktree source");
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(&main);
+    run_git_checked(&mut command, "configure linked-worktree email");
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["config", "user.name", "Test"])
+        .current_dir(&main);
+    run_git_checked(&mut command, "configure linked-worktree name");
+    let mut command = std::process::Command::new("git");
+    command.args(["add", "-A"]).current_dir(&main);
+    run_git_checked(&mut command, "stage linked-worktree source");
+    let mut command = std::process::Command::new("git");
+    command.args(["commit", "-m", "initial"]).current_dir(&main);
+    run_git_checked(&mut command, "commit linked-worktree source");
+    let mut command = std::process::Command::new("git");
+    command
+        .args([
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/test-owner/test-repo.git",
+        ])
+        .current_dir(&main);
+    run_git_checked(&mut command, "configure linked-worktree remote");
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["worktree", "add", "-b", "linked-fixture"])
+        .arg(&linked)
+        .arg("HEAD")
+        .current_dir(&main);
+    run_git_checked(&mut command, "create linked worktree");
+
+    let server = httpmock::MockServer::start();
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn remote_value() {}");
+    });
+    let state = repo_fetch_state_with_local_workspace(&linked);
+    let response = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: None,
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("linked-worktree prefer_local fetch");
+
+    assert_eq!(response["locator"]["kind"], "workspace");
+    assert_eq!(response["trust"], "local_trusted");
+    assert!(response["text"]
+        .as_str()
+        .is_some_and(|text| text.contains("local worktree")));
+    assert_eq!(remote.hits(), 0);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_reports_skip_and_returns_remote_result() {
+    use httpmock::prelude::*;
+
+    let root = tempfile::tempdir().unwrap();
+    let server = httpmock::MockServer::start();
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn remote_fallback_value() {}");
+    });
+    let response = run_repo_fetch(
+        repo_fetch_state_with_local_workspace(root.path()),
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "remote-owner".into(),
+            repo: "remote-repository".into(),
+            ref_name: None,
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("remote fallback should succeed");
+
+    assert_eq!(response["trust"], "external_untrusted");
+    assert!(response["text"]
+        .as_str()
+        .is_some_and(|text| text.contains("remote_fallback_value")));
+    assert_eq!(remote.hits(), 1);
+    assert!(response["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().any(|warning| {
+            warning.as_str().is_some_and(|message| {
+                message.contains("prefer_local_skipped")
+                    && message.contains("local copy was skipped")
+                    && message.contains("no matching local repository")
+            })
+        })
+    }));
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_names_the_skip_reason_when_the_remote_fails() {
+    use httpmock::prelude::*;
+
+    let root = tempfile::tempdir().unwrap();
+    let server = httpmock::MockServer::start();
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(404);
+    });
+    let error = run_repo_fetch(
+        repo_fetch_state_with_local_workspace(root.path()),
+        RepoFetchArgs {
+            host: Some("github".into()),
+            owner: "remote-owner".into(),
+            repo: "remote-repository".into(),
+            ref_name: None,
+            commit_sha: None,
+            path: "src/lib.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect_err("a failed remote fetch must surface as an error");
+
+    assert_eq!(remote.hits(), 1);
+    assert!(
+        error.to_string().contains("prefer_local_skipped")
+            && error.to_string().contains("no matching local repository"),
+        "got: {error}"
+    );
+}
+
 #[tokio::test]
 async fn repo_fetch_validation_error_zero_max_block_lines() {
     let state = repo_fetch_state();
@@ -4478,6 +4678,17 @@ fn repo_fetch_state() -> Arc<ServerState> {
     cfg.fetch.allow_private_network = true;
     cfg.fetch.sanitize_output = false;
     Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
+}
+
+#[cfg(feature = "mock")]
+fn repo_fetch_state_with_local_workspace(root: &std::path::Path) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![root.to_path_buf()];
+    Arc::new(ServerState::build(cfg).expect("local repo_fetch state"))
 }
 
 fn repo_fetch_state_with_challenge() -> Arc<ServerState> {

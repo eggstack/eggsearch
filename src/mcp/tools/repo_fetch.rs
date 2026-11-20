@@ -155,6 +155,7 @@ pub async fn run_repo_fetch_with_host_scope(
     }
 
     // --- prefer_local: resolve to local workspace when enabled ---
+    let mut prefer_local_skip_reason = None;
     if args.prefer_local.unwrap_or(false) {
         if host_local_scope.is_some() && !local_view.is_enabled() {
             return Err(ToolError::Validation(
@@ -172,7 +173,6 @@ pub async fn run_repo_fetch_with_host_scope(
                     &args.repo,
                 );
                 if let Some(rid) = matched {
-                    // Redirect to workspace fetch using the matched root
                     let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
                         args.response_detail,
                         state.config.mcp.schema_profile,
@@ -213,7 +213,12 @@ pub async fn run_repo_fetch_with_host_scope(
                         "local repository fetch was requested, but no matching repository exists in the authorized workspace".to_string(),
                     ));
                 }
+                prefer_local_skip_reason = Some("no matching local repository was found");
+            } else {
+                prefer_local_skip_reason = Some("the local workspace backend is disabled");
             }
+        } else {
+            prefer_local_skip_reason = Some("no local workspace backend is available");
         }
     }
 
@@ -545,6 +550,11 @@ pub async fn run_repo_fetch_with_host_scope(
             };
 
             let mut warnings = warnings;
+            if let Some(reason) = prefer_local_skip_reason {
+                warnings.push(format!(
+                    "prefer_local_skipped: local copy was skipped because {reason}"
+                ));
+            }
             if fetch_text_truncated {
                 warnings.push("remote_repo_fetch_truncated_by_fetch_cap".to_string());
             }
@@ -688,7 +698,14 @@ pub async fn run_repo_fetch_with_host_scope(
                 state.config.mcp.brief_max_chars,
             ))
         }
-        Err(e) => Err(ToolError::internal(format!("{}: {}", e.error_code(), e))),
+        Err(e) => Err(ToolError::internal(match prefer_local_skip_reason {
+            Some(reason) => format!(
+                "{}: {}; prefer_local_skipped: local copy was skipped because {reason}",
+                e.error_code(),
+                e
+            ),
+            None => format!("{}: {}", e.error_code(), e),
+        })),
     }
 }
 

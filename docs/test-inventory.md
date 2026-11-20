@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6445 | 28 |
-| `--features mock` | 6418 | 5 |
+| `--all-features` | 6519 | 28 |
+| `--features mock` | 6492 | 5 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -15,15 +15,15 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 
 | Suite | Feature Gate | Focus |
 |-------|-------------|-------|
-| `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, response shape, legacy-name rejection; opt-in screenshot PNG bounds, browser capability/conflict errors, image-out-of-JSON/cache behavior, and ordered batch image association |
+| `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, including the tagged fetch web/repo item schema, response shape, legacy-name rejection; opt-in screenshot PNG bounds, browser capability/conflict errors, image-out-of-JSON/cache behavior, and ordered batch image association |
 | `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection, derived-intent reporting and applied reranking, search-result cache hit/miss/coalesce equivalence and partial-fan-out bypass, blocked-provider classification |
 | `engine_parse_conformance` | `mock` | Captured-fixture conformance for the five HTML scrapers: parsed rows, explicit empty state, block classification, and a seeded-drift negative control that requires `parse_error` |
 | `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`), Anubis and ALTCHA solve-and-replay under `[search.challenge]`, fetch-side pass-cookie reuse, lifetime expiry, malformed-lifetime refusal, rejection eviction, in-call recovery from a refused pair set, and cross-origin isolation; plus auto-mode ordering (the solver owns a solvable wall and Chrome is never launched), unresolved-wall marking, interactive challenges staying manual, the deadline leaving no render time, and the `browser_completions` counter |
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
-| `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey |
+| `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey, prefer_local linked-worktree local redirect with no remote fetch, and no-match remote fallback with an explicit local-skip reason |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |
-| `knowledge_delta_brief` | `mock` | Cutoff-aware `knowledge_brief`: publication-after-cutoff emission, unknown-model non-claim, rejected provider-official override, total provider failure, retain-then-index refresh, and no index open on a live call |
-| `knowledge_delta_index` | None | Local evidence index: precision preservation, partition isolation, private-body rollback, corrupt-file refusal, and a second connection reading a committed batch |
+| `knowledge_delta_brief` | `mock` | Cutoff-aware `knowledge_brief`: publication-after-cutoff emission, unknown-model non-claim, rejected provider-official override, total provider failure, undated-provider diagnosis and capability reporting, date accounting and empty-state reasons, retained/index refresh behavior, excerpt selection without leading site chrome, and no index open on a live call |
+| `knowledge_delta_index` | None | Local evidence index: precision preservation, partition isolation, private-body rollback, corrupt-file refusal, a second connection reading a committed batch, and the actionable permission rejection that names the rejected directory and its required mode |
 | `knowledge_delta_discovery` | `mock` | Source-backed omission fixture: an unnamed neighbor appears only when `related_topics` is set and an indexed edge cites it; generic text adds no expanded delta |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling, default identifier routing through an enabled native advisory provider, conditional availability/severity warnings, and the bounded advisory summary |
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
@@ -32,7 +32,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
 | `config_validation` | None | Config rules and validation, including `[search]` search-cache TTL/entry bounds |
 | `keyless_core` | None | Keyless-core runtime invariant |
-| `local_workspace_integration` | `mock` | Local workspace search backend, local PDF extension/magic detection, size budget, feature/config gates, explicit empty outcome, trust/sanitization, non-PDF binary rejection, relevance admission (role bonuses never admit), scoped include_local, truncation meaning, second-pass content and symbol recall beyond the first candidate window, bounded git-hint versus walk parity, and exhausted-versus-cut-short signalling |
+| `local_workspace_integration` | `mock` | Local workspace search backend, local PDF extension/magic detection, size budget, feature/config gates, explicit empty outcome, trust/sanitization, non-PDF binary rejection, relevance admission (role bonuses never admit), scoped include_local, truncation meaning, second-pass content and symbol recall beyond the first candidate window, bounded git-hint versus walk parity, exhausted-versus-cut-short signalling, and linked-worktree shared-remote identity parity with a normal clone |
 | `inventory_freshness` | `mock` | Inventory lifecycle and freshness |
 | `retrieval_attempt_ledger` | None | Attempt ledger validation |
 | `retrieval_quality` | `mock` (live observation and recorder ignored) | Synthetic versioned retrieval-quality corpus, URL aliases, incomplete judgments, precision/recall/MRR/nDCG, passage budget, source diversity, evidence/status metrics, deterministic fingerprint, candidate-snapshot replay through the production selection path (tier-1 synthetic, tier-2 recorded, tier-3 recorded into `target/snapshots/`), duplicate-slot/domain/authoritative-survival metrics, three seeded negative controls, derived-intent rollout gate, shipped-default-set routing gate (one case per disclosed intent, keyword-query admission predicate, re-pointed `security-nvd-first` negative control), opt-in bounded provider observations |
@@ -64,7 +64,7 @@ Placement authority is the table in `architecture/testing.md`.
 
 Every case is generated synthetically by this repository; no third-party document bytes are committed. `corpus.json` records the licence, page count, SHA-256, expected outcome, and a construction recipe per case. The suite asserts 116 baseline annotations and 15 recorded ADR-0008 target statuses (an improvement forces a manifest update), and the join-lines-and-strip-spaces negative control must be rejected by 25 declared metric groups, with the two-column case covering all five metric families plus running heads. Corpus budget: 3 MiB total and 1 MiB per case, asserted by the suite.
 
-## Property Tests (18 suites)
+## Property Tests (19 suites)
 
 | Suite | Feature Gate | Tests | Focus |
 |-------|-------------|-------|-------|
@@ -86,6 +86,7 @@ Every case is generated synthetically by this repository; no third-party documen
 | `property_conflict` | None | 24 | Conflict detection, entity scoping, source attribution |
 | `property_retrieval` | None | 47 | Retrieval attempt ledger, absence kinds, truncation evidence, derived-intent determinism/bounds/reason-code shape |
 | `property_dependency_parse` | None | 8 | Dispatch determinism, per-file budgets, identity/provenance invariants, line bounds, canonicalization |
+| `property_knowledge_delta` | None | 9 | Cutoff comparison relations, date-accounting partition invariants, and cutoff precision handling |
 
 ## Fault Injection & Adversarial
 
@@ -187,7 +188,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `recipes_next_actions` | Workflow hint generation |
 | `evidence_bundle_handoff` | Evidence bundle packaging |
 | `evidence_integration` | Evidence integration pipeline |
-| `structured_local_code_intelligence` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment) |
+| `structured_local_code_intelligence` | Structured local code intelligence (4-language fixtures, ranking, fallback, budgets, repo-map enrichment, and linked-worktree structured search preserving repository-relative paths) |
 | `provider_capability_contract` | Provider native-capability enforcement contract |
 | `egress_qualify_contract` | Egress qualification CI contract (exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage) |
 
@@ -195,7 +196,7 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 
 | Suite | Tests | Focus |
 |-------|-------|-------|
-| `mcp_tool_contract` | 21 | Canonical registry parity, sanitization, deterministic fingerprints, and compact-profile size/all-name contract |
+| `mcp_tool_contract` | 22 | Canonical registry parity, sanitization, deterministic fingerprints, compact-profile size/all-name contract, and the fetch canonical argument-property surface |
 | `mcp_schema_slimming` | 21 | Full/compact schema budgets, batch per-target option advertisement, and legacy-field acceptance |
 | `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
 | `mcp_projection` | 35 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, intact over-800-character document extraction within budget, native advisory summary retention, payload budget fields retained, 15-task byte/retention trace, bundle identity |
