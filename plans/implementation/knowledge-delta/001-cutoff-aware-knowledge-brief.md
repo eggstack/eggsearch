@@ -1,8 +1,8 @@
 # M001 — Cutoff-Aware Knowledge Brief
 
 Status: proposed
-Draft: yes — implementation prohibited until ADR-0020 is accepted
 Date: 2026-11-19
+Revised: 2026-11-20 — proposed contract. Not implementation authorization.
 Subsystem: knowledge-delta
 Milestone class: capability
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
@@ -13,193 +13,301 @@ References: `plans/000-long-term-specification.md` §§1–4, 7–8;
 `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016;
 proposed ADR-0020.
 Design owners: `architecture/research.md`, `architecture/mcp.md`,
-`architecture/codegg-contract.md`, `architecture/evidence-workflow.md`.
+`architecture/codegg-contract.md`, `architecture/evidence-workflow.md`,
+`architecture/fetch.md` (emitted-payload measure only).
 
 ## Objective and readiness
 
 Expose one deterministic, model-cutoff-aware MCP `knowledge_brief` operation.
-Given a topic and explicit model identifier or cutoff, return a compact
-ranked list of *candidate* post-cutoff developments with supporting source
-spans, date-basis/provenance, evidence gaps, and retrieval accounting.
-There is no embedded LLM, index, or crawler.
+Given a topic and an explicit model identifier or cutoff, return a compact
+ranked list of *candidate* developments whose dated evidence is after the
+published cutoff, with source spans, date basis and precision, evidence
+gaps, and retrieval accounting. There is no embedded LLM, index, crawler,
+or prose date parser.
 
-**Hard dependency:** ADR-0020 must be accepted, including authorization
-to change the canonical inventory from nine to ten. If ADR-0020 is
-rejected or altered, stop and revise this plan before touching code.
-**Interface dependencies:** existing adapter/search/fetch and evidence
-bundle contracts are stable on this baseline. CodeGG/eggui model-ID
-plumbing can proceed separately against the proposed request schema.
+**Hard dependency:** ADR-0020 must be accepted, including authorization to
+change the advertised inventory from nine to ten. If ADR-0020 is rejected
+or altered, stop and revise this plan before touching code.
+**Interface dependencies:** existing adapter, search, fetch, and evidence
+contracts are stable on this baseline. CodeGG and eggui may pass
+`model_id` against this request schema. They must not send `scope` or a
+non-live `refresh`.
 
 ## Current implementation evidence
 
-- `src/meta/research_planner.rs` plans typed, bounded subqueries;
-  `src/meta/adapter/research.rs` orchestrates `research_search`.
-- `src/meta/workflow.rs` and `src/meta/fetch_ranking.rs` own attempts,
-  selection and follow-up hints; `src/core/research.rs` owns evidence DTOs.
-- `src/mcp/tools/research_search.rs` implements shared validation/result
-  projection; `src/mcp/server.rs` and `tool_contract.rs` own discovery.
-- `src/fetch/` owns authorized dynamic fetch and focused chunk selection.
-- The normative specification names nine canonical tools; tool-count tests
-  and consumer docs must change atomically if the ADR is accepted.
+- `src/meta/research_planner.rs` plans typed subqueries for
+  `research_search` only. `MAX_SUBQUERIES` is 8. That planner is a
+  pattern, not a shared engine. `ResearchWorkflow` in
+  `src/core/research.rs` is a closed goal enum. Do not add a variant.
+- Shared mechanics are `WorkflowExecution`, `RetrievalAttemptSet`, and
+  `FetchCandidateBuilder` (`src/meta/workflow.rs`,
+  `src/meta/fetch_ranking.rs`). Spec §3 forbids flattening domain
+  workflows into one planner.
+- `Freshness` (`day`/`week`/`month`/`year`) is a recency hint. The
+  adapter does not apply it locally. `SearchDateRange` is an inclusive
+  `YYYY-MM-DD` provider filter and is mutually exclusive with a non-`any`
+  freshness hint. Neither type is a cutoff judgment.
+- `parse_result_timestamp` in `src/core/source_card.rs` accepts only
+  RFC 3339 and `YYYY-MM-DD`, folds both to midnight UTC, and refuses
+  snippet text. `SourceCard.published_at` is publication evidence.
+  `src/fetch/` has no `datePublished`, JSON-LD, or `<time>` extractor.
+- Stable IDs are FNV-1a in `src/core/identity.rs` (`eggsearch-id-v1`,
+  `canonicalize_url`, `source_id`). Excerpts are not part of stable IDs.
+- Advertised tools are the nine names in `src/mcp/advertisement.rs`.
+  `web_fetch` and `batch_fetch` are callable aliases, not advertised.
+  `src/sdk.rs` asserts facade names match that inventory.
+  `AGENTS.md` still says "exactly 10 tools"; that sentence is already
+  stale and is not authority. Do not edit it in this plan.
+- `architecture/fetch.md` defines `payload_chars` as the Unicode scalar
+  count of the serialized item response, measured before projection.
+  `truncated` means text was clipped. Structural omission is not
+  `truncated`.
 
 ## Invariants
 
 - Do not alter incumbent canonical tool names, `fetch` semantics,
   compatibility aliases, source IDs, RRF tie-breakers, trust classes, or
   provider capability routing.
-- Never state that a model definitely lacks a fact; `post_cutoff` means
-  the **dated evidence** postdates the **published cutoff** under a
-  specific precision rule.
-- Unknown cutoff or ambiguous date remains unknown, never guessed.
+- Never state that a model lacks a fact. A temporal relationship describes
+  dated evidence against a published cutoff, under the ADR-0020 rule.
+- Unknown cutoff, unknown precision, or an unknown basis stays unknown.
+  Never guess, and never promote month or year precision to a day.
 - Publication, event, page-update, and first-observed dates are distinct.
-  A recent page reporting an older event is not an automatically new event.
+  A publication date is not an event date. A recent page about an older
+  event is not a new event.
+- Follow existing SSRF, origin, sanitization, and credential policy. Do
+  not add a private-network exception for this tool. Evidence stays
+  external-untrusted data.
 - No provider-produced summaries, internal answer generation, recursion,
-  uncontrolled source expansion, credential widening, or private-network
-  URL access. Evidence stays framed as external-untrusted data.
-- Return explicit budget, coverage and provider failures; no matches never
-  means proven no developments occurred.
+  or uncontrolled source expansion.
+- Return explicit budget, coverage, and provider failures. No matches
+  never means no developments occurred.
+- A `live` call has no persistent side effects. Later milestones must
+  not write an index on this call unless the caller opts in under
+  ADR-0021.
 
 ## Scope
 
-**In:** bounded cutoff catalog, source-provenant model aliases, typed
-deterministic query planner, date parsing/classification, existing live
-search and authorized small fetch selection, one new MCP contract,
-diagnostics, tests and docs.
+**In:** bundled cutoff snapshot, operator cutoff overrides, one typed
+planner, the ADR-0020 date rule, existing live search, a small authorized
+fetch selection, one new MCP contract, diagnostics, tests, and docs.
 
-**Out:** local persistent index, auto-refresh daemon, feed crawler,
-semantic embeddings, local LLM, new search engines, unrelated repo/search
-refactors, and model-dependent prompts generated by another model.
+**Out:** local persistent index, catalog import command, prose or
+snippet date extraction, an open `scope` field, `refresh` values other
+than omitted or `live`, feed crawler, auto-refresh daemon, semantic
+embeddings, local LLM, new search engines, a `ResearchWorkflow` variant,
+and unrelated repo or search refactors.
+
+## Cutoff comparison rule
+
+Implement the rule in ADR-0020. It is restated here so this handoff is
+executable. Each date carries `precision` (`day`, `month`, `year`,
+`unknown`) and `basis` (`event`, `publication`, `page_update`,
+`first_observed`, `unknown`).
+
+Compare only at the coarser precision. The relationship must hold for
+every calendar date that precision allows:
+
+- `after_cutoff` only when every evidence date is strictly after every
+  cutoff date.
+- `on_or_before_cutoff` only when every evidence date is on or before
+  every cutoff date. A day equal to a day-precision cutoff is
+  `on_or_before_cutoff`. This matches inclusive `SearchDateRange`.
+- Otherwise `indeterminate`, including unknown precision or basis, a
+  day inside a month-precision cutoff, and equal month or year periods.
+
+Required fixtures: cutoff day 2024-06-01 with evidence day 2024-06-02 is
+`after_cutoff`; the same day is `on_or_before_cutoff`; cutoff month
+2024-06 with evidence day 2024-07-01 is `after_cutoff`; that cutoff with
+evidence day 2024-06-15 or month 2024-06 is `indeterminate`; cutoff day
+2024-06-15 with evidence month 2024-06 is `indeterminate`; cutoff year
+2024 with evidence month 2024-06 is `indeterminate`.
+
+Do not call `parse_result_timestamp` as the classifier. Use it only to
+accept an already structured provider timestamp, and record precision
+`day`. A value it rejects stays `unknown` unless a separate parser
+preserves coarser precision explicitly. Do not fold a month or year to
+midnight UTC. Do not parse dates out of snippets. `src/fetch/` does not
+extract structured HTML dates; adding that extractor is not this
+milestone.
+
+`published_at` is publication basis. Emit an event relationship only
+when a provider field is already an event date. Do not promote
+publication to event. A publication-only delta may be `after_cutoff`
+on publication basis and must say so. Conflicting values on the same
+basis stay conflicted; do not pick a winner. The headline relationship
+is `indeterminate` when the event basis is missing or conflicting and
+the caller would otherwise read it as a new event.
+
+Send `SearchDateRange` only when cutoff precision is `day` (start is
+the next day, end is the call's UTC day). A coarser cutoff is classified
+locally and reported as not applied, not approximated. Do not map a
+cutoff onto `Freshness`. Pass a caller `language` hint through. Reuse
+the existing prefixes in `src/core/warning/prefixes.rs`:
+`language_unenforced`, `date_range_unenforced` when a sent day range
+is not provider-enforced, and `freshness_unenforced` only if a caller
+freshness hint was passed through. Do not invent a cutoff warning code.
 
 ## Proposed request/response contract
-
-Input, illustrative and subject to ADR approval:
 
 ```json
 {
   "topic": "free-threaded Python third-party compatibility",
   "model_id": "openai/gpt-6-luna",
-  "scope": "software",
   "max_items": 8,
-  "max_chars": 6000,
-  "refresh": "live"
+  "max_chars": 6000
 }
 ```
 
-An explicit `cutoff_override` may be supplied with `date`,
-`precision`, `source` and reason; if present it wins without pretending
-to be provider-official. Invalid model IDs, conflicting overrides,
-unbounded output settings and invalid dates produce repairable errors.
-Input defaults and hard caps must be written to `docs/config.md`.
+`topic` is required and is passed through unchanged. `model_id` is
+optional. An unrecognized model resolves to `unknown`; that is not an
+error, and the call remains usable without a temporal claim.
+`cutoff_override`, when present, wins and must include `date`,
+`precision`, `source`, and `reason`. It must not be labeled
+provider-official. A malformed override, an invalid date, or an unknown
+`refresh` value is a repairable error. Omitted `refresh` and
+`refresh: "live"` are the only accepted forms. `prefer_live` and
+`index` are rejected until ADR-0021. There is no `retain` field
+and no `scope` field.
 
-Output contains `topic`, `model_resolution` (ID, alias, date,
-precision, kind, source, verified_at or unknown), `deltas` (stable
-content-derived ID, bounded question/excerpt, `source_ids`, source
-URLs, evidence spans, `date_basis`, temporal relationship
-`after_cutoff | on_or_before_cutoff | indeterminate`, quality and
-conflict markers), `retrieval_summary`, `coverage`, `warnings`,
-`truncated`, and bounded `next_actions`. Return `unsupported` or
-`indeterminate`, not a fabricated confidence percentage, where
-verification evidence is insufficient.
+Operator overrides are `[knowledge_delta.cutoffs]` entries of model
+alias to `{date, precision, source, verified_at}`. They are not index
+settings. Invalid config fails closed at load. Precedence is caller
+override, operator override, then the bundled snapshot
+(provider-official, then Models.dev, then OpenRouter), then `unknown`.
+The snapshot records source URL, verification date, and precision. No
+runtime import, and no inference from model family. Proposed defaults
+are `max_items` 8 and `max_chars` 6000; write the caps to
+`docs/config.md` in the implementation change.
+
+`max_chars` counts Unicode scalars of `serde_json::to_string` on each
+delta object, before projection. Sum emitted deltas as
+`total_payload_chars`. Topic, model resolution, retrieval summary, and
+warnings are envelope overhead outside the sum, as in
+`architecture/fetch.md`. `truncated` means excerpt text was clipped.
+Omitting a delta sets `budget_exhausted` and does not set
+`truncated`. New warning strings go through
+`src/core/warning/prefixes.rs`.
+
+Output contains `topic`, `model_resolution`, `deltas` (a `kdelta_`
+ID, bounded excerpt, `source_ids`, URLs, spans, `date_basis`,
+`precision`, `temporal_relationship`, conflict markers, and
+`payload_chars`), `total_payload_chars`, `retrieval_summary`,
+`coverage`, `warnings`, `truncated`, and bounded `next_actions`.
+The static `next_tools` contract and the response `next_actions`
+field may name `fetch` and `research_search` only. No confidence
+percentage.
+
+Delta IDs use FNV-1a in `src/core/identity.rs` with the
+`eggsearch-id-v1` prefix and a new `kdelta_` tag. Hash
+`canonicalize_url` plus basis, precision, and the normalized date. Do
+not hash excerpt text. Source identity stays the existing `src_` ID.
 
 ## Ordered work packages
 
-1. **Contract and catalog.** In `src/core/knowledge_delta.rs`,
-   define the versioned DTO and date/cutoff precision vocabulary. In a
-   `src/meta/knowledge_delta/` module, implement a deterministic alias
-   resolver with an embedded, cited snapshot and provenance precedence:
-   explicit caller override, operator override, provider-official,
-   Models.dev, OpenRouter, unknown. Permit a later import command but
-   do not make startup or calls depend on an external model catalog.
-   Record source URLs and verification dates; never silently use a
-   family cutoff or turn month precision into a day precision.
-2. **Query planning.** Build at most the configured number of topic
-   and lexical-change queries (release, compatibility, deprecation,
-   policy, API) through the existing `MetadataSearchAdapter`.
-   Reuse `ResearchWorkflow`, source-role and retrieval-attempt
-   machinery rather than cloning an engine dispatch path. Apply
-   post-cutoff date filters where supported and report
-   `not_enforced` or `approximated` faithfully.
-3. **Evidence selection.** Deduplicate selected source cards by the
-   established identity. Inspect only a small caller/config-capped
-   subset using the authorized fetch path with explicit focus.
-   Extract source-backed candidate event/date phrases
-   deterministically; never convert unverified snippets into verified
-   claims. Keep a separate `event_date` and `source_published_at`
-   when supported, with explicit basis if only one exists. Make the
-   output stable under provider iteration and equivalent input aliases.
-4. **MCP and native facade.** Add `src/mcp/tools/knowledge_brief.rs`;
-   route it through `src/mcp/server.rs` plus `tool_contract.rs`,
-   `advertisement.rs`, `projection.rs`, `output_schema.rs`,
-   `src/sdk.rs` and Python typed bindings where exposed. Integrate
-   normal validation, read-only annotations, errors, response detail,
-   contract fingerprint and next-action filtering.
-5. **Compatibility and docs.** On accepted ADR, amend normative
-   `plans/000-long-term-specification.md` tool count and §7
-   exception *in the same implementation change*, and update code-
-   derived inventory guards, `architecture/mcp.md`, `maintenance.md`,
-   `codegg-contract.md`, `research.md`, `docs/tool-matrix.md`,
+1. **Contract and catalog.** In `src/core/knowledge_delta.rs`, define
+   the DTO and the precision, basis, and relationship vocabulary. In
+   `src/meta/knowledge_delta/`, resolve aliases from the bundled
+   snapshot and `[knowledge_delta.cutoffs]`. Do not add an import
+   command.
+2. **Query planning.** A new typed planner calls
+   `MetadataSearchAdapter`, records attempts on
+   `RetrievalAttemptSet`, and selects fetches with
+   `FetchCandidateBuilder`. Do not call `build_research_search_plan`
+   or add a `ResearchWorkflow` variant. Default 4 subqueries, hard
+   cap 8. The topic string is one subquery, unchanged. Further
+   subqueries may append a closed English hint list (release,
+   compatibility, deprecation). Coverage says those hints are English
+   and are not a translation.
+3. **Evidence selection.** Deduplicate by the existing source ID.
+   Fetch only a caller-capped subset through the authorized fetch path.
+   Classify dates by the rule above. Given the same provider responses,
+   packaging is deterministic across provider order and equivalent
+   aliases. Live provider drift across calls is not a stability
+   requirement.
+4. **MCP and native facade.** Add `src/mcp/tools/knowledge_brief.rs`.
+   Register it in `src/mcp/server.rs`, `tool_contract.rs`,
+   `advertisement.rs`, `projection.rs`, `output_schema.rs`, and
+   `src/sdk.rs`. The SDK assertion requires the facade name in the
+   same change. Python bindings follow that facade
+   (`architecture/python-library.md`); this is not optional. Match
+   `research_search` read-only annotations. Set `next_tools` to
+   `fetch` and `research_search` only. Full and Research presets
+   advertise the tool. Code and Minimal do not. A hidden tool stays
+   callable.
+5. **Compatibility and docs.** On accepted ADR, the implementation
+   change amends `plans/000-long-term-specification.md` §§1–2 and §7
+   and adds the subsystem pointer in `plans/002-long-term-roadmap.md`.
+   Do not amend those files in this plan. Update
+   `architecture/mcp.md`, `architecture/maintenance.md`,
+   `architecture/codegg-contract.md`, `architecture/research.md`,
+   `architecture/testing.md`, `docs/tool-matrix.md`,
    `docs/agent-workflows.md`, `docs/codegg-integration.md`,
-   `docs/config.md`, `docs/test-inventory.md` and SDK/Python docs.
-   Correct stale ten-tool prose only where evidence requires it.
-6. **Evaluation.** Supply at least 50 deterministic dated cases,
-   covering positive/negative changes, undated sources, fake dates,
-   late publication of older events, contradictory reports, model
-   aliases, unknown cutoffs and offline/failed-provider conditions.
-   Compare source-backed recall and cost to equal-budget
-   `research_search`; report results without assuming a gain.
+   `docs/config.md`, `docs/test-inventory.md`, and the stale
+   "exactly 10 tools" sentence in `AGENTS.md`. Correct other stale
+   ten-tool prose only where the code-derived inventory disagrees.
+6. **Evaluation.** Property-test the comparison fixtures above in
+   `tests/property_knowledge_delta.rs`, plus unknown cutoff and
+   conflicting bases. Extend `tests/property_identity.rs` for the
+   `kdelta_` ID. Failed-provider coverage belongs in the behavioral
+   suite. An equal-budget comparison with `research_search` is a
+   closure report, not a pass gate. Do not invent a recall threshold.
 
 ## Failure, timeout, and recovery
 
-Each call has explicit aggregate deadline and max-query, max-fetch,
-max-page-byte and max-output-character bounds. Provider failures are
-soft if evidence remains; total inability to retrieve sources is
-structured failure or explicit partial state, not empty success.
-Oversized or injection-laden text is sanitized and truncated with
-markers. Metadata catalog failure falls back to bundled snapshot or
-`unknown`. Cancellation stops fan-out. No persistent side effects.
+Each call has an aggregate deadline and max-query, max-fetch,
+max-page-byte, and max-output bounds. Provider failure is soft when
+any evidence remains. Total failure to retrieve is a structured
+failure or an explicit partial state, not an empty success. Sanitize
+and bound untrusted text. Catalog trouble falls back to the bundled
+snapshot or `unknown`. Cancellation stops fan-out. No persistent
+side effects.
 
 ## Verification (run against the exact implementation SHA)
 
-- Unit/property tests for date precision, alias precedence, stable IDs,
-  deterministic order, source-to-event linkage, and bounded planner.
-- Extend `tests/research_workflow.rs`,
-  `tests/research_evidence_corpus.rs`, `tests/mcp_tools.rs`,
+- The comparison rule is a pure function. Put its fixtures in
+  `tests/property_knowledge_delta.rs`. Extend
+  `tests/property_identity.rs` for the `kdelta_` ID. Do not put
+  either pure case in a behavioral suite.
+- New behavioral suite `tests/knowledge_delta_brief.rs` for the MCP
+  and planner path, including alias precedence, deterministic
+  packaging, and the subquery cap. Do not put these cases in
+  `tests/research_workflow.rs`. Extend `tests/mcp_tools.rs`,
   `tests/mcp_tool_contract.rs`, `tests/mcp_projection.rs`,
-  `tests/docs_tool_names.rs`, `tests/static_guards.rs`,
-  `tests/evidence_contract.rs`, and client schema parity suites.
+  `tests/docs_tool_names.rs`, `tests/static_guards.rs`, and client
+  schema parity. Add both suite rows to `architecture/testing.md`
+  and `docs/test-inventory.md`.
 - Focused:
-  `cargo test --locked --features mock --test research_workflow`;
-  `cargo test --locked --features mock --test research_evidence_corpus`;
+  `cargo test --locked --features mock --test knowledge_delta_brief`;
   `cargo test --locked --features mock --test mcp_tool_contract`;
   `cargo test --locked --features mock --test mcp_tools`;
   `cargo test --locked --features mock --test docs_tool_names`;
   `cargo test --locked --features mock --test static_guards`.
-- Broad: `make check` and `make docs-check` (plus installed-wheel
-  API/schema parity if exposed). Test keyless and offline fixtures.
-  Record advertised tool count and serialized full/compact tool-list
-  bytes against the nine-tool baseline.
+- Broad: `make check` and `make docs-check`, plus installed-wheel
+  schema parity. Keyless offline fixtures. Record advertised tool
+  count and full/compact tool-list bytes against the nine-tool
+  baseline.
 
 ## Acceptance and stop conditions
 
-M001 passes only if the new MCP tool is actually callable, returns
-bounded, source-linked, correctly dated evidence under fixtures, and
-does not regress existing tools/aliases or the declared budgets.
-A cutoff-unknown request must remain usable without a false temporal
-claim. All required code/docs/consumer parity and exact-candidate gates
-must pass; otherwise status remains open.
+M001 passes only if the tool is callable, the comparison fixtures
+match the rule, evidence is source-linked and basis-labeled, and
+existing tools, aliases, and budgets do not regress. An unknown
+cutoff stays usable without a false temporal claim.
 
-**Stop:** ADR not accepted; required catalog provenance unavailable;
-date precision being invented; proposed fetch path bypasses SSRF,
-sanitization, or adapter; tool count changes without the specification
-and guards updated; or multi-provider error handling hides loss of
-coverage.
+**Stop:** ADR not accepted; a date rule other than ADR-0020; snippet
+dates treated as verified; a `ResearchWorkflow` variant; fetch
+bypassing SSRF, sanitization, or the adapter; a tool-count change
+without the specification, `AGENTS.md`, and guards; or a provider
+failure hidden as empty coverage.
 
 ## Closure evidence required
 
-Record implementation commit SHA, accepted ADR status, requirement-to-
-test matrix, focused/broad and SDK/Python/CodeGG contract results, tool
-inventory/schema-size delta, dated-fixture evaluation, failure/timeout
+Record the implementation SHA, accepted ADR status, requirement-to-test
+matrix, focused and broad results, SDK, Python, and CodeGG contract
+results, tool-inventory and schema-size delta, the date-fixture
+results, the ungated `research_search` comparison if run, failure
 cases, security review, known limitations, and decision
 `closed | conditionally closed | corrective pass required | blocked`.
-Write `plans/closure/knowledge-delta/001-status.md` and update
-registry/roadmap together. Nothing in this draft counts as closure.
+Write `plans/closure/knowledge-delta/001-status.md` and update the
+registry and roadmap together. Nothing in this plan counts as closure.

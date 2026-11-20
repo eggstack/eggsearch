@@ -1,8 +1,8 @@
 # M002 — Optional Local Evidence Index
 
 Status: proposed
-Draft: yes — implementation prohibited until predecessors and ADR-0021 close
 Date: 2026-11-19
+Revised: 2026-11-20 — proposed contract. Not implementation authorization.
 Subsystem: knowledge-delta
 Milestone class: infrastructure
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
@@ -15,147 +15,164 @@ proposed ADR-0020 and ADR-0021.
 
 ## Objective and readiness
 
-Provide optional, bounded, crash-safe persistence for *selected external
-evidence*, with lexical FTS5 retrieval, source/version provenance, and
-explicit freshness state. A local run can answer from historical evidence
-without an LLM or network call, but must not claim current coverage.
+Provide optional, bounded, crash-safe persistence for *selected public
+evidence*, with lexical lookup, source provenance, and explicit
+freshness state. A caller can read historical evidence without an LLM.
+The index must not claim current coverage, and enabling it must not
+change an M001 `live` call.
 
-**Hard:** M001 must be closed and ADR-0021 accepted; confirm this branch's
-actual storage/packaging constraints before implementation. **Operational:**
-cross-platform SQLite and release footprint qualification before claiming
-the feature is shippable in a default binary. This plan is proposed, not
-ready.
+**Hard:** M001 closed, and ADR-0021 accepted. Acceptance of ADR-0021
+requires the footprint spike recorded in that ADR. This milestone does
+not run that spike and does not choose the storage engine. If the
+accepted ADR names JSON instead of SQLite, revise this plan before
+writing a SQLite schema. **Operational:** default-target footprint
+evidence before calling the feature shippable in the default binary.
+The experimental ARMv7 wheel is not a hard gate; mark that physical
+run unrun. This plan is proposed, not ready.
 
 ## Current evidence
 
-`src/meta/search_cache.rs` provides bounded process-local query-result
-reuse; `src/fetch/cache.rs` provides in-memory raw/derived extraction
-caches. Neither is an event index or persistent store. `src/core/config.rs`
-and `src/config.rs` own typed TOML defaults, validation and settings
-paths; `src/fetch/` owns bounded URL extraction, with `eggfetch-core`
-as transport authority. M001 will own the candidate-evidence contract.
+`src/meta/search_cache.rs` is process-local query reuse.
+`src/fetch/cache.rs` is an in-memory raw and derived cache.
+`CacheScope::Profile` partitions by an opaque `prof_` ID, never the
+display name. `should_cache_response` refuses `no-store`, non-2xx,
+and `private` in the anonymous scope. Neither cache is an event
+index. Config lives at `$XDG_CONFIG_HOME/eggsearch/config.toml`
+(`default_config_path`). There is no general eggsearch data
+directory. M001 owns the candidate-evidence contract and the
+`kdelta_` ID.
 
 ## Invariants and non-goals
 
-- Keep the M001 live-only path functional when index is disabled, corrupt,
-  unavailable, or its schema is too new. No silent fallback that makes a
-  stale result appear freshly searched.
-- Do not persist raw user prompts, authenticated browser/session state,
-  cookies, upstream credentials, or arbitrary private workspace content.
-- Keep external source trust markers and stable `SourceCard`/delta IDs;
-  index hits do not become trusted instructions.
-- Never use FTS scores as fact confidence or publication dates as
-  event dates. Preserve original observation/date evidence.
-- No recursive URL traversal, resident model, embedding dependency,
-  general background crawler, cross-profile evidence leakage, or second
-  release SKU.
+- A `live` call neither reads nor writes the index. Disabled, corrupt,
+  missing, and too-new schemas leave that path unchanged. No silent
+  fallback that makes a stale hit look freshly searched.
+- Do not persist raw user prompts, browser-profile or cookie-backed
+  bodies, pass-cookie replays, upstream credentials, or private
+  workspace content.
+- Keep trust markers and M001 `kdelta_` / `src_` IDs. An index hit
+  is not a trusted instruction. Do not invent a second URL
+  canonicalizer; use `canonicalize_url`.
+- Never use lexical scores as fact confidence, or a publication date
+  as an event date. Store the M001 basis and precision unchanged.
+- No feed ingestion, refresh command, scheduler, recursive traversal,
+  resident model, embedding dependency, cross-profile leakage, or
+  second release SKU.
 
 ## Storage and public compatibility contract
 
-SQLite with FTS5 is **conditional on accepted ADR-0021**, including its
-release-footprint/dependency gate. Suggested typed entities:
-`documents` (canonical URL, content hash, source, publish/update/
-observed dates, capped excerpt, trust); `candidate_events` (stable ID,
-subject/type, date precision/basis, document span, ambiguity flags);
-`event_sources` (event and document identity); `subscriptions`
-(operator-approved feed/API source, validators, last/next check, status);
-and `schema_meta` (schema version, last migration).
+The engine is whatever accepted ADR-0021 names. The SQLite/FTS5 schema
+below applies only if that decision is SQLite. Suggested entities:
+`documents` (canonical URL, content hash, source, dates with basis
+and precision, capped excerpt, trust); `candidate_events` (M001
+`kdelta_` ID, basis, precision, document span, ambiguity flags);
+`event_sources`; and `schema_meta`. No `subscriptions` table.
 
-Index path under the platform's eggsearch data directory, not a repository
-checkout; do not migrate/copy the existing fetch-cache contents. Default
-runtime configuration disabled. Proposed settings: `[knowledge_delta.index]`
-enabled, path, `max_bytes` (suggested 64 MiB), `max_documents`,
-`max_excerpt_chars`, retention days, per-cycle limits. Specify and
-validate all defaults/caps in the implementation's config docs.
+Default path is explicit `[knowledge_delta.index].path`, or
+`<config_dir>/knowledge-delta/<partition>/`. `partition` is
+`anonymous` or the opaque `prof_<fnv>` ID. Never the display name,
+and never a repository checkout. Do not copy fetch-cache contents.
+Runtime default is disabled. Settings: `enabled`, `path`,
+`max_bytes` (suggested 64 MiB), `max_documents`,
+`max_excerpt_chars`, and retention days. Validate them in
+`docs/config.md`.
+
+A document is indexable only when the fetch used
+`CacheScope::Anonymous`, `browser_profile` was absent, and
+`should_cache_response` would accept the response. Refuse `private`,
+`no-store`, pass-cookie replays, and profile-scoped bodies.
+
+Request modes, additive over M001:
+
+- omitted or `live`: M001 behavior. No index read or write.
+- `retain: true`: rejected unless the index is enabled. When accepted,
+  write this call's already selected public evidence. `retain` does
+  not change retrieval.
+- `prefer_live`: live search, then union index hits by stable ID.
+  Label each `live_checked` or `index_only`. An index-only hit
+  stays stale. It is not a fresh search.
+- `index`: index only. Coverage says freshness is unverified.
+
+`retain` is a boolean, not a `refresh` value. `prefer_live` is
+the union mode and `index` is the local-only mode; both are
+`refresh` values, and neither is the default. M001 callers that
+omit `refresh` stay live and write nothing.
 
 ## Ordered work packages
 
-1. **Dependency/footprint spike:** qualify SQLite bundled vs system
-   library under Rust MSRV 1.89, Linux/macOS/Windows and target SBC
-   distributions; measure added stripped binary size, startup resident
-   memory and schema-init time. If it violates accepted constraints,
-   stop and revise ADR-0021 rather than adding another binary SKU.
-2. **Local schema and transactions:** define schema version and
-   migrations, bounded excerpt storage and FTS5 columns. Persist
-   original source IDs, source URL canonicalization, validated date
-   basis/precision and content-derived event IDs. Atomic inserts,
-   idempotent replay, concurrent-reader/single-writer behavior,
-   crash recovery, and deterministic schema-downgrade refusal.
-3. **Ingestion:** index only already selected public source evidence
-   from M001 with explicit per-item/aggregate limits. Avoid arbitrary
-   link following. Permit operator-provided approved source feeds or
-   APIs using existing bounded fetch/forges; cap item and origin
-   rates. ETag/Last-Modified are validators, not verified event dates.
-4. **Query and budget:** use FTS5 for bounded topic/subject lookup with
-   deterministic tie-breaks. Union index and live candidates by stable
-   identity while preserving trust and freshness metadata; report
-   `index_only`, `live_checked`, `stale`, `refresh_failed`,
-   `budget_exhausted`, and `unknown` without overstating coverage.
-5. **Operations:** add a bounded operator CLI index-status/prune/refresh
-   path only if needed; keep no autonomous in-process timer. Allow an
-   external scheduler to invoke opt-in refresh safely. Document local
-   permissions, retention, backup/delete, recovery and migration.
-6. **Docs/SDK:** update `architecture/research.md`,
-   `architecture/config.md`, `architecture/fetch.md`,
-   `architecture/mcp.md`, `docs/config.md`,
-   `docs/features.md`, `docs/agent-workflows.md`,
-   `docs/test-inventory.md`, and the Python/native API surfaces only
-   where their contracts change.
+1. **Accepted engine.** Implement the engine named by accepted
+   ADR-0021. Do not re-run the footprint spike here. If the ADR names
+   JSON, stop and revise this plan before adding a C dependency.
+2. **Schema and transactions.** Version the schema. Persist M001 IDs,
+   `canonicalize_url`, and the original basis and precision. Atomic
+   inserts, idempotent replay, concurrent readers, one writer, crash
+   recovery, and deterministic refusal of a newer schema. Do not fold
+   a month or year to midnight UTC.
+3. **Ingestion.** Index only public evidence an already completed
+   `knowledge_brief` selected, and only when the caller set `retain`.
+   Enabling the index is not a write. No link following and no
+   feed parser.
+4. **Query.** Bounded lexical lookup with deterministic tie-breaks.
+   Apply the modes above. Report `index_only`, `live_checked`,
+   `stale`, `budget_exhausted`, and `unknown`. Do not report a
+   failed refresh as current; this milestone has no refresh.
+5. **Docs.** Update `architecture/research.md`,
+   `architecture/config.md`, `architecture/mcp.md`,
+   `architecture/testing.md`, `docs/config.md`,
+   `docs/features.md`, `docs/agent-workflows.md`, and
+   `docs/test-inventory.md`. No new CLI surface is required for
+   closure. Document delete, disable, permissions, and backup.
 
 ## Failure and recovery
 
-Use SQLite transactional boundaries for each selected evidence batch.
-A malformed date, source update conflict, bad UTF-8, lock contention,
-corrupt database, unsupported schema, disk full, and cancelled refresh
-have explicit bounded failure states. Do not delete existing data on
-migration failure or convert `refresh_failed` to current. If a
-partial failure leaves the index usable, report its coverage; otherwise
-run M001 live-only with an index-degraded warning if the caller allows
-network, or return a marked offline failure.
+Use one transactional boundary per retained batch. Malformed dates,
+conflicts, bad UTF-8, lock contention, a corrupt database, an
+unsupported schema, a full disk, and cancellation have explicit
+bounded states. Do not delete existing rows because a migration
+failed. If the index cannot be read, a `live` call is unchanged. A
+`prefer_live` or `index` call returns a marked degraded or offline
+result and does not pretend the miss was a fresh search.
 
 ## Verification (exact implementation candidate)
 
-- Pure tests: stable document/event identity, date preservation,
-  canonicalization, lexical FTS recall, bounded indexing, dedup,
-  deterministic eviction and no-query-persistence.
-- Fault injection: crash mid-transaction, two processes/locks, disk
-  full/read-only/corrupt DB, schema-forward incompatibility, missing
-  FTS5, malformed feed, ETag 304 and upstream 429/timeout.
-- Security: hostile source HTML/feed text remains untrusted;
-  feed input may not redirect around SSRF or origin policy; stored
-  credentials and cross-profile leakage remain absent.
-- Focused: implement `tests/knowledge_delta_index.rs` (network-free
-  deterministic fixtures) and extend `tests/mcp_tools.rs`,
-  `tests/fetch_safety.rs`, `tests/static_guards.rs`,
-  `tests/docs_config_snippets.rs` as applicable. Run
-  `cargo test --locked --features mock --test knowledge_delta_index`,
-  `cargo test --locked --features mock --test mcp_tools`,
+- Tests: stable IDs, precision preservation, `canonicalize_url`
+  reuse, bounded indexing, dedup, deterministic eviction, and no
+  write on `live`.
+- Fault injection: crash mid-write, two processes, full disk,
+  read-only path, corrupt file, and a newer schema.
+- Security: hostile stored text stays untrusted; profile-scoped,
+  `private`, `no-store`, and pass-cookie bodies are refused; no
+  cross-profile read.
+- Focused: `tests/knowledge_delta_index.rs`, plus
+  `tests/mcp_tools.rs`, `tests/fetch_safety.rs`,
+  `tests/static_guards.rs`, and `tests/docs_config_snippets.rs`
+  as applicable. Add the suite row to `architecture/testing.md`.
+  `cargo test --locked --features mock --test knowledge_delta_index`;
+  `cargo test --locked --features mock --test mcp_tools`;
   `cargo test --locked --features mock --test static_guards`.
-- Broad: `make check`, `make docs-check`,
-  `make packaging-check` and applicable Python wheel/ARMv7
-  qualification. Record CPU, RSS, disk, elapsed time, net requests,
-  and indexed-event counts on at least one low-memory target or
-  clearly mark physical validation unrun.
+- Broad: `make check`, `make docs-check`, and
+  `make packaging-check`. Record size and RSS on the default
+  release targets, or mark a target unrun. Do not block on the
+  experimental ARMv7 wheel.
 
 ## Acceptance and stop conditions
 
-Index survives restarts and returns bounded source-linked evidence;
-disabled and offline paths remain correct; migrations are non-
-destructive; stale coverage and refresh failure are visible;
-no new general crawl is introduced; release/target size and
-dependency policy pass. M002 is infrastructure, **not** proof of
-better knowledge-gap recall.
+The index survives restart and returns bounded source-linked
+evidence. `live` is unchanged. Migrations are non-destructive.
+Stale and offline states are visible. No feed, scheduler, or second
+binary. M002 is infrastructure, not proof of better recall.
 
-**Stop:** unaccepted ADR; unsupported SQLite build requirements;
-loss of source identity/trust; any unbounded background work; migrations
-requiring deletion without a plan; default binary/wheel fallout; or
-unmeasured footprint changes.
+**Stop:** ADR unaccepted or naming a different engine than the code
+about to be written; the spike being treated as this milestone;
+loss of source identity or trust; indexing an authenticated body;
+any background crawl; a migration that deletes data without a
+written plan.
 
 ## Closure evidence
 
-Record baseline and candidate SHA, ADR acceptance, exact migration
-and corruption/recovery tests, target matrix/footprint evidence,
-source-retention/privacy review, offline vs stale outcomes, command
-results, unresolved risks and decision. Write
-`plans/closure/knowledge-delta/002-status.md`; update roadmap and
-registry in the same closure change.
+Record baseline and candidate SHA, the accepted ADR and its spike
+record, migration and recovery tests, footprint evidence with unrun
+targets named, the privacy review, `live` versus `index`
+outcomes, command results, residual risks, and the decision. Write
+`plans/closure/knowledge-delta/002-status.md` and update the roadmap
+and registry in the same change.
