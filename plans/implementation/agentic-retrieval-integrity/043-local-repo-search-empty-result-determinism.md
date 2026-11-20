@@ -1,6 +1,6 @@
 # M043 — Local Repo-Search Empty-Result Determinism and Incomplete-Scan Diagnostics
 
-Status: ready
+Status: closed
 Date: 2026-11-20
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective to M037 and M040, local repo-search admission and bounded second pass)
