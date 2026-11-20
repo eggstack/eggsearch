@@ -281,4 +281,25 @@ only when the adapter produced none. Warnings stay explicit:
 
 ---
 
+## Knowledge brief (`src/meta/knowledge_delta/`)
+
+`knowledge_brief` is a separate typed planner. It does not add a
+`ResearchWorkflow` variant and does not call `build_research_search_plan`.
+It uses `MetadataSearchAdapter`, `RetrievalAttemptSet`, and
+`FetchCandidateBuilder`. The topic string is one subquery. Further
+subqueries may append a closed English hint list; coverage says those hints
+are not a translation. Dates come from structured provider timestamps.
+Comparison is at the coarser precision. A publication-only delta is labeled
+publication. The brief selects fetch candidates and names `fetch` in
+`next_actions`; it does not issue a network fetch or parse HTML dates.
+
+Omitted `refresh` is live and writes nothing. `retain` writes already
+selected public search-card excerpts when `[knowledge_delta.index]` is
+enabled. `prefer_live` unions index hits and labels them `index_only`.
+`index` does not search live. `related_topics` reads one source-backed
+index step and does not open a new host. Expanded deltas carry
+`edge_source_ids`. An edge without a stored span is not created.
+
+---
+
 **Back to:** [overview.md](overview.md)

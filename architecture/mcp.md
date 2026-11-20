@@ -1,9 +1,9 @@
 # MCP Server Deep Dive
 
-**Location:** `src/mcp/` (8 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`)
-**Purpose:** Stable MCP protocol surface for AI agents: 10 tools over client-owned stdio or explicit loopback-only Streamable HTTP, backed by `MetadataSearchAdapter` and the bounded fetch pipeline.
+**Location:** `src/mcp/` (8 modules + `tools/` with 11 behavior modules plus `mod`/`common`/`canonical`/`tests`)
+**Purpose:** Stable MCP protocol surface for AI agents: 10 canonical tools over client-owned stdio or explicit loopback-only Streamable HTTP, backed by `MetadataSearchAdapter` and the bounded fetch pipeline.
 
-All tool names in this document are derived from `src/mcp/server.rs` (`#[tool(name = ...)]` registrations). There are exactly 10. No other tool-like names are valid.
+Canonical tool names in this document are derived from `src/mcp/server.rs` (`#[tool(name = ...)]` registrations), excluding the `web_fetch` and `batch_fetch` compatibility aliases. There are exactly 10 canonical tools. No other tool-like names are valid.
 
 ---
 
@@ -12,7 +12,7 @@ All tool names in this document are derived from `src/mcp/server.rs` (`#[tool(na
 | File | Responsibility |
 |------|---------------|
 | `mod.rs` | Module declarations, `build_server(AppConfig) -> anyhow::Result<EggsearchServer>` factory, re-exports of `EggsearchServer`, `ServerState`, `Policy`, `McpPath`, `ServeOptions` |
-| `server.rs` | `EggsearchServer`: rmcp `ServerHandler` impl, 10 `#[tool]` handlers, `apply_contract_metadata()`, FNV-1a `contract_fingerprint()`, `EGGSEARCH_INSTRUCTIONS` |
+| `server.rs` | `EggsearchServer`: rmcp `ServerHandler` impl, 12 `#[tool]` handlers (10 canonical plus two compatibility aliases), `apply_contract_metadata()`, FNV-1a `contract_fingerprint()`, `EGGSEARCH_INSTRUCTIONS` |
 | `state.rs` | `ServerState`: shared `Arc`-wrapped config, adapter, fetch client, origin controller, cache, KEV client, local backend + inventory cache, browser handles |
 | `policy.rs` | `Policy` (`Allow`/`Deny`), `live_allowed()`, `fetch_allowed()`, denial-message constructors |
 | `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure, annotations, keywords, aliases, related/next graphs, `discovery_text()`, `is_known_tool()` |
@@ -23,6 +23,7 @@ All tool names in this document are derived from `src/mcp/server.rs` (`#[tool(na
 | `tools/common.rs` | `ToolError` taxonomy, `ToolErrorCode`, `RepairHint`, `map_tool_result()` single conversion seam, shared parse/selection helpers |
 | `tools/canonical.rs` | Canonical `goal`/`sources`/`include` selectors with legacy `workflow`/`profile`/`mode`/`include_*` translators and repairable conflict errors |
 | `tools/evidence_bundle.rs` | `build_evidence_bundle` args and the pure-local bundle builder; no `ServerState`, no adapter |
+| `tools/knowledge_brief.rs` | `knowledge_brief` args and the cutoff-aware brief runner. Full and Research presets advertise it; brief projection returns the payload unchanged |
 
 ---
 

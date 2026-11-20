@@ -225,6 +225,24 @@ behavior unchanged.
 
 ---
 
+### `[knowledge_delta]` — cutoffs and optional index
+
+Operator cutoff overrides live at `[knowledge_delta.cutoffs.<model>]`
+with `date`, `precision`, `source`, and optional `verified_at`. Invalid
+values fail closed at load. They are not index settings. The bundled
+snapshot stays empty until a cutoff is verified.
+
+`[knowledge_delta.index]` is disabled by default. Fields: `enabled`,
+`path`, `max_bytes` (64 MiB), `max_documents`, `max_excerpt_chars`, and
+`retention_days`. The default path is
+`<config_dir>/knowledge-delta/<partition>/index.sqlite`. A path ending in
+`.sqlite` or `.db` is the database file. `partition` is `anonymous` or an
+opaque `prof_` id, never a display name. Disabling the section or setting
+`enabled = false` leaves a live brief unchanged. Delete the database file
+to drop retained rows; a newer schema is refused without deleting them.
+
+---
+
 ## Provider Resolution
 
 ### Provider Kinds

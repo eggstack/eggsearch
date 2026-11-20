@@ -240,7 +240,9 @@ Call `provider_status` to get the recipe catalog in the `workflow_recipes` respo
 
 ### Next-Action Hints
 
-Tool responses from `web_search`, `repo_search`, `security_search`, and `research_search` include a `next_actions` field with up to 5 `AgentNextAction` entries. Each entry has:
+`knowledge_brief` compares dated public evidence with a published model cutoff. Its `next_actions` name only `fetch` and `research_search`. A temporal relationship is not a claim that a model lacks a fact. Omitted `refresh` is live and writes nothing; `retain` is the explicit local-index write. `related_topics` defaults false and reads one indexed step; it does not fetch a new host.
+
+Tool responses from `web_search`, `repo_search`, `security_search`, `research_search`, and `knowledge_brief` include a `next_actions` field with up to 5 `AgentNextAction` entries. Each entry has:
 
 - **`tool`**: target tool name for the follow-up call
 - **`reason_code`**: machine-readable reason (e.g. `inspect_top_source`, `fetch_primary_advisory`, `bundle_evidence`)

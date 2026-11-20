@@ -21,12 +21,12 @@ use crate::mcp::tasks::{
 };
 use crate::mcp::tools::{
     map_tool_outcome, map_tool_result, run_batch_fetch_with_host_scope_and_progress,
-    run_build_evidence_bundle, run_fetch_with_host_scope_and_progress, run_provider_status_async,
-    run_repo_fetch_with_host_scope, run_repo_map_with_host_scope, run_repo_search_with_host_scope,
-    run_research_search_with_progress, run_security_search, run_web_fetch_outcome_with_progress,
-    run_web_search, BatchFetchArgs, EvidenceBundleArgs, FetchArgs, ProviderStatusArgs,
-    RepoFetchArgs, RepoMapArgs, RepoSearchArgs, ResearchSearchArgs, SecuritySearchArgs, ToolError,
-    ToolOutcome, WebFetchArgs, WebSearchArgs,
+    run_build_evidence_bundle, run_fetch_with_host_scope_and_progress, run_knowledge_brief,
+    run_provider_status_async, run_repo_fetch_with_host_scope, run_repo_map_with_host_scope,
+    run_repo_search_with_host_scope, run_research_search_with_progress, run_security_search,
+    run_web_fetch_outcome_with_progress, run_web_search, BatchFetchArgs, EvidenceBundleArgs,
+    FetchArgs, KnowledgeBriefArgs, ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, RepoSearchArgs,
+    ResearchSearchArgs, SecuritySearchArgs, ToolError, ToolOutcome, WebFetchArgs, WebSearchArgs,
 };
 
 fn batch_contains_screenshot(items: &[crate::core::batch_fetch::BatchFetchItem]) -> bool {
@@ -678,6 +678,24 @@ impl EggsearchServer {
     ) -> Result<CallToolResult, McpError> {
         let state = self.state.clone();
         self.respond(run_security_search(state, args).await)
+    }
+
+    #[tool(
+        name = "knowledge_brief",
+        description = "Rank candidate developments whose dated evidence is after a model cutoff. Use with `topic` and optional `model_id`; does not synthesize answers or claim a model lacks a fact.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn knowledge_brief(
+        &self,
+        Parameters(args): Parameters<KnowledgeBriefArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let state = self.state.clone();
+        self.respond(run_knowledge_brief(state, args).await)
     }
 
     #[tool(

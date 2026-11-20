@@ -93,6 +93,12 @@ release provenance, remaining reqwest elimination behind eggfetch ownership,
 bounded process/unsafe consolidation, and security-sensitive forge maintenance.
 Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 
+### 9. Knowledge delta — active
+
+Cutoff-aware `knowledge_brief`, a bundled rusqlite local evidence index, and
+source-driven topic discovery. Roadmap:
+`plans/subsystems/knowledge-delta-roadmap.md`.
+
 ## Dependency notes
 
 - Distribution hardening depends on the closed distribution implementation.

@@ -6,9 +6,9 @@ use std::sync::Arc;
 use crate::core::config::AppConfig;
 use crate::mcp::state::ServerState;
 use crate::mcp::tools::{
-    run_batch_fetch, run_build_evidence_bundle, run_fetch, run_provider_status_async,
-    run_repo_fetch, run_repo_map, run_repo_search, run_research_search, run_security_search,
-    run_web_fetch, run_web_search, ToolError,
+    run_batch_fetch, run_build_evidence_bundle, run_fetch, run_knowledge_brief,
+    run_provider_status_async, run_repo_fetch, run_repo_map, run_repo_search, run_research_search,
+    run_security_search, run_web_fetch, run_web_search, ToolError,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -16,6 +16,7 @@ pub enum ToolName {
     BatchFetch,
     BuildEvidenceBundle,
     Fetch,
+    KnowledgeBrief,
     ProviderStatus,
     RepoFetch,
     RepoMap,
@@ -27,9 +28,10 @@ pub enum ToolName {
 }
 
 impl ToolName {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::BuildEvidenceBundle,
         Self::Fetch,
+        Self::KnowledgeBrief,
         Self::ProviderStatus,
         Self::RepoFetch,
         Self::RepoMap,
@@ -44,6 +46,7 @@ impl ToolName {
             Self::BatchFetch => "batch_fetch",
             Self::BuildEvidenceBundle => "build_evidence_bundle",
             Self::Fetch => "fetch",
+            Self::KnowledgeBrief => "knowledge_brief",
             Self::ProviderStatus => "provider_status",
             Self::RepoFetch => "repo_fetch",
             Self::RepoMap => "repo_map",
@@ -188,6 +191,9 @@ impl EggsearchClient {
             ToolName::BatchFetch => run_batch_fetch(self.state.clone(), decode(arguments)?).await,
             ToolName::BuildEvidenceBundle => run_build_evidence_bundle(decode(arguments)?),
             ToolName::Fetch => run_fetch(self.state.clone(), decode(arguments)?).await,
+            ToolName::KnowledgeBrief => {
+                run_knowledge_brief(self.state.clone(), decode(arguments)?).await
+            }
             ToolName::ProviderStatus => {
                 run_provider_status_async(self.state.clone(), decode(arguments)?).await
             }

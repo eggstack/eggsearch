@@ -27,6 +27,8 @@ pub mod forge_adapter;
 mod grouping;
 /// Deterministic retrieval-intent derivation with reported reason codes.
 pub(crate) mod intent;
+/// Cutoff-aware knowledge brief planner. Typed; not a ResearchWorkflow variant.
+pub mod knowledge_delta;
 /// Local workspace subsystem facade: ownership map for the `local_*`
 /// backend/inventory/cache/symbol modules (007-D).
 pub mod local;

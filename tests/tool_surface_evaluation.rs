@@ -25,6 +25,7 @@ const CASES_JSON: &str = include_str!("fixtures/tool_surface/cases.json");
 const KNOWN_TOOLS: &[&str] = &[
     "web_search",
     "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_search",
     "repo_fetch",
@@ -452,7 +453,7 @@ fn tool_surface_byte_budgets() {
     assert_eq!(
         tools.len(),
         KNOWN_TOOLS.len(),
-        "must advertise exactly nine canonical tools"
+        "must advertise exactly ten canonical tools"
     );
     let mut total_bytes = 0usize;
     let mut core_bytes = 0usize;

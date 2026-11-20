@@ -61,7 +61,7 @@ fn live_report(model: &str, surface: &str) -> serde_json::Value {
         "tool_contract_fingerprint": fingerprint,
         "configuration": surface,
         "model": model,
-        "aggregate": {"cases": 43, "source": "tests/fixtures/tool_surface/cases.json"},
+        "aggregate": {"cases": 44, "source": "tests/fixtures/tool_surface/cases.json"},
         "per_category_failures": {},
         "byte_metrics": {
             "total_definition_bytes": total_bytes,
@@ -96,12 +96,12 @@ fn tool_surface_live_report_contract() {
     let deltas = &report["token_byte_deltas_from_baseline"];
     assert_eq!(
         deltas["total_definition_bytes"].as_i64(),
-        Some(-8_139),
+        Some(-5_690),
         "candidate tool definitions must record the measured M029 byte reduction: {deltas}"
     );
     assert_eq!(
         deltas["estimated_tokens"].as_i64(),
-        Some(-2_035),
+        Some(-1_423),
         "candidate tool definitions must record the measured M029 token reduction: {deltas}"
     );
 }

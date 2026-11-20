@@ -149,7 +149,7 @@ fn project_brief(
     value: serde_json::Value,
     limits: ProjectionLimits,
 ) -> serde_json::Value {
-    if tool == "build_evidence_bundle" {
+    if tool == "build_evidence_bundle" || tool == "knowledge_brief" {
         return value;
     }
     let max_chars = limits.brief_max_chars;

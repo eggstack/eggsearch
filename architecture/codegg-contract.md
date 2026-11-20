@@ -26,16 +26,18 @@ any other count and on phantom tool-like names in docs.
 
 | Tool | Domain | Disclosure | Purpose |
 |------|--------|-----------|---------|
-| `batch_fetch` | fetch | deferred | bounded multi-target fetch over explicit targets |
 | `build_evidence_bundle` | evidence | deferred | deterministic evidence packaging for handoff |
+| `fetch` | fetch | core | bounded single- or multi-target web and repository fetching |
+| `knowledge_brief` | research | deferred | cutoff-aware candidate developments; not a claim that a model lacks a fact |
 | `provider_status` | diagnostic | diagnostic | diagnostic provider and capability report |
 | `repo_fetch` | repository | deferred | bounded repository file or span inspection |
 | `repo_map` | repository | deferred | repository structure discovery without contents |
 | `repo_search` | repository | core | structured repository evidence discovery |
 | `research_search` | research | deferred | multi-source research evidence discovery |
 | `security_search` | security | deferred | vulnerability and advisory evidence discovery |
-| `web_fetch` | web | core | bounded single-URL inspection |
 | `web_search` | web | core | general web source discovery |
+
+`web_fetch` and `batch_fetch` stay callable compatibility aliases. They are not part of the ten canonical names.
 
 Each `ToolContract` carries `name`, `description` (selection-oriented,
 budgeted), `purpose`, `use_when`, `not_for`, `domain`

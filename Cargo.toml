@@ -70,6 +70,7 @@ scraper = "0.20"
 ego-tree = "0.6.2"
 urlencoding = "2"
 regex = "1"
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 toml = "0.8"
 quick-xml = { version = "0.41", default-features = false }
 dirs = "5"

@@ -15,7 +15,7 @@ Eggsearch is a lightweight MCP search/fetch server for AI agents: live
 metasearch with RRF dedup, bounded fetch, and deterministic evidence bundles.
 
 - Single library + binary crate, not a workspace.
-- Stable contract is nine canonical MCP tools plus CLI. The canonical fetch
+- Stable contract is ten canonical MCP tools plus CLI. The canonical fetch
   tool replaces the advertised `web_fetch` and `batch_fetch` entries under
   ADR-0016; those names remain callable compatibility aliases but are not
   advertised or included in canonical discovery and `next_actions`. The narrow
@@ -30,10 +30,11 @@ metasearch with RRF dedup, bounded fetch, and deterministic evidence bundles.
 
 ## 2. Stable MCP tool contract
 
-The nine canonical tools are:
+The ten canonical tools are:
 
 - `build_evidence_bundle`
 - `fetch`
+- `knowledge_brief`
 - `provider_status`
 - `repo_fetch`
 - `repo_map`
@@ -46,10 +47,12 @@ The nine canonical tools are:
 legacy names `web_fetch` and `batch_fetch` remain callable compatibility
 aliases but are absent from `tools/list`, canonical tool metadata, and
 `next_actions`; their legacy request/response contracts remain intact. ADR-0016
-is the explicit, narrow exception authorizing this replacement. The canonical
-inventory MUST remain exactly nine; a further count/name change requires a
-later accepted ADR and coordinated updates to the tool matrix, contract tests,
-and CodeGG integration documentation (enforced by `tests/static_guards.rs`).
+is the explicit, narrow exception authorizing this replacement. ADR-0020 is
+the explicit, narrow exception authorizing `knowledge_brief` and the move from
+nine advertised tools to ten. The canonical inventory MUST remain exactly ten;
+a further count/name change requires a later accepted ADR and coordinated
+updates to the tool matrix, contract tests, and CodeGG integration
+documentation (enforced by `tests/static_guards.rs`).
 MCP tools MUST call the `MetadataSearchAdapter`, never engines directly. New
 tools REQUIRE a dedicated module under `src/mcp/tools/` with shared validation
 in `common.rs` and goal/workflow resolution in `canonical.rs`, registered in
@@ -136,7 +139,7 @@ discover -> rank -> select -> bounded fetch -> deterministic evidence handoff
 ## 7. Performance and footprint
 
 Optimization is optimization-with-equivalence. It MUST NOT change the
-nine-tool canonical surface established by ADR-0016, ranking weights,
+ten-tool canonical surface established by ADR-0016 and extended by ADR-0020, ranking weights,
 trust/SSRF semantics, cache policy, batch budget semantics, public Rust
 compatibility, browser/PDF availability, provider coverage, or integration
 verification merely to improve benchmark or binary-size numbers.

@@ -1,6 +1,6 @@
 //! Advertisement presets for the `tools/list` surface.
 //!
-//! A preset selects which of the nine canonical tools a server advertises.
+//! A preset selects which of the ten canonical tools a server advertises.
 //! Presets never change dispatch: every tool stays registered in the
 //! `ToolRouter`, so a hidden tool still executes when a caller names it by
 //! hand. Preset selection is presentation only, never authorization.
@@ -23,6 +23,7 @@ pub const ALL_PRESETS: &[McpToolPreset] = &[
 const FULL_TOOLS: &[&str] = &[
     "build_evidence_bundle",
     "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_fetch",
     "repo_map",
@@ -35,6 +36,7 @@ const FULL_TOOLS: &[&str] = &[
 const RESEARCH_TOOLS: &[&str] = &[
     "build_evidence_bundle",
     "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_fetch",
     "research_search",
@@ -197,6 +199,7 @@ const START_PRIMITIVES: &[(&str, &str)] = &[
 const SPECIALIST_LINE_TOOLS: &[&str] = &[
     "security_search",
     "research_search",
+    "knowledge_brief",
     "repo_fetch",
     "repo_map",
     "fetch",
@@ -337,7 +340,7 @@ Global rules:
 - Search tools discover candidate sources; fetch tools inspect only explicitly selected targets.
 - Start with the task-appropriate search primitive (`web_search` for general research, `repo_search` for codebases, `security_search` for advisories, `research_search` for complex comparisons). Do not start with `provider_status`.
 - `provider_status` is diagnostic for hosts and troubleshooting, not a normal first research step. Hosts may inspect it during bootstrap; agents call it only when provider availability itself is relevant.
-- Specialist tools (`security_search`, `research_search`, `repo_fetch`, `repo_map`, `fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed.
+- Specialist tools (`security_search`, `research_search`, `knowledge_brief`, `repo_fetch`, `repo_map`, `fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed.
 - Use `fetch` for one or more explicitly selected web URLs or repository targets by passing one tagged item or an array; never use it as a crawler.
 - Respect bounded output and follow `next_actions` hints for the most productive follow-up.
 - Use `build_evidence_bundle` to package already-selected evidence for handoff; it does not search, fetch, or summarize.
@@ -394,14 +397,15 @@ Tool details and schemas are available through `tools/list`.";
 
     #[test]
     fn preset_sizes_match_the_contract() {
-        assert_eq!(tools_for(McpToolPreset::Full).len(), 9);
-        assert_eq!(tools_for(McpToolPreset::Research).len(), 6);
+        assert_eq!(tools_for(McpToolPreset::Full).len(), 10);
+        assert_eq!(tools_for(McpToolPreset::Research).len(), 7);
         assert_eq!(tools_for(McpToolPreset::Code).len(), 7);
         assert_eq!(tools_for(McpToolPreset::Minimal).len(), 3);
         assert!(hidden_tools(McpToolPreset::Full).is_empty());
         assert_eq!(
             hidden_tools(McpToolPreset::Minimal),
             vec![
+                "knowledge_brief",
                 "provider_status",
                 "repo_fetch",
                 "repo_map",

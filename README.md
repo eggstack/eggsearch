@@ -124,6 +124,7 @@ $ curl -s http://127.0.0.1:11320/healthz
 | `repo_map` | Bounded repository structure discovery |
 | `security_search` | Vulnerability and advisory search |
 | `research_search` | Multi-source evidence discovery |
+| `knowledge_brief` | Cutoff-aware candidate developments; not a claim that a model lacks a fact |
 | `build_evidence_bundle` | Deterministic, non-summarizing evidence packaging |
 
 Start with the tool that matches the task: `web_search` for research, `repo_search`

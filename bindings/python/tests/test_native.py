@@ -74,6 +74,7 @@ def _mojeek_enabled(status):
 EXPECTED_TOOLS = {
     "web_search",
     "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_search",
     "repo_fetch",
@@ -92,6 +93,7 @@ REQUEST_TYPES = {
     "repo_map": eggsearch_types.RepoMapRequest,
     "security_search": eggsearch_types.SecuritySearchRequest,
     "research_search": eggsearch_types.ResearchSearchRequest,
+    "knowledge_brief": eggsearch_types.KnowledgeBriefRequest,
     "build_evidence_bundle": eggsearch_types.EvidenceBundleRequest,
 }
 
@@ -127,7 +129,7 @@ def config_path(tmp_path):
 
 def test_native_module_import_and_tool_inventory():
     names = tool_names()
-    assert len(names) == 9
+    assert len(names) == 10
     assert set(names) == EXPECTED_TOOLS
     assert len(set(names)) == len(names)
 
@@ -232,6 +234,7 @@ def test_native_client_executes_all_operations_without_an_mcp_process(config_pat
         "repo_map": {"owner": "invalid owner", "repo": "bad"},
         "security_search": {"query": "CVE-2024-1234"},
         "research_search": {"query": "native parity"},
+        "knowledge_brief": {"topic": "native parity"},
         "build_evidence_bundle": {"sources": [{}]},
     }
 
@@ -241,10 +244,10 @@ def test_native_client_executes_all_operations_without_an_mcp_process(config_pat
             *(client.execute(name, value) for name, value in arguments.items()),
             return_exceptions=True,
         )
-        assert len(outcomes) == 9
+        assert len(outcomes) == 10
         assert all(isinstance(value, (dict, EggsearchError)) for value in outcomes)
         assert isinstance(outcomes[2], dict)
-        assert isinstance(outcomes[8], dict)
+        assert isinstance(outcomes[9], dict)
         assert isinstance(outcomes[0], EggsearchError)
         assert outcomes[0].code
         assert outcomes[0].message

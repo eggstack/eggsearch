@@ -2,6 +2,14 @@
 
 eggsearch provides keyless web, fetch, advisory, registry, and scholarly paths by default. Current source builds also enable PDF extraction and browser rendering by default. The published `v0.4.4` binaries predate that change and include neither feature. Other optional capabilities require Cargo features or config changes.
 
+## Knowledge delta
+
+`knowledge_brief` is in the default binary. It needs no Cargo feature.
+The local evidence index is bundled rusqlite and is off until
+`[knowledge_delta.index].enabled` is set. There is no second SKU and no
+system SQLite link. Linux and Windows default-binary footprint measurements
+are still unrun; that is an operational gate, not a separate build.
+
 ## Retrieval Integrity Contracts
 
 These contracts are always on in current builds; they need no feature flag or

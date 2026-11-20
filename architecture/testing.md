@@ -43,6 +43,9 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |
+| `knowledge_delta_brief` | Cutoff-aware brief: comparison labeling, unknown cutoff, provider failure, and live-versus-index modes |
+| `knowledge_delta_index` | Optional local evidence index: precision, partitions, refusal, and restart |
+| `knowledge_delta_discovery` | One-step source-backed topic expansion and negative controls |
 | `security_workflow` | Advisory retrieval, applicability assessment, safety handling |
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |

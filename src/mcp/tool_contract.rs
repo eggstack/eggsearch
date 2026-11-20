@@ -128,7 +128,7 @@ impl ToolContract {
     }
 }
 
-/// Whether a name is one of the nine stable canonical tool names.
+/// Whether a name is one of the ten stable canonical tool names.
 ///
 /// Harnesses must ignore `next_actions` entries whose `tool` fails this
 /// check; unknown or malicious names never widen execution authority.
@@ -179,6 +179,31 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         next_tools: &["build_evidence_bundle"],
         keywords: &["url", "page", "extract", "read", "inspect", "repository", "file", "multiple", "offset", "limit"],
         aliases: &["web", "repository", "page", "read"],
+    },
+    ToolContract {
+        name: "knowledge_brief",
+        description: "Rank candidate developments whose dated evidence is after a model cutoff. Use with `topic` and optional `model_id`; does not synthesize answers or claim a model lacks a fact.",
+        purpose: "cutoff-aware candidate development evidence",
+        use_when: "a topic needs dated evidence compared with a model cutoff",
+        not_for: "answer synthesis, claiming a model lacks a fact, or a lookup that does not need a cutoff",
+        domain: ToolDomain::Research,
+        disclosure: ToolDisclosureHint::Deferred,
+        read_only: true,
+        open_world: true,
+        destructive: false,
+        idempotent: true,
+        related_tools: &["fetch", "research_search", "web_search"],
+        next_tools: &["fetch", "research_search"],
+        keywords: &[
+            "cutoff",
+            "knowledge",
+            "brief",
+            "model",
+            "temporal",
+            "delta",
+            "developments",
+        ],
+        aliases: &["cutoff_brief", "knowledge"],
     },
     ToolContract {
         name: "provider_status",
@@ -367,10 +392,10 @@ mod tests {
         assert_eq!(names, sorted, "contracts must stay in alphabetical order");
         let mut dedup = sorted.clone();
         dedup.dedup();
-        assert_eq!(dedup.len(), 9, "exactly nine contracts expected");
+        assert_eq!(dedup.len(), 10, "exactly ten contracts expected");
         names.sort_unstable();
         names.dedup();
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 10);
     }
 
     #[test]

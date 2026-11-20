@@ -428,5 +428,15 @@
     "expected_followups": ["repo_fetch"],
     "forbidden_primary": ["web_search", "provider_status", "build_evidence_bundle"],
     "why": "Change history needs commits, releases, and changelog groups; repo_map is acceptable for orientation but does not answer what changed."
+  },
+  {
+    "id": "kd-01",
+    "category": "knowledge_delta",
+    "query": "Prepare a knowledge brief on candidate developments in the Tokio async runtime, using dated sources after a model cutoff.",
+    "expected_primary": "knowledge_brief",
+    "acceptable": ["knowledge_brief"],
+    "expected_followups": ["fetch", "research_search"],
+    "forbidden_primary": ["provider_status", "build_evidence_bundle"],
+    "why": "Temporal evidence comparison is the purpose of knowledge_brief; it returns dated candidate developments without claiming that the model lacks a fact."
   }
 ]

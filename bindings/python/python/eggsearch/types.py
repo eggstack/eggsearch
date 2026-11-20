@@ -339,6 +339,25 @@ class SecuritySearchRequest(TypedDict, total=False):
     response_detail: ResponseDetail | None
 
 
+class CutoffOverride(TypedDict):
+    date: str
+    precision: str
+    source: str
+    reason: str
+
+
+class KnowledgeBriefRequest(TypedDict, total=False):
+    topic: Required[str]
+    model_id: str | None
+    cutoff_override: CutoffOverride | None
+    max_items: int | None
+    max_chars: int | None
+    refresh: str | None
+    retain: bool
+    related_topics: bool
+    language: str | None
+
+
 class ResearchSearchRequest(TypedDict, total=False):
     query: Required[str]
     research_domain: str | None
@@ -419,11 +438,13 @@ RepoFetchResponse = ToolResponse
 RepoMapResponse = ToolResponse
 SecuritySearchResponse = ToolResponse
 ResearchSearchResponse = ToolResponse
+KnowledgeBriefResponse = ToolResponse
 EvidenceBundleResponse = ToolResponse
 
 
 __all__ = [
     "AgentWarning",
+    "CutoffOverride",
     "BatchFetchRequest",
     "BatchFetchResponse",
     "EvidenceBundle",
@@ -437,6 +458,8 @@ __all__ = [
     "FetchResponse",
     "FetchResult",
     "JSONValue",
+    "KnowledgeBriefRequest",
+    "KnowledgeBriefResponse",
     "ProviderFailure",
     "ProviderStatusRequest",
     "ProviderStatusResponse",

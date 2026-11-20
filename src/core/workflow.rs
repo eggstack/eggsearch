@@ -139,6 +139,7 @@ pub const MAX_NEXT_ACTIONS: usize = 5;
 pub const STABLE_TOOL_NAMES: &[&str] = &[
     "build_evidence_bundle",
     "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_fetch",
     "repo_map",

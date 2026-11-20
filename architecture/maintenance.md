@@ -52,9 +52,9 @@ Overlap ratchets (each a named guard):
 
 ### New MCP tools
 
-Dedicated module under `src/mcp/tools/` with shared validation in `common.rs` and goal/workflow resolution in `canonical.rs`. Register in `src/mcp/server.rs` via `#[tool]` attrs. Guard `stable_tool_registration_count_and_names` requires exactly these ten:
+Dedicated module under `src/mcp/tools/` with shared validation in `common.rs` and goal/workflow resolution in `canonical.rs`. Register in `src/mcp/server.rs` via `#[tool]` attrs. Guard `stable_tool_registration_count_and_names` requires exactly these registrations (ten canonical tools plus the `web_fetch` and `batch_fetch` aliases):
 
-`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
+`web_search`, `fetch`, `web_fetch`, `batch_fetch`, `knowledge_brief`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
 
 Count changes only when the tool-matrix, docs contract tests (`tests/docs_tool_names.rs`, derived from `server.rs`), and CodeGG integration docs move in the same change. Legacy `local_search` and `search_and_fetch` must never return.
 
@@ -135,7 +135,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/engines/startpage_tests.rs` | 1,800 | 81,920 | Startpage behavioral fixtures; the css-load, header-only metarefresh, and sha256 flows are the next slice to move into a sibling fixture module |
 | `src/meta/challenge/anubis_tests.rs` | 1,750 | 81,920 | Solver fixtures and behavioral tests; the extension and sha256 fixtures are the next slice to move into a sibling fixture module |
 | `src/core/security.rs` | 3,000 | 115,000 | Identifier parsing/normalization plus the large inline test block; next slice is moving identifier + query-classification helpers into a `security/` submodule |
-| `src/core/config.rs` | 1,900 | 76,000 | Serde surface for every section; the inline test block now lives in `src/core/config/tests.rs`. Next slice is splitting the `[fetch]` section types out of the root `AppConfig` |
+| `src/core/config.rs` | 1,910 | 76,000 | Serde surface for every section, including `[knowledge_delta]`; the inline test block now lives in `src/core/config/tests.rs`. Next slice is splitting the `[fetch]` section types out of the root `AppConfig` |
 | `src/core/provider.rs` | 2,800 | 115,000 | Capability/provider model; next slice is moving the capability matrix out of the provider type module |
 | `src/fetch/span.rs` | 2,750 | 81,920 | Range selection and chunking; next slice is splitting the selection math from the file-walk plumbing |
 | `src/fetch/client.rs` | 2,600 | 100,000 | Fetch/redirect/conditional paths plus inline tests; next slice is extracting the redirect loop shared by `fetch_internal` and `fetch_conditional` |

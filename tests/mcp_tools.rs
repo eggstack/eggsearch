@@ -191,7 +191,7 @@ async fn fetch_tool_listed() {
 
 #[tokio::test]
 #[cfg(feature = "mock")]
-async fn all_nine_canonical_tools_advertised() {
+async fn all_ten_canonical_tools_advertised() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
@@ -200,6 +200,7 @@ async fn all_nine_canonical_tools_advertised() {
     let expected = [
         "web_search",
         "fetch",
+        "knowledge_brief",
         "provider_status",
         "repo_search",
         "repo_fetch",
@@ -232,7 +233,7 @@ fn fetch_disabled_state() -> Arc<ServerState> {
 
 #[cfg(feature = "mock")]
 #[test]
-fn mcp_tool_surface_all_nine_canonical_tools_with_mock_state() {
+fn mcp_tool_surface_all_ten_canonical_tools_with_mock_state() {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
     let server = eggsearch::mcp::EggsearchServer::new(state);
@@ -241,8 +242,8 @@ fn mcp_tool_surface_all_nine_canonical_tools_with_mock_state() {
 
     assert_eq!(
         names.len(),
-        9,
-        "expected exactly nine canonical tools, got: {names:?}"
+        10,
+        "expected exactly ten canonical tools, got: {names:?}"
     );
     assert!(
         names.contains(&"web_search".to_string()),
@@ -489,10 +490,14 @@ fn provider_status_pdf_capabilities_track_feature_and_config() {
 #[test]
 fn provider_status_reports_active_mcp_advertisement() {
     let cases = [
-        (eggsearch::core::config::McpToolPreset::Full, 9usize, 0usize),
-        (eggsearch::core::config::McpToolPreset::Research, 6, 3),
-        (eggsearch::core::config::McpToolPreset::Code, 7, 2),
-        (eggsearch::core::config::McpToolPreset::Minimal, 3, 6),
+        (
+            eggsearch::core::config::McpToolPreset::Full,
+            10usize,
+            0usize,
+        ),
+        (eggsearch::core::config::McpToolPreset::Research, 7, 3),
+        (eggsearch::core::config::McpToolPreset::Code, 7, 3),
+        (eggsearch::core::config::McpToolPreset::Minimal, 3, 7),
     ];
     for (preset, advertised, hidden) in cases {
         let mut cfg = AppConfig::default();
@@ -524,6 +529,20 @@ fn provider_status_reports_active_mcp_advertisement() {
             hidden,
             "{preset:?} hidden count"
         );
+        let advertised_has_brief = advertisement["advertised_tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|name| name == "knowledge_brief");
+        let hidden_has_brief = advertisement["hidden_tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|name| name == "knowledge_brief");
+        let expect_brief = preset == eggsearch::core::config::McpToolPreset::Full
+            || preset == eggsearch::core::config::McpToolPreset::Research;
+        assert_eq!(advertised_has_brief, expect_brief);
+        assert_eq!(hidden_has_brief, !expect_brief);
         for name in advertisement["advertised_tools"].as_array().unwrap() {
             assert!(
                 eggsearch::mcp::tool_contract::is_known_tool(name.as_str().unwrap()),

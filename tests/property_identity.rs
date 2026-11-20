@@ -1,6 +1,6 @@
 use eggsearch::core::identity::{
-    batch_fetch_id, canonicalize_url, chunk_id, code_span_id, doc_id, fetch_id, source_id,
-    suggested_fetch_id,
+    batch_fetch_id, canonicalize_url, chunk_id, code_span_id, doc_id, fetch_id, knowledge_delta_id,
+    source_id, suggested_fetch_id,
 };
 use proptest::prelude::*;
 
@@ -159,5 +159,31 @@ proptest! {
         let a = source_id(Some("prov"), Some(&url), Some(&title), None);
         let b = source_id(Some("prov"), Some(&url), Some(&title), None);
         prop_assert_eq!(a, b, "identical fields must produce identical source_id");
+    }
+
+    #[test]
+    fn knowledge_delta_id_shape(
+        basis in "(event|publication|page_update|first_observed)",
+        precision in "(day|month|year)",
+        date in "[0-9]{4}(-[0-9]{2}){0,2}"
+    ) {
+        let id = knowledge_delta_id("https://Example.com/path/", &basis, &precision, &date);
+        prop_assert!(id.starts_with("kdelta_"));
+        prop_assert_eq!(id.len(), 23);
+        let again = knowledge_delta_id("https://example.com/path", &basis, &precision, &date);
+        prop_assert_eq!(id, again);
+    }
+
+    #[test]
+    fn knowledge_delta_id_depends_on_date_not_decoration(
+        date in "[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    ) {
+        let id = knowledge_delta_id("https://example.com/a", "publication", "day", &date);
+        let other = knowledge_delta_id("https://example.com/a", "event", "day", &date);
+        prop_assert_ne!(id.clone(), other);
+        prop_assert_eq!(
+            id,
+            knowledge_delta_id("https://example.com/a", "publication", "day", &date)
+        );
     }
 }

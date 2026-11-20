@@ -230,7 +230,7 @@ fn collect_unresolved_local_refs(
 #[test]
 fn every_compact_schema_resolves_local_references() {
     let tools = compact_tool_definitions();
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 10);
     for tool in tools {
         let schema = serde_json::to_value(tool.input_schema).expect("schema serializes");
         let mut unresolved = Vec::new();

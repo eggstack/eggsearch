@@ -293,6 +293,11 @@ the aggregation path), `EvidenceGroup`, `CoverageSummary`,
 cards). Domain planners, grouping, and builders stay typed per
 workflow and are never flattened into one generic path.
 
+`knowledge_brief` reuses those mechanics without joining the research
+workflow enum. Its deltas are candidate evidence, not verified facts.
+Index hits stay external-untrusted. An expanded delta is admissible only
+when an already indexed document supplies the source id and span.
+
 ---
 
 ## `build_evidence_bundle`: Sync, Local-Only, Identity-Preserving

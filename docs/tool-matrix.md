@@ -1,6 +1,6 @@
 # eggsearch Tool Matrix
 
-Compact reference for the nine canonical MCP tools.
+Compact reference for the ten canonical MCP tools.
 
 | Tool | Purpose | Key Inputs | Output | Trust | When to Use |
 |------|---------|------------|--------|-------|-------------|
@@ -11,6 +11,7 @@ Compact reference for the nine canonical MCP tools.
 | `repo_fetch` | Structured repository file fetch by locator | `host`, `owner`, `repo`, `path`, optional `ref_name`, `commit_sha`, `line_start`, `line_end`, `context_before`/`context_after`, `symbol`/`symbol_kind`, `match_text`, `expand_to_block`/`max_block_lines`, `prefer_local` | `RepoFetchResponse` with content and trust markers, always-serialized `manual_interaction_required` (false for workspace reads), and `structured_warnings` including `fetch_challenge_page` when a remote challenge page is returned | `external_untrusted` or `local_trusted` | Fetch a specific file or code span; explicitly named local workspace PDFs are extracted under the local PDF cap and feature gates |
 | `repo_map` | Bounded repository-structure discovery | `host`, `owner`, `repo`, optional `ref_name`, `max_entries`, `max_depth` | `RepoMapResponse` with important files and directories plus additive `packages`, `language_distribution`, `modules`, `entrypoints`, `top_symbols`, `test_relationships`, `build_configs`, `structure_truncated` | `external_untrusted` or `local_trusted` | Understand repo layout before detailed search |
 | `security_search` | Security-oriented retrieval with normalized vulnerability metadata | `query`, optional `ecosystem`, `package`, `version`, `cve_id`, `ghsa_id`, `severity_min`, `assess_applicability`, `goal` (usually omit; defaults to security_review), `include` (kev, exploit_context, defensive_guidance, vendor_advisories). Legacy `workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but hidden | `SecuritySearchResponse` with advisories, applicability, and `next_actions` | `external_untrusted` | Vulnerability lookup and package security triage. Identifier queries include enabled native advisory providers by default; native vulnerabilities carry an optional bounded `summary`. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
+| `knowledge_brief` | Cutoff-aware candidate developments | `topic` (passed through unchanged), optional `model_id`, `cutoff_override` (`date`, `precision`, `source`, `reason`; must not be labeled provider-official), `max_items` (default and cap 8), `max_chars` (default 6000), `refresh` (`live`, `prefer_live`, or `index`; omitted means live and writes nothing), `retain`, `related_topics`, `language` | Ranked `deltas` with `kdelta_` ids, bounded excerpts, date basis, precision, temporal relationship, `model_resolution`, coverage, and `next_actions` naming only `fetch` and `research_search`. A temporal relationship describes dated evidence against a published cutoff. It does not claim that a model lacks a fact. | `external_untrusted` | Use when a topic needs dated public evidence compared with a model cutoff. Full and Research presets advertise it; Code and Minimal do not. A hidden tool stays callable. |
 | `research_search` | Research-oriented multi-source evidence discovery | `query`, optional `research_domain` (alias `domain`), `desired_source_types` (aliases `sources`, `source_types`), `goal`, `depth`, `offset`/`limit` (half-open window over non-empty result groups), `compare_targets`, `include` (counterpoints, primary_sources, recent_discussion, security_considerations). Legacy `workflow`/`include_*`/`providers`/`timeout_ms` remain accepted but hidden | `ResearchSearchResponse` with grouped evidence, claims, gaps, and `next_actions` | `external_untrusted` | Architectural comparison and multi-source evidence gathering. Source cards include `evidence_role`; `conflict_metadata` present when sources disagree. |
 | `build_evidence_bundle` | Package selected evidence into a deterministic container | `goal`, `sources`, `fetches` | `EvidenceBundle` with deterministic IDs, gap analysis, and trust summary | preserves input trust | Multi-agent handoff of gathered evidence |
 
@@ -27,7 +28,7 @@ Call `provider_status` only when provider availability itself is relevant or tro
 The canonical disclosure model lives in `src/mcp/tool_contract.rs`:
 
 - Core primitives, normally visible first: `web_search`, `fetch`, `repo_search`
-- Deferred specialists, used only when their domain semantics are needed: `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
+- Deferred specialists, used only when their domain semantics are needed: `repo_fetch`, `repo_map`, `security_search`, `research_search`, `knowledge_brief`, `build_evidence_bundle`
 - Diagnostic, host/operator use: `provider_status`
 
 Disclosure hints are advisory for hosts and never gate execution. Every capability remains callable regardless of its hint.
@@ -61,8 +62,8 @@ called directly.
 
 | Preset | Tools advertised |
 |--------|------------------|
-| `full` (default) | all nine canonical tools |
-| `research` | `provider_status`, `web_search`, `fetch`, `research_search`, `repo_fetch`, `build_evidence_bundle` |
+| `full` (default) | all ten canonical tools |
+| `research` | `provider_status`, `web_search`, `fetch`, `knowledge_brief`, `research_search`, `repo_fetch`, `build_evidence_bundle` |
 | `code` | `provider_status`, `web_search`, `fetch`, `repo_search`, `repo_fetch`, `repo_map`, `build_evidence_bundle` |
 | `minimal` | `web_search`, `fetch`, `build_evidence_bundle` |
 
@@ -81,7 +82,7 @@ There is deliberately no `tools/list._meta` signal.
 
 Pre-M029 ten-tool baseline (full / compact serialized bytes): `full`
 74,422 / 20,196; `research` 66,821 / 17,083; `code` 69,318 / 17,220; `minimal`
-58,874 / 13,516. These are comparison figures, not the current nine-tool advertisement.
+58,874 / 13,516. These are comparison figures, not the current ten-tool advertisement.
 
 ## Progressive disclosure
 
@@ -100,7 +101,7 @@ by content fingerprint plus server version, never by count.
 
 ## MCP result and error contract
 
-Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema`. Canonical `fetch` always uses an ordered batch-style `results` envelope, even for one item. `tools/list` contains the canonical nine-name surface and is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
+Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema`. Canonical `fetch` always uses an ordered batch-style `results` envelope, even for one item. `tools/list` contains the canonical ten-name surface and is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
 
 Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, `plan_mismatch`, `document_unavailable`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
 

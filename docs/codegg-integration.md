@@ -487,6 +487,7 @@ eggsearch will import, so no provider id stands behind it.
 | Unknown repo structure | `repo_map` first | `repo_search` with structural subqueries |
 | CVE/GHSA/OSV/package/version/security terms | `security_search` | `web_search(intent="security")` |
 | Comparative/architectural/deep research | `research_search` | `web_search` with multiple queries |
+| Cutoff-aware candidate developments | `knowledge_brief` | `research_search` without a cutoff |
 | One or more explicit web/repo targets | `fetch` | none |
 | Structured repository file/line/symbol retrieval | `repo_fetch` | `fetch` with a `type: "repo"` item for a shared or mixed result envelope |
 | Handoff to another agent | `build_evidence_bundle` | raw summary |

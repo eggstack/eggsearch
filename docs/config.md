@@ -704,6 +704,38 @@ schema for compatibility but is unsupported.
 
 When `allow_private_network = false` (the default), eggsearch blocks fetches to all RFC 1918 private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT (`100.64.0.0/10`), link-local (`169.254.0.0/16`), multicast, reserved, and documentation addresses. When `allow_localhost = false` (the default), loopback addresses (`127.0.0.0/8`, `::1`) are blocked independently. The two flags are fully independent. Redirect targets are validated against these same ranges. See [safety.md](safety.md#blocked-address-ranges) for the full policy table.
 
+## Knowledge Delta
+
+Optional `[knowledge_delta]` section for model-cutoff overrides and the local
+evidence index. A live `knowledge_brief` does not open the index unless the
+caller sets `retain`, `refresh` to `prefer_live` or `index`, or
+`related_topics`. The index is disabled by default. An explicit `path` ending
+in `.sqlite` or `.db` is the database file; any other path, or the default,
+is `<config_dir>/knowledge-delta/<partition>/index.sqlite`. Partitions are
+`anonymous` or an opaque `prof_` id, never a display name.
+
+Caller `max_items` defaults to 8 and is capped at 8. Caller `max_chars`
+defaults to 6000 and is capped at 6000. Operator cutoffs are not index
+settings. Invalid cutoff precision or date fails closed at load. Bundled
+snapshot rows stay empty until a cutoff date is verified.
+
+```toml eggsearch-config
+[knowledge_delta.cutoffs.example-model]
+date = "2024-06-01"
+precision = "day"
+source = "operator"
+verified_at = "2026-11-20"
+
+[knowledge_delta.index]
+enabled = false
+max_bytes = 67108864
+max_documents = 10000
+max_excerpt_chars = 500
+retention_days = 365
+```
+
+Disable the index by setting `enabled = false` or removing the section; a live brief then neither reads nor writes it. `retain` is rejected while the index is disabled. Delete the database file to drop retained evidence; eggsearch does not migrate by deleting rows, and a newer schema is refused without erasure. Back up by copying the `.sqlite` file and its `-wal`/`-shm` siblings while no writer is active. The file should be readable only by the operator. The brief indexes selected public search-card excerpts only. It refuses private, `no-store`, pass-cookie, and profile-scoped bodies, and it does not copy fetch-cache bodies.
+
 ## Reserved Live Settings
 
 `[search].live.user_agent` and `[search].live.respect_robots_txt` are parsed for compatibility but are no-ops in the current build.

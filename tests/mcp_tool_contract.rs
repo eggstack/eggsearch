@@ -30,7 +30,7 @@ fn registry_covers_exactly_registered_tools() {
         registered, contracted,
         "contract registry must match registered tools one-to-one"
     );
-    assert_eq!(registered.len(), 9, "exactly nine canonical tools expected");
+    assert_eq!(registered.len(), 10, "exactly ten canonical tools expected");
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn descriptions_stay_within_size_budget() {
         Arc::new(eggsearch::mcp::ServerState::build(AppConfig::default()).expect("default state"));
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let tools = server.tool_definitions();
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 10);
     for tool in &tools {
         let description = tool.description.as_deref().unwrap_or("");
         assert!(
@@ -470,7 +470,7 @@ fn fingerprint_is_content_based_not_count_based() {
         "fingerprint must be deterministic across instances"
     );
     let tools = server.tool_definitions();
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 10);
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     let mut sorted = names.clone();
     sorted.sort();
@@ -490,7 +490,7 @@ fn compact_profile_advertises_all_tools_with_smaller_stable_contract() {
     let compact = eggsearch::mcp::EggsearchServer::new(compact_state);
     let full_tools = full.tool_definitions();
     let compact_tools = compact.tool_definitions();
-    assert_eq!(compact_tools.len(), 9);
+    assert_eq!(compact_tools.len(), 10);
     assert_eq!(
         compact_tools
             .iter()
@@ -652,6 +652,7 @@ fn advertisement_presets_select_exact_name_subsets() {
             vec![
                 "build_evidence_bundle",
                 "fetch",
+                "knowledge_brief",
                 "provider_status",
                 "repo_fetch",
                 "research_search",
@@ -693,8 +694,8 @@ fn advertisement_presets_select_exact_name_subsets() {
         let routed = server.routed_tool_names();
         assert_eq!(
             routed.len(),
-            11,
-            "{preset:?} must keep nine canonical tools and two aliases callable: {routed:?}"
+            12,
+            "{preset:?} must keep ten canonical tools and two aliases callable: {routed:?}"
         );
         for name in &advertised {
             assert!(
@@ -709,7 +710,7 @@ fn advertisement_presets_select_exact_name_subsets() {
         McpToolPreset::Full,
         eggsearch::core::config::McpSchemaProfile::Full,
     );
-    assert_eq!(advertised_names(&full).len(), 9);
+    assert_eq!(advertised_names(&full).len(), 10);
 }
 
 #[test]
@@ -720,25 +721,25 @@ fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
     );
     assert_eq!(
         server.tool_fingerprint(),
-        "517d279f73742d36",
+        "57d64503e01ce7b9",
         "the full+full advertisement fingerprint is pinned"
     );
     let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
     assert_eq!(
         bytes.len(),
-        69_932,
+        72_382,
         "the full+full advertised tools/list bytes are pinned"
     );
     let compact = preset_server(
         eggsearch::core::config::McpToolPreset::Full,
         eggsearch::core::config::McpSchemaProfile::Compact,
     );
-    assert_eq!(compact.tool_fingerprint(), "e540f73dd2a392b8");
+    assert_eq!(compact.tool_fingerprint(), "43969fd84a817eae");
     assert_eq!(
         serde_json::to_string(&compact.tool_definitions())
             .unwrap()
             .len(),
-        18_847
+        19_739
     );
 }
 
@@ -837,8 +838,8 @@ fn advertised_schemas_carry_no_replay_cursor_tokens() {
         }
     }
     assert_eq!(
-        checked, 18,
-        "both schema profiles must advertise all nine canonical tools"
+        checked, 20,
+        "both schema profiles must advertise all ten canonical tools"
     );
 
     for name in tool_contract::tool_names() {

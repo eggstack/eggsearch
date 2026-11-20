@@ -213,7 +213,7 @@ pub(crate) async fn run_web_fetch_outcome_with_progress(
     args: WebFetchArgs,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<ToolOutcome, ToolError> {
-    run_web_fetch_inner(state, args, progress, None, None).await
+    run_web_fetch_inner(state, args, progress, None, None, true).await
 }
 
 pub(crate) async fn run_web_fetch_with_prepared_client(
@@ -223,7 +223,46 @@ pub(crate) async fn run_web_fetch_with_prepared_client(
     budget_ms: u64,
 ) -> Result<ToolOutcome, ToolError> {
     let mut progress = crate::mcp::progress::ProgressSink::disabled();
-    run_web_fetch_inner(state, args, &mut progress, Some(client), Some(budget_ms)).await
+    run_web_fetch_inner(
+        state,
+        args,
+        &mut progress,
+        Some(client),
+        Some(budget_ms),
+        true,
+    )
+    .await
+}
+
+pub(crate) async fn run_web_fetch_for_knowledge_brief(
+    state: Arc<ServerState>,
+    url: String,
+    focus: String,
+    max_chars: usize,
+) -> Result<serde_json::Value, ToolError> {
+    let args = WebFetchArgs {
+        url,
+        max_chars: Some(max_chars),
+        timeout_ms: None,
+        extract_mode: Some(crate::core::fetch::ExtractMode::Text),
+        include_links: Some(false),
+        pdf: None,
+        cache_policy: None,
+        max_cache_age_seconds: None,
+        focus: Some(focus),
+        focus_max_chunks: Some(2),
+        focus_max_chars: Some(max_chars),
+        render: Some("http_only".into()),
+        browser_profile: None,
+        include_screenshot: Some(false),
+        offset: None,
+        limit: None,
+        response_detail: Some(crate::mcp::projection::ResponseDetail::Diagnostic),
+    };
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    run_web_fetch_inner(state, args, &mut progress, None, None, false)
+        .await
+        .map(|outcome| outcome.value)
 }
 
 async fn run_web_fetch_inner(
@@ -232,6 +271,7 @@ async fn run_web_fetch_inner(
     progress: &mut crate::mcp::progress::ProgressSink,
     prepared_client: Option<Arc<FetchClient>>,
     prepared_budget_ms: Option<u64>,
+    allow_challenge_replay: bool,
 ) -> Result<ToolOutcome, ToolError> {
     use crate::core::fetch::ExtractMode;
     use crate::fetch::accept::select_accept_policy;
@@ -861,14 +901,18 @@ async fn run_web_fetch_inner(
                         pdf_options: args.pdf.as_ref(),
                         deadline,
                     };
-                    let solved = crate::challenge_replay::replay_challenge(
-                        client.as_ref(),
-                        args.url.trim(),
-                        &resp,
-                        challenge_cookies,
-                        &challenge_plan,
-                    )
-                    .await;
+                    let solved = if allow_challenge_replay {
+                        crate::challenge_replay::replay_challenge(
+                            client.as_ref(),
+                            args.url.trim(),
+                            &resp,
+                            challenge_cookies,
+                            &challenge_plan,
+                        )
+                        .await
+                    } else {
+                        None
+                    };
 
                     if let Some(solved) = solved {
                         response = Some(solved);

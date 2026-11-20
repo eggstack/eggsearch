@@ -13,6 +13,8 @@ from .types import (
     FetchItem,
     FetchRequest,
     FetchResponse,
+    KnowledgeBriefRequest,
+    KnowledgeBriefResponse,
     ProviderStatusRequest,
     ProviderStatusResponse,
     RepoFetchItem,
@@ -141,6 +143,14 @@ class AsyncEggsearch:
         return cast(
             ResearchSearchResponse,
             await self.execute("research_search", cast(dict[str, Any], kwargs)),
+        )
+
+    async def knowledge_brief(
+        self, **kwargs: Unpack[KnowledgeBriefRequest]
+    ) -> KnowledgeBriefResponse:
+        return cast(
+            KnowledgeBriefResponse,
+            await self.execute("knowledge_brief", cast(dict[str, Any], kwargs)),
         )
 
     async def build_evidence_bundle(
