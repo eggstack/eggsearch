@@ -82,6 +82,13 @@ The delta-count difference in the last row is live-source variation, not an iden
 the identities present in both runs are identical, and the emitted count tracks how many
 post-cutoff items the upstream index held at that moment.
 
+The selected-card counts in the table are what that run returned, not a fixed expectation: a
+re-run of the same probes against the integrated tip returned 20 selected cards for the shipped
+default set without a cutoff and 22 with the cutoff, with `dated: 0` and `undated` equal to
+`selected_cards` in every case. The empty-state reason, the accounting partition, and the
+provider-capability report were identical across runs; only the number of live cards moved with
+what the upstream providers served.
+
 ## Verification
 
 Using the pinned Rust 1.89 toolchain on the candidate `380a55c`:
@@ -140,8 +147,16 @@ change, no storage migration, no dependency change.
 ## Hosted qualification
 
 The candidate is pushed to `origin/feat/auto-20261117-044c4885` for the hosted pipeline.
-Hosted CI was not a requirement of this milestone plan, so the local gate above is the
-closure evidence; the hosted run is recorded here when it completes.
+Hosted run [44788814570](https://github.com/eggstack/eggsearch/actions/runs/44788814570)
+completed with an overall failure because the macOS canonical verification and local
+filesystem portability job was cancelled; the cancellation reason was not exposed in the run
+result. The routine CI verification and Windows portability job succeeded. The separate egress
+qualification, release drift guard, and Python native qualification runs also succeeded
+([egress](https://github.com/eggstack/eggsearch/actions/runs/44788814555),
+[release drift](https://github.com/eggstack/eggsearch/actions/runs/44788814607),
+[Python native](https://github.com/eggstack/eggsearch/actions/runs/44788814692)). The local
+`make check` and documentation gates above passed; the hosted macOS qualification remains
+unverified due to cancellation.
 ## Recommendation
 
 Accept M004 on `380a55cd7ea7c0b37dc6eff53851926e96e894d0`. Every acceptance criterion has
