@@ -1,14 +1,14 @@
 # Knowledge-Delta Coverage and Quality — Corrective Addendum
 
 Status: proposed
-Draft: yes — proposed M005–M007; M001–M003 remain closed
+Draft: yes — proposed M005–M007; M001–M004 remain closed
 Date: 2026-11-20
-Planning baseline: `16b4c2888206caeb6654ffebaa039862fc143712` on `feat/auto-20261117-044c4885`
+Planning baseline: `16b4c2888206caeb6654ffebaa039862fc143712` on `feat/auto-20261117-044c4885`; reconciled after M004 closed on `380a55cd7ea7c0b37dc6eff53851926e96e894d0`
 Owner: model-cutoff metadata, knowledge-index operability, and evidence-quality evaluation
 
 Controlling documents: `plans/000-long-term-specification.md` §§1–4, 7–9; `plans/001-terminology-and-domain-model.md` §§1–3; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0006, ADR-0020, ADR-0021.
 
-Predecessor (closed, not reopened): `plans/subsystems/knowledge-delta-roadmap.md` M001–M003; `plans/archive/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md`, `002-local-evidence-index.md`, `003-source-driven-topic-discovery.md`; exact candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; closure evidence `plans/closure/knowledge-delta/001-status.md`, `002-status.md`, `003-status.md`.
+Predecessor (closed, not reopened): `plans/subsystems/knowledge-delta-roadmap.md` M001–M004; `plans/archive/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md`, `002-local-evidence-index.md`, `003-source-driven-topic-discovery.md`, plus the corrective `plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`; exact candidates `c0f71909cfe2e6016512423e55b9d00fdb7220c5` (M001–M003) and `380a55cd7ea7c0b37dc6eff53851926e96e894d0` (M004); closure evidence `plans/closure/knowledge-delta/001-status.md` through `004-status.md`.
 
 ## 1. Purpose and corrective classification
 
@@ -19,7 +19,7 @@ The original workstream owns bounded evidence retrieval and the index implementa
 ## 2. Observed baseline
 
 - `src/meta/knowledge_delta/snapshot.rs` ships exactly **one** verified snapshot row (`gpt-6-astra`). `src/core/knowledge_delta.rs` supplies cutoff/date parsing and resolution. M001 tests verify correctness for known/unknown cutoffs, not breadth or model-ecosystem maintenance. No automatic vendor metadata sync exists.
-- `[knowledge_delta.index].enabled` defaults to `false` per accepted ADR-0021, and `knowledge_brief` defaults to `refresh: "live"`, which neither opens nor writes SQLite. Explicit `retain: true` is required to persist selected public evidence. Index-only and related-topic behavior depend on an already seeded index. M002 exercised persistence, privacy and recovery, but not operator success at first-run setup.
+- `[knowledge_delta.index].enabled` defaults to `false` per accepted ADR-0021, and `knowledge_brief` defaults to `refresh: "live"`, which neither opens nor writes SQLite. Explicit `retain: true` is required to persist selected public evidence. Index-only and related-topic behavior depend on an already seeded index. M002 exercised persistence, privacy and recovery, but not operator success at first-run setup. M004 added `coverage.index_status`, `coverage.empty_state_reason` (including `no_matching_index_hits`) and a permission rejection that names the rejected directory and its mode; the cold-start enable/seed/inspect workflow and the disabled-versus-never-seeded distinction remain unaddressed.
 - `src/meta/knowledge_delta/discovery.rs` extracts bounded subject relationships; `src/meta/knowledge_delta/index.rs` expands one indexed step. M003 closure proves a synthetic omitted-name fixture with negative controls, but explicitly states no live precision/recall estimate. `src/meta/knowledge_delta/plan.rs` emits one unchanged query plus bounded English hints (`release`, `compatibility`, `deprecation`). There is no general crawler or LLM loop **by design**, not as a missing implementation.
 
 ## 3. Invariants and non-goals
