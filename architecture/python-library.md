@@ -84,7 +84,10 @@ hard-float wheel; all six passed exact-candidate qualification and public
 binary-only consumer installs. An sdist
 rebuild uses the binding and root Cargo manifests from clean extraction; it can
 build offline with locked crates already cached, otherwise Cargo registry
-access is required. PyPy, free-threaded CPython, and Windows ARM64 are outside
+access is required. The sdist and the crate tarball carry every asset the
+library compiles through `include_str!` — currently the bundled knowledge-delta
+catalog and the release-target mirror — and
+`packaging/check-packaged-assets.py` fails the routine gate when one is missing. PyPy, free-threaded CPython, and Windows ARM64 are outside
 the support matrix. ARMv7 has an experimental `manylinux_2_28_armv7l`
 hard-float wheel with emulated public installation; native ARMv7 32-bit
 hardware evidence is pending through M004.

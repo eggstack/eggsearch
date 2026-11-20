@@ -13,9 +13,11 @@ keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
 include = [
     "src/**/*.rs",
+    "src/meta/knowledge_delta/catalog.json",
     "benches/**/*.rs",
     "docs/**/*.md",
     "architecture/**/*.md",
+    "packaging/release-targets.txt",
     "packaging/systemd/*",
     "packaging/launchd/*",
     "packaging/windows/*",

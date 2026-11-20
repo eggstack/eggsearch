@@ -235,6 +235,12 @@ Deterministic `packaging/check-repo-hygiene.sh` runs in `make check` (`make hygi
 - oversized unexpected root blobs over 100 KiB (allowlist: `Cargo.lock`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `LICENSE`);
 - tracked editor/temp files (`*.swp`, `*.bak`, `.DS_Store`).
 
+`packaging/check-contract.sh` (part of `make check`) also runs
+`packaging/check-packaged-assets.py`, which fails when an asset read by
+`include_str!` or `include_bytes!` under `src/` is absent from
+`cargo package --list`, so the published crate and the maturin sdist always
+compile from the tarball they ship.
+
 ## CI Jobs
 
 | Job | Duration | Feature Combos |

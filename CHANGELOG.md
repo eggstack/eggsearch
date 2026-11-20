@@ -314,6 +314,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `duckduckgo` skips sponsored containers (`result--ad`) instead of returning
   paid placements as organic results, and `startpage` classifies the Anubis
   challenge page (`#anubis_challenge`) as `blocked` instead of `parse_error`.
+- The published crate and the Python sdist now carry every asset the library
+  reads at compile time: the bundled knowledge-delta catalog and the
+  release-target mirror were missing from `[package] include`, so `cargo
+  package` verification and the extracted-sdist rebuild failed on a clean
+  tarball. `packaging/check-packaged-assets.py` now compares
+  `cargo package --list` against every `include_str!`/`include_bytes!` literal
+  under `src/`.
 - A cold local `repo_search` no longer spends its whole request budget on the
   first inventory build: the scan deadline starts when that build finishes, and
   the build keeps its own 5-second git bound. A content-only query in a small

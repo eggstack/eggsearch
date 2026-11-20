@@ -174,8 +174,11 @@ On candidate `5a218a4`:
 - Release drift guard `44829078125`: success, attempt 1.
 - Python native qualification `44829078082`: failure in `Rebuild and smoke extracted sdist`.
   The same job failed on the three preceding docs-only tips (`950f219`, `58446ef`, `77c32aa`,
-  `d5f17a5`), so it is pre-existing and outside this milestone's gate; it is recorded rather than
-  claimed green.
+  `d5f17a5`). **Reconciled 2026-11-20:** that pre-existing attribution was wrong. The job was
+  green on `57f5fed` and the six runs before it and red from `bc52970`, the first commit
+  containing the M005 catalog, whose `catalog.json` was missing from `[package] include`. It
+  remains outside M043's gate, but it is a regression owned by
+  `plans/implementation/python-pypi-distribution/005-packaged-artifact-asset-completeness.md`.
 
 ## Gates
 
