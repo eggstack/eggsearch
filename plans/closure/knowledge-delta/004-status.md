@@ -147,16 +147,27 @@ change, no storage migration, no dependency change.
 ## Hosted qualification
 
 The candidate is pushed to `origin/feat/auto-20261117-044c4885` for the hosted pipeline.
-Hosted run [44788814570](https://github.com/eggstack/eggsearch/actions/runs/44788814570)
-completed with an overall failure because the macOS canonical verification and local
-filesystem portability job was cancelled; the cancellation reason was not exposed in the run
-result. The routine CI verification and Windows portability job succeeded. The separate egress
+
+The first hosted attempt on `10986ed` (run
+[44788814570](https://github.com/eggstack/eggsearch/actions/runs/44788814570)) reported an
+overall failure because the macOS canonical verification and local filesystem portability job
+was cancelled; the cancellation reason was not exposed in the run result. The routine CI
+verification and Windows portability jobs in that run succeeded. The separate egress
 qualification, release drift guard, and Python native qualification runs also succeeded
 ([egress](https://github.com/eggstack/eggsearch/actions/runs/44788814555),
 [release drift](https://github.com/eggstack/eggsearch/actions/runs/44788814607),
-[Python native](https://github.com/eggstack/eggsearch/actions/runs/44788814692)). The local
-`make check` and documentation gates above passed; the hosted macOS qualification remains
-unverified due to cancellation.
+[Python native](https://github.com/eggstack/eggsearch/actions/runs/44788814692)).
+
+A re-run on `a9fc806` — the same source and test tree, with this record and the inventory
+counts as the only differences — is fully green:
+[CI](https://github.com/eggstack/eggsearch/actions/runs/44797522795) passed all three jobs
+(`ci`, macOS canonical verification and local filesystem portability, and Windows portability),
+as did [egress qualification](https://github.com/eggstack/eggsearch/actions/runs/44797522796),
+[release drift guard](https://github.com/eggstack/eggsearch/actions/runs/44797522762), and
+[Python native qualification](https://github.com/eggstack/eggsearch/actions/runs/44797522799).
+The cancellation on the earlier attempt therefore does not stand as a macOS signal on this
+tree.
+
 ## Recommendation
 
 Accept M004 on `380a55cd7ea7c0b37dc6eff53851926e96e894d0`. Every acceptance criterion has
