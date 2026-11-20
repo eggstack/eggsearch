@@ -68,30 +68,40 @@ Search flow per call:
 
 1. Ensure the `WorkspaceInventory` is built (auto-build on cache miss).
 2. `select_inventory_candidates()` filters by language/file/path hints and
-   scores each viable entry once, returning a bounded deterministic top-K
-   set (budget `max_results * 2`).
-3. Read candidates through `safe_read_file()` under `max_file_bytes`.
-4. Score path, text, language, and symbol matches; structured definitions
-   outrank regex matches while preserving lexical fallback ordering.
-5. Convert to `SourceCard`s (`trust: LocalTrusted`, `local_repo_match`
+   scores each viable entry once, returning the unchanged bounded deterministic
+   first-pass set (budget `max_results * 2`).
+3. Validate and read candidates through `safe_read_file()` under
+   `max_file_bytes`, then score path, text, language, and symbol matches.
+4. If fewer than `max_results` matches were admitted, the request has not
+   timed out, and `files_scanned < max_indexed_files`, run one second pass over
+   the remaining inventory in deterministic relative-path order. It skips
+   `(root_index, relative_path)` entries already read. The first-pass matches
+   and ordering are retained; second-pass matches fill the remaining result slots.
+5. The second pass is bounded by 512 files read, 8 MiB of file contents,
+   1.5 seconds, the request deadline, `max_indexed_files`, and exhaustion.
+   Query and symbol hints participate in candidate filtering; symbol results
+   still use the structured parser first and regex fallback for provenance.
+6. Convert to `SourceCard`s (`trust: LocalTrusted`, `local_repo_match`
    with root path, remote host/owner/repo, branch, commit, dirty state,
    plus file classification and deterministic `workspace_id`).
-6. Report `InventoryTelemetry`, including `freshness_confidence`
+7. Report `InventoryTelemetry`, including `freshness_confidence`
    (`FreshnessConfidence`: `High`, `Medium`, `Low`).
 
 `local_result_budget()` caps local merging at half the effective max
-results. A completed search that admits no cards reports
-`local_search_completed_no_matches`, even if inventory candidates existed or
-truncation is possible. `local_search_truncated` means admitted matches were
-dropped by the result cap or inventory truncation could have hidden a match;
-bounded candidate pruning alone is not reported as truncation. The
-`SymbolBackend` trait defines `find_symbols()`, `capabilities()`,
-`find_definition()`, `find_references()` (defaulting to
-`local_symbols::find_references()`), and `find_enclosing()` /
-`find_implementors()` where supported. `RegexSymbolBackend` preserves the
-compiled-pattern behavior; `StructuredSymbolBackend` runs the deterministic
-parser first and degrades to regex when parsing is disabled, unsupported,
-fails, or exceeds budget.
+results. Internally, `ScanOutcome::Exhausted` means the eligible inventory was
+completed; `ScanOutcome::CutShort` means a scan bound stopped it.
+`local_search_truncated` is reported only for a cut-short scan, dropped returned
+matches, or inventory truncation. A completed scan with zero cards reports
+`local_search_completed_no_matches`; timeout remains a separate warning and
+prevents the no-match warning. Bounded first-pass candidate selection alone is
+not truncation when the second pass completes. The `SymbolBackend` trait
+defines `find_symbols()`, `capabilities()`, `find_definition()`,
+`find_references()` (defaulting to `local_symbols::find_references()`), and
+`find_enclosing()` / `find_implementors()` where supported.
+`RegexSymbolBackend` preserves compiled-pattern behavior;
+`StructuredSymbolBackend` runs the deterministic parser first and degrades to
+regex when parsing is disabled, unsupported, fails, or exceeds budget. There is
+no persistent symbol index; recall remains bounded by the scan ceilings.
 
 ---
 
@@ -111,6 +121,19 @@ walker for non-git roots, timeouts, or cap breaches.
 (`ProcessTerminationController`, now owned by `src/process.rs` and reused by
 startup and integration probes); `CommandTermination` is `Exited`, `TimedOut`,
 `StdoutLimitExceeded`, `StderrLimitExceeded`, `SpawnFailed`, or `Signaled`.
+
+The second-pass literal hint is built with bounded `git grep -l -z -i -F
+--untracked`, the configured `--exclude-standard` or
+`--no-exclude-standard`, and `-e` patterns for the lowercased query, query
+tokens (up to eight patterns), and symbol hint. Its 2s configured maximum is
+further capped to half of the 1.5s second-pass budget for each hint, with a
+4 MiB stdout cap. NUL-separated paths are only a skip filter: every admitted entry
+still passes `validate_entry()` and `safe_read_file()`. A path outside the hint
+set remains eligible if a query token appears in its lowercased relative path
+or a path/file hint was provided. Non-git roots, spawn/status/timeout/cap
+failures produce no hint set and walk every remaining candidate. If no hint set
+is available, symbol-only searches also walk the remaining inventory; there is
+no persistent symbol index.
 
 Freshness uses two clocks: `FRESHNESS_PROBE_INTERVAL` (30s status-hash
 probe via `probe_needs_rebuild()`) and `INVENTORY_REBUILD_TTL` (300s full

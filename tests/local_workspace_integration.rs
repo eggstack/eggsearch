@@ -95,6 +95,19 @@ fn build_pdf_with_text(text: &str) -> Vec<u8> {
     bytes
 }
 
+fn local_search_backend(
+    root: &std::path::Path,
+) -> eggsearch::meta::local_backend::LocalWorkspaceBackend {
+    eggsearch::meta::local_backend::LocalWorkspaceBackend::new(
+        eggsearch::core::local::LocalConfig {
+            enabled: true,
+            roots: vec![root.to_path_buf()],
+            ..Default::default()
+        },
+    )
+    .expect("local workspace backend")
+}
+
 fn workspace_fetch_args(root_name: &str, path: &str) -> RepoFetchArgs {
     RepoFetchArgs {
         host: Some("workspace".into()),
@@ -345,13 +358,25 @@ fn count_entries(v: &serde_json::Value) -> usize {
 async fn non_empty_workspace_without_query_match_returns_no_cards_without_false_truncation() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
-    for i in 0..5 {
+    for i in 0..20 {
         std::fs::write(
             root.join(format!("file{i}.rs")),
             format!("fn fixture_{i}() {{}}"),
         )
         .unwrap();
     }
+
+    let local_result = local_search_backend(root)
+        .search(&eggsearch::core::local::LocalSearchRequest {
+            query: "zzzzqqqxx".into(),
+            max_results: Some(5),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        })
+        .await;
+    assert!(local_result.matches.is_empty());
+    assert_eq!(local_result.files_scanned, 20);
+    assert_eq!(local_result.telemetry.unwrap().content_reads, 20);
 
     let calls = Arc::new(AtomicUsize::new(0));
     let other_calls = Arc::new(AtomicUsize::new(0));
@@ -394,23 +419,145 @@ async fn non_empty_workspace_without_query_match_returns_no_cards_without_false_
 }
 
 #[tokio::test]
+async fn local_content_query_finds_a_file_beyond_the_first_candidate_window() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    for i in 0..15 {
+        std::fs::write(
+            root.join(format!("impl_{i:02}.rs")),
+            format!("pub fn filler_{i}() {{}}"),
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        root.join("z_late_target.rs"),
+        "pub fn late_target() { let _ = \"rare_content_m040\"; }",
+    )
+    .unwrap();
+
+    let backend = local_search_backend(root);
+    let result = backend
+        .search(&eggsearch::core::local::LocalSearchRequest {
+            query: "rare_content_m040".into(),
+            max_results: Some(5),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        })
+        .await;
+
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].file.relative_path, "z_late_target.rs");
+    assert!(result.files_scanned > 10);
+    assert_eq!(
+        result.telemetry.as_ref().unwrap().content_reads,
+        result.files_scanned
+    );
+}
+
+#[tokio::test]
+async fn git_hint_and_walk_second_pass_return_the_same_late_candidate() {
+    let git_available = std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !git_available {
+        return;
+    }
+
+    let git_root = TempDir::new().unwrap();
+    let walk_root = TempDir::new().unwrap();
+    for root in [git_root.path(), walk_root.path()] {
+        for i in 0..15 {
+            std::fs::write(
+                root.join(format!("impl_{i:02}.rs")),
+                format!("pub fn filler_{i}() {{}}"),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            root.join("z_late_git_walk.rs"),
+            "pub fn late_target() { let _ = \"git_walk_marker_m040\"; }",
+        )
+        .unwrap();
+    }
+    init_git_repo(git_root.path());
+    git_add_and_commit(git_root.path(), "second-pass fixture");
+
+    let request = eggsearch::core::local::LocalSearchRequest {
+        query: "git_walk_marker_m040".into(),
+        max_results: Some(5),
+        timeout_ms: Some(10_000),
+        ..Default::default()
+    };
+    let git_result = local_search_backend(git_root.path()).search(&request).await;
+    let walk_result = local_search_backend(walk_root.path())
+        .search(&request)
+        .await;
+    let paths = |result: &eggsearch::core::local::LocalSearchResult| {
+        result
+            .matches
+            .iter()
+            .map(|matched| matched.file.relative_path.clone())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(paths(&git_result), vec!["z_late_git_walk.rs".to_string()]);
+    assert_eq!(paths(&git_result), paths(&walk_result));
+    assert!(git_result.telemetry.unwrap().uses_git_backend);
+    assert!(!walk_result.telemetry.unwrap().uses_git_backend);
+}
+
+#[tokio::test]
+async fn path_rich_local_query_keeps_first_pass_result_order() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    for name in ["a.rs", "b.rs", "c.rs", "d.rs"] {
+        std::fs::write(
+            root.join("src").join(name),
+            "pub fn path_order_marker_m040() {}",
+        )
+        .unwrap();
+    }
+    let backend = local_search_backend(root);
+    let result = backend
+        .search(&eggsearch::core::local::LocalSearchRequest {
+            query: "path_order_marker_m040".into(),
+            path: Some("src".into()),
+            max_results: Some(2),
+            timeout_ms: Some(10_000),
+            ..Default::default()
+        })
+        .await;
+
+    assert_eq!(
+        result
+            .matches
+            .iter()
+            .map(|matched| matched.file.relative_path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["src/a.rs", "src/b.rs"]
+    );
+}
+
+#[tokio::test]
 async fn local_symbol_only_match_preserves_structured_provenance() {
     let tmp = TempDir::new().unwrap();
     let root = tmp.path();
     std::fs::create_dir_all(root.join("src")).unwrap();
+    for i in 0..15 {
+        std::fs::write(
+            root.join("src").join(format!("impl_{i:02}.rs")),
+            format!("pub fn filler_{i}() {{}}"),
+        )
+        .unwrap();
+    }
     std::fs::write(
-        root.join("src/lib.rs"),
+        root.join("src/z_late.rs"),
         "pub struct LocalRelevanceFixture { value: i32 }\n",
     )
     .unwrap();
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(
-        eggsearch::core::local::LocalConfig {
-            enabled: true,
-            roots: vec![root.to_path_buf()],
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    let backend = local_search_backend(root);
     let result = backend
         .search(&eggsearch::core::local::LocalSearchRequest {
             symbol: Some("LocalRelevanceFixture".into()),
@@ -421,6 +568,7 @@ async fn local_symbol_only_match_preserves_structured_provenance() {
         .await;
 
     assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].file.relative_path, "src/z_late.rs");
     assert_eq!(
         result.matches[0].symbol_provenance.as_deref(),
         Some("structured")
@@ -433,6 +581,46 @@ async fn local_symbol_only_match_preserves_structured_provenance() {
         None,
     );
     assert_eq!(cards.len(), 1);
+}
+
+#[tokio::test]
+async fn second_pass_byte_bound_warns_truncated_without_claiming_no_match() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path();
+    let large_file = vec![b'x'; 1_048_576];
+    for i in 0..20 {
+        std::fs::write(root.join(format!("large_{i:02}.rs")), &large_file).unwrap();
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let other_calls = Arc::new(AtomicUsize::new(0));
+    let response = run_repo_search(
+        mode_off_counting_state(root, calls.clone(), other_calls.clone()),
+        RepoSearchArgs {
+            query: "absent_byte_bound_m040".into(),
+            max_results: Some(2),
+            timeout_ms: Some(10_000),
+            providers: vec!["mock_a".into()],
+            include_local: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("bounded local repo_search");
+
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(other_calls.load(Ordering::SeqCst), 0);
+    let warnings = response["warnings"].as_array().expect("warnings array");
+    assert!(warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("local_search_truncated"))
+    }));
+    assert!(!warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("local_search_completed_no_matches"))
+    }));
 }
 
 #[tokio::test]

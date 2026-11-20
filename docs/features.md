@@ -9,26 +9,45 @@ configuration.
 
 ### Unified fetch budget
 
-`fetch` measures every item with one readable-text rule: Unicode scalar values in
-the returned `text` plus bounded visible metadata. A repo item is not charged for
-its serialized JSON or for the structural `document`/`lines` copy of the same
-text. Oversized text is clipped with `truncated: true` before an item is omitted,
-and an item that cannot fit its locator and metadata is a failed item
-(`ok: false`, `response: null`, `chars_returned: 0`) with an attributable
-`batch_total_budget_exhausted` error and warning. A repo item missing `owner`,
-`repo`, or `path` fails before dispatch with an error that names the field and
-the accepted shape.
+`fetch` keeps two distinct measures. `chars_returned` is the readable-text
+measure: Unicode scalar values in the returned `text` plus bounded visible
+metadata; a repo item is not charged twice for its structural `document`/`lines`
+copy of the same text. `payload_chars` is the serialized character count of the
+item's response value before `response_detail` projection, and
+`total_payload_chars` sums it across emitted items; both are additive telemetry,
+and projection may remove fields after measurement, so they conservatively
+over-count a compact response.
+
+The aggregate `max_total_chars` budget is enforced against that emitted payload.
+Before any text is clipped, a repo item drops optional structure in order:
+`document.blocks`/`document.chunks`, then `document`, then `lines`. Each removed
+field is listed in `degraded_fields` and produces one
+`batch_payload_budget_degraded` warning; a structural drop does not set
+`truncated`, which continues to mean text was clipped. Only when no droppable
+structure remains is `text` clipped, and an item that still cannot fit its
+locator and metadata is a failed item (`ok: false`, `response: null`,
+`chars_returned: 0`) with an attributable `batch_total_budget_exhausted` error
+and warning. A repo item missing `owner`, `repo`, or `path` fails before
+dispatch with an error that names the field and the accepted shape.
 
 ### Local search admission and scope
 
 A local workspace file is a `repo_search` result only when the query, its path or
 file name, its content, or a requested symbol matches. Source-role bonuses rank
-candidates but never admit one. When local search admits nothing, the response
-carries `local_search_completed_no_matches`; `local_search_truncated` means
-admitted matches were dropped or the inventory cap could have hidden a match. An
-unscoped request includes local results by default; a request that names a host,
-owner, repository, or organization includes them only with explicit
-`include_local: true`, and `include_local: false` disables them everywhere.
+candidates but never admit one. When the path-ranked first pass admits fewer than
+the requested results, one bounded second pass scans the remaining inventory in
+deterministic relative-path order and fills the remaining slots. A bounded
+`git grep` literal hint skips files that cannot match when the root is a git
+checkout; every candidate is still validated and read locally, and a git failure
+falls back to the walk. The pass stops at the result cap, 512 files read, 8 MiB of
+content, 1.5 seconds, or the request deadline.
+
+A completed scan with no matches carries `local_search_completed_no_matches`;
+`local_search_truncated` means a scan bound cut the scan short, admitted matches
+were dropped, or the inventory cap could have hidden a match. An unscoped request
+includes local results by default; a request that names a host, owner, repository,
+or organization includes them only with explicit `include_local: true`, and
+`include_local: false` disables them everywhere.
 
 ### Native security advisories
 

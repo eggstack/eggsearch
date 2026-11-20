@@ -8,6 +8,14 @@
 use crate::core::code_evidence::SymbolKind;
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
+
+pub(crate) const SECOND_PASS_MAX_FILES: usize = 512;
+pub(crate) const SECOND_PASS_MAX_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const SECOND_PASS_TIME_BUDGET: Duration = Duration::from_millis(1500);
+pub(crate) const GIT_GREP_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const GIT_GREP_STDOUT_CAP: usize = 4 * 1024 * 1024;
+pub(crate) const GIT_GREP_MAX_PATTERNS: usize = 8;
 
 /// Configuration for the `[local]` section of the eggsearch config file.
 ///

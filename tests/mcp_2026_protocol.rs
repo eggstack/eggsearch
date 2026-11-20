@@ -168,6 +168,7 @@ fn typed_output_schemas_validate_representative_payloads() {
         failed: 0,
         truncated: false,
         total_chars_returned: 10,
+        total_payload_chars: 0,
         results: vec![],
         warnings: vec![],
         structured_warnings: vec![],

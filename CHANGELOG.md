@@ -148,6 +148,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `fetch` now enforces `max_total_chars` against the emitted payload instead of
+  the readable-text measure alone. Each item reports `payload_chars` (the
+  serialized character count of its response value before projection) and the
+  envelope reports `total_payload_chars`. Before any requested text is clipped, a
+  repo item drops optional structure in a fixed order — `document.blocks` and
+  `document.chunks`, then `document`, then `lines` — and records each removal in
+  `degraded_fields` with one `batch_payload_budget_degraded` warning mapped to the
+  existing `fetch_content_truncated` code. `chars_returned` keeps its readable
+  meaning and `truncated` still means text was clipped; an item that cannot fit
+  after the ladder remains a failed, omitted item. No tool, argument, or
+  configuration default changes.
+- Local workspace search continues past the path-ranked first window for content
+  and symbol queries. When the first pass admits fewer than the requested
+  results, one bounded second pass scans the remaining inventory in deterministic
+  relative-path order, accelerated by a bounded `git grep` literal hint that only
+  skips candidates (every match is still validated and read locally). It stops at
+  the result cap, 512 files, 8 MiB, 1.5 seconds, or the request deadline, and a
+  git failure falls back to the walk. A symbol hint can now find a definition
+  without a path hint. `local_search_truncated` means a bound cut the scan short
+  or returned matches were dropped; `local_search_completed_no_matches` now
+  requires the scan to have completed. No tool, argument, schema, configuration
+  key, or shipped default changes.
 - Under `render: "auto"` the fetch path now runs the bounded challenge solver before any browser
   escalation, so a solvable Anubis or ALTCHA wall returns its document without launching Chrome.
   A wall the solver leaves unsolved is completed by the browser when one is available, and a wall

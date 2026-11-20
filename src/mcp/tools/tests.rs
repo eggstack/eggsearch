@@ -158,6 +158,8 @@ fn repo_batch_budget_counts_readable_metadata() {
             &payload,
             crate::core::batch_fetch::BatchFetchItemType::Repo,
         ),
+        payload_chars: 0,
+        degraded_fields: Vec::new(),
         truncated: false,
     };
     assert!(result.chars_returned > 1);
@@ -165,6 +167,85 @@ fn repo_batch_budget_counts_readable_metadata() {
     let bounded = truncate_batch_result_to_budget(result, 5, 5);
     assert!(bounded.chars_returned <= 5);
     assert!(bounded.truncated);
+}
+
+#[test]
+fn repo_batch_degradation_ladder_drops_structure_before_text() {
+    let payload = serde_json::json!({
+        "text": "a".repeat(100),
+        "document": {
+            "kind": "file",
+            "text_chars_returned": 100,
+            "metadata": {"path": "src/ladder.rs"},
+            "blocks": [{"text": "b".repeat(50_000)}],
+            "chunks": [{"text": "c".repeat(50_000)}]
+        },
+        "lines": [{"number": 1, "text": "l".repeat(50_000)}]
+    });
+    let full = serde_json::to_string(&payload).unwrap().chars().count();
+    let base = crate::core::batch_fetch::BatchFetchResult {
+        index: 0,
+        item_type: crate::core::batch_fetch::BatchFetchItemType::Repo,
+        label: "ladder".to_string(),
+        stable_id: None,
+        ok: true,
+        response: Some(payload),
+        error: None,
+        chars_returned: 0,
+        payload_chars: 0,
+        degraded_fields: Vec::new(),
+        truncated: false,
+    };
+
+    let first = truncate_batch_result_to_budget(base.clone(), full - 1, full);
+    assert_eq!(
+        first.degraded_fields,
+        vec!["document.blocks", "document.chunks"]
+    );
+    assert!(first.ok);
+    assert_eq!(
+        first.response.as_ref().unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .count(),
+        100
+    );
+
+    let second = truncate_batch_result_to_budget(base.clone(), first.payload_chars - 1, full);
+    assert_eq!(
+        second.degraded_fields,
+        vec!["document.blocks", "document.chunks", "document"]
+    );
+
+    let third = truncate_batch_result_to_budget(base.clone(), second.payload_chars - 1, full);
+    assert_eq!(
+        third.degraded_fields,
+        vec!["document.blocks", "document.chunks", "document", "lines"]
+    );
+    assert!(!third.truncated);
+
+    let fourth = truncate_batch_result_to_budget(base.clone(), third.payload_chars - 1, full);
+    assert_eq!(
+        fourth.degraded_fields,
+        vec![
+            "document.blocks",
+            "document.chunks",
+            "document",
+            "lines",
+            "text"
+        ]
+    );
+    assert!(fourth.truncated);
+    assert!(fourth.payload_chars < third.payload_chars);
+
+    let omitted = truncate_batch_result_to_budget(base, 1, full);
+    assert!(!omitted.ok);
+    assert_eq!(omitted.response, Some(serde_json::Value::Null));
+    assert_eq!(omitted.chars_returned, 0);
+    assert_eq!(omitted.payload_chars, 0);
+    assert!(omitted.degraded_fields.is_empty());
+    assert!(omitted.truncated);
 }
 
 #[test]
@@ -1099,7 +1180,7 @@ async fn screenshot_batch_associations_follow_successful_input_order() {
         ],
         max_items: Some(4),
         max_chars_per_item: Some(1000),
-        max_total_chars: Some(4000),
+        max_total_chars: Some(8000),
         timeout_ms: Some(5000),
         continue_on_error: Some(true),
         offset: None,

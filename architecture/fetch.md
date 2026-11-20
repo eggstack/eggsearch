@@ -46,26 +46,45 @@ workspace reads retain the same authorized root and root-relative path boundary
 as `repo_fetch`. Batch order, per-item failures, and aggregate budgets remain
 owned by the batch envelope.
 
-### Batch returned-character budget
+### Batch returned-character and emitted-payload budgets
 
-The unified `fetch` envelope measures web and repo items with one deterministic
-returned-character rule: Unicode scalar values in the top-level `text`, plus
-`title`, `description`, and visible link URL/text metadata. Repo items also count
-the string-valued locator and returned URL fields. The measure is applied to each
-item before the caller's `response_detail` projection. Repo `document` and `lines`
-are structural representations of the same text and are not counted a second
-time.
+The unified `fetch` envelope keeps the M036 readable measure, `chars_returned`,
+unchanged: Unicode scalar values in top-level `text`, plus `title`,
+`description`, visible link URL/text metadata, and for repo items string-valued
+locator and returned URL fields. Repo `document` and `lines` are structural copies
+of the text and are not counted again in this readable measure.
 
-When an item exceeds the remaining `max_total_chars`, its text is clipped
-UTF-8-safely before omission. Repo locator and bounded metadata are retained;
-only the top-level `text` is clipped, while the structural `document` and `lines`
-remain unchanged. If the repo locator and metadata alone cannot fit, the item is
-omitted with `response: null`, `ok: false`, `chars_returned: 0`, an item-specific
-budget error, and `truncated: true`. Aggregate fetched/failed and telemetry counts
-follow those item outcomes. A single `batch_total_budget_exhausted` warning (the
-raw prefix; the structured entry carries the existing `fetch_content_truncated`
-code) names the first item affected and the `max_total_chars` budget;
-budget-limited truncation and omission are never silent.
+The aggregate `max_total_chars` budget is enforced against the emitted-payload
+measure. For each item, `payload_chars` is the Unicode scalar count of
+`serde_json::to_string(&response_value)`, where `response_value` is that item's
+`response` JSON value; an unmeasurable response is treated as unfittable and
+omitted. It is measured before
+`response_detail` projection; `total_payload_chars` sums this measure for emitted
+items, while omitted items contribute zero. The budget covers the sum of these
+response values, not the complete serialized envelope: item wrappers, the results
+array, aggregate counts and telemetry, warnings, addressing fields, and projection
+stamps are envelope overhead outside the measure. Compact and standard projections
+can remove response fields after measurement, so `payload_chars` and
+`total_payload_chars` may conservatively over-count the projected response.
+
+When a repo response exceeds the remaining budget, preserve requested text by
+applying this ladder in order, remeasuring the serialized response after each
+step and stopping as soon as it fits: remove `document.blocks` and
+`document.chunks` together; remove `document`; remove `lines`; then clip top-level
+`text`. Never clip text while one of those structural fields remains. Each removed
+field is listed in `degraded_fields`; structural drops made by the budget do not
+set `truncated`, which continues to mean text was clipped. Web responses retain their existing
+title/description/links trimming and text clipping, with the final fit decided by
+`payload_chars`. An item that still cannot fit is omitted under M036's contract:
+`ok: false`, `response: null`, `chars_returned: 0`, a budget error, and a warning.
+
+Each degraded item emits one `batch_payload_budget_degraded` legacy warning naming
+the sanitized item label, comma-separated dropped-field markers, measured
+`payload_chars`, remaining budget, and `max_total_chars`; the structured warning
+uses the existing `fetch_content_truncated` code. The batch-level
+`batch_total_budget_exhausted` warning is retained for the first budget-limited
+item. `total_chars_returned` continues to sum the M036 readable measure and is
+distinct from `total_payload_chars`.
 
 1. **Validate.** `limits::validate_url` (sync shape check) runs first;
    `limits::validate_fetch_target` / `validate_fetch_target_with_resolved_addrs`

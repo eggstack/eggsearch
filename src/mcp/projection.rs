@@ -609,6 +609,9 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
         "returned_groups",
         "aggregate_scope",
         "focus_scope",
+        "payload_chars",
+        "degraded_fields",
+        "total_payload_chars",
     ];
     match value {
         serde_json::Value::Object(object) => {

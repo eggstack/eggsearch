@@ -222,6 +222,12 @@ pub struct BatchFetchResult {
     pub error: Option<String>,
     /// Approximate character count of the returned text content.
     pub chars_returned: usize,
+    /// Unicode scalar count of the serialized response value before projection.
+    #[serde(default)]
+    pub payload_chars: usize,
+    /// Response fields removed to fit the aggregate payload budget.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub degraded_fields: Vec<String>,
     /// Whether this item's text was truncated at the per-item max_chars cap.
     pub truncated: bool,
 }
@@ -287,6 +293,9 @@ pub struct BatchFetchResponse {
     pub truncated: bool,
     /// Approximate total characters returned across all items.
     pub total_chars_returned: usize,
+    /// Sum of serialized response-value characters across emitted items.
+    #[serde(default)]
+    pub total_payload_chars: usize,
     /// Per-item results, in input order.
     pub results: Vec<BatchFetchResult>,
     /// Batch-level warnings (e.g. budget exhaustion, partial failure).

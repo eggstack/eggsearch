@@ -1723,6 +1723,7 @@ fn compatibility_dead_code_inventory() {
         "src/meta/engines/semantic_scholar.rs",
         "src/meta/engines/sourcegraph.rs",
         "src/meta/local_backend.rs",
+        "src/meta/local_backend_tests.rs",
         "src/meta/local_ignore.rs",
         "src/meta/local_inventory_cache.rs",
         "src/startup.rs",

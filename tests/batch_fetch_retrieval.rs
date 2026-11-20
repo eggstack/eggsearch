@@ -1589,6 +1589,86 @@ fn locator_helpers_preserve_safety() {
     ));
 }
 
+#[tokio::test]
+async fn batch_repo_degradation_drops_structure_before_text() {
+    let dir = tempfile::tempdir().expect("workspace root");
+    let root_name = workspace_root_name(dir.path());
+    let content = "pub fn routine() { let value = 1; }\n".repeat(900);
+    std::fs::write(dir.path().join("structured.rs"), &content).expect("write structured file");
+    let mut args = batch_args(vec![workspace_repo_item(&root_name, "structured.rs", None)]);
+    args.max_total_chars = Some(25_000);
+    let batch = run_batch_fetch(workspace_state(dir.path()), args)
+        .await
+        .expect("structured batch");
+    let result = &batch["results"][0];
+    assert_eq!(result["ok"], true);
+    let returned_text = result["response"]["text"].as_str().unwrap_or_default();
+    assert!(!returned_text.is_empty());
+    assert!(content.starts_with(returned_text));
+    let degraded: Vec<&str> = result["degraded_fields"]
+        .as_array()
+        .expect("degraded markers")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect();
+    assert_eq!(degraded, vec!["lines"]);
+    let payload_chars = result["payload_chars"].as_u64().expect("payload chars");
+    assert!(payload_chars > 0 && payload_chars <= 25_000);
+    assert_eq!(batch["total_payload_chars"].as_u64(), Some(payload_chars));
+    let warning = batch["warnings"]
+        .as_array()
+        .expect("warnings")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .find(|warning| warning.starts_with("batch_payload_budget_degraded"))
+        .expect("degradation warning");
+    assert!(warning.contains("structured.rs"));
+    assert!(warning.contains("lines"));
+    assert!(warning.contains("payload_chars="));
+    let structured = batch["structured_warnings"]
+        .as_array()
+        .expect("structured warnings")
+        .iter()
+        .find(|warning| {
+            warning["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("dropped lines"))
+        })
+        .expect("structured degradation warning");
+    assert_eq!(structured["code"], "fetch_content_truncated");
+}
+
+#[tokio::test]
+async fn batch_total_payload_chars_bounds_three_item_batch() {
+    let dir = tempfile::tempdir().expect("workspace root");
+    let root_name = workspace_root_name(dir.path());
+    for name in ["alpha.rs", "beta.rs", "gamma.rs"] {
+        let content = "pub fn routine() { let value = 1; }\n".repeat(200);
+        std::fs::write(dir.path().join(name), content).expect("write workspace file");
+    }
+    let items = ["alpha.rs", "beta.rs", "gamma.rs"]
+        .iter()
+        .map(|name| workspace_repo_item(&root_name, name, None))
+        .collect();
+    let args = batch_args(items);
+    let batch = run_batch_fetch(workspace_state(dir.path()), args)
+        .await
+        .expect("three item batch");
+    let mut summed = 0u64;
+    for result in batch["results"].as_array().expect("results") {
+        assert_eq!(result["ok"], true);
+        assert!(!result["response"]["text"]
+            .as_str()
+            .unwrap_or_default()
+            .is_empty());
+        summed += result["payload_chars"]
+            .as_u64()
+            .expect("item payload chars");
+    }
+    assert_eq!(batch["total_payload_chars"].as_u64(), Some(summed));
+    assert!(summed <= 50_000);
+}
+
 #[test]
 fn focus_policy_utf8_safe() {
     let s = "a🦀b🦀c";

@@ -994,6 +994,26 @@ async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
         })
         .collect();
 
+    let probe = run_batch_fetch(
+        state.clone(),
+        eggsearch::mcp::tools::BatchFetchArgs {
+            offset: None,
+            limit: None,
+            items: items.clone(),
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(50_000),
+            continue_on_error: Some(true),
+            timeout_ms: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("budget probe");
+    let first_payload_chars = probe["results"][0]["payload_chars"]
+        .as_u64()
+        .expect("measured payload") as usize;
+
     let result = run_batch_fetch(
         state.clone(),
         eggsearch::mcp::tools::BatchFetchArgs {
@@ -1002,7 +1022,7 @@ async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
             items,
             max_items: None,
             max_chars_per_item: None,
-            max_total_chars: Some(1),
+            max_total_chars: Some(first_payload_chars),
             continue_on_error: Some(true),
             timeout_ms: None,
             response_detail: None,

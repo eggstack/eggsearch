@@ -257,7 +257,7 @@ impl MetadataSearchAdapter {
                         self.sanitize_output,
                         matched_repo,
                     );
-                if local_cards.is_empty() && !local_result.timed_out {
+                if local_cards.is_empty() && !local_result.timed_out && !local_result.truncated {
                     local_warnings.push(SearchWarning::new(
                         "local_workspace",
                         "local_search_completed_no_matches: Local workspace search completed without matching files.",
