@@ -33,6 +33,8 @@ Closed or superseded implementation plans are archived under
 | Browser artifact availability and render bounds | closing (M001–M005 acceptance complete; PR #16 merged as `aea34ee`) | `plans/subsystems/browser-artifact-availability-roadmap.md` | M003 acceptance passed on exact SHA `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`: local fixture, macOS arm64 installer/release smoke, live ten-tool MCP, hosted CI, egress, Eggpack drift/qualification, Windows wrappers, and Python full matrix (`43916322850`, attempt 4; all 34 jobs passed). All seven Eggpack consumer validations, `required_gate`, and aggregate passed; Eggpack target sizes and Python wheel sizes are in the closure record. PR-linked Python run `43897293446`, attempt 7, passed all 34 jobs and all displayed PR checks pass on the same SHA. PR #16 merged as `aea34eeb89749e3196712d9e9b9741f75c58e760` on 2026-11-16T21:05:25Z. See M003 closure and M004/M005 plans. |
 | Knowledge-delta research | closed (M001–M003) | `plans/subsystems/knowledge-delta-roadmap.md` | All three milestones closed on `c0f71909cfe2e6016512423e55b9d00fdb7220c5`. M002 Linux/Windows qualification and footprint records are in the closure record with `threshold_applied=false`; no numeric budget pass is claimed. |
 
+| Knowledge-delta coverage and quality corrective addendum | proposed; M004–M006 proposed | `plans/subsystems/knowledge-delta-corrective-addendum.md` | M001–M003 remain closed. M004 addresses verified model-cutoff breadth; M005 explicit-index setup/seeding; M006 live discovery quality. All draft; no default persistence, crawling, or LLM loop. |
+
 ## Active and dependency-ready implementation plans
 
 | Subsystem | Milestone | Status | Plan | Gate |
@@ -72,6 +74,10 @@ Closed or superseded implementation plans are archived under
 | Knowledge delta | M001 cutoff-aware knowledge brief | closed | `plans/archive/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md` | Closed on exact candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; see `plans/closure/knowledge-delta/001-status.md`. |
 | Knowledge delta | M002 optional local evidence index | closed | `plans/archive/implementation/knowledge-delta/002-local-evidence-index.md` | Closed on exact candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; Linux/Windows evidence and the no-threshold caveat are in `plans/closure/knowledge-delta/002-status.md`. |
 | Knowledge delta | M003 source-driven topic discovery | closed | `plans/archive/implementation/knowledge-delta/003-source-driven-topic-discovery.md` | Closed on exact candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; see `plans/closure/knowledge-delta/003-status.md`. |
+
+| Knowledge delta corrective | M004 verified model-cutoff coverage | proposed | `plans/implementation/knowledge-delta/004-verified-model-cutoff-coverage.md` | Draft; M001 and ADR-0020 are closed/accepted. Source verification and catalog coverage gate implementation. |
+| Knowledge delta corrective | M005 opt-in index onboarding and seeding | proposed | `plans/implementation/knowledge-delta/005-opt-in-index-onboarding-and-seeding.md` | Draft; M002/M003 and ADR-0021 are closed/accepted. Keep index disabled and writing explicit. |
+| Knowledge delta corrective | M006 live discovery quality qualification | proposed | `plans/implementation/knowledge-delta/006-live-discovery-quality-qualification.md` | Draft; M001–M003 closed. Prospective live evidence and held-out corpus required; M004/M005 are soft integration dependencies. |
 
 ## Closure rule
 
