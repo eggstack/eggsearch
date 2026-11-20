@@ -1,12 +1,14 @@
 # M002 — Optional Local Evidence Index
 
-Status: proposed
+Status: closed
 Date: 2026-11-19
-Revised: 2026-11-20 — ADR-0021 accepted bundled rusqlite. Not implementation authorization.
+Revised: 2026-11-20 — closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5.
 Subsystem: knowledge-delta
 Milestone class: infrastructure
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 Roadmap: `plans/subsystems/knowledge-delta-roadmap.md` M002
+Closure record: `plans/closure/knowledge-delta/002-status.md`
+Implementation candidate: `c0f71909cfe2e6016512423e55b9d00fdb7220c5`
 
 References: `plans/000-long-term-specification.md` §§3–4, 6–8;
 `plans/001-terminology-and-domain-model.md` §§1–3;

@@ -1,8 +1,8 @@
 # Knowledge-Delta Research Roadmap
 
-Status: M001 ready; M002 and M003 proposed
+Status: closed (M001–M003)
 Date: 2026-11-19
-Revised: 2026-11-20 — ADR-0020 and ADR-0021 accepted. M001 is not started. M002 stays proposed.
+Revised: 2026-11-20 — M001–M003 closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5. Linux/Windows footprint evidence has threshold_applied=false; no numeric budget pass is claimed.
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 Owner: research retrieval and evidence handoff, with optional local evidence persistence
 
@@ -88,21 +88,24 @@ M001 request schema ──────── interface ──> CodeGG and eggui 
 default-target footprint ──── operational ──> calling M002 shippable
 ```
 
-ADR-0021 was accepted 2026-11-20. The engine is bundled rusqlite. The
-macOS spike did not qualify Linux or Windows; that waiver is in the ADR
-and is not M002 work. Those unrun targets remain the operational
-footprint gate. ADR-0020 is accepted, so M001 is `ready` and not started.
-M002 stays `proposed` because M001 is not closed. M003 stays `proposed`. CodeGG and
-eggui may pass `model_id` against the M001 schema. They must not send `scope` or a non-live `refresh`. That
-parallel work is not asserted complete.
+ADR-0021 was accepted 2026-11-20 and selects bundled rusqlite. M001,
+M002, and M003 are closed on exact candidate
+`c0f71909cfe2e6016512423e55b9d00fdb7220c5`; their records are in
+`plans/closure/knowledge-delta/`. The Linux and Windows default-target
+qualification and footprint evidence are complete. Every footprint
+record states `threshold_applied=false`; no numeric threshold pass is
+claimed. The experimental ARMv7 physical run remains unrun and
+non-gating. ADR-0020 and ADR-0021 remain accepted. CodeGG and eggui may
+pass `model_id` against the M001 schema; their parallel consumer work is
+not asserted complete.
 
 ## 6. Ordered milestones
 
 | Milestone | Primary class | Status | Handoff plan | Dependency and visible exit |
 |---|---|---|---|---|
-| M001 — Cutoff-aware knowledge brief | capability | ready | `plans/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md` | Hard dependency satisfied: ADR-0020 accepted 2026-11-20. Not started. Exit remains a bounded source-backed brief that applies the ADR-0020 date rule and is callable over MCP. |
-| M002 — Optional local evidence index | infrastructure | proposed | `plans/implementation/knowledge-delta/002-local-evidence-index.md` | Hard: M001 closed. ADR-0021 accepted 2026-11-20 names bundled rusqlite. Not started. The accepted engine survives restart, does not change a live call, and refuses authenticated bodies. |
-| M003 — Source-driven topic discovery | capability | proposed | `plans/implementation/knowledge-delta/003-source-driven-topic-discovery.md` | Hard: M002 closed. The omission fixture returns the labeled indexed delta that direct retrieval missed. Negative controls add none. No crawler or LLM. |
+| M001 — Cutoff-aware knowledge brief | capability | closed | `plans/archive/implementation/knowledge-delta/001-cutoff-aware-knowledge-brief.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; see `plans/closure/knowledge-delta/001-status.md`. |
+| M002 — Optional local evidence index | infrastructure | closed | `plans/archive/implementation/knowledge-delta/002-local-evidence-index.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; Linux/Windows records and target qualification are in `plans/closure/knowledge-delta/002-status.md`; no numeric threshold pass is claimed. |
+| M003 — Source-driven topic discovery | capability | closed | `plans/archive/implementation/knowledge-delta/003-source-driven-topic-discovery.md` | Closed on candidate `c0f71909cfe2e6016512423e55b9d00fdb7220c5`; omission fixture and negative controls are in `plans/closure/knowledge-delta/003-status.md`. |
 
 ## 7. Cross-cutting requirements
 
@@ -168,7 +171,9 @@ A milestone is closed only after its exact-candidate implementation meets
 the stated exit, the focused and broad gates, the security evidence that
 applies, a closure record under
 `plans/closure/knowledge-delta/NNN-status.md`, and synchronized registry
-and roadmap updates. ADR-0020 was accepted 2026-11-20. M001 is ready and
-not started. ADR-0021 was accepted 2026-11-20 with bundled rusqlite.
-M002 remains proposed until M001 is closed. The incomplete spike does
-not reopen that acceptance.
+and roadmap updates. M001, M002, and M003 are closed on exact implementation candidate
+`c0f71909cfe2e6016512423e55b9d00fdb7220c5`; see their closure records
+under `plans/closure/knowledge-delta/`. ADR-0020 and ADR-0021 remain
+accepted. Linux/Windows measurements state `threshold_applied=false`;
+no numeric budget pass is claimed. ARMv7 physical evidence remains
+unrun and non-gating.

@@ -1,12 +1,14 @@
 # M001 — Cutoff-Aware Knowledge Brief
 
-Status: ready
+Status: closed
 Date: 2026-11-19
-Revised: 2026-11-20 — ADR-0020 accepted. Dependency-ready. Not started.
+Revised: 2026-11-20 — closed on exact implementation candidate c0f71909cfe2e6016512423e55b9d00fdb7220c5.
 Subsystem: knowledge-delta
 Milestone class: capability
 Planning baseline: `0f52c8fc812c99e8aee75f515f1b1d8dd32a9789` on `feat/auto-20261117-044c4885`
 Roadmap: `plans/subsystems/knowledge-delta-roadmap.md` M001
+Closure record: `plans/closure/knowledge-delta/001-status.md`
+Implementation candidate: `c0f71909cfe2e6016512423e55b9d00fdb7220c5`
 
 References: `plans/000-long-term-specification.md` §§1–4, 7–8;
 `plans/001-terminology-and-domain-model.md` §§1–3;

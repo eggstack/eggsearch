@@ -93,10 +93,14 @@ release provenance, remaining reqwest elimination behind eggfetch ownership,
 bounded process/unsafe consolidation, and security-sensitive forge maintenance.
 Roadmap: `plans/subsystems/repository-hardening-roadmap.md`.
 
-### 9. Knowledge delta — active
+### 9. Knowledge delta — closed (M001–M003)
 
-Cutoff-aware `knowledge_brief`, a bundled rusqlite local evidence index, and
-source-driven topic discovery. Roadmap:
+Cutoff-aware `knowledge_brief`, the bundled rusqlite local evidence index, and
+source-driven topic discovery closed on exact candidate
+`c0f71909cfe2e6016512423e55b9d00fdb7220c5`. Closure evidence: M001
+`plans/closure/knowledge-delta/001-status.md`, M002
+`plans/closure/knowledge-delta/002-status.md`, and M003
+`plans/closure/knowledge-delta/003-status.md`. Roadmap:
 `plans/subsystems/knowledge-delta-roadmap.md`.
 
 ## Dependency notes
