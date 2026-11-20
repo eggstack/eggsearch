@@ -269,6 +269,13 @@ fn windows_footprint_samples_peak_working_set_while_process_is_alive() {
         let sample = step
             .find("$currentSample = [long]$process.PeakWorkingSet64")
             .expect("sample peak working set during process run");
+        let alive_before = step[..sample]
+            .rfind("$process.HasExited")
+            .expect("check that process is alive before sampling");
+        let alive_after = sample
+            + step[sample..]
+                .find("$process.HasExited")
+                .expect("check that process is alive after sampling");
         let exit_poll = step
             .find("$process.WaitForExit(1)")
             .expect("poll process exit while sampling");
@@ -276,8 +283,15 @@ fn windows_footprint_samples_peak_working_set_while_process_is_alive() {
             .find("$process.WaitForExit()")
             .expect("wait for process after sampling");
         assert!(
-            sample < exit_poll && exit_poll < final_wait,
-            "Windows RSS must be sampled before process exit for {target}"
+            alive_before < sample
+                && sample < alive_after
+                && alive_after < exit_poll
+                && exit_poll < final_wait,
+            "Windows RSS samples must be bracketed by live-process checks for {target}"
+        );
+        assert!(
+            !step.contains("$finalSample"),
+            "post-exit PeakWorkingSet64 values cannot count for {target}"
         );
         assert!(
             step.contains("ReadToEndAsync()"),

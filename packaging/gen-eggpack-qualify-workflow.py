@@ -96,17 +96,16 @@ def footprint_steps(target, platform, artifact):
             $rssSample = 0L
             do {
               $process.Refresh()
+              if ($process.HasExited) { break }
               $currentSample = [long]$process.PeakWorkingSet64
-              if ($currentSample -gt $rssSample) { $rssSample = $currentSample }
+              $process.Refresh()
+              if (-not $process.HasExited -and $currentSample -gt $rssSample) { $rssSample = $currentSample }
               if ($process.WaitForExit(1)) { break }
             } while ($true)
             $process.WaitForExit()
             $stdout = $stdoutTask.GetAwaiter().GetResult()
             $stderr = $stderrTask.GetAwaiter().GetResult()
             if ($process.ExitCode -ne 0) { throw "--version exited with $($process.ExitCode): $stderr" }
-            $process.Refresh()
-            $finalSample = [long]$process.PeakWorkingSet64
-            if ($finalSample -gt $rssSample) { $rssSample = $finalSample }
             if ($rssSample -gt 0) { $rssSamples += $rssSample }
             $process.Dispose()
           }
