@@ -716,31 +716,36 @@ async fn run_web_fetch_inner(
                                         metadata.cache_status = revalidated_status;
                                         updated_freshness.fetched_at =
                                             Some(std::time::SystemTime::now());
-                                        cache
-                                            .insert_raw(
-                                                raw_key,
-                                                crate::fetch::cache::RawFetchCacheEntry {
-                                                    freshness: updated_freshness,
-                                                    validators: updated_validators,
-                                                    ..raw_entry.clone()
-                                                },
-                                            )
-                                            .await;
-                                        cached_response = if let Some(derived) =
-                                            cache.get_derived_shared(&derived_key).await
-                                        {
-                                            let mut resp = cached_document_response(
-                                                trimmed_url,
-                                                &raw_entry,
-                                                &derived.response,
-                                                budgets.window_chars(),
-                                                state.config.fetch.sanitize_output,
-                                            );
-                                            resp.cache_status = revalidated_status;
-                                            Some(resp)
+                                        if revalidated_cacheable {
+                                            cache
+                                                .insert_raw(
+                                                    raw_key.clone(),
+                                                    crate::fetch::cache::RawFetchCacheEntry {
+                                                        freshness: updated_freshness,
+                                                        validators: updated_validators,
+                                                        ..raw_entry.clone()
+                                                    },
+                                                )
+                                                .await;
+                                            cached_response = if let Some(derived) =
+                                                cache.get_derived_shared(&derived_key).await
+                                            {
+                                                let mut resp = cached_document_response(
+                                                    trimmed_url,
+                                                    &raw_entry,
+                                                    &derived.response,
+                                                    budgets.window_chars(),
+                                                    state.config.fetch.sanitize_output,
+                                                );
+                                                resp.cache_status = revalidated_status;
+                                                Some(resp)
+                                            } else {
+                                                derive(true).await.ok()
+                                            };
                                         } else {
-                                            derive(revalidated_cacheable).await.ok()
-                                        };
+                                            cache.invalidate_raw_response(&raw_key, raw_hash).await;
+                                            cached_response = derive(false).await.ok();
+                                        }
                                     }
                                     Ok(_) => {}
                                     Err(reval_err) => {

@@ -165,7 +165,7 @@ jobs:
           $candidateSha = (git rev-parse HEAD).Trim()
           $binaryBytes = [long](Get-Item -LiteralPath $binary).Length
           $rssSamples = @()
-          for ($attempt = 0; $attempt -lt 5; $attempt++) {
+          for ($attempt = 0; $attempt -lt 10 -and $rssSamples.Count -lt 5; $attempt++) {
             $process = [System.Diagnostics.Process]::new()
             $process.StartInfo.FileName = $binary
             $process.StartInfo.Arguments = "--version"
@@ -174,16 +174,26 @@ jobs:
             $process.StartInfo.RedirectStandardOutput = $true
             $process.StartInfo.RedirectStandardError = $true
             if (-not $process.Start()) { throw "Could not start release binary" }
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+            $rssSample = 0L
+            do {
+              $process.Refresh()
+              $currentSample = [long]$process.PeakWorkingSet64
+              if ($currentSample -gt $rssSample) { $rssSample = $currentSample }
+              if ($process.WaitForExit(1)) { break }
+            } while ($true)
             $process.WaitForExit()
-            $process.Refresh()
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
             if ($process.ExitCode -ne 0) { throw "--version exited with $($process.ExitCode): $stderr" }
-            $rssSample = [long]$process.PeakWorkingSet64
-            if ($rssSample -le 0) { throw "Peak working set sample was invalid: $rssSample" }
-            $rssSamples += $rssSample
+            $process.Refresh()
+            $finalSample = [long]$process.PeakWorkingSet64
+            if ($finalSample -gt $rssSample) { $rssSample = $finalSample }
+            if ($rssSample -gt 0) { $rssSamples += $rssSample }
             $process.Dispose()
           }
+          if ($rssSamples.Count -ne 5) { throw "Collected $($rssSamples.Count) valid peak working set samples; expected 5" }
           $record = [ordered]@{ candidate_sha = $candidateSha; target = $target; binary_bytes = $binaryBytes; probe = "eggsearch --version"; peak_working_set_bytes_samples = $rssSamples; threshold_applied = $false }
           $json = $record | ConvertTo-Json -Compress
           $outputDir = Join-Path $PWD "eggpack-footprint"
@@ -525,7 +535,7 @@ jobs:
           $candidateSha = (git rev-parse HEAD).Trim()
           $binaryBytes = [long](Get-Item -LiteralPath $binary).Length
           $rssSamples = @()
-          for ($attempt = 0; $attempt -lt 5; $attempt++) {
+          for ($attempt = 0; $attempt -lt 10 -and $rssSamples.Count -lt 5; $attempt++) {
             $process = [System.Diagnostics.Process]::new()
             $process.StartInfo.FileName = $binary
             $process.StartInfo.Arguments = "--version"
@@ -534,16 +544,26 @@ jobs:
             $process.StartInfo.RedirectStandardOutput = $true
             $process.StartInfo.RedirectStandardError = $true
             if (-not $process.Start()) { throw "Could not start release binary" }
-            $stdout = $process.StandardOutput.ReadToEnd()
-            $stderr = $process.StandardError.ReadToEnd()
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+            $rssSample = 0L
+            do {
+              $process.Refresh()
+              $currentSample = [long]$process.PeakWorkingSet64
+              if ($currentSample -gt $rssSample) { $rssSample = $currentSample }
+              if ($process.WaitForExit(1)) { break }
+            } while ($true)
             $process.WaitForExit()
-            $process.Refresh()
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
             if ($process.ExitCode -ne 0) { throw "--version exited with $($process.ExitCode): $stderr" }
-            $rssSample = [long]$process.PeakWorkingSet64
-            if ($rssSample -le 0) { throw "Peak working set sample was invalid: $rssSample" }
-            $rssSamples += $rssSample
+            $process.Refresh()
+            $finalSample = [long]$process.PeakWorkingSet64
+            if ($finalSample -gt $rssSample) { $rssSample = $finalSample }
+            if ($rssSample -gt 0) { $rssSamples += $rssSample }
             $process.Dispose()
           }
+          if ($rssSamples.Count -ne 5) { throw "Collected $($rssSamples.Count) valid peak working set samples; expected 5" }
           $record = [ordered]@{ candidate_sha = $candidateSha; target = $target; binary_bytes = $binaryBytes; probe = "eggsearch --version"; peak_working_set_bytes_samples = $rssSamples; threshold_applied = $false }
           $json = $record | ConvertTo-Json -Compress
           $outputDir = Join-Path $PWD "eggpack-footprint"

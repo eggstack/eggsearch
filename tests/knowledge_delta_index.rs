@@ -266,7 +266,7 @@ fn schema_v1_scrubs_query_text_and_rebuilds_source_subjects() {
     index.retain(&[record("legacy", "anonymous")]).unwrap();
     drop(index);
 
-    let secret = "private customer roadmap query";
+    let secret = "privatecustomerroadmapqueryqz7x";
     let conn = Connection::open(&path).unwrap();
     let rowid: i64 = conn
         .query_row(
@@ -347,6 +347,66 @@ fn schema_v1_scrubs_query_text_and_rebuilds_source_subjects() {
         1
     );
     assert!(migrated.lookup("anonymous", secret, 10).unwrap().is_empty());
+    let secure_delete: i64 = conn
+        .query_row(
+            "SELECT v FROM candidate_events_fts_config WHERE k = 'secure-delete'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(secure_delete, 1);
+    drop(conn);
+    drop(migrated);
+    let database = std::fs::read(&path).unwrap();
+    assert!(!database
+        .windows(secret.len())
+        .any(|window| window == secret.as_bytes()));
+}
+
+#[test]
+fn schema_v1_migration_bounds_rebuilt_subjects_near_page_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("index.sqlite");
+    let index = EvidenceIndex::open(&path, &config()).unwrap();
+    index.retain(&[record("dense", "anonymous")]).unwrap();
+    drop(index);
+
+    let title = (0..32)
+        .map(|number| format!("pkg:legacy-{number:02}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute(
+        "UPDATE candidate_events SET title = ?1 WHERE kdelta_id = 'kdelta_dense'",
+        [&title],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE schema_meta SET value = '1' WHERE key = 'version'",
+        [],
+    )
+    .unwrap();
+    let page_count: i64 = conn
+        .pragma_query_value(None, "page_count", |row| row.get(0))
+        .unwrap();
+    let page_size: i64 = conn
+        .pragma_query_value(None, "page_size", |row| row.get(0))
+        .unwrap();
+    drop(conn);
+
+    let mut bounded = config();
+    bounded.max_bytes = (page_count + 4) as u64 * page_size as u64;
+    let migrated = EvidenceIndex::open(&path, &bounded).expect("bounded migration fits");
+    let conn = Connection::open(&path).unwrap();
+    let subjects: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM subjects WHERE source_id = 'src_dense'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(subjects, 16);
+    assert!(migrated.lookup("anonymous", "legacy", 10).is_ok());
 }
 
 #[test]

@@ -14,6 +14,8 @@ use crate::core::identity::canonicalize_url;
 use crate::core::knowledge_delta::KnowledgeIndexConfig;
 
 pub const SCHEMA_VERSION: i64 = 2;
+const MAX_SUBJECTS_PER_SOURCE: usize = 16;
+const MAX_EDGES_PER_SOURCE: usize = 8;
 const MAX_EDGES_PER_SUBJECT: usize = 64;
 const MAX_EXPANSION_SUBJECTS: usize = 16;
 const MAX_EXPANSION_NEIGHBORS: usize = 32;
@@ -117,6 +119,8 @@ impl EvidenceIndex {
         #[cfg(unix)]
         protect_database_file(path)?;
         conn.busy_timeout(std::time::Duration::from_millis(500))
+            .map_err(map_sqlite)?;
+        conn.pragma_update(None, "secure_delete", true)
             .map_err(map_sqlite)?;
         conn.pragma_update(None, "journal_mode", "DELETE")
             .map_err(map_sqlite)?;
@@ -308,7 +312,10 @@ impl EvidenceIndex {
         let excerpt = clip(&record.excerpt, self.max_excerpt_chars);
         let title = clip(&record.title, 512);
         let topic = "";
-        let subjects = extract_subjects(&title, &excerpt);
+        let subjects: Vec<_> = extract_subjects(&title, &excerpt)
+            .into_iter()
+            .take(MAX_SUBJECTS_PER_SOURCE)
+            .collect();
         let primary_subject = subjects
             .iter()
             .find(|subject| subject.verified)
@@ -357,14 +364,18 @@ impl EvidenceIndex {
         )
         .map_err(map_sqlite)?;
         let from = primary_subject.clone().unwrap_or_default();
-        for subject in subjects.iter().take(16) {
+        for subject in &subjects {
             let id = subject_id(subject.kind, &subject.token);
             tx.execute(
                 "INSERT OR REPLACE INTO subjects (partition, subject_id, kind, token, verified, source_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![record.partition, id, subject.kind, subject.token, i64::from(subject.verified), record.source_id],
             ).map_err(map_sqlite)?;
         }
-        for subject in subjects.into_iter().filter(|item| item.verified).take(8) {
+        for subject in subjects
+            .into_iter()
+            .filter(|item| item.verified)
+            .take(MAX_EDGES_PER_SOURCE)
+        {
             if from.is_empty() || subject.token.eq_ignore_ascii_case(&from) {
                 continue;
             }
@@ -524,7 +535,27 @@ fn cleanup_orphans(tx: &Connection) -> Result<(), IndexError> {
     Ok(())
 }
 
+fn enable_fts5_secure_delete(conn: &Connection) -> Result<(), IndexError> {
+    let configured: Option<i64> = conn
+        .query_row(
+            "SELECT v FROM candidate_events_fts_config WHERE k = 'secure-delete'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(map_sqlite)?;
+    if configured != Some(1) {
+        conn.execute(
+            "INSERT INTO candidate_events_fts(candidate_events_fts, rank) VALUES('secure-delete', 1)",
+            [],
+        )
+        .map_err(map_sqlite)?;
+    }
+    Ok(())
+}
+
 fn migrate_schema_v1(conn: &Connection) -> Result<(), IndexError> {
+    enable_fts5_secure_delete(conn)?;
     let tx = conn.unchecked_transaction().map_err(map_sqlite)?;
     tx.execute(
         "UPDATE candidate_events SET title = '' WHERE topic <> '' AND title = topic",
@@ -564,7 +595,10 @@ fn migrate_schema_v1(conn: &Connection) -> Result<(), IndexError> {
         rows.collect::<Result<Vec<_>, _>>().map_err(map_sqlite)?
     };
     for (rowid, partition, source_id, title, excerpt) in records {
-        let subjects = extract_subjects(&title, &excerpt);
+        let subjects: Vec<_> = extract_subjects(&title, &excerpt)
+            .into_iter()
+            .take(MAX_SUBJECTS_PER_SOURCE)
+            .collect();
         let primary = subjects
             .iter()
             .find(|subject| subject.verified)
@@ -586,7 +620,7 @@ fn migrate_schema_v1(conn: &Connection) -> Result<(), IndexError> {
             for subject in subjects
                 .into_iter()
                 .filter(|subject| subject.verified)
-                .take(8)
+                .take(MAX_EDGES_PER_SOURCE)
             {
                 if subject.token.eq_ignore_ascii_case(&from) {
                     continue;
@@ -637,6 +671,7 @@ fn ensure_schema(conn: &Connection) -> Result<(), IndexError> {
                 "schema version {version} is older than {SCHEMA_VERSION}; refusing to delete rows"
             )));
         }
+        enable_fts5_secure_delete(conn)?;
         return Ok(());
     }
     conn.execute_batch(
@@ -695,6 +730,7 @@ fn ensure_schema(conn: &Connection) -> Result<(), IndexError> {
          COMMIT;",
     )
     .map_err(map_sqlite)?;
+    enable_fts5_secure_delete(conn)?;
     Ok(())
 }
 

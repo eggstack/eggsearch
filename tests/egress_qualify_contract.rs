@@ -254,6 +254,43 @@ fn windows_candidate_validation_runs_installer_and_release_smoke_wrappers() {
 }
 
 #[test]
+fn windows_footprint_samples_peak_working_set_while_process_is_alive() {
+    let workflow = fs::read_to_string(".github/workflows/qualify-eggpack-candidate.yml")
+        .expect("read exact-SHA candidate workflow");
+    for target in ["aarch64-pc-windows-msvc", "x86_64-pc-windows-msvc"] {
+        let start = workflow
+            .find(&format!("target = \"{target}\""))
+            .expect("find Windows footprint target");
+        let remaining = &workflow[start..];
+        let end = remaining
+            .find("\n      - name: Capture canonical build handoff\n")
+            .expect("find footprint step boundary");
+        let step = &remaining[..end];
+        let sample = step
+            .find("$currentSample = [long]$process.PeakWorkingSet64")
+            .expect("sample peak working set during process run");
+        let exit_poll = step
+            .find("$process.WaitForExit(1)")
+            .expect("poll process exit while sampling");
+        let final_wait = step
+            .find("$process.WaitForExit()")
+            .expect("wait for process after sampling");
+        assert!(
+            sample < exit_poll && exit_poll < final_wait,
+            "Windows RSS must be sampled before process exit for {target}"
+        );
+        assert!(
+            step.contains("ReadToEndAsync()"),
+            "redirected output must be drained asynchronously for {target}"
+        );
+        assert!(
+            step.contains("$rssSamples.Count -ne 5"),
+            "Windows footprint must reject incomplete RSS samples for {target}"
+        );
+    }
+}
+
+#[test]
 fn macos_arm64_workflows_use_supported_runner_label() {
     let policy = fs::read_to_string("release/eggpack/github-policy.json")
         .expect("read Eggpack GitHub policy");

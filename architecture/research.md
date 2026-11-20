@@ -307,7 +307,10 @@ The index never persists the caller's topic. Its legacy topic column stays
 empty; primary subjects and expansion edges are derived from indexed public
 titles and excerpts. Schema v1 is atomically scrubbed to v2, preserving
 evidence rows while clearing caller-topic fields and rebuilding derived
-subjects and edges. On Unix, partition directories are restricted to mode
+subjects and edges. Every index connection enables SQLite core `secure_delete`;
+schema setup and migration ensure FTS5 `secure-delete` before removing legacy
+terms. Regression coverage checks the migrated database file for residual
+caller-topic bytes. On Unix, partition directories are restricted to mode
 0700 and database files to 0600. An explicitly configured database file
 under a shared parent is refused. On Windows, the index inherits the ACL of
 its parent directory, so configured paths should remain user-private.

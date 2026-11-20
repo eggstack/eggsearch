@@ -4258,6 +4258,9 @@ async fn web_fetch_304_policy_update_blocks_index_cacheability() {
             .await
             .expect("304 revalidation");
         assert_eq!(revalidated["cache_status"], "not_cacheable");
+        let stats = state.fetch_cache.as_ref().unwrap().stats().await;
+        assert_eq!(stats.raw_entries, 0);
+        assert_eq!(stats.derived_entries, 0);
         validation.assert();
     }
 }
