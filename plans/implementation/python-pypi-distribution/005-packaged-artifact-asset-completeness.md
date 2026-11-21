@@ -1,6 +1,6 @@
 # M005 — Packaged-Artifact Asset Completeness
 
-Status: ready
+Status: closed
 Date: 2026-11-20
 Subsystem: Python PyPI distribution and prebuilt SBC wheels
 Milestone class: invariant (corrective to Python M001–M003 packaging verification and to
