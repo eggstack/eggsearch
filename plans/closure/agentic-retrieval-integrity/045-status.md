@@ -44,8 +44,8 @@ which is what work package 2 fixes.
 2. **A silently ignored flag set.** chromiumoxide's builder renders a `--key=value` pair from a
    `(key, value)` argument. Every valued flag was passed as one `"--key=value"` string and emitted
    as `----key=value`, which Chrome ignores, so `--user-data-dir`, `--autoplay-policy`, and the
-   new identity flag never reached the process. This is why presenting a browser identity appeared
-   not to matter when the same flag worked when Chrome was launched by hand.
+   new identity flag never reached the process. That is why the identity flag appeared to have no
+   effect while the same flag worked when Chrome was launched by hand.
 3. **Status-first classification in the render loop.** `classify_response` settled a `429` as
    `RateLimited` before looking at the wall, so the browser never waited for a challenge served
    with a non-success status. Relatedly, "captcha" as a bare substring classified Brave's page as
