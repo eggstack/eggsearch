@@ -299,21 +299,6 @@ impl ServerState {
             max_entries: config.search.cache_max_entries,
         };
 
-        let adapter = MetadataSearchAdapter::new_with_egress(
-            enabled,
-            global_timeout,
-            user_agent,
-            searxng_base_url,
-            config.search.sanitize_output,
-            config.search.default_providers.clone(),
-            &config.search.api,
-            config.search.multiquery_concurrency,
-            config.search.multiquery_provider_concurrency,
-            &config.egress,
-            &config.search.challenge,
-            search_cache,
-        )?;
-
         let misconfigured = config.misconfigured_default_providers();
         for id in &misconfigured {
             tracing::warn!(
@@ -410,13 +395,12 @@ impl ServerState {
         #[cfg(feature = "browser")]
         let browser_discovery_state = discover_browser(config.fetch.browser.executable.as_deref());
         #[cfg(feature = "browser")]
-        let browser_lifecycle = if config.fetch.browser.enabled {
-            let discovery = browser_discovery_state.discovery().cloned();
+        let browser_config = {
             let render_policy: crate::fetch::browser::RenderPolicy = serde_json::from_value(
                 serde_json::Value::String(config.fetch.browser.policy.clone()),
             )
             .unwrap_or_default();
-            let browser_config = crate::fetch::browser::BrowserConfig {
+            crate::fetch::browser::BrowserConfig {
                 enabled: config.fetch.browser.enabled,
                 policy: render_policy,
                 executable: config.fetch.browser.executable.clone(),
@@ -430,15 +414,45 @@ impl ServerState {
                 per_origin_concurrency: config.fetch.browser.per_origin_concurrency,
                 block_media: config.fetch.browser.block_media,
                 persistent_profiles: config.fetch.browser.persistent_profiles.clone(),
-            };
+            }
+        };
+        #[cfg(feature = "browser")]
+        let browser_lifecycle = if config.fetch.browser.enabled {
+            let discovery = browser_discovery_state.discovery().cloned();
             Some(Arc::new(
-                BrowserLifecycle::new(discovery, browser_config).with_idle_timeout(
+                BrowserLifecycle::new(discovery, browser_config.clone()).with_idle_timeout(
                     std::time::Duration::from_millis(config.fetch.browser.idle_timeout_ms),
                 ),
             ))
         } else {
             None
         };
+        #[cfg(feature = "browser")]
+        let serp_renderer: Option<Arc<dyn crate::meta::engines::render::SerpRenderer>> =
+            browser_lifecycle.as_ref().map(|lifecycle| {
+                Arc::new(crate::serp_render::browser::BrowserSerpRenderer::new(
+                    Arc::clone(lifecycle),
+                    browser_config.clone(),
+                )) as Arc<dyn crate::meta::engines::render::SerpRenderer>
+            });
+        #[cfg(not(feature = "browser"))]
+        let serp_renderer: Option<Arc<dyn crate::meta::engines::render::SerpRenderer>> = None;
+
+        let adapter = MetadataSearchAdapter::new_with_egress(
+            enabled,
+            global_timeout,
+            user_agent,
+            searxng_base_url,
+            config.search.sanitize_output,
+            config.search.default_providers.clone(),
+            &config.search.api,
+            config.search.multiquery_concurrency,
+            config.search.multiquery_provider_concurrency,
+            &config.egress,
+            &config.search.challenge,
+            search_cache,
+            serp_renderer,
+        )?;
         #[cfg(feature = "browser")]
         let browser_global_semaphore = if config.fetch.browser.enabled {
             Some(Arc::new(tokio::sync::Semaphore::new(

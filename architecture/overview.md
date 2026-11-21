@@ -58,6 +58,7 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ```
 core ← meta ← mcp ← commands (binary)
 meta + fetch ← challenge_replay ← mcp + commands
+meta + fetch ← serp_render ← mcp
 ```
 
 1. **core** is the foundation — pure types, no external service calls
@@ -66,7 +67,9 @@ meta + fetch ← challenge_replay ← mcp + commands
 4. **challenge_replay** depends on `fetch` and `meta`, and owns shared fetch-path challenge orchestration
 5. **mcp** wires `core` + `meta` + `fetch` + `challenge_replay` into 10 tool endpoints
 6. **commands** (binary-only `src/commands/`) uses `challenge_replay` for CLI fetch alongside its other shared modules
-7. **startup / update / platform / integrations** are ops and deployment seams around the core path
+7. **serp_render** depends on `meta` and `fetch` and implements the engine layer's
+   `SerpRenderer` contract over the browser, so `fetch` stays independent of `meta`
+8. **startup / update / platform / integrations** are ops and deployment seams around the core path
 
 ---
 
@@ -80,6 +83,7 @@ meta + fetch ← challenge_replay ← mcp + commands
 | HTTP fetch pipeline | `src/fetch/` (13 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, representation negotiation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
 | Shared challenge replay | `src/challenge_replay/` | Shared bounded detect → solve → replay → classify orchestration combining the fetch client with the meta challenge solver; the ALTCHA branch derives its same-origin endpoints from the page's own widget publication, and a process-local origin-keyed cache reuses a fetch-side pass cookie for the same origin | [fetch.md](fetch.md#challenge-pages-on-the-http-path) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#9-browser-rendering-browser-8-files-feature-browser) |
+| Browser-rendered provider pages | `src/serp_render/` | Implements the engine layer's `SerpRenderer` contract over the shared browser lifecycle, so a browser-gated HTML provider is parsed from the rendered DOM | [engines.md](engines.md#browser-rendered-access) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#6-render-subsystem-render-8-files) |
 | MCP server & tools | `src/mcp/` (7 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
 | Native SDK facade | `src/sdk.rs` | Narrow direct Rust operation API delegating to the same ten MCP handlers | [python-library.md](python-library.md) |

@@ -38,6 +38,10 @@ The SearXNG provider below is different: it calls a SearXNG instance's JSON API,
 - Included in `default_providers`: yes
 - No configuration needed
 - No API key required
+- Brave answers an automated client with HTTP 429 and a proof-of-work page. When
+  `[fetch.browser].enabled` is true and Chrome or Chromium was discovered, the provider retries
+  that wall once through the shipped browser, which completes it in about two seconds; without a
+  browser it reports the challenge in its error. See [Browser Rendering](features.md#browser-rendering).
 
 ### Startpage
 
@@ -63,6 +67,9 @@ Features](features.md#bounded-challenge-solving) for limits and restrictions.
 - Enabled by default: yes
 - Included in `default_providers`: yes
 - No configuration needed
+- Yahoo answers a client that announces a headless browser with HTTP 500 and an empty body. The
+  provider renders the result page in the shipped browser when one is available and otherwise
+  reports the status, so enabling browser rendering is what makes this provider return results.
 
 ### Mojeek
 

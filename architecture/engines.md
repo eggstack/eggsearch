@@ -182,6 +182,35 @@ through the same blocked markers, so the outcome is `Blocked` with the status na
 never `rate_limited` from the bare status. A non-success body that matches no marker keeps
 `BadStatus`.
 
+### Browser-rendered access
+
+A wall that only executes JavaScript cannot be reached by any header set: Brave answers HTTP 429
+with a proof-of-work page whose `Verify` control completes it, and Yahoo answers HTTP 500 with an
+empty body to a client that announces a headless browser. Both are served to a browser.
+
+`brave` and `yahoo` therefore keep the HTTP request as the first attempt and escalate to the
+shared browser render once, inside the same request deadline, when that attempt fails in a way a
+browser can fix: any `Blocked` outcome, or `BadStatus` in the `429`/`5xx` class. The rendered DOM
+is parsed by the provider's existing parser, so the four-outcome contract is unchanged. Without a
+browser build, a discovered browser, or the browser enabled, the provider reports the HTTP failure
+exactly as before.
+
+The contract is `meta::engines::render::SerpRenderer`; engines never import the browser module.
+The implementation lives in `src/serp_render/browser.rs`, above both `meta` and `fetch`, so
+`src/fetch/**` stays independent of `src/meta/**`. The server state installs it when
+`[fetch.browser].enabled` is true and a browser was discovered, reusing the process-wide lifecycle
+that `fetch` already owns.
+
+Two consequences worth stating:
+
+- A rendered Brave result links to an opaque `/go/v1#…` token, and its displayed URL is the only
+  readable destination. `brave.rs` rebuilds it from `cite.snippet-url`, joining breadcrumb
+  segments while they stay URI-shaped and stopping at the first human-readable one, so a truncated
+  display degrades to its exact prefix rather than inventing a path.
+- A browser-gated search costs a render (seconds, not milliseconds). The cost is bounded by the
+  request deadline and the render caps; a provider that cannot be served in that budget reports the
+  HTTP failure, never a partial result set.
+
 `EngineError::Blocked` classifies as `ErrorClass::Blocked` (`blocked`) and mirrors as
 `FailureClass::Blocked`; it is a provider failure with a rate-limit cooldown, never absence.
 `ParseFailed` maps to `parse_error` and to `parse_shape = shifted`.

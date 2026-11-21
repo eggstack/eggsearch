@@ -42,6 +42,7 @@ pub fn build_default_engines(
         api_providers,
         &crate::core::config::EgressSection::default(),
         &crate::core::config::ChallengeSection::default(),
+        None,
     )
 }
 
@@ -53,6 +54,7 @@ pub fn build_default_engines_with_egress(
     api_providers: &std::collections::BTreeMap<String, ApiProviderConfig>,
     egress: &crate::core::config::EgressSection,
     challenge: &crate::core::config::ChallengeSection,
+    serp_renderer: Option<Arc<dyn crate::meta::engines::render::SerpRenderer>>,
 ) -> anyhow::Result<(EngineList, Vec<SkippedProvider>)> {
     use crate::meta::engines::{
         ArxivEngine, BraveApiEngine, BraveEngine, CisaKevEngine, CratesIoRegistryEngine,
@@ -81,6 +83,7 @@ pub fn build_default_engines_with_egress(
             })),
             "brave" => engines.push(Arc::new(BraveEngine {
                 client: client.clone(),
+                renderer: serp_renderer.clone(),
             })),
             "startpage" => engines.push(Arc::new(StartpageEngine {
                 client: client.clone(),
@@ -88,6 +91,7 @@ pub fn build_default_engines_with_egress(
             })),
             "yahoo" => engines.push(Arc::new(YahooEngine {
                 client: client.clone(),
+                renderer: serp_renderer.clone(),
             })),
             "mojeek" => engines.push(Arc::new(MojeekEngine {
                 client: client.clone(),

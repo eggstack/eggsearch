@@ -259,6 +259,16 @@ cargo build --no-default-features --features browser
 Rendering requires a discovered Chrome/Chromium executable. eggsearch never
 downloads, installs, or manages one.
 
+### Provider Result Pages
+
+`brave` and `yahoo` gate keyless access on browser execution: Brave serves a proof-of-work page
+with HTTP 429 and Yahoo answers a headless client with HTTP 500 and no body. When
+`[fetch.browser].enabled` is true and a Chrome or Chromium executable was discovered, both engines
+fall back to one bounded render of their result page and parse the rendered DOM; without a browser
+they report the HTTP failure unchanged. The fallback costs a render per search (a few seconds) and
+is bounded by the request deadline. A wall that needs a person — an interactive CAPTCHA — is never
+attempted and is reported instead.
+
 ### Render Policy
 
 The `render` parameter on `web_fetch` controls transport selection. When the

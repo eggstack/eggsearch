@@ -26,6 +26,9 @@ impl FetchDisposition {
     }
 }
 
+/// Rendered text below this length never overrides an interstitial status.
+const RENDERED_CONTENT_MIN_CHARS: usize = 200;
+
 pub fn classify_response(
     status: u16,
     content_type: Option<&str>,
@@ -33,36 +36,45 @@ pub fn classify_response(
     text_len: usize,
     body_snippet: &[u8],
 ) -> FetchDisposition {
-    match status {
-        401 => return FetchDisposition::AuthenticationRequired,
-        403 => return FetchDisposition::AccessDenied,
-        404 => return FetchDisposition::AccessDenied,
-        429 => return FetchDisposition::RateLimited,
-        500..=599 => return FetchDisposition::ServerError,
-        _ => {}
+    if status == 401 {
+        return FetchDisposition::AuthenticationRequired;
     }
 
     let ct = content_type.unwrap_or("");
-    if !ct.contains("text/html") && !ct.is_empty() {
-        return FetchDisposition::UsefulContent;
+    let is_html = ct.is_empty() || ct.contains("text/html");
+    if is_html {
+        let title_lower = title.unwrap_or("").to_lowercase();
+        let body_lower = String::from_utf8_lossy(body_snippet).to_lowercase();
+
+        // A wall marker outranks the document status. Origins serve their
+        // challenge with a non-success status (Brave answers 429 with its
+        // proof-of-work page), so a status-first classification would settle
+        // the render before the page's own script has had a chance to run.
+        if is_interactive_challenge(&title_lower, &body_lower) {
+            return FetchDisposition::InteractiveChallenge;
+        }
+        if is_noninteractive_verification(&title_lower, &body_lower) {
+            return FetchDisposition::NonInteractiveVerification;
+        }
+        if is_javascript_shell(&title_lower, text_len, &body_lower) {
+            return FetchDisposition::JavascriptShell;
+        }
+        // After client-side rendering the DOM is authoritative: an
+        // interstitial status whose document now carries a real page is a
+        // served page. The rule is limited to the two statuses an
+        // interstitial is actually served with, so a denial or an outage is
+        // still reported as such.
+        if matches!(status, 202 | 429) && text_len >= RENDERED_CONTENT_MIN_CHARS {
+            return FetchDisposition::UsefulContent;
+        }
     }
 
-    let title_lower = title.unwrap_or("").to_lowercase();
-    let body_lower = String::from_utf8_lossy(body_snippet).to_lowercase();
-
-    if is_interactive_challenge(&title_lower, &body_lower) {
-        return FetchDisposition::InteractiveChallenge;
+    match status {
+        403 | 404 => FetchDisposition::AccessDenied,
+        429 => FetchDisposition::RateLimited,
+        500..=599 => FetchDisposition::ServerError,
+        _ => FetchDisposition::UsefulContent,
     }
-
-    if is_noninteractive_verification(&title_lower, &body_lower) {
-        return FetchDisposition::NonInteractiveVerification;
-    }
-
-    if is_javascript_shell(&title_lower, text_len, &body_lower) {
-        return FetchDisposition::JavascriptShell;
-    }
-
-    FetchDisposition::UsefulContent
 }
 
 fn is_interactive_challenge(title_lower: &str, body: &str) -> bool {
@@ -73,12 +85,17 @@ fn is_interactive_challenge(title_lower: &str, body: &str) -> bool {
         return true;
     }
 
+    // Widget and endpoint markers only. A bare "captcha" substring also
+    // matches a page that merely *offers* a traditional CAPTCHA beside its
+    // scripted challenge (Brave's proof-of-work page does), and treating that
+    // as interactive would refuse a page the origin serves to a browser.
     let indicators = [
         "cf-turnstile",
-        "captcha",
         "challenge-platform",
         "g-recaptcha",
         "h-captcha",
+        "hcaptcha.com",
+        "recaptcha/api",
         "interactive challenge",
         "verify you are human",
     ];
@@ -199,6 +216,72 @@ mod tests {
         assert_eq!(
             classify_response(500, Some("text/html"), None, 0, b""),
             FetchDisposition::ServerError
+        );
+    }
+
+    #[test]
+    fn interstitial_status_with_a_rendered_page_is_useful_content() {
+        assert_eq!(
+            classify_response(
+                429,
+                Some("text/html"),
+                Some("rust programming language - Brave Search"),
+                12000,
+                b"<html><body><div data-type=\"web\">results</div></body></html>"
+            ),
+            FetchDisposition::UsefulContent
+        );
+    }
+
+    #[test]
+    fn a_short_interstitial_document_keeps_its_status() {
+        assert_eq!(
+            classify_response(
+                429,
+                Some("text/html"),
+                Some("Brave Search"),
+                26,
+                b"<html></html>"
+            ),
+            FetchDisposition::RateLimited
+        );
+        assert_eq!(
+            classify_response(
+                500,
+                Some("text/html"),
+                Some("Server"),
+                900,
+                b"<html></html>"
+            ),
+            FetchDisposition::ServerError
+        );
+        assert_eq!(
+            classify_response(
+                403,
+                Some("text/html"),
+                Some("Denied"),
+                900,
+                b"<html></html>"
+            ),
+            FetchDisposition::AccessDenied
+        );
+    }
+
+    #[test]
+    fn scripted_wall_beats_its_status() {
+        let body = b"<html><body>Verifying you're not a bot. Quick check before you continue searching.</body></html>";
+        assert_eq!(
+            classify_response(429, Some("text/html"), Some("Brave Search"), 64, body),
+            FetchDisposition::NonInteractiveVerification
+        );
+    }
+
+    #[test]
+    fn offering_a_traditional_captcha_is_not_an_interactive_challenge() {
+        let body = b"<html><body><button>Verify</button><a>Switch to traditional CAPTCHA</a></body></html>";
+        assert_eq!(
+            classify_response(429, Some("text/html"), Some("Brave Search"), 500, body),
+            FetchDisposition::UsefulContent
         );
     }
 

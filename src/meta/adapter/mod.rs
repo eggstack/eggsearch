@@ -167,6 +167,7 @@ impl MetadataSearchAdapter {
             &crate::core::config::EgressSection::default(),
             &crate::core::config::ChallengeSection::default(),
             search_cache,
+            None,
         )
     }
 
@@ -185,6 +186,7 @@ impl MetadataSearchAdapter {
         egress: &crate::core::config::EgressSection,
         challenge: &crate::core::config::ChallengeSection,
         search_cache: SearchCacheSettings,
+        serp_renderer: Option<std::sync::Arc<dyn crate::meta::engines::render::SerpRenderer>>,
     ) -> anyhow::Result<Self> {
         let searxng_configured = searxng_base_url.as_deref().is_some_and(|s| !s.is_empty());
         let (engines, skipped) = builders::build_default_engines_with_egress(
@@ -194,6 +196,7 @@ impl MetadataSearchAdapter {
             api_providers,
             egress,
             challenge,
+            serp_renderer,
         )?;
         if !skipped.is_empty() {
             let skipped_ids: Vec<String> = skipped.iter().map(|s| s.id.clone()).collect();

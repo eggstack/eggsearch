@@ -57,6 +57,7 @@ pub mod meta;
 pub mod platform;
 pub(crate) mod process;
 pub mod sdk;
+pub mod serp_render;
 pub mod startup;
 pub mod update;
 

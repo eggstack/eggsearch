@@ -41,6 +41,7 @@ pub mod osv;
 pub mod packagist;
 pub mod pubmed;
 pub mod pypi;
+pub mod render;
 pub mod request;
 pub mod rubygems;
 pub mod rustsec;
@@ -147,6 +148,7 @@ pub struct DuckDuckGoEngine {
 
 pub struct BraveEngine {
     pub client: Arc<Client>,
+    pub renderer: Option<Arc<dyn render::SerpRenderer>>,
 }
 
 pub struct StartpageEngine {
@@ -156,6 +158,7 @@ pub struct StartpageEngine {
 
 pub struct YahooEngine {
     pub client: Arc<Client>,
+    pub renderer: Option<Arc<dyn render::SerpRenderer>>,
 }
 
 pub struct MojeekEngine {
@@ -384,6 +387,7 @@ impl SearchEngine for BraveEngine {
             &request.query,
             request.max_results,
             request.timeout,
+            self.renderer.as_ref(),
         ))
     }
 }
@@ -421,6 +425,7 @@ impl SearchEngine for YahooEngine {
             &request.query,
             request.max_results,
             request.timeout,
+            self.renderer.as_ref(),
         ))
     }
 }

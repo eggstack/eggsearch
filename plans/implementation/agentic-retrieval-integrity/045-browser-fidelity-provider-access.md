@@ -1,6 +1,6 @@
 # M045 — Browser-Fidelity Provider Access
 
-Status: active (work package 1 complete; work package 2 designed, not started)
+Status: closing (work packages 1 and 2 implemented; local gates and hosted qualification pending)
 Date: 2026-11-21
 Subsystem: agentic retrieval integrity
 Milestone class: correctness (keyless HTML provider access)
@@ -49,25 +49,49 @@ A real browser passes both origins that our HTTP client fails:
 This fixes the classification defect. It does not produce results, because the challenge still has
 to be completed.
 
-## Work package 2 — browser-rendered SERP access (not started)
+## Work package 2 — browser-rendered SERP access (implemented)
 
 A browser passes both origins because it executes their JavaScript. The product already ships a
-browser behind the `browser` feature for `fetch`. The proposed slice:
+browser behind the `browser` feature for `fetch`. Two observations from this egress fixed the
+design: a launched Chromium that announces `HeadlessChrome/…` is refused outright by Yahoo, and
+Brave's proof-of-work page does not advance on its own — it completes only after its own `Verify`
+control is clicked, then returns results in about 1.5 s.
 
-- Render the provider SERP in the existing browser and extract result containers from the rendered
-  DOM, instead of requesting the HTML with the HTTP client.
-- Cache the browser session per origin so a completed wall (Brave's PoW) is not repaid on every
-  search; reuse must respect the existing one-solve-per-window and deadline rules.
-- Keep the HTTP client path as the default and the fallback when the browser is unavailable, and
-  report which path served the result.
-- Bound the render with the existing render timeout and byte/character caps.
-- Change no tool, argument, or schema property. A provider id or capability flag is only added if
-  the rendered path is a separate selectable provider.
+Resolved design questions:
 
-Open design questions for the implementer: whether the rendered path is a new provider or a
-fallback inside the existing HTML engines; how a browser handle reaches `SearchEngine::search`
-without a dependency inversion (`fetch` is currently independent of `meta`); and how the browser
-feature stays optional for builds without it.
+- **Fallback, not a new provider.** `brave` and `yahoo` keep their provider ids, capabilities, and
+  positions in `default_providers`. No tool, argument, schema property, configuration key, or
+  provider id is added.
+- **Contract in `meta`, implementation above `meta` and `fetch`.** `meta::engines::render` owns
+  `SerpRenderer`, `RenderedSerp`, and the escalation predicate `is_browser_gated`.
+  `src/serp_render/browser.rs` implements it over the shared `BrowserLifecycle`. `src/fetch/**`
+  stays independent of `src/meta/**`, and `challenge_replay` keeps its own ownership.
+- **Optional browser.** The implementation is behind the `browser` feature and the renderer is
+  `None` unless `[fetch.browser].enabled` is true and a browser was discovered. A build without
+  the feature reports the HTTP failure exactly as before.
+- **One render per search, inside the request deadline.** The render budget is the engine request
+  timeout, and the lifecycle's navigation and verification waits are clamped to it.
+- **Reported path.** A render-served batch logs `provider result page served by browser render`
+  at debug level with the final URL and whether a wall was completed; a failed render keeps the
+  HTTP reason in the provider error, never a partial result set.
+
+What changed:
+
+- `src/fetch/browser/lifecycle.rs` passes `--user-agent` built from the discovered major version
+  and host platform, so the browser presents the identity of the Chrome it is, and passes every
+  valued flag to chromiumoxide as a `(key, value)` pair. Before this slice a literal
+  `"--key=value"` argument became `----key=value` and was silently ignored, so `--user-data-dir`
+  and the autoplay policy never reached Chrome.
+- `src/fetch/browser/classify.rs` lets a wall marker outrank the document status and limits the
+  served-page override to `202`/`429`. Interactive markers are now widget-specific, so a page that
+  offers a traditional CAPTCHA beside its scripted challenge is not refused.
+- `src/fetch/browser/navigate.rs` clicks the page's own scripted-verification control at most once
+  per render, inside `verification_wait_ms`.
+- `src/meta/engines/render.rs`, `src/meta/engines/brave.rs`, `src/meta/engines/yahoo.rs`,
+  `src/meta/adapter/builders.rs`, `src/meta/adapter/mod.rs`, `src/serp_render/`, and
+  `src/mcp/state.rs` carry the contract, the fallback, and the wiring.
+- `brave.rs` rebuilds a result destination from `cite.snippet-url`: the rendered page links to an
+  opaque `/go/v1#…` token, and the displayed URL is the only readable statement of the target.
 
 ## Non-goals
 
@@ -89,6 +113,21 @@ RUSTUP_TOOLCHAIN=1.89.0 make docs-check
 Work package 1 additionally needs a live release-build check that Brave now reports `blocked` with
 the status in the reason instead of `rate_limited`.
 
+Work package 2 adds:
+
+```sh
+RUSTUP_TOOLCHAIN=1.89.0 cargo test --locked --all-features --lib engines::
+RUSTUP_TOOLCHAIN=1.89.0 cargo test --locked --all-features --test static_guards
+RUSTUP_TOOLCHAIN=1.89.0 make check
+RUSTUP_TOOLCHAIN=1.89.0 make docs-check
+```
+
+and a live release-build provider matrix on this egress: both providers return results for two
+unrelated queries, and the same origins render through `web_fetch` with `render: "browser"`
+carrying `transport: "browser"`. Mock coverage holds the behaviour without a network: a 429
+challenge and a 500 body are each served from a fixture renderer, a renderer that cannot render
+keeps the HTTP reason, and a served HTTP page never consults the browser.
+
 ## Acceptance and stop conditions
 
 - Work package 1: a mock 429 challenge yields `Blocked` with "challenge page detected" and "HTTP
@@ -97,7 +136,9 @@ the status in the reason instead of `rate_limited`.
   render bounded and the HTTP path preserved.
 - **Stop:** the rendered path cannot be added without changing the ten-tool surface, inverting the
   `fetch`/`meta` dependency, or making the browser mandatory. Record the blocker and propose a
-  separate decision.
+  separate decision. *(Not triggered: no tool, argument, schema property, configuration key, or
+  provider id changed; `src/fetch/**` still imports nothing from `src/meta/**`; the renderer is
+  `None` without the feature, without a discovered browser, or with the browser disabled.)*
 
 ## Required closure evidence
 

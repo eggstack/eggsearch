@@ -611,10 +611,18 @@ initial URL with `is_request_allowed_with_dns`, then:
    reading content.
 3. `classify_response` maps status/title/text-length/body-snippet to
    `UsefulContent`, `JavascriptShell`, `NonInteractiveVerification`,
-   `InteractiveChallenge`, and HTTP error dispositions. Interactive challenges
-   error immediately. A script-driven wall polls the live classification every
-   500 ms up to `verification_timeout_ms` and is returned marked when it does
-   not resolve; see § Browser challenge completion.
+   `InteractiveChallenge`, and HTTP error dispositions. A wall marker outranks
+   the document status, because an interstitial is commonly served with a
+   non-success status (Brave answers 429 with its proof-of-work page); after
+   client-side rendering the DOM is authoritative, so `202`/`429` carrying a real
+   page and no wall marker is `UsefulContent`, while `403`, `404`, and other
+   `5xx` keep their meaning. Interactive challenges error immediately, and their
+   markers are specific (`cf-turnstile`, `g-recaptcha`, `h-captcha`,
+   `challenge-platform`), so a page that merely offers a traditional CAPTCHA
+   beside its scripted challenge is not refused. A script-driven wall polls the
+   live classification every 500 ms, clicks the page's own `Verify` control at
+   most once, and is returned marked when it does not resolve; see
+   § Browser challenge completion.
 4. DOM length is checked before and after `page.content()` against
    `max_dom_bytes`; the DOM converts through `browser_result_to_response` — the
    same render + detect + link + sanitize pipeline as HTTP, tagged
@@ -625,6 +633,22 @@ credentials, private-hostname/IP literal rejection (including IPv4-mapped and
 IPv4-compatible IPv6 via the shared `limits::classify_ip`), and a 3 s DNS
 resolution check rejecting private resolutions. It does not take
 `allow_localhost` / `allow_private_network` overrides.
+
+### Browser identity
+
+The launched browser presents the identity of the Chrome build it actually is. Chromium's headless
+mode announces itself with a `HeadlessChrome/` token that origins gate on: Yahoo answers that user
+agent with HTTP 500 and a zero-byte body, and the same Chrome with an ordinary identity with its
+results page. `lifecycle.rs` therefore passes `--user-agent` built from the discovered major
+version and the host platform, so the version in the header is the version running. This is
+ADR-0019 §5's browser-like identity, never a third party's. An unparseable discovered version leaves
+the flag off rather than claiming a build that was not detected.
+
+Flags reach Chromium as `(key, value)` pairs. chromiumoxide renders the pair itself, so a literal
+`"--key=value"` argument becomes `----key=value` and is silently ignored by Chrome; every flag
+with a value, including `--user-agent` and `--user-data-dir`, is passed as a pair for that reason.
+The same lifecycle also serves provider result pages; see `architecture/engines.md`
+§ Browser-rendered access.
 
 ### Viewport screenshot capture
 
@@ -820,6 +844,11 @@ live page with `classify_response` over the current status, content type, title,
 `NonInteractiveVerification`, or one `src/fetch/challenge.rs` recognises as a challenge family, is
 treated as a script-driven wall: the render polls the same live state every 500 ms until the page
 stops being one of those two dispositions, bounded by `verification_wait_ms` and the call deadline.
+A wall that gates its challenge script behind a button the page renders (`Verify`) is clicked once
+per render inside that wait: the click starts the page's own script, so it is the same act as
+letting it run rather than a human judgement, and the label set is limited to scripted-verification
+wording (`verify`, `start verification`, `verify now`, `continue verification`). A wall whose
+only control is an interactive CAPTCHA never matches that set and stays an error.
 Completion is decided by that classification, never by the title, so a page that clears without
 changing its title is no longer treated as unresolved and a legitimate page whose title happens to
 carry a verification phrase is no longer treated as a wall. `InteractiveChallenge` remains an

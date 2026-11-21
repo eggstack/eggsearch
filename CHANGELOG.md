@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `brave` and `yahoo` return results when the origin gates access on browser execution. Both
+  engines keep the HTTP request as the first attempt and fall back once, inside the same request
+  deadline, to the shipped browser render when that attempt is blocked or answered with `429`/
+  `5xx`: Yahoo's empty `500` to a client that announces a headless browser becomes the results
+  page, and Brave's proof-of-work wall is completed by clicking the page's own `Verify` control.
+  The rendered DOM goes through each provider's existing parser, so the four-outcome contract is
+  unchanged. Without the `browser` feature, a discovered browser, or `[fetch.browser].enabled`,
+  the provider reports the HTTP failure exactly as before. A browser-gated search costs one render
+  (seconds, not milliseconds), bounded by the request deadline.
+- The launched browser presents the identity of the Chrome build it actually is instead of
+  `HeadlessChrome/…`, and browser flags reach Chromium as key/value pairs. A literal
+  `--key=value` argument was previously emitted as `----key=value` and silently ignored, so
+  `--user-data-dir` and the autoplay policy never reached the process.
+
 - `knowledge_brief` resolves model cutoffs from a bundled, source-verified catalog that now
   covers 11 models across OpenAI, Anthropic, and xAI instead of a single row, and reports
   `model_resolution.catalog_as_of` so a stale catalog is visible. Every shipped row carries the

@@ -366,6 +366,7 @@ async fn navigate_and_extract(
     ) || sample.family.is_some();
     if entered_wall || sample.disposition.is_script_wall() {
         let wait_start = Instant::now();
+        let mut clicked_verification = false;
         while wait_start.elapsed() < params.verification_timeout {
             tokio::time::sleep(Duration::from_millis(500)).await;
             if let Ok(current) = captured.lock() {
@@ -380,6 +381,9 @@ async fn navigate_and_extract(
             }
             if !sample.disposition.is_script_wall() {
                 break;
+            }
+            if !clicked_verification {
+                clicked_verification = click_verification_control(page).await;
             }
         }
     }
@@ -552,6 +556,30 @@ async fn page_sample(page: &Page, status: u16, content_type: Option<&str>) -> Pa
         disposition,
         family,
     }
+}
+
+/// Click the page's own verification control once per render.
+///
+/// Some scripted walls gate their challenge script behind a button the page
+/// renders ("Verify"). Clicking it is the same act as letting the challenge
+/// script run: no image, OCR, or human judgement is involved, and a wall that
+/// only an interactive CAPTCHA answers never matches this label set. Returns
+/// whether a click was dispatched.
+async fn click_verification_control(page: &Page) -> bool {
+    const SCRIPT: &str = r#"(() => {
+  const label = (el) => ((el.innerText || el.value || el.getAttribute('aria-label') || '') + '').trim();
+  const starts = (text) => /^(verify|start verification|verify now|continue verification)$/i.test(text);
+  const controls = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]'));
+  const target = controls.find((el) => starts(label(el)) && el.offsetParent !== null);
+  if (!target) return false;
+  target.click();
+  return true;
+})()"#;
+    page.evaluate(SCRIPT)
+        .await
+        .ok()
+        .and_then(|value| value.into_value::<bool>().ok())
+        .unwrap_or(false)
 }
 
 fn interactive_challenge_error(url: &str) -> BrowserFetchError {
