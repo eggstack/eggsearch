@@ -1,6 +1,6 @@
 # M045 — Browser-Fidelity Provider Access
 
-Status: closing (work packages 1 and 2 implemented; local gates and hosted qualification pending)
+Status: closed (work packages 1 and 2 complete; see `plans/closure/agentic-retrieval-integrity/045-status.md`)
 Date: 2026-11-21
 Subsystem: agentic retrieval integrity
 Milestone class: correctness (keyless HTML provider access)
@@ -35,6 +35,11 @@ A real browser passes both origins that our HTTP client fails:
    scripted verification).
 3. Curl is not a valid oracle for these origins: it fails where the browser succeeds. Browser
    observations are the reference.
+
+*Work package 2 finding (2026-11-21): the differentiator was the `HeadlessChrome/…` user-agent
+token, not the TLS or HTTP/2 fingerprint. The same installed Chrome passes both origins once it
+presents its own identity; Brave additionally needs one click on its own `Verify` control. The
+paragraph above is left as recorded and corrected here rather than rewritten.*
 
 ## Work package 1 — challenge responses on non-success statuses (complete)
 
