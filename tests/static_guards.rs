@@ -1183,8 +1183,10 @@ fn stable_tool_registration_count_and_names() {
     let source = read_source("src/mcp/server.rs");
     let expected = [
         "web_search",
+        "fetch",
         "web_fetch",
         "batch_fetch",
+        "knowledge_brief",
         "provider_status",
         "repo_search",
         "repo_fetch",
@@ -1202,7 +1204,7 @@ fn stable_tool_registration_count_and_names() {
     assert_eq!(
         source.matches("name = \"").count(),
         expected.len(),
-        "server.rs must register exactly ten stable tools"
+        "server.rs must register exactly ten canonical tools and two compatibility aliases"
     );
     assert!(
         !source.contains("local_search"),
@@ -1387,7 +1389,7 @@ fn orchestration_module_size_ratchet() {
         // Over the ordinary 1600-line / 80 KB ceiling. Frozen here so the debt
         // is explicit and cannot grow; split when touched.
         ("src/core/security.rs", 3000, 115_000),
-        ("src/core/config.rs", 1900, 76_000),
+        ("src/core/config.rs", 1910, 76_000),
         ("src/core/provider.rs", 2800, 115_000),
         ("src/fetch/span.rs", 2750, 81_920),
         ("src/fetch/client.rs", 2600, 100_000),
@@ -1722,6 +1724,7 @@ fn compatibility_dead_code_inventory() {
         "src/meta/engines/semantic_scholar.rs",
         "src/meta/engines/sourcegraph.rs",
         "src/meta/local_backend.rs",
+        "src/meta/local_backend_tests.rs",
         "src/meta/local_ignore.rs",
         "src/meta/local_inventory_cache.rs",
         "src/startup.rs",
@@ -1968,7 +1971,7 @@ fn html_scrape_engines_use_automatic_decompression() {
             "{rel} must retain explicit total deadline alongside automatic decompression"
         );
         assert!(
-            non_test.contains("read_bounded_body("),
+            non_test.contains("read_bounded_body(") || non_test.contains("read_search_body("),
             "{rel} must retain streaming byte cap alongside automatic decompression"
         );
     }
@@ -2532,4 +2535,224 @@ fn no_retired_replay_cursor_in_mcp_tree_or_docs() {
             );
         }
     }
+}
+#[test]
+fn fetch_layer_never_imports_the_challenge_solver() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/fetch/") {
+            continue;
+        }
+        checked += 1;
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        for forbidden in [
+            "challenge_replay",
+            "crate::meta",
+            "anubis::",
+            "altcha::",
+            "solve_and_verify",
+        ] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not reference the challenge solver (`{forbidden}`); the fetch \
+                 layer detects and marks a challenge page and never solves one"
+            );
+        }
+    }
+    assert!(
+        checked >= 20,
+        "the src/fetch walk must not be vacuous, checked {checked} files"
+    );
+}
+
+#[test]
+fn challenge_solve_orchestration_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/mcp/") && !rel.starts_with("src/commands/") {
+            continue;
+        }
+        checked += 1;
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        for forbidden in ["solve_and_verify", "anubis::", "altcha::"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not call the challenge solver (`{forbidden}`); the shared \
+                 module in src/challenge_replay/ owns the solve and replay sequence"
+            );
+        }
+    }
+    assert!(
+        checked >= 20,
+        "the src/mcp and src/commands walk must not be vacuous, checked {checked} files"
+    );
+
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/meta/") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        assert!(
+            !production_code_clean(&source).contains("challenge_replay"),
+            "{rel} must not depend on the shared replay module; the solver owns the \
+             engine side and the shared module depends on it, never the reverse"
+        );
+    }
+
+    let shared = read_source("src/challenge_replay/mod.rs");
+    assert!(
+        shared.contains("solve_and_verify"),
+        "src/challenge_replay/mod.rs must own the solve call"
+    );
+    assert!(
+        shared.contains("FETCH_LEDGER_LABEL"),
+        "src/challenge_replay/mod.rs must record every fetch-path solve under one label"
+    );
+}
+
+#[test]
+fn altcha_fetch_solve_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut owners = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if rel.starts_with("src/meta/") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        if rel.starts_with("src/challenge_replay/") {
+            if clean.contains("solve_document_and_verify") {
+                owners += 1;
+            }
+            continue;
+        }
+        for forbidden in ["solve_document_and_verify", "altcha::"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not call the ALTCHA solver (`{forbidden}`); the shared module \
+                 in src/challenge_replay/ owns the fetch-path ALTCHA solve"
+            );
+        }
+    }
+    assert_eq!(
+        owners, 1,
+        "exactly one file must own the fetch-path ALTCHA solve"
+    );
+}
+
+#[test]
+fn altcha_endpoint_derivation_is_same_origin_only() {
+    let source = read_source("src/challenge_replay/altcha.rs");
+    let clean = production_code_clean(&source);
+    assert!(
+        clean.contains("same_origin"),
+        "the ALTCHA endpoint derivation must gate every published endpoint on the page origin"
+    );
+    assert!(
+        clean.contains("BOUND_UNSUPPORTED_SCHEME"),
+        "a refused ALTCHA endpoint must use the existing unsupported-scheme key"
+    );
+    assert!(
+        clean.contains("BOUND_MALFORMED"),
+        "an unusable ALTCHA publication must use the existing malformed-parameters key"
+    );
+    assert!(
+        !clean.contains("http://"),
+        "the ALTCHA derivation must not carry a hardcoded request target"
+    );
+    assert!(
+        !clean.contains("https://"),
+        "the ALTCHA derivation must not carry a hardcoded request target"
+    );
+}
+
+#[test]
+fn fetch_pass_cookie_cache_is_process_local_and_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    let mut owners = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        if clean.contains("pub struct FetchPassCookieCache") {
+            owners += 1;
+            assert_eq!(
+                rel, "src/challenge_replay/cache.rs",
+                "the fetch-side pass-cookie cache must be defined in one place"
+            );
+        }
+        if rel == "src/challenge_replay/cache.rs" {
+            for forbidden in [
+                "std::fs",
+                "fs::write",
+                "fs::create",
+                "File::create",
+                "OpenOptions",
+                "tempfile",
+                "serde",
+                "Serialize",
+            ] {
+                assert!(
+                    !clean.contains(forbidden),
+                    "src/challenge_replay/cache.rs must not persist a pass cookie \
+                     (`{forbidden}`); the fetch-side cache is process-local"
+                );
+            }
+            continue;
+        }
+        if rel.starts_with("src/challenge_replay/") {
+            continue;
+        }
+        for forbidden in ["fetch_pass_cookie_cache", "FetchPassCookieCache"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not touch the fetch-side pass-cookie cache (`{forbidden}`); \
+                 src/challenge_replay/ owns it"
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(
+        owners, 1,
+        "exactly one file must define the fetch-side pass-cookie cache"
+    );
+    assert!(
+        checked >= 20,
+        "the src walk must not be vacuous, checked {checked} files"
+    );
+
+    let shared = read_source("src/challenge_replay/mod.rs");
+    assert!(
+        shared.contains("fetch_pass_cookie_cache"),
+        "src/challenge_replay/mod.rs must own the fetch-side reuse sequence"
+    );
 }

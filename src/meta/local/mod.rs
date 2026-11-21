@@ -9,6 +9,7 @@
 //! | Responsibility | Owner | Must not own |
 //! |---|---|---|
 //! | Bounded search orchestration | `super::local_backend` | Git discovery, inventory caching, symbol parsing |
+//! | Scan bounds and literal hint filtering | `scan` | Candidate scoring, inventory/cache policy, file reads |
 //! | Git worktree discovery + identity | `super::local_inventory` | File scoring, symbol parsing, cache policy |
 //! | File inventory cache + git runner | `super::local_inventory_cache` | Scoring, symbol parsing, identity matching |
 //! | Structured symbol parsing | `super::local_symbols` | Filesystem walking, cache policy, scoring |
@@ -25,3 +26,5 @@
 //!
 //! See `architecture/local-workspace.md` for the deep dive and
 //! `architecture/maintenance.md` for the 007 responsibility map.
+
+pub(crate) mod scan;

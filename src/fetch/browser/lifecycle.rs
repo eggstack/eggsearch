@@ -148,6 +148,28 @@ impl BrowserLifecycle {
         }
     }
 
+    /// The identity the launched browser presents.
+    ///
+    /// Headless Chrome announces itself with a `HeadlessChrome/` token that
+    /// origins gate on, while the process is the same Chrome build in every
+    /// other respect. The browser therefore presents that build's own identity
+    /// rather than the mode it runs in: browser-like, never a third party's
+    /// (ADR-0019 §5). An unparseable version leaves the flag off rather than
+    /// claiming a build that was not detected.
+    fn browser_user_agent(version: &str) -> Option<String> {
+        let major = super::profiles::parse_browser_major_version(version)?;
+        let platform = if cfg!(target_os = "macos") {
+            "Macintosh; Intel Mac OS X 10_15_7"
+        } else if cfg!(target_os = "windows") {
+            "Windows NT 10.0; Win64; x64"
+        } else {
+            "X11; Linux x86_64"
+        };
+        Some(format!(
+            "Mozilla/5.0 ({platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36"
+        ))
+    }
+
     fn touch(&self) {
         if let Ok(mut last) = self.last_activity.lock() {
             *last = Instant::now();
@@ -215,35 +237,43 @@ impl BrowserLifecycle {
 
         bc = bc.chrome_executable(&disc.path);
 
-        bc = bc.arg("--headless=new");
-        bc = bc.arg("--disable-extensions");
-        bc = bc.arg("--disable-component-extensions-with-background-pages");
-        bc = bc.arg("--disable-default-apps");
-        bc = bc.arg("--disable-dev-shm-usage");
-        bc = bc.arg("--disable-gpu");
-        bc = bc.arg("--no-first-run");
-        bc = bc.arg("--no-default-browser-check");
-        bc = bc.arg("--disable-background-networking");
-        bc = bc.arg("--disable-background-timer-throttling");
-        bc = bc.arg("--disable-backgrounding-occluded-windows");
-        bc = bc.arg("--disable-renderer-backgrounding");
-        bc = bc.arg("--disable-hang-monitor");
-        bc = bc.arg("--disable-prompt-on-repost");
-        bc = bc.arg("--disable-sync");
-        bc = bc.arg("--metrics-recording-only");
-        bc = bc.arg("--password-store=basic");
-        bc = bc.arg("--use-mock-keychain");
-        bc = bc.arg("--disable-features=TranslateUI");
-        bc = bc.arg("--disable-ipc-flooding-protection");
-        bc = bc.arg("--disable-extensions-http-auth-schemes");
-
-        if self.config.block_media {
-            bc = bc.arg("--autoplay-policy=user-gesture-required");
-        } else {
-            bc = bc.arg("--autoplay-policy=no-user-gesture-required");
+        // chromiumoxide's builder takes a key and a value and renders the
+        // `--key=value` pair itself, so a flag passed as one `--key=value`
+        // string becomes `----key=value` and is silently ignored by Chrome.
+        if let Some(user_agent) = Self::browser_user_agent(&disc.version) {
+            bc = bc.arg(("user-agent", user_agent.as_str()));
         }
 
-        bc = bc.arg(format!("--user-data-dir={}", user_data_dir.display()));
+        bc = bc.arg(("headless", "new"));
+        bc = bc.arg("disable-extensions");
+        bc = bc.arg("disable-component-extensions-with-background-pages");
+        bc = bc.arg("disable-default-apps");
+        bc = bc.arg("disable-dev-shm-usage");
+        bc = bc.arg("disable-gpu");
+        bc = bc.arg("no-first-run");
+        bc = bc.arg("no-default-browser-check");
+        bc = bc.arg("disable-background-networking");
+        bc = bc.arg("disable-background-timer-throttling");
+        bc = bc.arg("disable-backgrounding-occluded-windows");
+        bc = bc.arg("disable-renderer-backgrounding");
+        bc = bc.arg("disable-hang-monitor");
+        bc = bc.arg("disable-prompt-on-repost");
+        bc = bc.arg("disable-sync");
+        bc = bc.arg("metrics-recording-only");
+        bc = bc.arg(("password-store", "basic"));
+        bc = bc.arg("use-mock-keychain");
+        bc = bc.arg(("disable-features", "TranslateUI"));
+        bc = bc.arg("disable-ipc-flooding-protection");
+        bc = bc.arg("disable-extensions-http-auth-schemes");
+
+        if self.config.block_media {
+            bc = bc.arg(("autoplay-policy", "user-gesture-required"));
+        } else {
+            bc = bc.arg(("autoplay-policy", "no-user-gesture-required"));
+        }
+
+        let user_data_dir_arg = user_data_dir.display().to_string();
+        bc = bc.arg(("user-data-dir", user_data_dir_arg.as_str()));
 
         let startup_timeout = Duration::from_millis(self.config.startup_timeout_ms);
 
@@ -520,6 +550,16 @@ impl std::error::Error for BrowserLaunchError {}
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn browser_identity_names_the_detected_chrome_build() {
+        let ua = BrowserLifecycle::browser_user_agent("Google Chrome 157.0.8103.40")
+            .expect("a detected version parses");
+        assert!(ua.contains("Chrome/157.0.0.0"), "{ua}");
+        assert!(!ua.contains("Headless"), "{ua}");
+        assert!(ua.starts_with("Mozilla/5.0 ("), "{ua}");
+        assert!(BrowserLifecycle::browser_user_agent("unknown").is_none());
+    }
 
     #[tokio::test]
     async fn persistent_profile_close_does_not_remove_profile_directory(

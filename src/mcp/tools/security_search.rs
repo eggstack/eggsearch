@@ -248,7 +248,7 @@ pub async fn run_security_search(
         dependency_file_roots = roots;
     }
 
-    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
+    let mut routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
         &req.providers,
         None,
         state.adapter.provider_ids(),
@@ -263,6 +263,23 @@ pub async fn run_security_search(
         state.config.search.default_max_results,
         state.config.search.max_results_cap,
     );
+
+    if args.providers.is_empty()
+        && (req.cve_id.is_some()
+            || req.ghsa_id.is_some()
+            || req.osv_id.is_some()
+            || req.rustsec_id.is_some()
+            || req
+                .package
+                .as_deref()
+                .is_some_and(|package| !package.trim().is_empty()))
+    {
+        for provider_id in state.adapter.enabled_native_advisory_provider_ids() {
+            if !routing_decision.selected_providers.contains(&provider_id) {
+                routing_decision.selected_providers.push(provider_id);
+            }
+        }
+    }
 
     let mut req = req;
     req.providers = routing_decision.selected_providers.clone();

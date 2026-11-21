@@ -773,6 +773,7 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
         cache_policy: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
         max_cache_age_seconds: None,
         focus: None,
         focus_max_chunks: None,
@@ -1331,7 +1332,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
     let block = empty["challenge_solver"]
         .as_object()
         .expect("challenge_solver is always present");
-    assert_eq!(block["enabled"], serde_json::json!(false));
+    assert_eq!(block["enabled"], serde_json::json!(true));
     assert_eq!(block["untracked_providers"], serde_json::json!(0));
     assert_eq!(
         block["providers"],
@@ -1358,6 +1359,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
     );
     solve_ledger().record_cookie_lookup("mojeek", true);
     solve_ledger().record_cookie_lookup("mojeek", false);
+    solve_ledger().record_browser_completion("fetch");
 
     let mut cfg = AppConfig::default();
     cfg.search.challenge.enabled = true;
@@ -1390,6 +1392,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
         "refusals",
         "cookie_hits",
         "cookie_misses",
+        "browser_completions",
         "last_candidates",
         "last_wall_clock_ms",
     ]
@@ -1428,6 +1431,16 @@ fn challenge_solver_block_reports_the_shared_ledger() {
     assert_eq!(refusals["already spent"], serde_json::json!(1));
     assert_eq!(refusals["challenge expired"], serde_json::json!(0));
     assert_eq!(refusals["unsafe base prefix"], serde_json::json!(0));
+
+    let fetch = exercised["challenge_solver"]["providers"]["fetch"]
+        .as_object()
+        .expect("the browser completion is reported");
+    assert_eq!(fetch["browser_completions"], serde_json::json!(1));
+    assert_eq!(
+        fetch["solves_attempted"],
+        serde_json::json!(0),
+        "a browser completion is not a solve"
+    );
 
     let rendered = serde_json::to_string(&exercised).expect("payload serializes");
     assert!(
@@ -1741,13 +1754,12 @@ fn workflow_recipe_steps_use_real_tools() {
         .expect("workflow_recipes is array");
     let known_tools = [
         "web_search",
-        "web_fetch",
+        "fetch",
         "repo_search",
         "repo_fetch",
         "repo_map",
         "security_search",
         "research_search",
-        "batch_fetch",
         "provider_status",
         "build_evidence_bundle",
     ];

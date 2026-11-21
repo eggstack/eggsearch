@@ -189,7 +189,7 @@ async fn disabled_challenge_keeps_blocked_with_one_request() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     pass_cookie_cache().put(ENGINE, "disabled-should-not-send", Duration::from_secs(60));
 
     let server = MockServer::start();
@@ -243,7 +243,7 @@ async fn enabled_challenge_solves_and_replays_once() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -327,7 +327,7 @@ async fn prefixed_challenge_solves_under_the_published_prefix() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let page = CHALLENGE_PAGE.replacen(
@@ -383,7 +383,7 @@ async fn slow_method_solves_through_the_fast_path() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let page = CHALLENGE_PAGE.replace("\"method\":\"fast\"", "\"method\":\"slow\"");
@@ -439,7 +439,7 @@ async fn spent_challenge_is_blocked_without_a_submission() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -488,7 +488,7 @@ async fn projection_breach_is_blocked_without_a_submission() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -546,7 +546,7 @@ async fn metarefresh_challenge_solves_and_replays_once() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let challenge_page_mock = server.mock(|when, then| {
@@ -598,7 +598,7 @@ async fn metarefresh_wait_beyond_budget_is_blocked_without_a_submission() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -650,7 +650,7 @@ async fn disabled_metarefresh_keeps_blocked_with_one_request() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let challenge_page_mock = server.mock(|when, then| {
@@ -690,7 +690,7 @@ async fn cached_pass_cookie_is_sent_proactively() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
     pass_cookie_cache().put(
         ENGINE,
@@ -740,7 +740,7 @@ async fn above_ceiling_is_blocked_naming_both_values() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -801,7 +801,7 @@ async fn unknown_method_is_blocked_without_solving() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -845,7 +845,7 @@ async fn rejected_pass_cookie_blocks_without_leaking_it() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -919,7 +919,7 @@ async fn solved_page_that_does_not_parse_stays_parse_failed() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let challenge_page_mock = server.mock(|when, then| {
@@ -1107,7 +1107,7 @@ async fn malformed_challenge_parameters_are_recorded() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -1157,7 +1157,7 @@ async fn missing_pass_cookie_is_recorded() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -1211,7 +1211,7 @@ async fn exhausted_attempts_are_recorded() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -1265,7 +1265,7 @@ async fn rejected_verification_is_recorded_as_a_refusal() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -1313,7 +1313,7 @@ async fn pass_cookie_max_age_zero_leaves_no_entry() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let challenge_page_mock = server.mock(|when, then| {
@@ -1373,7 +1373,7 @@ async fn pass_cookie_max_age_beyond_the_ceiling_is_stored() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let challenge_page_mock = server.mock(|when, then| {
@@ -1429,7 +1429,7 @@ async fn zero_cookie_ttl_solves_on_every_search() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
     let before = ledger_stats();
 
     let server = MockServer::start();
@@ -1494,7 +1494,7 @@ async fn disabled_solver_never_requests_a_css_load_extension() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let page = CHALLENGE_PAGE.replace(
@@ -1552,7 +1552,7 @@ async fn css_load_challenge_fetches_the_extension_then_replays() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let server = MockServer::start();
     let page = CHALLENGE_PAGE.replace(
@@ -1623,7 +1623,7 @@ async fn metarefresh_challenge_without_a_meta_tag_solves() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let page = r#"<html><head><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"metarefresh","difficulty":0},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"metarefresh","randomData":"header-token","redir":"/search?q=rust","difficulty":0,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
 
@@ -1677,7 +1677,7 @@ async fn sha256_challenge_solves_and_replays_once() {
     use httpmock::prelude::*;
 
     let _guard = CHALLENGE_TEST_LOCK.lock().await;
-    pass_cookie_cache().clear();
+    pass_cookie_cache().remove(ENGINE);
 
     let page = r#"<html><head><script id="anubis_challenge" type="application/json">{"rules":{"algorithm":"sha256","difficulty":8},"challenge":{"id":"01a1cc17-0000-7000-8000-000000000000","method":"sha256","randomData":"abcd","redir":"/search?q=rust","difficulty":8,"spent":false}}</script></head><body><div id="app"></div></body></html>"#;
 

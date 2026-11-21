@@ -10,8 +10,14 @@ from .types import (
     BatchFetchResponse,
     EvidenceBundleRequest,
     EvidenceBundleResponse,
+    FetchItem,
+    FetchRequest,
+    FetchResponse,
+    KnowledgeBriefRequest,
+    KnowledgeBriefResponse,
     ProviderStatusRequest,
     ProviderStatusResponse,
+    RepoFetchItem,
     RepoFetchRequest,
     RepoFetchResponse,
     RepoMapRequest,
@@ -23,6 +29,7 @@ from .types import (
     SecuritySearchRequest,
     SecuritySearchResponse,
     ToolContractSet,
+    WebFetchItem,
     WebFetchRequest,
     WebFetchResponse,
     WebSearchRequest,
@@ -70,6 +77,12 @@ class AsyncEggsearch:
         return cast(
             WebSearchResponse,
             await self.execute("web_search", cast(dict[str, Any], kwargs)),
+        )
+
+    async def fetch(self, **kwargs: Unpack[FetchRequest]) -> FetchResponse:
+        return cast(
+            FetchResponse,
+            await self.execute("fetch", cast(dict[str, Any], kwargs)),
         )
 
     async def web_fetch(self, **kwargs: Unpack[WebFetchRequest]) -> WebFetchResponse:
@@ -132,6 +145,14 @@ class AsyncEggsearch:
             await self.execute("research_search", cast(dict[str, Any], kwargs)),
         )
 
+    async def knowledge_brief(
+        self, **kwargs: Unpack[KnowledgeBriefRequest]
+    ) -> KnowledgeBriefResponse:
+        return cast(
+            KnowledgeBriefResponse,
+            await self.execute("knowledge_brief", cast(dict[str, Any], kwargs)),
+        )
+
     async def build_evidence_bundle(
         self, **kwargs: Unpack[EvidenceBundleRequest]
     ) -> EvidenceBundleResponse:
@@ -147,5 +168,10 @@ class AsyncEggsearch:
 __all__ = [
     "AsyncEggsearch",
     "EggsearchError",
+    "FetchItem",
+    "FetchRequest",
+    "FetchResponse",
+    "RepoFetchItem",
+    "WebFetchItem",
     "tool_names",
 ]

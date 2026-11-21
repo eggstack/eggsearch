@@ -91,6 +91,8 @@ pub struct VulnerabilityMetadata {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rustsec_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ecosystem: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package: Option<String>,
@@ -145,6 +147,7 @@ impl VulnerabilityMetadata {
             ghsa_ids,
             osv_ids,
             rustsec_ids,
+            summary: self.summary.or(other.summary),
             ecosystem: self.ecosystem.or(other.ecosystem),
             package: self.package.or(other.package),
             affected_ranges,
@@ -2064,6 +2067,19 @@ mod tests {
     }
 
     #[test]
+    fn vulnerability_metadata_merge_keeps_first_available_summary() {
+        let a = VulnerabilityMetadata {
+            summary: Some("first summary".to_string()),
+            ..Default::default()
+        };
+        let b = VulnerabilityMetadata {
+            summary: Some("second summary".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(a.merge(b).summary.as_deref(), Some("first summary"));
+    }
+
+    #[test]
     fn security_result_group_kind_default() {
         assert_eq!(
             SecurityResultGroupKind::default(),
@@ -2103,6 +2119,8 @@ mod tests {
         let json = serde_json::to_string(&m).unwrap();
         let parsed: VulnerabilityMetadata = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.cve_ids, m.cve_ids);
+        assert!(parsed.summary.is_none());
+        assert!(!json.contains("summary"));
         assert_eq!(parsed.severity, m.severity);
         assert_eq!(parsed.source, m.source);
     }

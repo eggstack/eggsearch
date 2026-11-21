@@ -2,7 +2,7 @@
 
 **Purpose:** Keep the post-consolidation repository from re-concentrating into new monoliths. Contributor contract for adding tools, providers, workflows, parsers, and tests.
 
-The crate is application-first: the stable contract is MCP tools (10) plus CLI, with the narrow `src/sdk.rs` application facade for native consumers. The remaining Rust module tree is an implementation detail for the binary, integration tests, and fuzz harnesses. Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent of `meta`. Factual claims about tools and providers must agree with the code; inventories below are guard-enforced, the rest is kept in sync by discipline.
+The crate is application-first: the stable contract is MCP tools (10) plus CLI, with the narrow `src/sdk.rs` application facade for native consumers. The remaining Rust module tree is an implementation detail for the binary, integration tests, and fuzz harnesses. Dependency flow: `core <- meta <- mcp <- commands`; `challenge_replay` depends on `fetch` and `meta` and is used by `mcp` and `commands`; `fetch` remains independent of `meta`. Factual claims about tools and providers must agree with the code; inventories below are guard-enforced, the rest is kept in sync by discipline.
 
 ---
 
@@ -18,7 +18,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Search-result cache | `src/meta/search_cache.rs` (bounded LRU keyed by an FNV-1a digest, single-flight coalescer, counters); `adapter/web.rs` is the only consumer | Domain workflows, ranking, health recording on cache hits |
 | Intent derivation | `src/meta/intent.rs` (pure lexical classifier, fixed precedence, reason codes, rollout switch) | Planner rewrites, provider routing, inference |
 | Intent-aware routing | `src/meta/routing.rs` (deterministic intent→provider table, capability predicate per entry, dispositions) + `src/core/config/routing.rs` (`intent_mode`, `max_extra_providers`); the decision is applied in `provider_diagnostics/decisions.rs` | Query rewriting, ranking, removing or reordering a caller-supplied provider |
-| Bounded challenge solving | `src/meta/challenge/` (`mod.rs` owns `SolveBudget`, `SolveOutcome`, `PassCookieCache` and the single solve-recording seam; `cookie.rs` owns pass-cookie lifetime parsing; `ledger.rs` owns the process-local solve ledger; `altcha.rs` and `anubis.rs` own one published scheme each) + `src/core/config/challenge.rs` | Interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing; per-engine solver copies |
+| Bounded challenge solving | `src/challenge_replay/` (shared detect/solve/replay/classify orchestration combining the fetch client with the solver; `altcha.rs` owns the page-published ALTCHA endpoint derivation; `cache.rs` owns the process-local, origin-keyed fetch-side pass-cookie cache) + `src/meta/challenge/` (`mod.rs` owns `SolveBudget`, `SolveOutcome`, `PassCookieCache` and the single solve-recording seam; `cookie.rs` owns pass-cookie lifetime parsing; `ledger.rs` owns the process-local solve ledger; `altcha.rs` and `anubis.rs` own one published scheme each) + `src/core/config/challenge.rs` | Interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing; per-engine solver copies |
 | Advertisement presets | `src/mcp/advertisement.rs` (preset table, preset filter, `next_actions` filtering seam) + `src/core/config/mcp.rs` (`tool_preset`) | Tool dispatch, tool removal, `response_detail` defaults |
 | Excerpt economy | `src/mcp/excerpt_economy.rs` (response-wide budget, deterministic shingle suppression, counts) | Ranking, result ordering, stable IDs, whole-result removal |
 | Provider health DTOs | `src/meta/provider_health_view.rs` (`ProviderHealthStatus`, `ProviderHealthView`, `ParseShape`) | Health recording or routing decisions (owned by `provider_diagnostics.rs`) |
@@ -26,7 +26,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Shared workflow mechanics | `src/meta/workflow.rs` (`PlannedLane`, `WorkflowExecution`, `RetrievalAttemptSet`, `FetchCandidateSet`) + `fetch_ranking.rs` (`FetchCandidateBuilder`) | Typed domain semantics — `repo`/`research`/`security` keep their own planners, grouping, suggested-fetch builders on the shared primitives |
 | Bounded dispatch | `src/meta/dispatch/` (`types` owns job/config/output types + capability partition; `execution` owns the bounded concurrent executor) | Engine-specific parsing, workflow policy, role derivation from `rq_` labels |
 | Dependency parsing | `src/meta/dependency_parse/` (`mod` owns normalized `parse_dependency_file` dispatch, the `DependencyParseReport` seam, path-aware basename extraction, and Go vendor-manifest gating; `status` owns recognized structured syntax/document-shape validation; ecosystem submodules own one parser each; per-file budget truncation lives in the parsers, collection caps and finding index live in `meta/advisory_range.rs`) | Path/size/root validation, applicability policy |
-| Local workspace | `src/meta/local/` facade + `local_backend.rs` (search orchestration), `local_inventory.rs` (git discovery/identity), `local_inventory_cache.rs` (cache), `local_symbols.rs` (structured parsing), `local_ignore.rs`, `safe_open.rs`; `src/process.rs` owns bounded process execution and process-group setup | Cross-owner logic; single cache abstraction only |
+| Local workspace | `src/meta/local/` facade + `local/scan.rs` (scan bounds and literal-hint filtering) + `local_backend.rs` (search orchestration), `local_inventory.rs` (git discovery/identity), `local_inventory_cache.rs` (cache), `local_symbols.rs` (structured parsing), `local_ignore.rs`, `safe_open.rs`; `src/process.rs` owns bounded process execution and process-group setup | Cross-owner logic; single cache abstraction only |
 | Forge access | `src/meta/forge_adapter/mod.rs` facade; `policy.rs` owns endpoint/address/DNS/redirect policy; `budget.rs` owns bounded reads; `urls.rs` owns permalink construction; `github.rs`, `gitlab.rs`, `gitea.rs` own provider execution | Duplicated SSRF/credential/redirect policy or independent clients in per-host code |
 | Evidence packaging | `src/meta/evidence_bundle.rs` (`build_evidence_bundle`: dedup, linking, caps, trust/provider summaries, gaps) | Ranking math and candidate ordering (owned by `fetch_ranking.rs`) |
 | Fetch ranking | `src/meta/fetch_ranking.rs` (`FetchCandidateBuilder`, `rank_and_select`, scoring) | Domain source semantics and bundle packaging |
@@ -52,9 +52,9 @@ Overlap ratchets (each a named guard):
 
 ### New MCP tools
 
-Dedicated module under `src/mcp/tools/` with shared validation in `common.rs` and goal/workflow resolution in `canonical.rs`. Register in `src/mcp/server.rs` via `#[tool]` attrs. Guard `stable_tool_registration_count_and_names` requires exactly these ten:
+Dedicated module under `src/mcp/tools/` with shared validation in `common.rs` and goal/workflow resolution in `canonical.rs`. Register in `src/mcp/server.rs` via `#[tool]` attrs. Guard `stable_tool_registration_count_and_names` requires exactly these registrations (ten canonical tools plus the `web_fetch` and `batch_fetch` aliases):
 
-`web_search`, `web_fetch`, `batch_fetch`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
+`web_search`, `fetch`, `web_fetch`, `batch_fetch`, `knowledge_brief`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
 
 Count changes only when the tool-matrix, docs contract tests (`tests/docs_tool_names.rs`, derived from `server.rs`), and CodeGG integration docs move in the same change. Legacy `local_search` and `search_and_fetch` must never return.
 
@@ -135,7 +135,7 @@ Ordinary source files must stay under 1,600 lines and 80 KB. Larger modules carr
 | `src/meta/engines/startpage_tests.rs` | 1,800 | 81,920 | Startpage behavioral fixtures; the css-load, header-only metarefresh, and sha256 flows are the next slice to move into a sibling fixture module |
 | `src/meta/challenge/anubis_tests.rs` | 1,750 | 81,920 | Solver fixtures and behavioral tests; the extension and sha256 fixtures are the next slice to move into a sibling fixture module |
 | `src/core/security.rs` | 3,000 | 115,000 | Identifier parsing/normalization plus the large inline test block; next slice is moving identifier + query-classification helpers into a `security/` submodule |
-| `src/core/config.rs` | 1,900 | 76,000 | Serde surface for every section; the inline test block now lives in `src/core/config/tests.rs`. Next slice is splitting the `[fetch]` section types out of the root `AppConfig` |
+| `src/core/config.rs` | 1,910 | 76,000 | Serde surface for every section, including `[knowledge_delta]`; the inline test block now lives in `src/core/config/tests.rs`. Next slice is splitting the `[fetch]` section types out of the root `AppConfig` |
 | `src/core/provider.rs` | 2,800 | 115,000 | Capability/provider model; next slice is moving the capability matrix out of the provider type module |
 | `src/fetch/span.rs` | 2,750 | 81,920 | Range selection and chunking; next slice is splitting the selection math from the file-walk plumbing |
 | `src/fetch/client.rs` | 2,600 | 100,000 | Fetch/redirect/conditional paths plus inline tests; next slice is extracting the redirect loop shared by `fetch_internal` and `fetch_conditional` |

@@ -186,6 +186,10 @@ pub(super) const FETCH_WARNING_PREFIXES: &[(&str, WarningCode)] = &[
         WarningCode::FetchContentTruncated,
     ),
     (
+        "batch_payload_budget_degraded",
+        WarningCode::FetchContentTruncated,
+    ),
+    (
         "local_content_marker_warning",
         WarningCode::PromptInjectionMarkerDetected,
     ),

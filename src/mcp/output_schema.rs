@@ -29,8 +29,8 @@ fn permissive_object_schema(
 
 pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
     match tool {
-        "batch_fetch" => Some(permissive_object_schema(
-            "Bounded multi-target fetch envelope with per-item results and aggregate telemetry.",
+        "fetch" => Some(permissive_object_schema(
+            "Unified bounded fetch envelope with ordered per-item results and aggregate telemetry.",
             serde_json::json!({
                 "results": {"type": "array"},
                 "fetched": {"type": "integer"},
@@ -112,26 +112,6 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
             }),
             &[],
         )),
-        "web_fetch" => Some(permissive_object_schema(
-            "Bounded single-URL fetch envelope. Stable envelope with permissive transport/cache metadata.",
-            serde_json::json!({
-                "url": {"type": "string"},
-                "final_url": {"type": "string"},
-                "status": {"type": "integer"},
-                "fetched": {"type": "boolean"},
-                "truncated": {"type": "boolean"},
-                "text": {"type": ["string", "null"]},
-                "warnings": {"type": "array"},
-                "structured_warnings": {"type": "array"},
-                "text_from": {"type": "integer"},
-                "text_to": {"type": "integer"},
-                "text_total": {"type": "integer"},
-                "next_offset": {"type": "integer"},
-                "doc_id": {"type": "string"},
-                "focus_scope": {"type": "string"},
-            }),
-            &["url", "final_url", "status", "fetched", "truncated"],
-        )),
         "web_search" => Some(permissive_object_schema(
             "Web source discovery envelope. Query/results with permissive routing metadata.",
             serde_json::json!({
@@ -144,6 +124,22 @@ pub fn output_schema_for(tool: &str) -> Option<Arc<JsonObject>> {
                 "excerpt_economy": {"type": "object"},
             }),
             &["query", "results"],
+        )),
+        "knowledge_brief" => Some(permissive_object_schema(
+            "Cutoff-aware candidate developments. Temporal relationships describe dated evidence, not model ignorance.",
+            serde_json::json!({
+                "topic": {"type": "string"},
+                "model_resolution": {"type": "object"},
+                "deltas": {"type": "array"},
+                "total_payload_chars": {"type": "integer"},
+                "retrieval_summary": {"type": "object"},
+                "coverage": {"type": "object"},
+                "warnings": {"type": "array"},
+                "truncated": {"type": "boolean"},
+                "budget_exhausted": {"type": "boolean"},
+                "next_actions": {"type": "array"},
+            }),
+            &["topic", "deltas"],
         )),
         "provider_status" => Some(permissive_object_schema(
             "Diagnostic provider and capability report envelope. Open-ended capability metadata is permissive.",

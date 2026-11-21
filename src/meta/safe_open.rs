@@ -472,6 +472,32 @@ pub fn safe_read_file(
     Ok(buf)
 }
 
+pub(crate) fn safe_read_file_prefix(
+    root: &Path,
+    relative: &str,
+    config: &LocalConfig,
+    max_open_size: usize,
+    max_prefix_size: usize,
+) -> Result<(Vec<u8>, u64), SafeOpenError> {
+    let mut open_config = config.clone();
+    open_config.max_file_bytes = max_open_size;
+    let safe = safe_open_relative(root, relative, &open_config)?;
+    let size = safe.size;
+    let mut fd = safe.fd;
+    let prefix_size = size.min(max_prefix_size as u64) as usize;
+    let mut prefix = vec![0; prefix_size];
+    let mut total_read = 0;
+    while total_read < prefix_size {
+        let read = fd.read(&mut prefix[total_read..])?;
+        if read == 0 {
+            prefix.truncate(total_read);
+            break;
+        }
+        total_read += read;
+    }
+    Ok((prefix, size))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

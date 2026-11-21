@@ -19,6 +19,15 @@ use crate::meta::engines::{engine_timeout, map_request_error, read_bounded_body}
 /// The only challenge algorithm this build solves, after normalisation.
 pub const SUPPORTED_ALGORITHM: &str = "sha256";
 
+/// Largest published PBKDF2 iteration count one solve accepts.
+///
+/// The published `cost` is the work factor of a single counter iteration, so
+/// it is the one published parameter that can overrun the wall-clock ceiling
+/// on its own. A challenge above this ceiling is refused as malformed rather
+/// than started. Upstream deployments publish a cost between one thousand and
+/// ten thousand.
+pub const MAX_PBKDF2_COST: u32 = 1_000_000;
+
 /// Fixed client timing field submitted with every solution.
 pub const SOLUTION_TIME: u64 = 150;
 
@@ -91,7 +100,7 @@ impl AltchaChallenge {
             .get("cost")
             .and_then(Value::as_u64)
             .ok_or(BOUND_MALFORMED)?;
-        if cost == 0 || cost > u64::from(u32::MAX) {
+        if cost == 0 || cost > u64::from(MAX_PBKDF2_COST) {
             return Err(BOUND_MALFORMED);
         }
         let key_length = parameters
@@ -219,25 +228,44 @@ pub async fn solve_and_verify(
     timeout: Duration,
     budget: &mut SolveBudget,
 ) -> Result<SolveOutcome, EngineError> {
-    let step =
-        solve_and_verify_inner(client, engine, challenge_url, verify_url, timeout, budget).await;
+    let step = match fetch_document(client, engine, challenge_url, timeout).await {
+        Ok(document) => {
+            solve_document_inner(client, engine, &document, verify_url, timeout, budget).await
+        }
+        Err(step) => step,
+    };
     finish_solve(engine, step, budget.attempts_used())
 }
 
-async fn solve_and_verify_inner(
+/// Solve an already published challenge document and verify it at `verify_url`.
+///
+/// The document is the published challenge JSON. It is parsed, solved, and
+/// submitted exactly as a fetched document is; only where the document came
+/// from differs.
+pub async fn solve_document_and_verify(
     client: &Client,
     engine: &'static str,
-    challenge_url: &str,
+    document: &str,
     verify_url: &str,
     timeout: Duration,
     budget: &mut SolveBudget,
-) -> SolveStep {
+) -> Result<SolveOutcome, EngineError> {
+    let step = solve_document_inner(client, engine, document, verify_url, timeout, budget).await;
+    finish_solve(engine, step, budget.attempts_used())
+}
+
+async fn fetch_document(
+    client: &Client,
+    engine: &'static str,
+    challenge_url: &str,
+    timeout: Duration,
+) -> Result<String, SolveStep> {
     let request = match client
         .get(challenge_url)
         .map_err(|source| EngineError::Http { engine, source })
     {
         Ok(request) => request,
-        Err(error) => return SolveStep::Error(error),
+        Err(error) => return Err(SolveStep::Error(error)),
     };
     let resp = match request
         .header("Accept", "application/json")
@@ -246,29 +274,36 @@ async fn solve_and_verify_inner(
         .await
     {
         Ok(resp) => resp,
-        Err(error) => return SolveStep::Error(map_request_error(engine, error)),
+        Err(error) => return Err(SolveStep::Error(map_request_error(engine, error))),
     };
     if !resp.status().is_success() {
-        return SolveStep::Error(EngineError::BadStatus {
+        return Err(SolveStep::Error(EngineError::BadStatus {
             engine,
             status: resp.status().as_u16(),
-        });
+        }));
     }
     let bytes = match read_bounded_body(resp, engine, MAX_CHALLENGE_BYTES).await {
         Ok(bytes) => bytes,
-        Err(error) => return SolveStep::Error(error),
+        Err(error) => return Err(SolveStep::Error(error)),
     };
-    let raw = match String::from_utf8(bytes) {
-        Ok(raw) => raw,
-        Err(_) => {
-            return SolveStep::Error(EngineError::ParseFailed {
-                engine,
-                reason: "challenge response is not valid UTF-8".to_string(),
-            })
-        }
-    };
+    match String::from_utf8(bytes) {
+        Ok(raw) => Ok(raw),
+        Err(_) => Err(SolveStep::Error(EngineError::ParseFailed {
+            engine,
+            reason: "challenge response is not valid UTF-8".to_string(),
+        })),
+    }
+}
 
-    let challenge = match AltchaChallenge::parse(&raw) {
+async fn solve_document_inner(
+    client: &Client,
+    engine: &'static str,
+    document: &str,
+    verify_url: &str,
+    timeout: Duration,
+    budget: &mut SolveBudget,
+) -> SolveStep {
+    let challenge = match AltchaChallenge::parse(document) {
         Ok(challenge) => challenge,
         Err(bound) => return refused_step(bound),
     };

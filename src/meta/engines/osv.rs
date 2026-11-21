@@ -79,6 +79,7 @@ fn parse_osv_query(query: &str) -> OsvQuery {
 const ENGINE: &str = "osv";
 const DEFAULT_BASE_URL: &str = "https://api.osv.dev/v1";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+const SUMMARY_MAX_CHARS: usize = 500;
 #[allow(dead_code)]
 const SNIPPET_MAX_CHARS: usize = 500;
 
@@ -660,6 +661,7 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         }
     }
 
+    let summary = vuln.summary.as_deref().and_then(sanitize_summary);
     let references: Vec<VulnerabilityReference> = vuln
         .references
         .iter()
@@ -674,6 +676,7 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         ghsa_ids,
         osv_ids: vec![vuln.id.clone()],
         rustsec_ids: Vec::new(),
+        summary,
         ecosystem,
         package: package_name,
         affected_ranges,
@@ -691,6 +694,15 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         references,
         source: VulnerabilitySource::Osv,
     }
+}
+
+fn sanitize_summary(summary: &str) -> Option<String> {
+    let (stripped, _) = crate::core::sanitize::strip_control_chars(summary);
+    let stripped = stripped.trim();
+    if stripped.is_empty() {
+        return None;
+    }
+    Some(crate::core::sanitize::bound_text(stripped, SUMMARY_MAX_CHARS).0)
 }
 
 #[allow(dead_code)]
@@ -772,6 +784,7 @@ mod tests {
 
         match &out[0].metadata {
             ResultMetadata::Advisory(m) => {
+                assert_eq!(m.summary.as_deref(), Some("Test vulnerability"));
                 assert_eq!(m.cve_ids, vec!["CVE-2024-0001"]);
                 assert_eq!(m.osv_ids, vec!["GHSA-test-1234-abcd"]);
                 assert_eq!(m.package.as_deref(), Some("test-package"));
@@ -786,6 +799,15 @@ mod tests {
             }
             other => panic!("expected Advisory metadata, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_summary_sanitization_is_bounded_to_500_chars() {
+        let input = format!("safe\u{0001}{}", "x".repeat(520));
+        let summary = sanitize_summary(&input).expect("summary");
+        assert!(!summary.contains('\u{0001}'));
+        assert_eq!(summary.chars().count(), 500);
+        assert!(summary.ends_with('…'));
     }
 
     #[test]

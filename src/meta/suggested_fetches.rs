@@ -216,7 +216,7 @@ pub fn generate_suggested_fetches_with_mode(
             let preferred_tool = if candidate.structured_repo_fetch {
                 Some("repo_fetch".to_string())
             } else {
-                Some("web_fetch".to_string())
+                Some("fetch".to_string())
             };
 
             let recommended_focus_query = structured_repo_fetch
@@ -453,7 +453,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                     stable: None,
                     stable_id: None,
                     source_id: card.stable_id.clone(),
-                    preferred_tool: Some("web_fetch".to_string()),
+                    preferred_tool: Some("fetch".to_string()),
                     recommended_focus_query: None,
                     batch_item: Some(crate::core::fetch_locator::url_to_batch_web_item(
                         &batch_url,
@@ -953,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    fn web_fetch_preferred_for_non_structured() {
+    fn fetch_preferred_for_non_structured() {
         let groups = vec![make_group(
             RepoResultGroupKind::OfficialDocs,
             vec![make_card("Docs", "https://docs.example.com")],
@@ -964,8 +964,8 @@ mod tests {
         assert!(!fetches.is_empty());
         assert_eq!(
             fetches[0].preferred_tool.as_deref(),
-            Some("web_fetch"),
-            "non-structured candidate should prefer web_fetch"
+            Some("fetch"),
+            "non-structured candidate should prefer fetch"
         );
     }
 
@@ -1279,7 +1279,7 @@ mod tests {
         )];
         let suggestions = generate_complementary_suggestions(&groups);
         for s in &suggestions {
-            // Changelog suggestions use web_fetch, others use repo_fetch
+            // Changelog suggestions use fetch, others use repo_fetch
             if s.reason != "changelog_source" {
                 assert_eq!(
                     s.preferred_tool.as_deref(),

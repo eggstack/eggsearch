@@ -189,6 +189,7 @@ async fn legacy_http_lifecycle_lists_tools_and_calls_local_tool() {
         .map(|tool| tool["name"].as_str().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(names.len(), 10);
+    assert!(names.contains(&"knowledge_brief"));
     assert!(names.contains(&"web_search"));
     assert!(names.contains(&"build_evidence_bundle"));
 
@@ -231,6 +232,7 @@ async fn compact_profile_is_used_by_initialized_http_tools_list() {
         .map(|tool| tool["name"].as_str().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(names.len(), 10);
+    assert!(names.contains(&"knowledge_brief"));
     assert!(names.contains(&"security_search"));
     assert!(names.contains(&"research_search"));
     assert!(listed.iter().all(|tool| tool.get("outputSchema").is_none()));
@@ -351,7 +353,9 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
         .unwrap();
     assert_eq!(tools.status().as_u16(), 200);
     let tools = sse_payload(tools).await;
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 10);
+    let listed = tools["result"]["tools"].as_array().unwrap();
+    assert_eq!(listed.len(), 10);
+    assert!(listed.iter().any(|tool| tool["name"] == "knowledge_brief"));
     server.stop().await;
 }
 
@@ -650,7 +654,7 @@ fn router_requires_loopback_options() {
 }
 
 #[tokio::test]
-async fn minimal_preset_advertises_four_tools_and_still_executes_hidden_tool() {
+async fn minimal_preset_advertises_three_tools_and_still_executes_hidden_tools() {
     let mut config = AppConfig::default();
     config.mcp.tool_preset = eggsearch::core::config::McpToolPreset::Minimal;
     let server = TestServer::start_with_config(config).await;
@@ -678,15 +682,10 @@ async fn minimal_preset_advertises_four_tools_and_still_executes_hidden_tool() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        names,
-        vec![
-            "batch_fetch",
-            "build_evidence_bundle",
-            "web_fetch",
-            "web_search"
-        ]
-    );
+    assert_eq!(names, vec!["build_evidence_bundle", "fetch", "web_search"]);
+    assert!(names.contains(&"fetch"));
+    assert!(!names.contains(&"web_fetch"));
+    assert!(!names.contains(&"batch_fetch"));
     assert!(!names.contains(&"provider_status"));
     assert!(listed.get("error").is_none());
     assert!(
@@ -723,21 +722,21 @@ async fn minimal_preset_advertises_four_tools_and_still_executes_hidden_tool() {
             .as_array()
             .unwrap()
             .len(),
-        4
+        3
     );
     assert_eq!(
         payload["mcp_advertisement"]["hidden_tools"]
             .as_array()
             .unwrap()
             .len(),
-        6
+        7
     );
-    let advertised = [
-        "batch_fetch",
-        "build_evidence_bundle",
-        "web_fetch",
-        "web_search",
-    ];
+    assert!(payload["mcp_advertisement"]["hidden_tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|tool| tool == "knowledge_brief"));
+    let advertised = ["build_evidence_bundle", "fetch", "web_search"];
     let mut saw_summary_steps = false;
     for recipe in payload["workflow_recipes"].as_array().expect("recipes") {
         if let Some(step_tools) = recipe["step_tools"].as_array() {
@@ -798,5 +797,216 @@ async fn minimal_preset_advertises_four_tools_and_still_executes_hidden_tool() {
         payload["next_actions_omitted"].as_u64().unwrap() >= 1,
         "dropped pointers must be counted: {payload}"
     );
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn fetch_aliases_remain_callable_but_unadvertised_over_mcp_http() {
+    use httpmock::prelude::*;
+
+    let upstream = MockServer::start_async().await;
+    let _page = upstream
+        .mock_async(|when, then| {
+            when.method(GET).path("/doc");
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .body("<!doctype html><html><head><title>Fetch alias</title></head><body><p>bounded fixture</p></body></html>");
+        })
+        .await;
+    let url = upstream.url("/doc");
+    let workspace = tempfile::tempdir().expect("workspace");
+    let root_name = workspace
+        .path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("workspace root name")
+        .to_string();
+    std::fs::write(
+        workspace.path().join("lib.rs"),
+        "pub fn workspace_fetch_fixture() {}\n",
+    )
+    .expect("write workspace fixture");
+    let mut config = AppConfig::default();
+    config.mcp.tool_preset = eggsearch::core::config::McpToolPreset::Minimal;
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    config.local.enabled = true;
+    config.local.roots = vec![workspace.path().to_path_buf()];
+    let server = TestServer::start_with_config(config).await;
+    let (session_id, _) = initialize_legacy(&server).await;
+
+    let listed = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )
+        .await,
+    )
+    .await;
+    let listed_names: Vec<&str> = listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        listed_names,
+        ["build_evidence_bundle", "fetch", "web_search"]
+    );
+    assert!(!listed_names.contains(&"web_fetch"));
+    assert!(!listed_names.contains(&"batch_fetch"));
+
+    let web = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0","id":3,"method":"tools/call",
+                "params":{"name":"web_fetch","arguments":{"url":url}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(web.get("error").is_none(), "legacy web_fetch route: {web}");
+    assert_eq!(web["result"]["isError"], false, "{web}");
+    let web_payload = &web["result"]["structuredContent"];
+    assert!(
+        web_payload["url"].is_string(),
+        "legacy response shape: {web_payload}"
+    );
+    assert!(
+        web_payload.get("results").is_none(),
+        "legacy direct response must stay direct: {web_payload}"
+    );
+
+    let batch = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0","id":4,"method":"tools/call",
+                "params":{"name":"batch_fetch","arguments":{"items":[{"type":"web","url":url}]}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        batch.get("error").is_none(),
+        "legacy batch_fetch route: {batch}"
+    );
+    assert_eq!(batch["result"]["isError"], false, "{batch}");
+    let batch_payload = &batch["result"]["structuredContent"];
+    assert_eq!(batch_payload["results"].as_array().unwrap().len(), 1);
+    assert!(batch_payload["fetched"].is_number());
+
+    let unified = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0","id":5,"method":"tools/call",
+                "params":{"name":"fetch","arguments":{"items":{"type":"web","url":url}}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        unified.get("error").is_none(),
+        "canonical fetch route: {unified}"
+    );
+    assert_eq!(unified["result"]["isError"], false, "{unified}");
+    let unified_payload = &unified["result"]["structuredContent"];
+    assert_eq!(unified_payload["results"].as_array().unwrap().len(), 1);
+    assert!(
+        unified_payload.get("url").is_none(),
+        "single canonical fetch stays enveloped: {unified_payload}"
+    );
+
+    let mixed = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0","id":7,"method":"tools/call",
+                "params":{"name":"fetch","arguments":{"items":[
+                    {"type":"web","url":url},
+                    {"type":"repo","host":"workspace","owner":root_name,"repo":"lib.rs","path":"lib.rs"}
+                ]}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        mixed.get("error").is_none(),
+        "mixed canonical fetch route: {mixed}"
+    );
+    assert_eq!(mixed["result"]["isError"], false, "{mixed}");
+    let mixed_payload = &mixed["result"]["structuredContent"];
+    let mixed_results = mixed_payload["results"].as_array().expect("mixed results");
+    assert_eq!(mixed_results.len(), 2, "{mixed_payload}");
+    assert_eq!(mixed_results[0]["index"], 0);
+    assert_eq!(mixed_results[0]["item_type"], "web");
+    assert_eq!(mixed_results[0]["ok"], true);
+    assert!(mixed_results[0]["response"]["url"].is_string());
+    assert_eq!(mixed_results[1]["index"], 1);
+    assert_eq!(mixed_results[1]["item_type"], "repo");
+    assert_eq!(mixed_results[1]["ok"], true);
+    assert!(mixed_results[1]["response"]["text"]
+        .as_str()
+        .expect("workspace text")
+        .contains("workspace_fetch_fixture"));
+
+    let repo = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0","id":8,"method":"tools/call",
+                "params":{"name":"fetch","arguments":{"items":{
+                    "type":"repo","host":"workspace","owner":root_name,"repo":"lib.rs","path":"lib.rs"
+                }}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        repo.get("error").is_none(),
+        "scalar repo fetch route: {repo}"
+    );
+    assert_eq!(repo["result"]["isError"], false, "{repo}");
+    let repo_results = repo["result"]["structuredContent"]["results"]
+        .as_array()
+        .expect("scalar repo result envelope");
+    assert_eq!(repo_results.len(), 1);
+    assert_eq!(repo_results[0]["item_type"], "repo");
+    assert_eq!(repo_results[0]["ok"], true);
+    assert!(repo_results[0]["response"]["text"]
+        .as_str()
+        .expect("scalar workspace text")
+        .contains("workspace_fetch_fixture"));
+
+    let unknown = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({
+                "jsonrpc":"2.0","id":6,"method":"tools/call",
+                "params":{"name":"not_a_tool","arguments":{}}
+            }),
+        )
+        .await,
+    )
+    .await;
+    assert!(
+        unknown.get("error").is_some(),
+        "unknown tool name must be rejected: {unknown}"
+    );
+
     server.stop().await;
 }

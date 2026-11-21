@@ -288,6 +288,10 @@ pub struct RepoFetchResponse {
     /// Structured warnings with stable codes and severity.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structured_warnings: Vec<crate::core::warning::AgentWarning>,
+    /// Whether the fetched body is an anti-bot challenge page that needs
+    /// manual interaction rather than the requested document.
+    #[serde(default)]
+    pub manual_interaction_required: bool,
     /// Trust label for the fetched content.
     pub trust: FetchTrust,
     /// Trust markers describing what sanitization was applied.

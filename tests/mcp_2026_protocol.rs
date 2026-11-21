@@ -168,6 +168,7 @@ fn typed_output_schemas_validate_representative_payloads() {
         failed: 0,
         truncated: false,
         total_chars_returned: 10,
+        total_payload_chars: 0,
         results: vec![],
         warnings: vec![],
         structured_warnings: vec![],
@@ -210,6 +211,9 @@ fn tools_list_is_deterministic_and_fingerprinted() {
     sorted.sort();
     assert_eq!(names_first, sorted, "tools/list must be sorted for caching");
     assert_eq!(first.len(), 10);
+    assert!(names_first.iter().any(|name| name == "knowledge_brief"));
+    assert!(!names_first.iter().any(|name| name == "web_fetch"));
+    assert!(!names_first.iter().any(|name| name == "batch_fetch"));
 
     let fp1 = server.tool_fingerprint();
     let fp2 = server.tool_fingerprint();

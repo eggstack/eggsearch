@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use eggfetch_core::Client;
@@ -5,6 +6,7 @@ use scraper::Html;
 
 use super::error::EngineError;
 use super::models::SearchResult;
+use super::render::SerpRenderer;
 use super::{PageMarker, ScrapeShape};
 
 const ENGINE: &str = "yahoo";
@@ -22,9 +24,44 @@ pub async fn search(
     query: &str,
     max_results: usize,
     timeout: Duration,
+    renderer: Option<&Arc<dyn SerpRenderer>>,
 ) -> Result<Vec<SearchResult>, EngineError> {
+    search_at(client, YAHOO_URL, query, max_results, timeout, renderer).await
+}
+
+pub(super) async fn search_at(
+    client: &Client,
+    base_url: &str,
+    query: &str,
+    max_results: usize,
+    timeout: Duration,
+    renderer: Option<&Arc<dyn SerpRenderer>>,
+) -> Result<Vec<SearchResult>, EngineError> {
+    let served = match fetch_html(client, base_url, query, timeout).await {
+        Ok(body) => parse(&body, max_results),
+        Err(error) => Err(error),
+    };
+    match served {
+        Err(error) if super::render::is_browser_gated(&error) => match renderer {
+            Some(renderer) => {
+                let url = search_url(base_url, query);
+                super::render::render_blocked(renderer, &url, timeout, error, max_results, parse)
+                    .await
+            }
+            None => Err(error),
+        },
+        other => other,
+    }
+}
+
+async fn fetch_html(
+    client: &Client,
+    base_url: &str,
+    query: &str,
+    timeout: Duration,
+) -> Result<String, EngineError> {
     let resp = client
-        .get(YAHOO_URL)
+        .get(base_url)
         .map_err(|e| EngineError::Http {
             engine: ENGINE,
             source: e,
@@ -35,17 +72,11 @@ pub async fn search(
         .send()
         .await
         .map_err(|e| super::map_request_error(ENGINE, e))?;
-    if !resp.status().is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: resp.status().as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
+    super::read_search_body(resp, ENGINE, &SHAPE, MAX_BODY_BYTES, &[]).await
+}
 
-    let body = String::from_utf8_lossy(&bytes).into_owned();
-
-    parse(&body, max_results)
+fn search_url(base_url: &str, query: &str) -> String {
+    format!("{base_url}?p={}", urlencoding::encode(query))
 }
 
 pub(super) fn parse(html: &str, max_results: usize) -> Result<Vec<SearchResult>, EngineError> {
@@ -253,5 +284,38 @@ mod tests {
             matches!(err, EngineError::ParseFailed { .. }),
             "unexpected error: {err:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn an_empty_failure_status_is_served_by_the_browser_when_one_is_installed() {
+        use crate::meta::engines::render::test_support::FixtureRenderer;
+        use crate::meta::engines::render::SerpRenderer;
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("p", "rust");
+            then.status(500);
+        });
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
+        let renderer = FixtureRenderer::serving(
+            r#"<div class="algo-sr"><div class="compTitle"><a href="https://example.com"><h3><span>Rendered</span></h3></a></div><div class="compText">Served by the browser.</div></div>"#,
+        );
+        let installed: std::sync::Arc<dyn SerpRenderer> = renderer.clone();
+
+        let results = search_at(
+            &client,
+            &server.url("/search"),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            Some(&installed),
+        )
+        .await
+        .expect("the rendered page parses");
+
+        assert_eq!(renderer.calls(), 1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].url, "https://example.com");
     }
 }

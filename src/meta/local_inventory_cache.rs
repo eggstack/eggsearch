@@ -244,6 +244,40 @@ pub fn score_inventory_entry(
     score
 }
 
+pub(crate) fn has_relevance(
+    relative_path: &str,
+    query_lower: &str,
+    query_tokens: &[&str],
+    content_text: Option<&str>,
+    path_hint: Option<&str>,
+    file_hint: Option<&str>,
+    symbol_matched: bool,
+) -> bool {
+    if symbol_matched
+        || path_hint.is_some_and(|hint| !hint.is_empty())
+        || file_hint.is_some_and(|hint| !hint.is_empty())
+    {
+        return true;
+    }
+    if query_lower.trim().is_empty() {
+        return false;
+    }
+    let path_lower = relative_path.to_lowercase();
+    let file_name = Path::new(relative_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if file_name == query_lower || query_tokens.iter().any(|token| path_lower.contains(token)) {
+        return true;
+    }
+    content_text.is_some_and(|text| {
+        let text_lower = text.to_lowercase();
+        text_lower.contains(query_lower)
+            || query_tokens.iter().any(|token| text_lower.contains(token))
+    })
+}
+
 fn compute_fingerprint(path: &str, size: u64, mtime_secs: u64, mtime_nanos: u32) -> u64 {
     let mut data = Vec::with_capacity(path.len() + 20);
     data.extend_from_slice(path.as_bytes());

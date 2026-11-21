@@ -29,6 +29,8 @@ pub mod fetch_policy;
 pub mod focus;
 /// Deterministic cross-tool identity model for stable source/fetch/suggested IDs.
 pub mod identity;
+/// Cutoff comparison, knowledge-delta vocabulary, and operator cutoff config.
+pub mod knowledge_delta;
 /// Local workspace search types: config, file entries, and search requests.
 pub mod local;
 /// Package coordinate types and ecosystem resolution for repo_search.

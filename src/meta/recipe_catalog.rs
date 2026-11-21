@@ -100,8 +100,8 @@ pub fn build_recipe_catalog(
 
 /// Build a bounded batch-focused next action for multi-source evidence.
 ///
-/// Recommends one `batch_fetch` call with per-item focus instead of many
-/// serial `web_fetch` calls. Callers should only use this when candidates
+/// Recommends one `fetch` call with per-item focus instead of many
+/// serial `fetch` calls. Callers should only use this when candidates
 /// share safety/config prerequisites (all web URLs); mixed
 /// remote/workspace locators must use separate fetches.
 pub fn focused_batch_next_action(
@@ -110,7 +110,7 @@ pub fn focused_batch_next_action(
     priority: u8,
 ) -> AgentNextAction {
     AgentNextAction::new(
-        "batch_fetch",
+        "fetch",
         reason_code,
         priority,
         serde_json::json!({"items": [{"type": "web", "url": "<selected_url>", "focus": "<query>", "focus_max_chunks": 3}]}),
@@ -131,10 +131,10 @@ pub fn web_search_next_actions(
     let mut actions = Vec::new();
     if has_suggestions && !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
-            "web_fetch",
+            "fetch",
             "inspect_top_source",
             1,
-            serde_json::json!({"url": "<selected_url>"}),
+            serde_json::json!({"items": {"type": "web", "url": "<selected_url>"}}),
             source_ids.iter().take(1).cloned().collect(),
             None,
         ));
@@ -177,7 +177,7 @@ pub fn repo_search_next_actions(
     if source_ids.len() > 1 {
         actions.push(
             AgentNextAction::new(
-                "batch_fetch",
+                "fetch",
                 "fetch_multiple_focused",
                 2,
                 serde_json::json!({"items": [{"type": "repo", "owner": "<owner>", "repo": "<repo>", "path": "<path>", "focus": "<symbol_or_query>"}, {"type": "web", "url": "<selected_url>", "focus": "<query>"}]}),
@@ -224,10 +224,10 @@ pub fn security_search_next_actions(
     let mut actions = Vec::new();
     if !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
-            "web_fetch",
+            "fetch",
             "fetch_primary_advisory",
             1,
-            serde_json::json!({"url": "<advisory_url>"}),
+            serde_json::json!({"items": {"type": "web", "url": "<advisory_url>"}}),
             source_ids.iter().take(1).cloned().collect(),
             None,
         ));
@@ -269,10 +269,10 @@ pub fn research_search_next_actions(
     let mut actions = Vec::new();
     if !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
-            "web_fetch",
+            "fetch",
             "fetch_primary_source",
             1,
-            serde_json::json!({"url": "<primary_source_url>"}),
+            serde_json::json!({"items": {"type": "web", "url": "<primary_source_url>"}}),
             source_ids.iter().take(1).cloned().collect(),
             None,
         ));
@@ -292,10 +292,10 @@ pub fn research_search_next_actions(
     }
     if has_counterpoints {
         actions.push(AgentNextAction::new(
-            "web_fetch",
+            "fetch",
             "fetch_counterpoint",
             2,
-            serde_json::json!({"url": "<counterpoint_url>"}),
+            serde_json::json!({"items": {"type": "web", "url": "<counterpoint_url>"}}),
             vec![],
             None,
         ));
@@ -368,14 +368,14 @@ fn generic_web_lookup() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 3,
-                tool: "web_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch selected URLs to inspect full content".into(),
                 input_hints: vec![
-                    "url: one explicit URL from source cards or suggested_fetches".into(),
+                    "items: {type: web, url: one explicit URL from source cards or suggested_fetches}".into(),
                     "max_chars: output cap (optional)".into(),
                 ],
                 inspect_fields: vec!["text".into(), "document".into(), "trust_markers".into()],
-                next_action_rule: Some("one URL per call; never batch without batch_fetch".into()),
+                next_action_rule: Some("one URL per call; never batch without fetch".into()),
                 evidence_roles: vec![],
             },
             AgentWorkflowStep {
@@ -476,9 +476,9 @@ fn documentation_api_lookup() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 4,
-                tool: "web_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch selected documentation pages".into(),
-                input_hints: vec!["url: documentation URL".into()],
+                input_hints: vec!["items: {type: web, url: documentation URL}".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: None,
                 evidence_roles: vec![],
@@ -595,7 +595,7 @@ fn repository_investigation() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 5,
-                tool: "batch_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch multiple selected suggestions at once".into(),
                 input_hints: vec![
                     "items: Vec of URLs or RepoLocators".into(),
@@ -678,9 +678,9 @@ fn exact_error_investigation() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 2,
-                tool: "web_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch official docs, issues, or release notes".into(),
-                input_hints: vec!["url: from suggested_fetches or source cards".into()],
+                input_hints: vec!["items: {type: web, items: {type: web, url: from suggested_fetches} or source cards}".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: None,
                 evidence_roles: vec![],
@@ -753,9 +753,11 @@ fn security_package_triage() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 2,
-                tool: "web_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch primary advisory or vendor guidance".into(),
-                input_hints: vec!["url: advisory URL from suggested_fetches".into()],
+                input_hints: vec![
+                    "items: {type: web, url: advisory URL from suggested_fetches}".into(),
+                ],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: None,
                 evidence_roles: vec![],
@@ -844,9 +846,9 @@ fn dependency_upgrade_research() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 3,
-                tool: "web_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch changelog, migration guide, or release notes".into(),
-                input_hints: vec!["url: from suggested_fetches".into()],
+                input_hints: vec!["items: {type: web, url: from suggested_fetches}".into()],
                 inspect_fields: vec!["text".into()],
                 next_action_rule: None,
                 evidence_roles: vec![],
@@ -931,9 +933,9 @@ fn architecture_deep_research() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 2,
-                tool: "web_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch primary and conflicting sources".into(),
-                input_hints: vec!["url: from suggested_fetches".into()],
+                input_hints: vec!["items: {type: web, url: from suggested_fetches}".into()],
                 inspect_fields: vec!["text".into(), "document".into()],
                 next_action_rule: Some("fetch both supporting and contradicting sources".into()),
                 evidence_roles: vec![],
@@ -1117,16 +1119,15 @@ mod tests {
     #[test]
     fn recipe_steps_reference_real_tools() {
         let real_tools = [
+            "build_evidence_bundle",
+            "fetch",
             "provider_status",
-            "web_search",
-            "web_fetch",
-            "repo_search",
             "repo_fetch",
             "repo_map",
-            "batch_fetch",
-            "security_search",
+            "repo_search",
             "research_search",
-            "build_evidence_bundle",
+            "security_search",
+            "web_search",
         ];
         let catalog = build_recipe_catalog(&[], false);
         for recipe in &catalog {
@@ -1145,16 +1146,15 @@ mod tests {
     #[test]
     fn next_actions_use_real_tools() {
         let real_tools = [
+            "build_evidence_bundle",
+            "fetch",
             "provider_status",
-            "web_search",
-            "web_fetch",
-            "repo_search",
             "repo_fetch",
             "repo_map",
-            "batch_fetch",
-            "security_search",
+            "repo_search",
             "research_search",
-            "build_evidence_bundle",
+            "security_search",
+            "web_search",
         ];
         let actions = web_search_next_actions(&["src_1".into()], true);
         for action in &actions {

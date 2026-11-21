@@ -2950,12 +2950,12 @@ mod search_result_cache {
 }
 
 #[test]
-fn challenge_config_is_disabled_by_default() {
+fn challenge_config_is_enabled_by_default() {
     let cfg = AppConfig::default();
-    assert!(!cfg.search.challenge.enabled);
-    assert_eq!(cfg.search.challenge.max_difficulty, 5);
-    assert_eq!(cfg.search.challenge.max_attempts, 2_000_000);
-    assert_eq!(cfg.search.challenge.timeout_ms, 2000);
+    assert!(cfg.search.challenge.enabled);
+    assert_eq!(cfg.search.challenge.max_difficulty, 6);
+    assert_eq!(cfg.search.challenge.max_attempts, 100_000_000);
+    assert_eq!(cfg.search.challenge.timeout_ms, 10_000);
     assert_eq!(cfg.search.challenge.cookie_ttl_seconds, 240);
 }
 

@@ -18,6 +18,7 @@ rust_contract="$root/src/platform.rs"
 docs_installation="$root/docs/installation.md"
 
 python3 "$root/packaging/check-workflow-pins.py"
+python3 "$root/packaging/check-packaged-assets.py"
 python3 "$root/packaging/check-planning-consistency.py"
 python3 "$root/packaging/check-eggpack-qualifier.py"
 "$root/packaging/release-validate.sh" tree "$(git -C "$root" rev-parse HEAD)"

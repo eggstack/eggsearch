@@ -24,8 +24,8 @@ const CASES_JSON: &str = include_str!("fixtures/tool_surface/cases.json");
 
 const KNOWN_TOOLS: &[&str] = &[
     "web_search",
-    "web_fetch",
-    "batch_fetch",
+    "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_search",
     "repo_fetch",
@@ -129,7 +129,7 @@ const KEYWORDS: &[(&str, &str, i32)] = &[
     ("repo_map", "important files", 8),
     ("repo_map", "directories", 4),
     ("repo_map", "structure", 4),
-    ("web_fetch", "fetch", 4),
+    ("fetch", "fetch", 4),
     ("repo_fetch", "fetch", 3),
     ("repo_fetch", "fetch file", 10),
     ("repo_fetch", "fetch symbol", 10),
@@ -137,14 +137,13 @@ const KEYWORDS: &[(&str, &str, i32)] = &[
     ("repo_fetch", "line range", 6),
     ("repo_fetch", "lines", 3),
     ("repo_fetch", "symbol", 5),
-    ("batch_fetch", "these three urls", 12),
-    ("batch_fetch", "three urls", 10),
-    ("batch_fetch", "multiple", 6),
-    ("batch_fetch", "several", 6),
-    ("batch_fetch", "fetch these", 8),
-    ("batch_fetch", "sources you found", 10),
-    ("batch_fetch", "fetch the sources", 10),
-    ("batch_fetch", "fetch", 3),
+    ("fetch", "these three urls", 12),
+    ("fetch", "three urls", 10),
+    ("fetch", "multiple", 6),
+    ("fetch", "several", 6),
+    ("fetch", "fetch these", 8),
+    ("fetch", "sources you found", 10),
+    ("fetch", "fetch the sources", 10),
     ("provider_status", "provider", 6),
     ("provider_status", "unavailable", 6),
     ("provider_status", "outage", 10),
@@ -279,9 +278,8 @@ fn score_tool(
         }
     }
     match count_urls(query_lower) {
-        1 if tool == "web_fetch" => score += 12,
-        n if n >= 2 && tool == "batch_fetch" => score += 15,
-        n if n >= 2 && tool == "web_fetch" => score += 6,
+        1 if tool == "fetch" => score += 12,
+        n if n >= 2 && tool == "fetch" => score += 15,
         _ => {}
     }
     if has_owner_repo_pattern(query_lower) {
@@ -455,7 +453,7 @@ fn tool_surface_byte_budgets() {
     assert_eq!(
         tools.len(),
         KNOWN_TOOLS.len(),
-        "must advertise exactly ten stable tools"
+        "must advertise exactly ten canonical tools"
     );
     let mut total_bytes = 0usize;
     let mut core_bytes = 0usize;
@@ -479,10 +477,7 @@ fn tool_surface_byte_budgets() {
             .expect("tool definition stringifies")
             .len();
         total_bytes += bytes;
-        if matches!(
-            tool.name.as_ref(),
-            "web_search" | "web_fetch" | "repo_search"
-        ) {
+        if matches!(tool.name.as_ref(), "web_search" | "fetch" | "repo_search") {
             core_bytes += bytes;
         }
         println!(
@@ -709,7 +704,7 @@ fn tool_surface_layer2_synthetic_mechanics() {
         }
     }
     assert!(
-        hydrated.contains("web_fetch") || hydrated.contains("batch_fetch"),
+        hydrated.contains("fetch"),
         "synthetic follow-up hydration must reach a fetch tool: {hydrated:?}"
     );
     assert!(

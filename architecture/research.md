@@ -281,4 +281,49 @@ only when the adapter produced none. Warnings stay explicit:
 
 ---
 
+## Knowledge brief (`src/meta/knowledge_delta/`)
+
+`knowledge_brief` is a separate typed planner. It does not add a
+`ResearchWorkflow` variant and does not call `build_research_search_plan`.
+It uses `MetadataSearchAdapter`, `RetrievalAttemptSet`, and
+`FetchCandidateBuilder`. The topic string is one subquery. Further
+subqueries may append a closed English hint list; coverage says those hints
+are not a translation. Dates come only from provider-declared publication timestamps; prose, snippets, and fetched HTML are never date sources. At least one selected provider must advertise `result_timestamps` and return a declared timestamp for a delta to be possible. The shipped keyless defaults (`duckduckgo`, `brave`, `yahoo`) do not advertise that capability, so a default-only brief may have no dated sources. Provider capability is reported, not used to change routing.
+
+Cutoff resolution walks caller override, operator entry, then the bundled catalog (`BUNDLED_CUTOFF_SNAPSHOT`). The catalog is a static, source-verified manifest mirrored by `src/meta/knowledge_delta/catalog.json`; a test rejects a bundled row without a matching verified manifest entry, an alias collision, or a date that contradicts its declared precision. `model_resolution.catalog_as_of` reports the newest `verified_at` in the shipped snapshot, so a stale catalog is visible without a schema change. Unknown models stay `unknown`; the resolver never guesses from a release date.
+
+Coverage accounts for selected live cards with `selected_cards`, `dated`, `undated`, `at_or_before_cutoff`, and `not_after_cutoff`; `dated + undated` equals `selected_cards`. The two cutoff counts are zero when no cutoff resolves. `at_or_before_cutoff` counts confirmed on-or-before comparisons, while `not_after_cutoff` also includes dated cards whose precision leaves the comparison indeterminate. `index_status` is one of `not_opened`, `disabled`, `open`, `degraded`, or `offline`: `disabled` means the request asked to read or retain while `[knowledge_delta.index].enabled` is false, and it is distinct from `offline`, which means the file exists in configuration but could not be opened. `empty_state_reason` is one of `no_cutoff_resolved`, `no_dated_sources`, `all_sources_at_or_before_cutoff`, `index_not_seeded`, `index_stale`, `no_matching_index_hits`, or `deltas_emitted`; the two index-freshness reasons appear only for an `index` refresh, and a status probe failure degrades the index instead of failing the call. Every non-emitting reason is also a `knowledge_brief_<reason>: ...` warning. A resolved cutoff never has `no_temporal_claim`; without a resolved cutoff the reason is `no_cutoff_resolved`. Coverage lists the selected providers and the subset that advertises `result_timestamps`.
+
+Comparison is at the coarser precision. A publication-only delta is labeled
+publication. The brief performs bounded source fetches for selected candidates
+through the existing fetch path; it does not parse HTML dates. `fetch` may
+also appear in `next_actions` for follow-up inspection.
+
+Omitted `refresh` is live and writes nothing. `retain` writes only fetched,
+bounded excerpts and source spans from already selected deltas when the
+response passes anonymous HTTP cacheability checks. Search-card snippets
+alone are not retained. Private, `no-store`, profile-scoped, browser, and
+otherwise non-cacheable responses are refused. `prefer_live` unions index hits
+and labels them `index_only`.
+`index` does not search live. `related_topics` reads one source-backed
+index step and does not open a new host. Expanded deltas carry
+`edge_source_ids`. An edge without a stored span is not created. Every
+delta explicitly carries `trust: external_untrusted`, including index hits
+and responses with `sanitize_output = false`; disabling framing does not
+change the trust classification.
+
+The index never persists the caller's topic. Its legacy topic column stays
+empty; primary subjects and expansion edges are derived from indexed public
+titles and excerpts. Schema v1 is atomically scrubbed to v2, preserving
+evidence rows while clearing caller-topic fields and rebuilding derived
+subjects and edges. Every index connection enables SQLite core `secure_delete`;
+schema setup and migration ensure FTS5 `secure-delete` before removing legacy
+terms. Regression coverage checks the migrated database file for residual
+caller-topic bytes. On Unix, partition directories are restricted to mode
+0700 and database files to 0600. An explicitly configured database file
+under a shared parent is refused. On Windows, the index inherits the ACL of
+its parent directory, so configured paths should remain user-private.
+
+---
+
 **Back to:** [overview.md](overview.md)

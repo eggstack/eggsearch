@@ -10,19 +10,19 @@ const TIMEOUT_MS_MIN: u64 = 100;
 const TIMEOUT_MS_MAX: u64 = 30_000;
 const COOKIE_TTL_MAX_SECONDS: u64 = 3600;
 
-/// Bounded, opt-in challenge-solving configuration.
+/// Bounded challenge-solving configuration, on by default.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChallengeSection {
-    /// Whether computational challenges may be solved. Default: false.
-    #[serde(default)]
+    /// Whether computational challenges may be solved. Default: true.
+    #[serde(default = "default_challenge_enabled")]
     pub enabled: bool,
-    /// Difficulty ceiling for schemes that publish one. Default: 5, bounded 1..=10.
+    /// Difficulty ceiling for schemes that publish one. Default: 6, bounded 1..=10.
     #[serde(default = "default_challenge_max_difficulty")]
     pub max_difficulty: u8,
-    /// Candidate/derivation ceiling per solve. Default: 2_000_000, bounded 1..=100_000_000.
+    /// Candidate/derivation ceiling per solve. Default: 100_000_000, bounded 1..=100_000_000.
     #[serde(default = "default_challenge_max_attempts")]
     pub max_attempts: u64,
-    /// Wall-clock ceiling per solve. Default: 2000 ms, bounded 100..=30000.
+    /// Wall-clock ceiling per solve. Default: 10000 ms, bounded 100..=30000.
     #[serde(default = "default_challenge_timeout_ms")]
     pub timeout_ms: u64,
     /// Pass-cookie reuse window per provider. Default: 240 s, bounded 0..=3600; `0` disables reuse.
@@ -33,7 +33,7 @@ pub struct ChallengeSection {
 impl Default for ChallengeSection {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: default_challenge_enabled(),
             max_difficulty: default_challenge_max_difficulty(),
             max_attempts: default_challenge_max_attempts(),
             timeout_ms: default_challenge_timeout_ms(),
@@ -75,14 +75,17 @@ impl ChallengeSection {
     }
 }
 
+fn default_challenge_enabled() -> bool {
+    true
+}
 fn default_challenge_max_difficulty() -> u8 {
-    5
+    6
 }
 fn default_challenge_max_attempts() -> u64 {
-    2_000_000
+    100_000_000
 }
 fn default_challenge_timeout_ms() -> u64 {
-    2000
+    10_000
 }
 fn default_challenge_cookie_ttl_seconds() -> u64 {
     240

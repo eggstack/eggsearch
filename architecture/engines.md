@@ -176,6 +176,41 @@ empty-state marker. Ordering: parsed rows win; then a blocked marker; then an em
 `ParseFailed` with a reason that names the container (`missing` versus `produced no parseable
 results`).
 
+A challenge page can arrive with a non-success status: Brave answers its proof-of-work wall with
+HTTP 429 while serving the challenge document. The body is therefore read for every status and run
+through the same blocked markers, so the outcome is `Blocked` with the status named in the reason,
+never `rate_limited` from the bare status. A non-success body that matches no marker keeps
+`BadStatus`.
+
+### Browser-rendered access
+
+A wall that only executes JavaScript cannot be reached by any header set: Brave answers HTTP 429
+with a proof-of-work page whose `Verify` control completes it, and Yahoo answers HTTP 500 with an
+empty body to a client that announces a headless browser. Both are served to a browser.
+
+`brave` and `yahoo` therefore keep the HTTP request as the first attempt and escalate to the
+shared browser render once, inside the same request deadline, when that attempt fails in a way a
+browser can fix: any `Blocked` outcome, or `BadStatus` in the `429`/`5xx` class. The rendered DOM
+is parsed by the provider's existing parser, so the four-outcome contract is unchanged. Without a
+browser build, a discovered browser, or the browser enabled, the provider reports the HTTP failure
+exactly as before.
+
+The contract is `meta::engines::render::SerpRenderer`; engines never import the browser module.
+The implementation lives in `src/serp_render/browser.rs`, above both `meta` and `fetch`, so
+`src/fetch/**` stays independent of `src/meta/**`. The server state installs it when
+`[fetch.browser].enabled` is true and a browser was discovered, reusing the process-wide lifecycle
+that `fetch` already owns.
+
+Two consequences worth stating:
+
+- A rendered Brave result links to an opaque `/go/v1#…` token, and its displayed URL is the only
+  readable destination. `brave.rs` rebuilds it from `cite.snippet-url`, joining breadcrumb
+  segments while they stay URI-shaped and stopping at the first human-readable one, so a truncated
+  display degrades to its exact prefix rather than inventing a path.
+- A browser-gated search costs a render (seconds, not milliseconds). The cost is bounded by the
+  request deadline and the render caps; a provider that cannot be served in that budget reports the
+  HTTP failure, never a partial result set.
+
 `EngineError::Blocked` classifies as `ErrorClass::Blocked` (`blocked`) and mirrors as
 `FailureClass::Blocked`; it is a provider failure with a rate-limit cooldown, never absence.
 `ParseFailed` maps to `parse_error` and to `parse_shape = shifted`.
@@ -202,8 +237,8 @@ Requirements for any change to an HTML parser:
 ## Challenge solving
 
 ADR-0009 permits in-process solving of published computational proof-of-work challenges and
-nothing else. The capability is off by default; when it is off or the budget is exhausted, the
-provider reports `blocked` exactly as it does today. Nothing in this section authorizes answering
+nothing else. The capability is on by default (ADR-0019 §4); when it is explicitly off or the
+budget is exhausted, the provider reports `blocked` exactly as the unsolved case does. Nothing in this section authorizes answering
 an interactive CAPTCHA, driving a browser, or contacting a solving service.
 
 Two upstreams in the engine set use this gate. Measured parameters on 2026-11-11:
@@ -292,6 +327,13 @@ Implementation:
   offline, pure-computation dependencies and no network, TLS, browser, or service dependency was
   added. The verify POST hand-builds its `multipart/form-data` body with a fixed boundary because
   the guard `eggfetch_feature_budget_stays_bounded` forbids the `multipart` eggfetch feature.
+- One ALTCHA solve implementation serves both callers. `src/meta/challenge/altcha.rs` owns the
+  parse, the counter search, and the verification POST; the engine-side caller fetches the
+  challenge document first, and the fetch-path caller in `src/challenge_replay/altcha.rs` may hand
+  over a document the page published inline. The published PBKDF2 `cost` is the work factor of a
+  single counter iteration, so it is the one published parameter that can overrun the wall-clock
+  ceiling on its own; a `cost` above `MAX_PBKDF2_COST` is refused as `malformed parameters`
+  rather than started.
 - Every solve runs under four ceilings: a challenge-difficulty ceiling, a total candidate/iteration
   ceiling, a wall-clock ceiling, and one solve per provider per cookie TTL. A solve that reaches a
   ceiling fails; it never loops. The ceilings are configuration, not constants. The shipped
@@ -315,8 +357,16 @@ Implementation:
   `web_fetch` classifies its bounded body with `src/fetch/challenge.rs`, solves a detected Anubis
   challenge once via `anubis::solve_and_verify`, and replays once with the cookie pairs the pass
   response issued, joined with `; `, on the first hop. `src/fetch/**` remains independent of
-  `src/meta/**`; only `src/mcp/tools/web_fetch.rs` orchestrates the solve. A fetch-side pass pair set
-  is never cached for reuse, so `cookie_ttl_seconds` still governs search upstreams only.
+  `src/meta/**`; the shared `src/challenge_replay/` module orchestrates the solve for every
+  surface, and `src/mcp/tools/web_fetch.rs`, `src/mcp/tools/repo_fetch.rs`, and
+  `src/commands/fetch.rs` all reach it. A fetch-side pass pair set is reused from the
+  process-local, origin-keyed cache in `src/challenge_replay/cache.rs`, so `cookie_ttl_seconds`
+  governs the search upstreams and the fetch path alike.
+- A stored pair set the upstream refuses evicts the entry and the same call continues into the
+  ordinary solve path, so a stale pair set costs no second fetch (ADR-0018). The refusal is a
+  challenge page; a transport error, a timeout, and a non-2xx status are not refusals, so the
+  stored pair set is kept and no solve is attempted. The call still performs at most one solve and
+  one replay, and the refused pair set is presented at most once.
 - Pass-cookie identity is opaque, like the challenge id. The Anubis solver never looks for a fixed
   name: it takes every non-deletion pair the pass-challenge response set (empty values and deletion
   cookies dropped, duplicate names resolved by the last non-deletion value at the first position),
@@ -382,6 +432,7 @@ Implementation:
         },
         "cookie_hits": 4,
         "cookie_misses": 3,
+        "browser_completions": 0,
         "last_candidates": 291,
         "last_wall_clock_ms": 420
       }
@@ -391,6 +442,9 @@ Implementation:
 
   `solves_attempted == solves_succeeded + refusals_total + solves_errored` holds by construction
   because one recording call increments the attempt and exactly one outcome under one lock.
+  `browser_completions` is that counter's sibling, not a solve: it counts walls a browser render
+  completed on the fetch path, moves no solve or refusal counter, and carries no cookie or challenge
+  parameter.
   `last_candidates` is the budget attempts the most recent attempt consumed; `last_wall_clock_ms` is
   its parse-to-decision time, excluding every HTTP request. Both are `0` when the attempt ended
   before any computation. The refusal key set is fixed and always emitted in full, so a zero is
@@ -428,9 +482,9 @@ IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilit
 |-------------|--------|------------------------|
 | `duckduckgo` | `DuckDuckGoEngine` | HTML scrape, keyless |
 | `brave` | `BraveEngine` | HTML scrape, keyless (distinct from `brave_api`) |
-| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). With `[search.challenge]` disabled or `max_difficulty` below the published difficulty the engine reports `blocked`; a permitted solve replays the pairs the pass response issued. Not in `default_providers` |
+| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). The solver is on by default at `max_difficulty = 6`; with `[search.challenge]` disabled or a lower ceiling the engine reports `blocked`, and a permitted solve replays the pairs the pass response issued. Not in `default_providers` |
 | `yahoo` | `YahooEngine` | HTML scrape, keyless |
-| `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. With `[search.challenge]` disabled the engine reports `blocked`; with it enabled the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs |
+| `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. By default the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs; with `[search.challenge]` disabled the engine reports `blocked` |
 | `searxng` | `SearxngEngine` | JSON API, self-hosted `base_url` required; skipped as `missing_searxng_config` otherwise; no native capability flags claimed |
 | `brave_api` | `BraveApiEngine` | JSON API, `BRAVE_API_KEY`; native safe-search, freshness/date-range, language, region, news, result timestamps |
 | `exa` | `ExaEngine` | JSON API (`POST /search`), `EXA_API_KEY`; native freshness/date-range, domain filters, result timestamps; highlights fetched only on excerpt demand |

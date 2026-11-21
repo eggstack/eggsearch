@@ -21,45 +21,39 @@ pub const ALL_PRESETS: &[McpToolPreset] = &[
 ];
 
 const FULL_TOOLS: &[&str] = &[
-    "batch_fetch",
     "build_evidence_bundle",
+    "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_fetch",
     "repo_map",
     "repo_search",
     "research_search",
     "security_search",
-    "web_fetch",
     "web_search",
 ];
 
 const RESEARCH_TOOLS: &[&str] = &[
-    "batch_fetch",
     "build_evidence_bundle",
+    "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_fetch",
     "research_search",
-    "web_fetch",
     "web_search",
 ];
 
 const CODE_TOOLS: &[&str] = &[
-    "batch_fetch",
     "build_evidence_bundle",
+    "fetch",
     "provider_status",
     "repo_fetch",
     "repo_map",
     "repo_search",
-    "web_fetch",
     "web_search",
 ];
 
-const MINIMAL_TOOLS: &[&str] = &[
-    "batch_fetch",
-    "build_evidence_bundle",
-    "web_fetch",
-    "web_search",
-];
+const MINIMAL_TOOLS: &[&str] = &["build_evidence_bundle", "fetch", "web_search"];
 
 /// Canonical tool names advertised by a preset, in alphabetical order.
 pub fn tools_for(preset: McpToolPreset) -> &'static [&'static str] {
@@ -116,9 +110,6 @@ pub fn filter_tools(
     preset: McpToolPreset,
     tools: Vec<rmcp::model::Tool>,
 ) -> Vec<rmcp::model::Tool> {
-    if preset == McpToolPreset::Full {
-        return tools;
-    }
     tools
         .into_iter()
         .filter(|tool| is_allowed(preset, tool.name.as_ref()))
@@ -208,9 +199,10 @@ const START_PRIMITIVES: &[(&str, &str)] = &[
 const SPECIALIST_LINE_TOOLS: &[&str] = &[
     "security_search",
     "research_search",
+    "knowledge_brief",
     "repo_fetch",
     "repo_map",
-    "batch_fetch",
+    "fetch",
     "build_evidence_bundle",
 ];
 
@@ -244,8 +236,8 @@ const INSTRUCTION_SLOTS: &[InstructionSlot] = &[
     },
     InstructionSlot::Specialists,
     InstructionSlot::Static {
-        requires: &["web_fetch", "batch_fetch"],
-        text: "- Do not use web_fetch as a crawler. Each `web_fetch` call fetches one explicit HTTP(S) URL selected from search results, user input, or host policy. Use `batch_fetch` for several explicitly selected targets.",
+        requires: &["fetch"],
+        text: "- Use `fetch` for one or more explicitly selected web URLs or repository targets by passing one tagged item or an array; never use it as a crawler.",
     },
     InstructionSlot::Static {
         requires: &[],
@@ -348,8 +340,8 @@ Global rules:
 - Search tools discover candidate sources; fetch tools inspect only explicitly selected targets.
 - Start with the task-appropriate search primitive (`web_search` for general research, `repo_search` for codebases, `security_search` for advisories, `research_search` for complex comparisons). Do not start with `provider_status`.
 - `provider_status` is diagnostic for hosts and troubleshooting, not a normal first research step. Hosts may inspect it during bootstrap; agents call it only when provider availability itself is relevant.
-- Specialist tools (`security_search`, `research_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed.
-- Do not use web_fetch as a crawler. Each `web_fetch` call fetches one explicit HTTP(S) URL selected from search results, user input, or host policy. Use `batch_fetch` for several explicitly selected targets.
+- Specialist tools (`security_search`, `research_search`, `knowledge_brief`, `repo_fetch`, `repo_map`, `fetch`, `build_evidence_bundle`) are used only when their domain semantics are needed.
+- Use `fetch` for one or more explicitly selected web URLs or repository targets by passing one tagged item or an array; never use it as a crawler.
 - Respect bounded output and follow `next_actions` hints for the most productive follow-up.
 - Use `build_evidence_bundle` to package already-selected evidence for handoff; it does not search, fetch, or summarize.
 
@@ -407,12 +399,13 @@ Tool details and schemas are available through `tools/list`.";
     fn preset_sizes_match_the_contract() {
         assert_eq!(tools_for(McpToolPreset::Full).len(), 10);
         assert_eq!(tools_for(McpToolPreset::Research).len(), 7);
-        assert_eq!(tools_for(McpToolPreset::Code).len(), 8);
-        assert_eq!(tools_for(McpToolPreset::Minimal).len(), 4);
+        assert_eq!(tools_for(McpToolPreset::Code).len(), 7);
+        assert_eq!(tools_for(McpToolPreset::Minimal).len(), 3);
         assert!(hidden_tools(McpToolPreset::Full).is_empty());
         assert_eq!(
             hidden_tools(McpToolPreset::Minimal),
             vec![
+                "knowledge_brief",
                 "provider_status",
                 "repo_fetch",
                 "repo_map",
@@ -451,7 +444,7 @@ Tool details and schemas are available through `tools/list`.";
         serde_json::json!({
             "results": [{"url": "https://example.test/a", "title": "A"}],
             "next_actions": [
-                {"tool": "web_fetch", "reason_code": "inspect_source", "priority": 1},
+                {"tool": "fetch", "reason_code": "inspect_source", "priority": 1},
                 {"tool": "repo_search", "reason_code": "code_context", "priority": 2},
                 {"tool": "security_search", "reason_code": "advisory", "priority": 3},
                 {"tool": "build_evidence_bundle", "reason_code": "handoff", "priority": 4},
@@ -460,20 +453,20 @@ Tool details and schemas are available through `tools/list`.";
                 "workflow_id": "generic",
                 "next_actions": [
                     {"tool": "repo_map", "reason_code": "layout", "priority": 1},
-                    {"tool": "web_fetch", "reason_code": "inspect_source", "priority": 2},
+                    {"tool": "fetch", "reason_code": "inspect_source", "priority": 2},
                 ],
             },
             "workflow_recipes": [{
                 "id": "generic_lookup",
-                "step_tools": ["web_search", "web_fetch", "repo_map", "security_search"],
+                "step_tools": ["web_search", "fetch", "repo_map", "security_search"],
                 "steps": [
                     {"order": 1, "tool": "web_search", "purpose": "discover"},
                     {"order": 2, "tool": "repo_map", "purpose": "orient"},
-                    {"order": 3, "tool": "web_fetch", "purpose": "inspect"},
+                    {"order": 3, "tool": "fetch", "purpose": "inspect"},
                 ],
                 "fallbacks": [
                     {"description": "providers unavailable", "tool": "provider_status", "when": "always"},
-                    {"description": "use one fetch", "tool": "web_fetch", "when": "always"},
+                    {"description": "use one fetch", "tool": "fetch", "when": "always"},
                 ],
             }],
         })
@@ -513,24 +506,24 @@ Tool details and schemas are available through `tools/list`.";
         let filtered = filter_payload(McpToolPreset::Minimal, synthetic_payload());
         assert_eq!(
             action_tools(&filtered, "/next_actions"),
-            vec!["web_fetch", "build_evidence_bundle"]
+            vec!["fetch", "build_evidence_bundle"]
         );
         assert_eq!(
             action_tools(&filtered, "/workflow_coverage/next_actions"),
-            vec!["web_fetch"]
+            vec!["fetch"]
         );
         assert_eq!(
             step_tools(&filtered),
-            vec!["web_search", "web_fetch"],
+            vec!["web_search", "fetch"],
             "step_tools must keep only advertised names"
         );
         assert_eq!(
             action_tools(&filtered, "/workflow_recipes/0/steps"),
-            vec!["web_search", "web_fetch"]
+            vec!["web_search", "fetch"]
         );
         assert_eq!(
             action_tools(&filtered, "/workflow_recipes/0/fallbacks"),
-            vec!["web_fetch"]
+            vec!["fetch"]
         );
         assert_eq!(filtered["next_actions_omitted"], serde_json::json!(7));
         assert_eq!(filtered["results"], synthetic_payload()["results"]);
@@ -572,7 +565,7 @@ Tool details and schemas are available through `tools/list`.";
     #[test]
     fn filter_payload_is_a_noop_when_every_pointer_is_visible() {
         let payload = serde_json::json!({
-            "next_actions": [{"tool": "web_fetch", "reason_code": "inspect", "priority": 1}],
+            "next_actions": [{"tool": "fetch", "reason_code": "inspect", "priority": 1}],
             "workflow_recipes": [{"step_tools": ["web_search"], "steps": [{"order": 1, "tool": "web_search"}], "fallbacks": []}],
         });
         let filtered = filter_payload(McpToolPreset::Minimal, payload.clone());

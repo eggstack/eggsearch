@@ -412,6 +412,29 @@ impl FetchCache {
         true
     }
 
+    pub async fn invalidate_raw_response(&self, key: &RawCacheKey, raw_content_hash: u64) {
+        let _operation = self.operation_gate.write().await;
+        let mut raw = self.raw.lock().await;
+        if let Some(evicted) = raw.pop(key) {
+            saturating_sub_counter(&self.current_raw_bytes, evicted.body.len());
+        }
+        drop(raw);
+
+        let mut derived = self.derived.lock().await;
+        let keys_to_remove: Vec<DerivedCacheKey> = derived
+            .iter()
+            .filter(|(derived_key, _)| {
+                derived_key.scope == key.scope && derived_key.raw_content_hash == raw_content_hash
+            })
+            .map(|(derived_key, _)| derived_key.clone())
+            .collect();
+        for derived_key in keys_to_remove {
+            if let Some(evicted) = derived.pop(&derived_key) {
+                saturating_sub_counter(&self.current_derived_bytes, derived_entry_bytes(&evicted));
+            }
+        }
+    }
+
     pub async fn get_derived(&self, key: &DerivedCacheKey) -> Option<DerivedDocumentCacheEntry> {
         self.get_derived_shared(key)
             .await
@@ -720,6 +743,31 @@ pub fn should_cache_response(
         }
     }
     true
+}
+
+pub fn response_cache_status(
+    status: u16,
+    content_type: Option<&str>,
+    response_headers: Option<&HashMap<String, String>>,
+    scope: &CacheScope,
+) -> CacheStatus {
+    let mut headers = http::HeaderMap::new();
+    if let Some(response_headers) = response_headers {
+        for (name, value) in response_headers {
+            if let (Ok(name), Ok(value)) = (
+                http::header::HeaderName::from_bytes(name.as_bytes()),
+                http::header::HeaderValue::from_str(value),
+            ) {
+                headers.insert(name, value);
+            }
+        }
+    }
+    let (freshness, _) = CacheFreshness::from_headers(&headers);
+    if should_cache_response(status, content_type, &freshness, scope) {
+        CacheStatus::Miss
+    } else {
+        CacheStatus::NotCacheable
+    }
 }
 
 pub fn build_request_conditional_headers(validators: &CacheValidators) -> Vec<(String, String)> {

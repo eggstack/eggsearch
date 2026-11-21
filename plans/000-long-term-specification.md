@@ -15,10 +15,14 @@ Eggsearch is a lightweight MCP search/fetch server for AI agents: live
 metasearch with RRF dedup, bounded fetch, and deterministic evidence bundles.
 
 - Single library + binary crate, not a workspace.
-- Stable contract is 10 MCP tools plus CLI. The narrow `src/sdk.rs` facade
-  is an additional application interface for native consumers; the remaining
-  Rust module tree is an implementation detail with no general semver library
-  guarantee (see `src/lib.rs` and `architecture/python-library.md`).
+- Stable contract is ten canonical MCP tools plus CLI. The canonical fetch
+  tool replaces the advertised `web_fetch` and `batch_fetch` entries under
+  ADR-0016; those names remain callable compatibility aliases but are not
+  advertised or included in canonical discovery and `next_actions`. The narrow
+  `src/sdk.rs` facade is an additional application interface for native
+  consumers; the remaining Rust module tree is an implementation detail with
+  no general semver library guarantee (see `src/lib.rs` and
+  `architecture/python-library.md`).
 - Transports: client-owned `mcp stdio` or explicit loopback-only `mcp serve`.
   Non-loopback/LAN/public MCP exposure is a non-goal.
 - Dependency flow: `core <- meta <- mcp <- commands`; `fetch` is independent
@@ -26,25 +30,33 @@ metasearch with RRF dedup, bounded fetch, and deterministic evidence bundles.
 
 ## 2. Stable MCP tool contract
 
-The 10 stable tools are:
+The ten canonical tools are:
 
-- `web_search`
-- `web_fetch`
-- `batch_fetch`
+- `build_evidence_bundle`
+- `fetch`
+- `knowledge_brief`
 - `provider_status`
-- `repo_search`
 - `repo_fetch`
 - `repo_map`
-- `security_search`
+- `repo_search`
 - `research_search`
-- `build_evidence_bundle`
+- `security_search`
+- `web_search`
 
-The tool set MUST remain exactly 10 unless the tool-matrix, docs contract
-tests, and CodeGG integration docs move in the same change (enforced by
-`tests/static_guards.rs`). MCP tools MUST call the `MetadataSearchAdapter`,
-never engines directly. New tools REQUIRE a dedicated module under
-`src/mcp/tools/` with shared validation in `common.rs` and goal/workflow
-resolution in `canonical.rs`, registered in `src/mcp/server.rs`.
+`fetch` accepts one typed web or repo item or a non-empty array of items. The
+legacy names `web_fetch` and `batch_fetch` remain callable compatibility
+aliases but are absent from `tools/list`, canonical tool metadata, and
+`next_actions`; their legacy request/response contracts remain intact. ADR-0016
+is the explicit, narrow exception authorizing this replacement. ADR-0020 is
+the explicit, narrow exception authorizing `knowledge_brief` and the move from
+nine advertised tools to ten. The canonical inventory MUST remain exactly ten;
+a further count/name change requires a later accepted ADR and coordinated
+updates to the tool matrix, contract tests, and CodeGG integration
+documentation (enforced by `tests/static_guards.rs`).
+MCP tools MUST call the `MetadataSearchAdapter`, never engines directly. New
+tools REQUIRE a dedicated module under `src/mcp/tools/` with shared validation
+in `common.rs` and goal/workflow resolution in `canonical.rs`, registered in
+`src/mcp/server.rs`.
 
 ## 3. Retrieval architecture
 
@@ -127,10 +139,10 @@ discover -> rank -> select -> bounded fetch -> deterministic evidence handoff
 ## 7. Performance and footprint
 
 Optimization is optimization-with-equivalence. It MUST NOT change the
-ten-tool surface, ranking weights, trust/SSRF semantics, cache policy, batch
-budget semantics, public Rust compatibility, browser/PDF availability,
-provider coverage, or integration verification merely to improve benchmark or
-binary-size numbers.
+ten-tool canonical surface established by ADR-0016 and extended by ADR-0020, ranking weights,
+trust/SSRF semantics, cache policy, batch budget semantics, public Rust
+compatibility, browser/PDF availability, provider coverage, or integration
+verification merely to improve benchmark or binary-size numbers.
 
 - Hot paths use shared immutable inventory/cache ownership and score/select
   candidates once; deterministic tie ordering is preserved.

@@ -473,6 +473,42 @@ pub fn map_tool_result(
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ImageAttachment {
+    pub association: Option<String>,
+    pub png: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ToolOutcome {
+    pub value: serde_json::Value,
+    pub images: Vec<ImageAttachment>,
+}
+
+pub(crate) fn map_tool_outcome(
+    result: Result<ToolOutcome, ToolError>,
+) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use rmcp::model::ContentBlock;
+
+    match result {
+        Ok(outcome) => {
+            let mut mapped = rmcp::model::CallToolResult::structured(outcome.value);
+            for image in outcome.images {
+                if let Some(association) = image.association {
+                    mapped.content.push(ContentBlock::text(association));
+                }
+                mapped
+                    .content
+                    .push(ContentBlock::image(STANDARD.encode(image.png), "image/png"));
+            }
+            Ok(mapped)
+        }
+        Err(error) => map_tool_result(Err(error)),
+    }
+}
+
 #[cfg(feature = "browser")]
 pub(crate) fn browser_manual_interaction_error(
     origin: &str,
@@ -797,7 +833,8 @@ pub(crate) async fn run_browser_fetch(
     sanitize_output: bool,
     policy: &crate::fetch::browser::RenderPolicy,
     profile_dir: Option<&std::path::Path>,
-) -> Result<crate::fetch::browser::BrowserFetchResult, crate::fetch::browser::BrowserFetchError> {
+    capture: bool,
+) -> Result<crate::fetch::browser::BrowserFetchOutcome, crate::fetch::browser::BrowserFetchError> {
     // Headless renders are the most expensive thing this server does, so they
     // are bounded twice: process-wide by `[fetch.browser].global_concurrency`
     // and per origin by `OriginPolicy::browser_concurrency`. Browser escalation
@@ -845,12 +882,31 @@ pub(crate) async fn run_browser_fetch(
             )
         },
     );
-    let result = crate::fetch::browser::browser_fetch_with_policy(
+    #[cfg(all(feature = "mock", feature = "browser"))]
+    let result = if let Some(browser_fetch_override) = &state.browser_fetch_override {
+        browser_fetch_override(crate::mcp::state::MockBrowserRequest {
+            url: url.to_string(),
+            capture,
+        })
+    } else {
+        crate::fetch::browser::browser_fetch_outcome(
+            &request_lifecycle,
+            url,
+            &config,
+            sanitize_output,
+            policy,
+            capture,
+        )
+        .await
+    };
+    #[cfg(not(all(feature = "mock", feature = "browser")))]
+    let result = crate::fetch::browser::browser_fetch_outcome(
         &request_lifecycle,
         url,
         &config,
         sanitize_output,
         policy,
+        capture,
     )
     .await;
     if profile_dir.is_some() {
@@ -883,33 +939,6 @@ pub(crate) fn project_cached_response(
     response.text = Some(text);
     document.text_chars_returned = chars;
     document.text_truncated = truncated;
-}
-
-pub(crate) fn project_cached_document(
-    document: &mut crate::fetch::cache::CachedExtractedDocument,
-    final_url: &str,
-    window_chars: usize,
-    sanitize_output: bool,
-) {
-    let Some(structured) = document.document.as_mut() else {
-        return;
-    };
-    if structured.kind != crate::core::document::DocumentKind::Html || structured.blocks.is_empty()
-    {
-        return;
-    }
-    let markdown = structured.text_format == "markdown";
-    let (projected, truncated) =
-        crate::fetch::projection::project_document_text(&structured.blocks, window_chars, markdown);
-    let chars = projected.chars().count();
-    let text = if sanitize_output {
-        crate::core::sanitize::frame(&projected, "text", final_url)
-    } else {
-        projected
-    };
-    document.text = Some(text);
-    structured.text_chars_returned = chars;
-    structured.text_truncated = truncated;
 }
 
 pub(crate) fn cached_document_response(

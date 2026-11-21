@@ -19,7 +19,7 @@ All credentialed providers are disabled or non-routable unless explicitly config
 
 ## Web Search Providers
 
-These providers require no API key and parse public search-result HTML. Like SearXNG, eggsearch is a metasearch system: it queries independent upstream engines and combines their results rather than maintaining a web index. HTML is an upstream format, not a stable API, so markup changes, rate limits, and challenge pages can cause provider-specific failures. eggsearch distinguishes those failures from a confirmed empty result. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) for observed HTML providers. Respect each upstream's terms and rate limits. Challenge solving is opt-in and limited to bounded computational proof-of-work; interactive CAPTCHAs, third-party solvers, proxy rotation, and user-agent spoofing are not supported. See [Capabilities and Optional Features](features.md#bounded-challenge-solving).
+These providers require no API key and parse public search-result HTML. Like SearXNG, eggsearch is a metasearch system: it queries independent upstream engines and combines their results rather than maintaining a web index. HTML is an upstream format, not a stable API, so markup changes, rate limits, and challenge pages can cause provider-specific failures. eggsearch distinguishes those failures from a confirmed empty result. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) for observed HTML providers. Respect each upstream's terms and rate limits. Challenge solving is on by default and limited to bounded computational proof-of-work; set `[search.challenge].enabled = false` to disable it. Interactive CAPTCHAs, third-party solvers, proxy rotation, and user-agent spoofing are not supported. See [Capabilities and Optional Features](features.md#bounded-challenge-solving).
 
 The SearXNG provider below is different: it calls a SearXNG instance's JSON API, not its HTML page.
 
@@ -38,25 +38,27 @@ The SearXNG provider below is different: it calls a SearXNG instance's JSON API,
 - Included in `default_providers`: yes
 - No configuration needed
 - No API key required
+- Brave answers an automated client with HTTP 429 and a proof-of-work page. When
+  `[fetch.browser].enabled` is true and Chrome or Chromium was discovered, the provider retries
+  that wall once through the shipped browser, which completes it in about two seconds; without a
+  browser it reports the challenge in its error. See [Browser Rendering](features.md#browser-rendering).
 
 ### Startpage
 
 - ID: `startpage`
 - Enabled by default, but not included in `default_providers`
 - No API key is required
-- The upstream may present a proof-of-work challenge. Without challenge solving, eggsearch reports the provider as `blocked`.
-- To opt in, enable the provider and bounded challenge solving:
+- The upstream presents a proof-of-work challenge at difficulty 6; the shipped solver solves it by default.
+- To select the provider, enable it (challenge solving is already on):
 
   ```toml
   [search.providers]
   startpage = true
-
-  [search.challenge]
-  enabled = true
   ```
 
-Challenge solving is off by default and can add time to a search. Its difficulty,
-attempt, and timeout limits are configurable. See [Capabilities and Optional
+Challenge solving is on by default and can add time to a search. If you disable it
+(`[search.challenge]\nenabled = false`), a challenged provider reports `blocked`. Its
+difficulty, attempt, and timeout limits are configurable. See [Capabilities and Optional
 Features](features.md#bounded-challenge-solving) for limits and restrictions.
 
 ### Yahoo (default)
@@ -65,6 +67,9 @@ Features](features.md#bounded-challenge-solving) for limits and restrictions.
 - Enabled by default: yes
 - Included in `default_providers`: yes
 - No configuration needed
+- Yahoo answers a client that announces a headless browser with HTTP 500 and an empty body. The
+  provider renders the result page in the shipped browser when one is available and otherwise
+  reports the status, so enabling browser rendering is what makes this provider return results.
 
 ### Mojeek
 
@@ -76,10 +81,9 @@ Features](features.md#bounded-challenge-solving) for limits and restrictions.
   ```toml
   [search.providers]
   mojeek = true
-
-  [search.challenge]
-  enabled = true
   ```
+
+  Its ALTCHA proof-of-work wall is solved by the default solver settings.
 
 The upstream may require an ALTCHA proof-of-work challenge. Challenge solving is
 off by default, uses configured limits, and can add CPU time. See
@@ -481,6 +485,7 @@ SearXNG returns `403` when a requested format is disabled, and many public insta
 - Enabled by default: yes
 - No API key needed
 - Used primarily by `security_search` for vulnerability lookups
+- Identifier-bearing `security_search` requests (`cve_id`, `ghsa_id`, `osv_id`, `rustsec_id`, or `package`) select OSV automatically when it is enabled; no `providers` list is needed, and an explicit list stays authoritative. Disabling `osv` removes the native lane and the response reports that no enabled native advisory provider is available.
 
 ## Security Advisory Providers
 
@@ -701,13 +706,16 @@ as native coverage, so a real `native_*_unavailable` warning is still reported.
 - `enabled`: the configured `[search.challenge].enabled` value.
 - `untracked_providers`: records dropped because the four-entry provider cap was already full.
 - `providers.<id>`: `solves_attempted`, `solves_succeeded`, `solves_errored`, `cookie_hits`,
-  `cookie_misses`, `last_candidates`, `last_wall_clock_ms`, and a fixed ten-key `refusals` object
+  `cookie_misses`, `browser_completions`, `last_candidates`, `last_wall_clock_ms`, and a fixed
+  ten-key `refusals` object
   (`difficulty above ceiling`, `attempts exhausted`, `wall clock exhausted`, `unsupported scheme`,
   `malformed parameters`, `pass cookie absent`, `pass cookie rejected`, `challenge expired`,
   `already spent`, `unsafe base prefix`).
 
 `providers` is `{}` until the first solve, so a stable key set is visible before anything runs.
 `solves_attempted` always equals `solves_succeeded + refusals_total + solves_errored`.
+`browser_completions` counts walls a browser render completed on the fetch path; it is not a solve
+and moves no solve or refusal counter.
 `last_candidates` and `last_wall_clock_ms` describe only the most recent attempt and are `0` when it
 ended before any computation. An extension refusal is one of the `unsupported scheme` entries: the
 key is unchanged and the sentence names the extension list. All values are process-lifetime totals

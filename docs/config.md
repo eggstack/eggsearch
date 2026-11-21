@@ -117,7 +117,7 @@ All 44 built-in providers:
 |----------|------|----------|-------|
 | `duckduckgo` | html_scrape | none | Default generic provider |
 | `brave` | html_scrape | none | Default generic provider |
-| `startpage` | html_scrape | none | Selectable; the upstream Anubis proof-of-work wall is solved when `[search.challenge].enabled = true` |
+| `startpage` | html_scrape | none | Selectable; the upstream Anubis proof-of-work wall is solved by default |
 | `yahoo` | html_scrape | none | Default generic provider |
 | `mojeek` | html_scrape | none | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
@@ -316,24 +316,24 @@ Some keyless upstreams answer a request with a computational proof-of-work
 challenge instead of results. ADR-0009 permits solving those in-process and
 permits nothing else: no interactive CAPTCHA, image puzzle, OCR, human or
 third-party solving service, credential bypass, proxy rotation, or
-user-agent spoofing. The capability is off by default.
+user-agent spoofing. The capability is on by default.
 
 ```toml
 [search.challenge]
-enabled = false           # operator opt-in
-max_difficulty = 5        # Anubis ceiling; difficulty 6 is ~16.8M candidates
-max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
-timeout_ms = 2000         # wall-clock ceiling per solve
-cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider
+enabled = true            # default; set false to disable the solver
+max_difficulty = 6        # Anubis ceiling; difficulty 6 is ~16.8M candidates
+max_attempts = 100000000  # candidate / PBKDF2-derivation ceiling per solve
+timeout_ms = 10000        # wall-clock ceiling per solve
+cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider and per fetch origin
 ```
 
 | Setting | Default | Bounds | Meaning |
 |---------|---------|--------|---------|
-| `enabled` | `false` | none | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
-| `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
-| `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
-| `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
-| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider. `0` disables reuse, so every request re-solves. |
+| `enabled` | `true` | none | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
+| `max_difficulty` | `6` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. The default covers the difficulty Startpage publishes today. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
+| `max_attempts` | `100000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default sits above what the wall clock can spend at measured release speed, so `timeout_ms` governs the cost while the ceiling still refuses a projected difficulty 7 (`16^7` candidates). |
+| `timeout_ms` | `10000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
+| `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider, and for an origin on the fetch path. `0` disables reuse, so every request re-solves. |
 
 Challenge solving is supported for bounded, non-interactive proof-of-work
 challenges from Mojeek and Startpage. If you raise `max_difficulty`, increase
@@ -342,11 +342,22 @@ configured limit fail with a structured `blocked` outcome. The solver does not
 attempt interactive CAPTCHA, OCR, third-party solving services, or unsupported
 challenge methods.
 
-Search pass cookies are held in process memory only, bounded by
+`max_difficulty` gates the Anubis family only. An ALTCHA challenge publishes no
+difficulty: it is bounded by `max_attempts`, which counts PBKDF2 counter
+iterations, and by `timeout_ms`. The published PBKDF2 `cost` multiplies the work
+each iteration performs, so a challenge with a very large `cost` is refused as
+malformed rather than started.
+
+Pass cookies are held in process memory only, bounded by
 `cookie_ttl_seconds`, and never written to disk or logs. On the HTTP path,
-`web_fetch` can solve one Anubis challenge when enabled. Set `render = "http_only"`
-to avoid automatic browser escalation for that request. Fetch-side pass cookies
-are used for one replay and not stored. `batch_fetch` does not solve challenges.
+`web_fetch` can solve one Anubis or ALTCHA challenge when enabled. Set
+`render = "http_only"` to avoid automatic browser escalation for that request.
+A fetch-side pass cookie is reused for a later fetch to the same origin, from a
+process-local cache keyed by origin and bounded by the same published lifetime
+and the same `cookie_ttl_seconds` ceiling. A fetch that crossed an origin
+stores nothing and reuses nothing, and a pair set the upstream rejects is
+evicted so the next fetch solves again. `batch_fetch` inherits the same solve
+behavior through the shared web-fetch handler.
 See [Capabilities and Optional Features](features.md#bounded-challenge-solving)
 for the supported methods and safety limits.
 
@@ -693,6 +704,78 @@ schema for compatibility but is unsupported.
 
 When `allow_private_network = false` (the default), eggsearch blocks fetches to all RFC 1918 private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT (`100.64.0.0/10`), link-local (`169.254.0.0/16`), multicast, reserved, and documentation addresses. When `allow_localhost = false` (the default), loopback addresses (`127.0.0.0/8`, `::1`) are blocked independently. The two flags are fully independent. Redirect targets are validated against these same ranges. See [safety.md](safety.md#blocked-address-ranges) for the full policy table.
 
+## Knowledge Delta
+
+Optional `[knowledge_delta]` section for model cutoffs and the local evidence
+index. Both are opt-in: a live `knowledge_brief` resolves a cutoff if it can,
+reads no index, and writes nothing.
+
+### Model cutoffs
+
+Resolution order is caller `cutoff_override`, then
+`[knowledge_delta.cutoffs.<model>]`, then the bundled verified catalog in
+`src/meta/knowledge_delta/catalog.json`. A bundled row exists only after its
+date was checked against the vendor's own publication, and every row carries
+`source`, `source_url` and `verified_at`;
+`model_resolution.catalog_as_of` reports the newest verification date in the
+shipped catalog. An unrecognized model resolves to `unknown` and is not an
+error. Operator and caller entries keep precedence over bundled rows and are
+validated at load. See [model cutoffs](knowledge-delta-cutoffs.md) for the
+manifest format, entry statuses and the update procedure.
+
+Caller `max_items` defaults to 8 and is capped at 8. Caller `max_chars`
+defaults to 6000 and is capped at 6000. Operator cutoffs are not index
+settings. Invalid cutoff precision or date fails closed at load.
+
+```toml eggsearch-config
+[knowledge_delta.cutoffs.example-model]
+date = "2024-06-01"
+precision = "day"
+source = "operator"
+verified_at = "2026-11-20"
+
+[knowledge_delta.index]
+enabled = false
+max_bytes = 67108864
+max_documents = 10000
+max_excerpt_chars = 500
+retention_days = 365
+```
+
+### Local evidence index
+
+The index is disabled by default, and `retain` is rejected while it is
+disabled. An explicit `path` ending in `.sqlite` or `.db` is the database
+file; any other path, or the default, is
+`<config_dir>/knowledge-delta/<partition>/index.sqlite`. Partitions are
+`anonymous` or an opaque `prof_` id, never a display name.
+
+A clean setup is two calls. First enable the index, then seed it with public,
+cacheable evidence by calling `knowledge_brief` with `refresh: "live"` and
+`retain: true` for a topic whose sources carry provider-declared timestamps.
+Then read it back with `refresh: "index"` (index only) or
+`refresh: "prefer_live"` (live search plus index hits), optionally with
+`related_topics: true` to follow one source-backed edge. `retain` persists
+only bounded excerpts and spans from already selected, fetch-verified deltas; a
+search snippet alone is never retained.
+
+`coverage.index_status` distinguishes the index states: `not_opened` (the
+call did not touch it), `disabled` (the call asked to read or retain while
+`enabled = false`), `open`, `degraded` (opened, but a lookup or status probe
+failed), and `offline` (the file could not be opened at all). `degraded` and
+`offline` also return a warning naming the failure, and an `index` refresh
+reports `freshness_unverified: true` because no live search ran.
+
+When an `index` refresh emits nothing, `coverage.empty_state_reason` names
+the cause: `index_not_seeded` when the partition holds no retained documents
+at all, `index_stale` when every retained document is older than
+`retention_days`, and `no_matching_index_hits` when retained documents exist
+but none matches the topic after the cutoff. The live reasons are
+`no_cutoff_resolved`, `no_dated_sources`,
+`all_sources_at_or_before_cutoff`, and `deltas_emitted`.
+
+Disable the index by setting `enabled = false` or removing the section; a live brief then neither reads nor writes it. `retain` is rejected while the index is disabled. Delete the database file to drop retained evidence. Schema v1 migrates atomically to v2: evidence rows are preserved while caller-topic fields are cleared and subject edges are rebuilt from public titles and excerpts; newer schemas are refused without erasure. Back up by copying the `.sqlite` file and its `-wal`/`-shm` siblings while no writer is active. On Unix, partition directories use owner-only mode `0700` and database files use `0600`; an explicitly configured database file under an existing parent directory with group/other permissions is refused. Its warning names that directory and current mode and states that it needs mode `0700`; this remains fail-closed. On Windows, files inherit the selected directory's ACL, so keep configured paths user-private. The index never stores the caller's topic. The brief retains selected public evidence only; it refuses private, `no-store`, pass-cookie, and profile-scoped bodies and does not copy fetch-cache bodies.
+
 ## Reserved Live Settings
 
 `[search].live.user_agent` and `[search].live.respect_robots_txt` are parsed for compatibility but are no-ops in the current build.
@@ -730,6 +813,7 @@ Local workspace search is disabled by default.
 | `enabled` | `false` |
 | `roots` | empty |
 | `max_file_bytes` | `1_048_576` |
+| `pdf_max_file_bytes` | `16_777_216` (1–268_435_456) |
 | `max_indexed_files` | `50_000` |
 | `include_hidden` | `false` |
 | `respect_gitignore` | `true` |
@@ -740,6 +824,13 @@ Local workspace search is disabled by default.
 | `max_structured_files` | `200` |
 | `max_total_symbols` | `5_000` |
 | `repo_map_structure_cap` | `500` |
+
+`repo_fetch` extracts an explicitly named workspace PDF when its path ends in
+`.pdf` (case-insensitive) or its first bytes contain `%PDF-`. Local PDFs use
+`pdf_max_file_bytes`; other files keep `max_file_bytes`. The PDF feature and
+`[fetch].pdf_enabled` gates still apply. PDFs remain excluded from local search,
+symbol parsing, and repo-map indexing. `repo_fetch` does not accept PDF page
+selection.
 
 When enabled, local results use `local_trusted` trust labels and can be surfaced through `repo_search`, `repo_fetch`, and `repo_map`. They remain provenance-trusted, not instruction-trusted.
 

@@ -416,7 +416,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -479,7 +479,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -558,7 +558,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
         pass_cookie_cache().put("mojeek", "chllg=cached-cookie-456", Duration::from_secs(60));
 
@@ -607,7 +607,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -673,7 +673,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -756,7 +756,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -813,7 +813,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -870,7 +870,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -931,7 +931,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -992,7 +992,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -1052,7 +1052,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
         let before = ledger_stats();
 
         let server = MockServer::start();
@@ -1104,7 +1104,7 @@ mod tests {
         use httpmock::prelude::*;
 
         let _guard = CHALLENGE_TEST_LOCK.lock().await;
-        pass_cookie_cache().clear();
+        pass_cookie_cache().remove(ENGINE);
 
         let server = MockServer::start();
         let challenge_page_mock = server.mock(|when, then| {

@@ -1811,6 +1811,7 @@ async fn repo_fetch_via_web_fetch_full_file() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
@@ -1860,6 +1861,7 @@ async fn repo_fetch_via_web_fetch_404() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
@@ -1911,6 +1913,7 @@ async fn repo_fetch_via_web_fetch_429() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
@@ -1961,6 +1964,7 @@ async fn repo_fetch_via_web_fetch_injection_marker_detection() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
@@ -2020,6 +2024,7 @@ async fn repo_fetch_via_web_fetch_truncation() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
@@ -6205,6 +6210,10 @@ async fn batch_fetch_disabled_by_policy_returns_error() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -6233,6 +6242,10 @@ async fn batch_fetch_over_item_cap_returns_validation_error() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
     let res = run_batch_fetch(
@@ -6294,6 +6307,10 @@ async fn batch_fetch_single_web_item_succeeds() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -6351,6 +6368,10 @@ async fn batch_fetch_multiple_web_items_return_in_order() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -6421,6 +6442,10 @@ async fn batch_fetch_web_item_failure_with_continue_on_error() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
@@ -6432,6 +6457,10 @@ async fn batch_fetch_web_item_failure_with_continue_on_error() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
             ],
             max_items: None,
@@ -6485,6 +6514,10 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
@@ -6496,6 +6529,10 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
@@ -6507,6 +6544,10 @@ async fn batch_fetch_continue_on_error_false_stops_after_first_failure() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
             ],
             max_items: None,
@@ -6567,6 +6608,10 @@ async fn batch_fetch_per_item_max_chars_enforced() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -6620,6 +6665,10 @@ async fn batch_fetch_total_budget_enforced() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -6690,6 +6739,10 @@ async fn batch_fetch_continue_on_error_across_waves() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: "https://198.51.100.1/nope".to_string(),
@@ -6701,6 +6754,10 @@ async fn batch_fetch_continue_on_error_across_waves() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Web {
                     url: server.url("/ok"),
@@ -6712,6 +6769,10 @@ async fn batch_fetch_continue_on_error_across_waves() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
             ],
             max_items: None,
@@ -6769,6 +6830,10 @@ async fn batch_fetch_concurrent_total_budget_not_exceeded() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -6833,6 +6898,10 @@ async fn batch_fetch_metadata_overhead_cannot_exceed_total_budget() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -6911,6 +6980,10 @@ async fn batch_fetch_empty_web_url_returns_error_in_result() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -6951,6 +7024,12 @@ async fn batch_fetch_invalid_repo_host_returns_error() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -6996,6 +7075,10 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -7030,15 +7113,17 @@ async fn batch_fetch_result_order_matches_input_under_concurrent_execution() {
 }
 
 #[test]
-fn batch_fetch_server_instructions_mention_batch_fetch() {
+fn fetch_server_instructions_mention_canonical_fetch() {
     let state = state_with_default();
     let server = eggsearch::mcp::EggsearchServer::new(state);
     let info = server.get_info();
     let instructions = info.instructions.unwrap_or_default();
     assert!(
-        instructions.contains("batch_fetch"),
-        "instructions should mention batch_fetch: {instructions}"
+        instructions.contains("Use `fetch` for one or more explicitly selected web URLs"),
+        "instructions should describe canonical fetch: {instructions}"
     );
+    assert!(!instructions.contains("batch_fetch"));
+    assert!(!instructions.contains("web_fetch"));
 }
 
 #[tokio::test]
@@ -7100,6 +7185,10 @@ async fn batch_fetch_mixed_web_and_repo_items_return_separate_responses() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 },
                 eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                     host: Some("workspace".to_string()),
@@ -7116,6 +7205,12 @@ async fn batch_fetch_mixed_web_and_repo_items_return_separate_responses() {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    symbol: None,
+                    symbol_kind: None,
+                    match_text: None,
+                    expand_to_block: None,
+                    max_block_lines: None,
+                    prefer_local: None,
                 },
             ],
             max_items: None,
@@ -7217,6 +7312,12 @@ async fn batch_fetch_workspace_item_retains_local_trusted_and_marker_scan() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7289,6 +7390,10 @@ async fn batch_fetch_rejects_malformed_url() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7327,6 +7432,10 @@ async fn batch_fetch_rejects_unsupported_scheme() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7370,6 +7479,12 @@ async fn batch_fetch_rejects_absolute_repo_path() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7413,6 +7528,12 @@ async fn batch_fetch_rejects_path_traversal() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7451,6 +7572,10 @@ async fn batch_fetch_rejects_zero_max_chars_web() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7494,6 +7619,12 @@ async fn batch_fetch_rejects_zero_max_chars_repo() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7532,6 +7663,10 @@ async fn batch_fetch_rejects_zero_max_items() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: Some(0),
             max_chars_per_item: None,
@@ -7570,6 +7705,10 @@ async fn batch_fetch_rejects_zero_max_chars_per_item() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: Some(0),
@@ -7608,6 +7747,10 @@ async fn batch_fetch_rejects_zero_max_total_chars() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7654,6 +7797,10 @@ async fn batch_fetch_budget_exhaustion_returns_warning() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -7723,6 +7870,10 @@ async fn batch_fetch_budget_clamps_to_cap() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -7770,6 +7921,10 @@ async fn batch_fetch_result_order_preserved() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -7830,6 +7985,10 @@ async fn batch_fetch_preserves_order_and_indices_under_concurrency() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -7909,6 +8068,10 @@ async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order(
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         },
         eggsearch::core::batch_fetch::BatchFetchItem::Web {
             url: fast.url("/fast"),
@@ -7920,6 +8083,10 @@ async fn batch_fetch_preserves_result_payloads_when_wave_completes_out_of_order(
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         },
     ];
 
@@ -8008,6 +8175,10 @@ async fn batch_fetch_concurrent_wave_budget_does_not_exceed_total_cap() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -8071,6 +8242,10 @@ async fn batch_fetch_url_scheme_error_message_is_spaced_correctly() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -8114,6 +8289,10 @@ async fn batch_fetch_rejects_zero_timeout_ms() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -8165,6 +8344,10 @@ async fn batch_fetch_uppercase_scheme_is_accepted() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,

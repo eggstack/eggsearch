@@ -384,6 +384,7 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
             cache_policy: None,
             render: None,
             browser_profile: None,
+            include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,

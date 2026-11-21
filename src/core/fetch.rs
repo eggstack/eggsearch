@@ -57,6 +57,14 @@ pub enum ExtractMode {
     MetadataOnly,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RenderPolicy {
+    HttpOnly,
+    Auto,
+    Browser,
+}
+
 /// Maximum focused chunks returned for one `web_fetch` focus query.
 pub const MAX_FOCUS_CHUNKS: usize = 5;
 /// Maximum characters for a `web_fetch` focus query string.

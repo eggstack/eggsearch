@@ -88,10 +88,10 @@ flipping the default would ship an unmeasured policy change.
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `enabled` | `bool` | `false` | Opt-in gate for bounded non-interactive proof-of-work solving (ADR-0009). While off, challenged providers behave exactly as before |
-| `max_difficulty` | `u8` | `5` | Refuses an Anubis challenge whose published `rules.difficulty` exceeds it; bounded to 1–10. Operator cost knob, not an engine constant |
-| `max_attempts` | `u64` | `2000000` | Candidate/derivation ceiling per solve, bounded to 1–100000000; reaching it fails the solve rather than looping |
-| `timeout_ms` | `u64` | `2000` | Wall-clock ceiling per solve, bounded to 100–30000; a difficulty-6 Anubis solve needs at least 8000 |
+| `enabled` | `bool` | `true` | Default-on gate for bounded non-interactive proof-of-work solving (ADR-0009, ADR-0019 §4). While off, challenged providers behave exactly as before |
+| `max_difficulty` | `u8` | `6` | Refuses an Anubis challenge whose published `rules.difficulty` exceeds it; bounded to 1–10. Operator cost knob, not an engine constant; the default covers the difficulty Startpage publishes today |
+| `max_attempts` | `u64` | `100000000` | Candidate/derivation ceiling per solve, bounded to 1–100000000; reaching it fails the solve rather than looping. Set above what the wall clock can spend, so the clock governs and a projected difficulty 7 is still refused |
+| `timeout_ms` | `u64` | `10000` | Wall-clock ceiling per solve, bounded to 100–30000; a difficulty-6 Anubis solve needs at least 8000 |
 | `cookie_ttl_seconds` | `u64` | `240` | Pass-cookie reuse window per provider, bounded to 0–3600; `0` re-solves every request |
 
 The section is serde-defaulted, so a config file without it keeps pre-ADR-0009
@@ -222,6 +222,24 @@ the same handlers. Omitted `response_detail` remains `diagnostic` under
 `full` and becomes `brief` under `compact`; explicit per-call values win.
 The default `full` profile keeps the existing advertisement and response
 behavior unchanged.
+
+---
+
+### `[knowledge_delta]` — cutoffs and optional index
+
+Operator cutoff overrides live at `[knowledge_delta.cutoffs.<model>]`
+with `date`, `precision`, `source`, and optional `verified_at`. Invalid
+values fail closed at load. They are not index settings. The bundled
+snapshot stays empty until a cutoff is verified.
+
+`[knowledge_delta.index]` is disabled by default. Fields: `enabled`,
+`path`, `max_bytes` (64 MiB), `max_documents`, `max_excerpt_chars`, and
+`retention_days`. The default path is
+`<config_dir>/knowledge-delta/<partition>/index.sqlite`. A path ending in
+`.sqlite` or `.db` is the database file. `partition` is `anonymous` or an
+opaque `prof_` id, never a display name. Disabling the section or setting
+`enabled = false` leaves a live brief unchanged. Delete the database file
+to drop retained rows; a newer schema is refused without deleting them.
 
 ---
 

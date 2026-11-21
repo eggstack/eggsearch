@@ -57,16 +57,19 @@ This document is the bird's-eye view: what each module is for, how they connect,
 
 ```
 core ← meta ← mcp ← commands (binary)
-      ↗
-fetch ↗
+meta + fetch ← challenge_replay ← mcp + commands
+meta + fetch ← serp_render ← mcp
 ```
 
 1. **core** is the foundation — pure types, no external service calls
 2. **meta** builds on `core` — engines use `eggfetch-core`, adapter orchestrates everything
 3. **fetch** is independent of `meta` — HTTP client, extraction, caching, browser rendering
-4. **mcp** wires `core` + `meta` + `fetch` into 10 tool endpoints
-5. **commands** (binary-only `src/commands/`) wires everything for CLI subcommands
-6. **startup / update / platform / integrations** are ops and deployment seams around the core path
+4. **challenge_replay** depends on `fetch` and `meta`, and owns shared fetch-path challenge orchestration
+5. **mcp** wires `core` + `meta` + `fetch` + `challenge_replay` into 10 tool endpoints
+6. **commands** (binary-only `src/commands/`) uses `challenge_replay` for CLI fetch alongside its other shared modules
+7. **serp_render** depends on `meta` and `fetch` and implements the engine layer's
+   `SerpRenderer` contract over the browser, so `fetch` stays independent of `meta`
+8. **startup / update / platform / integrations** are ops and deployment seams around the core path
 
 ---
 
@@ -78,7 +81,9 @@ fetch ↗
 | Metasearch adapter | `src/meta/` (36 top-level files plus `adapter/`, `dependency_parse/`, `dispatch/`, `engines/`, `forge_adapter/`, `local/` facade) | Central orchestrator: planning, bounded dispatch, RRF aggregation, provider health, evidence postprocessing; shared repo/research/security mechanics without domain policy flattening | [meta.md](meta.md) |
 | Vendored search engines | `src/meta/engines/` (49 files: 43 per-provider + 6 support modules) | 43 engine structs covering 43 of 44 provider IDs (`local_workspace` is served by the local backend, not an engine): HTML scrape, JSON API, structured API, API key, advisory, registry, scholarly, source-specific | [engines.md](engines.md) |
 | HTTP fetch pipeline | `src/fetch/` (13 top-level files + `browser/` + `render/`) | Bounded URL fetching: SSRF validation, representation negotiation, extraction, span selection, two-tier cache, origin control | [fetch.md](fetch.md) |
+| Shared challenge replay | `src/challenge_replay/` | Shared bounded detect → solve → replay → classify orchestration combining the fetch client with the meta challenge solver; the ALTCHA branch derives its same-origin endpoints from the page's own widget publication, and a process-local origin-keyed cache reuses a fetch-side pass cookie for the same origin | [fetch.md](fetch.md#challenge-pages-on-the-http-path) |
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#9-browser-rendering-browser-8-files-feature-browser) |
+| Browser-rendered provider pages | `src/serp_render/` | Implements the engine layer's `SerpRenderer` contract over the shared browser lifecycle, so a browser-gated HTML provider is parsed from the rendered DOM | [engines.md](engines.md#browser-rendered-access) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#6-render-subsystem-render-8-files) |
 | MCP server & tools | `src/mcp/` (7 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
 | Native SDK facade | `src/sdk.rs` | Narrow direct Rust operation API delegating to the same ten MCP handlers | [python-library.md](python-library.md) |
@@ -187,7 +192,7 @@ Ordinary agent schemas are slimmed: canonical `goal` (`understand`, `architectur
 |------|---------|----------------|
 | `web_search` | Live metasearch over configured providers | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `excerpt_count` |
 | `web_fetch` | Bounded extraction of one HTTP(S) URL | `url`, `max_chars`, `extract_mode` |
-| `batch_fetch` | Batch fetch over URLs or repo locators with per-item focus | `items` (per-item focus), `max_chars_per_item`, `max_total_chars`, telemetry |
+| `batch_fetch` | Batch fetch over URLs or repo locators with per-target controls | Web-item PDF/render/profile/cache/focus options; repo-item span/source-selection/`prefer_local`/focus options; `max_chars_per_item`, `max_total_chars`, telemetry |
 | `provider_status` | Diagnostic provider configuration report with optional bounded live probe | (none; `probe`, `recipe_detail`) |
 | `repo_search` | Structured repository evidence discovery | `query`, `goal`, `sources`, repo locator/package fields, `include_local` |
 | `repo_fetch` | Repository file fetch by locator | `locator`, `line_start`, `line_end`, `symbol` |
