@@ -1,4 +1,9 @@
 use super::common::*;
+#[cfg(feature = "browser")]
+use super::web_fetch_escalation::{
+    escalate_gated_status, gated_status, GatedEscalation, GatedEscalationRequest,
+};
+use super::web_fetch_window::{windowed_fetch, WindowedFetch};
 use crate::fetch::FetchClient;
 use crate::mcp::policy::{fetch_allowed, web_fetch_denied_message, Policy};
 use crate::mcp::state::ServerState;
@@ -798,6 +803,8 @@ async fn run_web_fetch_inner(
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
     progress.phase("plan");
     let mut auto_escalation_unavailable = false;
+    #[cfg(feature = "browser")]
+    let mut gated_escalation_spent = false;
     #[allow(unused_mut)]
     let mut screenshot_png: Option<Vec<u8>> = None;
 
@@ -1067,23 +1074,85 @@ async fn run_web_fetch_inner(
                     }
                     break;
                 }
-                Err(e) => {
-                    let kind = e.kind();
-                    let class = match &e {
+                Err(err) => {
+                    #[allow(unused_mut)]
+                    let mut failure = err;
+                    #[allow(unused_mut)]
+                    let mut suppress_retry = false;
+
+                    // A browser-gated origin answers an automated client with a
+                    // status instead of a document, so there is nothing to
+                    // classify and the browser is the only reader left. The
+                    // escalation runs before the failure is recorded: the
+                    // status is the origin refusing this client, not an outage,
+                    // and an origin the browser served must not be charged to
+                    // the HTTP circuit breaker.
+                    #[cfg(feature = "browser")]
+                    if !gated_escalation_spent {
+                        if let Some(status) = gated_status(&failure, &render_policy) {
+                            gated_escalation_spent = true;
+                            suppress_retry = true;
+                            let escalation = escalate_gated_status(GatedEscalationRequest {
+                                state: state.as_ref(),
+                                url: trimmed_url,
+                                status,
+                                sanitize_output: state.config.fetch.sanitize_output,
+                                render_policy: &render_policy,
+                                profile_dir: profile_chrome_data_dir.as_deref(),
+                                browser_available,
+                                used_profile_name: used_profile_name.as_deref(),
+                                origin_key: &origin_key,
+                                budgets,
+                                extract_mode,
+                                include_links,
+                                deadline,
+                            })
+                            .await;
+                            match escalation {
+                                GatedEscalation::Served(served) => {
+                                    response = Some(*served);
+                                    break;
+                                }
+                                GatedEscalation::Failed {
+                                    error,
+                                    escalation_unavailable,
+                                } => {
+                                    auto_escalation_unavailable |= escalation_unavailable;
+                                    failure = error;
+                                }
+                                GatedEscalation::ManualInteraction {
+                                    origin,
+                                    message,
+                                    next_action,
+                                } => {
+                                    return Err(browser_manual_interaction_error(
+                                        &origin,
+                                        &message,
+                                        used_profile_name.as_deref(),
+                                        next_action.as_deref(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    let kind = failure.kind();
+                    let class = match &failure {
                         crate::fetch::FetchError::HttpStatus(status, _) => {
                             crate::fetch::origin::classify_http_status(*status)
                         }
-                        _ => classify_network_error(&e.to_string()),
+                        _ => classify_network_error(&failure.to_string()),
                     };
-                    let is_retryable = matches!(
-                        kind,
-                        crate::fetch::FetchErrorKind::Timeout
-                            | crate::fetch::FetchErrorKind::NetworkError
-                    ) || matches!(
-                        class,
-                        crate::fetch::origin::OriginFailureClass::Retryable
-                            | crate::fetch::origin::OriginFailureClass::RateLimited
-                    );
+                    let is_retryable = !suppress_retry
+                        && (matches!(
+                            kind,
+                            crate::fetch::FetchErrorKind::Timeout
+                                | crate::fetch::FetchErrorKind::NetworkError
+                        ) || matches!(
+                            class,
+                            crate::fetch::origin::OriginFailureClass::Retryable
+                                | crate::fetch::origin::OriginFailureClass::RateLimited
+                        ));
 
                     if let Some(ref ctrl) = state.origin_controller {
                         let decision = ctrl.record_failure(&origin_key, class).await;
@@ -1093,7 +1162,7 @@ async fn run_web_fetch_inner(
                                 ..
                             } => {
                                 return Err(ToolError::internal(format!(
-                                    "origin_circuit_open: {e}, retry in {delay_ms}ms"
+                                    "origin_circuit_open: {failure}, retry in {delay_ms}ms"
                                 )));
                             }
                             crate::fetch::origin::OriginBackoffDecision::Backoff {
@@ -1122,7 +1191,7 @@ async fn run_web_fetch_inner(
                         }
                     }
 
-                    last_err = Some(e);
+                    last_err = Some(failure);
                     break;
                 }
             }
@@ -1424,129 +1493,4 @@ async fn run_web_fetch_inner(
         Vec::new()
     };
     Ok(ToolOutcome { value, images })
-}
-
-struct WindowedFetch {
-    text: Option<String>,
-    document: Option<crate::core::document::FetchDocument>,
-    window: Option<AddressWindow>,
-    doc_id: Option<String>,
-}
-
-fn addressable_text(document: &crate::core::document::FetchDocument) -> String {
-    document
-        .chunks
-        .iter()
-        .map(|chunk| chunk.text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn default_page_chunk_count(
-    document: &crate::core::document::FetchDocument,
-    capacity: usize,
-) -> usize {
-    let mut used = 0usize;
-    let mut count = 0usize;
-    for chunk in &document.chunks {
-        let unit = chunk.text.chars().count().saturating_add(1);
-        let next = used.saturating_add(unit);
-        if count > 0 && next > capacity {
-            break;
-        }
-        used = next;
-        count += 1;
-    }
-    count
-}
-
-fn windowed_chunks(
-    document: &crate::core::document::FetchDocument,
-    window: AddressWindow,
-) -> Vec<crate::core::document::DocumentChunk> {
-    if window.len() == 0 {
-        return Vec::new();
-    }
-    let mut chunks = Vec::new();
-    let mut position = 0usize;
-    for chunk in &document.chunks {
-        let len = chunk.text.chars().count();
-        let start = position;
-        let end = start.saturating_add(len);
-        if start < window.to && end > window.from {
-            chunks.push(chunk.clone());
-        }
-        position = end.saturating_add(1);
-    }
-    chunks
-}
-
-fn windowed_fetch(
-    resp: &crate::core::fetch::WebFetchResponse,
-    capacity: usize,
-    addressed: bool,
-    offset: Option<usize>,
-    sanitize_output: bool,
-) -> WindowedFetch {
-    let unchanged = || WindowedFetch {
-        text: None,
-        document: None,
-        window: None,
-        doc_id: None,
-    };
-    let Some(document) = resp.document.as_ref() else {
-        return unchanged();
-    };
-    if document.chunks.is_empty() {
-        return unchanged();
-    }
-    if !addressed {
-        let count = default_page_chunk_count(document, capacity);
-        if count == document.chunks.len() {
-            return unchanged();
-        }
-        let page_chunks = document.chunks[..count].to_vec();
-        let page = page_chunks
-            .iter()
-            .map(|chunk| chunk.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let page_chars = page.chars().count();
-        let (stripped, _) = crate::core::sanitize::strip_control_chars(&page);
-        let text = if sanitize_output {
-            crate::core::sanitize::frame(&stripped, "text", &resp.final_url)
-        } else {
-            stripped
-        };
-        let mut paged_document = document.clone();
-        paged_document.chunks = page_chunks;
-        paged_document.text_chars_returned = page_chars;
-        paged_document.text_truncated = count < document.chunks.len();
-        return WindowedFetch {
-            text: Some(text),
-            document: Some(paged_document),
-            window: None,
-            doc_id: None,
-        };
-    }
-    let joined = addressable_text(document);
-    let total = joined.chars().count();
-    let window = AddressWindow::resolve(total, offset, capacity);
-    let slice = slice_chars(&joined, window.from, window.to);
-    let (stripped, _) = crate::core::sanitize::strip_control_chars(slice);
-    let text = if sanitize_output && !stripped.is_empty() {
-        crate::core::sanitize::frame(&stripped, "text", &resp.final_url)
-    } else {
-        stripped
-    };
-    let mut paged_document = document.clone();
-    paged_document.chunks = windowed_chunks(document, window);
-    paged_document.text_chars_returned = window.len();
-    paged_document.text_truncated = window.next_offset().is_some();
-    WindowedFetch {
-        text: Some(text),
-        document: Some(paged_document),
-        window: Some(window),
-        doc_id: Some(document.doc_id.clone()),
-    }
 }

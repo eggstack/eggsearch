@@ -205,6 +205,7 @@ enabled = false
 - Under `render: "auto"` the solver runs before the browser, so a solvable Anubis or ALTCHA wall returns its document without launching Chrome. Only a wall the solver leaves unsolved escalates
 - A script-driven wall the browser cannot get past is returned marked with `manual_interaction_required: true` and a `fetch_challenge_page` warning, never as an unmarked document
 - Fetch-path solves use the `fetch` label in `provider_status.challenge_solver.providers`; search upstreams retain their own labels. A wall the browser completed is counted beside them as `browser_completions`
+- CLI `eggsearch fetch` honours `[fetch.browser].policy` with no per-call flag: `auto` (the default) escalates on a browser-gated status, `http_only` keeps the error, and `browser` renders directly and reports the unavailable message when no executable was discovered. The CLI never gains profile-scoped or screenshot behaviour
 - At most one solve per provider per search request, and one per `cookie_ttl_seconds`
 - A solved search request runs through the normal parser and the normal four-outcome classification
 
@@ -303,6 +304,16 @@ When auto escalation is unavailable, the HTTP response is returned with the
 structured warning `browser_unavailable` and `browser_escalated: false`. If the
 browser detects an interactive challenge, the call returns a manual-interaction
 error instead.
+
+Auto mode also escalates when the origin answers the HTTP attempt with a
+browser-gated status: `429`, or a `5xx` such as Yahoo's empty `500` to a client
+that announces a headless browser. A rendered document replaces the error only
+when the render ended on a `2xx`/`3xx` page or completed a recognised wall; a
+`5xx` page the browser only re-rendered keeps the original `http_status` error,
+with the attempted escalation named in the message. Under auto a gated status is
+not retried, because a retry meets the same wall. A `401`, `402`, `403`, or
+`404` never renders. The same rule covers `web_fetch`, every `fetch` web item,
+and CLI `eggsearch fetch`.
 
 ### Safety Properties
 

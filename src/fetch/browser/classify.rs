@@ -77,6 +77,17 @@ pub fn classify_response(
     }
 }
 
+/// Whether a rendered page replaces the status error that caused the render.
+///
+/// A render is accepted when it ended on a success or redirect status, or when
+/// it completed a recognised wall. A `5xx` page the browser only re-rendered is
+/// still the origin's outage, so the caller keeps its original error rather
+/// than returning an error page as a document.
+#[must_use]
+pub fn rendered_result_serves(status: Option<u16>, challenge_completed: bool) -> bool {
+    challenge_completed || status.is_some_and(|status| (200..400).contains(&status))
+}
+
 fn is_interactive_challenge(title_lower: &str, body: &str) -> bool {
     if title_lower.contains("access denied")
         || title_lower.contains("security check")
@@ -171,6 +182,25 @@ mod tests {
         ] {
             assert!(!settled.is_script_wall(), "{settled:?} must not wait");
         }
+    }
+
+    #[test]
+    fn a_render_serves_only_when_it_improved_on_the_status() {
+        assert!(rendered_result_serves(Some(200), false));
+        assert!(rendered_result_serves(Some(302), false));
+        assert!(
+            rendered_result_serves(Some(503), true),
+            "a completed wall is served whatever the document status says"
+        );
+        assert!(
+            !rendered_result_serves(Some(500), false),
+            "an error page the browser only re-rendered is not the document"
+        );
+        assert!(!rendered_result_serves(None, false));
+        assert!(
+            rendered_result_serves(None, true),
+            "a completed wall is served even without an observed status"
+        );
     }
 
     #[test]

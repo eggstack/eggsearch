@@ -5865,6 +5865,13 @@ fn browser_completions() -> u64 {
         .map_or(0, |stats| stats.browser_completions)
 }
 
+/// Serialises the tests that assert the process-global completion counter.
+///
+/// The solve ledger is process-wide, so two tests that each snapshot, run, and
+/// assert a delta race each other whenever the harness runs them in parallel.
+#[cfg(all(feature = "mock", feature = "browser"))]
+static COMPLETION_COUNTER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn challenge_warning_count(value: &serde_json::Value) -> usize {
     value["structured_warnings"]
         .as_array()
@@ -7290,6 +7297,7 @@ async fn web_fetch_auto_counts_a_wall_the_browser_completed() {
         }),
     );
 
+    let _guard = COMPLETION_COUNTER.lock().await;
     let before = browser_completions();
     let mut args = fetch_args_for(server.url("/"));
     args.render = Some("auto".to_string());
@@ -7410,4 +7418,262 @@ async fn web_fetch_auto_returns_the_marked_wall_when_the_deadline_leaves_no_rend
         0,
         "an insufficient deadline must not launch the browser"
     );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn gated_status_config() -> AppConfig {
+    let mut cfg = challenge_config(false);
+    cfg.fetch.retry_max_attempts = 1;
+    cfg
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn gated_status_server(status: u16) -> httpmock::MockServer {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/wall");
+        then.status(status)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Search</title></head><body><p>wall</p></body></html>");
+    });
+    server
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_escalates_a_gated_429_to_the_browser() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(429);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        {
+            let mut cfg = gated_status_config();
+            cfg.fetch.origin_circuit_failure_threshold = 1;
+            cfg
+        },
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state.clone(), args)
+        .await
+        .expect("the browser serves the gated status");
+
+    assert_eq!(value["transport"], "browser");
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["status"], 200);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("rendered"),
+        "the rendered document is returned: {value:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "exactly one escalation per call"
+    );
+    assert_eq!(
+        browser_completions(),
+        before + 1,
+        "a wall the browser completed is counted"
+    );
+    let controller = state.origin_controller.as_ref().expect("origin controller");
+    let key = eggsearch::fetch::origin::OriginKey::from_url(
+        &url::Url::parse(&server.url("/wall")).expect("url"),
+    )
+    .expect("origin key");
+    assert!(
+        controller.circuit_is_open(&key).await.is_none(),
+        "an origin the browser served must not charge the HTTP circuit breaker"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_escalates_a_gated_500_to_the_browser() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(500);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        gated_status_config(),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                false,
+            ))
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("the browser serves the empty-bodied refusal");
+
+    assert_eq!(value["transport"], "browser");
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["status"], 200);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        browser_completions(),
+        before,
+        "a render that cleared no wall is not a completion"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_does_not_escalate_a_refusal_status() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for status in [402, 403, 404] {
+        let server = gated_status_server(status);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let state = state_with_mock_browser(
+            gated_status_config(),
+            Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+                seen.fetch_add(1, Ordering::SeqCst);
+                Ok(browser_outcome(
+                    "unused",
+                    eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                    None,
+                    true,
+                ))
+            }),
+        );
+
+        let mut args = fetch_args_for(server.url("/wall"));
+        args.render = Some("auto".to_string());
+        let err = run_web_fetch(state, args)
+            .await
+            .expect_err("a refusal stays an error");
+        assert!(
+            format!("{err}").contains(&status.to_string()),
+            "the refusal keeps its status: {err}"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "{status} must never render"
+        );
+    }
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_http_only_never_escalates_a_gated_status() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(429);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        gated_status_config(),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                "unused",
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("http_only".to_string());
+    let err = run_web_fetch(state, args)
+        .await
+        .expect_err("http_only keeps the status error");
+    assert!(
+        format!("{err}").contains("429"),
+        "the status error is preserved: {err}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "http_only must never render"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_names_the_unavailable_escalation() {
+    let server = gated_status_server(429);
+    let mut cfg = gated_status_config();
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let err = run_web_fetch(state, args)
+        .await
+        .expect_err("no browser keeps the status error");
+    let message = format!("{err}");
+    assert!(
+        message.contains("http_status"),
+        "the error code is unchanged: {message}"
+    );
+    assert!(
+        message.contains("browser escalation unavailable"),
+        "the caller is told the escalation was unavailable: {message}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_keeps_the_error_when_the_render_did_not_improve() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(500);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        gated_status_config(),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            let mut outcome = browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::ServerError,
+                None,
+                false,
+            );
+            outcome.result.response.status = Some(500);
+            Ok(outcome)
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let err = run_web_fetch(state, args)
+        .await
+        .expect_err("a genuine outage is not converted into content");
+    let message = format!("{err}");
+    assert!(
+        message.contains("browser render ended on HTTP 500"),
+        "the attempted escalation is named: {message}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(browser_completions(), before);
 }

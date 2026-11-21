@@ -60,7 +60,9 @@ pub trait SerpRenderer: Send + Sync {
 pub(crate) fn is_browser_gated(error: &EngineError) -> bool {
     match error {
         EngineError::Blocked { .. } => true,
-        EngineError::BadStatus { status, .. } => matches!(status, 429 | 500..=599),
+        EngineError::BadStatus { status, .. } => {
+            crate::fetch::challenge::is_browser_gated_status(*status)
+        }
         _ => false,
     }
 }

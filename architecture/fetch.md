@@ -538,6 +538,9 @@ agent contract; the fetch-layer error variants of the same names remain reserved
 for direct library use. `RenderPolicy::Auto` never errors:
 when escalation was warranted but unavailable, the call returns the HTTP document
 with the `browser_unavailable` structured warning and `browser_escalated: false`.
+Escalation is triggered by wall-shaped `2xx` content or by a browser-gated status
+(`429` or `5xx`); § Browser challenge completion states the status seam, the
+return rule, and the retry interaction.
 
 | File | Responsibility |
 |------|---------------|
@@ -837,6 +840,24 @@ auto escalation. A call therefore performs at most one solve-and-replay and at m
 in that order, and a solvable puzzle never reaches Chrome. `render: "http_only"` keeps the marked
 body and never escalates; an explicit `render: "browser"` stays a direct render with its existing
 semantics.
+
+**Gated statuses.** `src/fetch/client.rs` rejects any status outside `200..300` with
+`FetchError::HttpStatus` before a response exists to classify, so the wall-shaped trigger above
+cannot fire for the class these origins actually serve: Brave answers `429` with its proof-of-work
+page, and Yahoo answers `500` with an empty body. Under `render: "auto"` the tool escalates at that
+error seam instead: once per call, before any origin failure is recorded, when
+`fetch::challenge::is_browser_gated_status` holds (`429`, `500..=599`), a browser is available, and
+at least 2 s of the call budget remain. Search escalation calls the same predicate through
+`meta::engines::render::is_browser_gated`, so the two surfaces cannot disagree about the class;
+`401`, `402`, `403`, and `404` never match it.
+
+A rendered document replaces the error only when `rendered_result_serves` accepts it: the render
+ended on `200..400`, or it completed a recognised wall. A `5xx` page the browser merely
+re-rendered is still the origin's outage, so the original `http_status` error is returned with the
+attempted escalation named in its message. Under `auto`, a gated status leaves the retry loop to
+the escalation, because an automated retry meets the same wall; `http_only` keeps its retry
+behaviour unchanged. An origin the browser served is recorded as a success, never as an HTTP
+failure, and `browser_completions` increments only when the render completed a wall.
 
 **Completion rule.** After the page loads and `post_load_wait_ms` elapses, the render classifies the
 live page with `classify_response` over the current status, content type, title,

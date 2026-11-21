@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6567 | 28 |
-| `--features mock` | 6540 | 5 |
+| `--all-features` | 6577 | 28 |
+| `--features mock` | 6550 | 5 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -18,7 +18,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `browser_live_smoke
 | `mcp_tools` | `mock` (mostly) | Tool registration, input validation for all 10 tools, including the tagged fetch web/repo item schema, response shape, legacy-name rejection; opt-in screenshot PNG bounds, browser capability/conflict errors, image-out-of-JSON/cache behavior, and ordered batch image association |
 | `web_search_integration` | `mock` (mostly) | Web search validation, sanitization, intent reranking, excerpt bounds, explicit-provider unbuildable-id rejection, derived-intent reporting and applied reranking, search-result cache hit/miss/coalesce equivalence and partial-fan-out bypass, blocked-provider classification |
 | `engine_parse_conformance` | `mock` | Captured-fixture conformance for the five HTML scrapers: parsed rows, explicit empty state, block classification, and a seeded-drift negative control that requires `parse_error` |
-| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`), Anubis and ALTCHA solve-and-replay under `[search.challenge]`, fetch-side pass-cookie reuse, lifetime expiry, malformed-lifetime refusal, rejection eviction, in-call recovery from a refused pair set, and cross-origin isolation; plus auto-mode ordering (the solver owns a solvable wall and Chrome is never launched), unresolved-wall marking, interactive challenges staying manual, the deadline leaving no render time, and the `browser_completions` counter |
+| `web_fetch_integration` | `mock` (mostly) | Fetch extraction, truncation, metadata-only mode, safety bounds, anti-bot challenge marking (`fetch_challenge_page` + `manual_interaction_required`), Anubis and ALTCHA solve-and-replay under `[search.challenge]`, fetch-side pass-cookie reuse, lifetime expiry, malformed-lifetime refusal, rejection eviction, in-call recovery from a refused pair set, and cross-origin isolation; plus auto-mode ordering (the solver owns a solvable wall and Chrome is never launched), unresolved-wall marking, interactive challenges staying manual, the deadline leaving no render time, the `browser_completions` counter, and the browser-gated status seam (a `429` and a `500` each escalate once, `402`/`403`/`404` never render, `http_only` never renders, a missing browser keeps the `http_status` error and names the unavailable escalation, a render that ends on `5xx` without a completed wall keeps the original error, and a served origin is not charged to the circuit breaker) |
 | `provider_routing` | `mock` (mostly) | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider routing/disabled-skip behavior, credentialed-provider opt-in/configured status reporting, explicit-provider rejection classification matrix (unknown/disabled/missing-credential/not-built), CodeGG parity qualification journeys |
 | `repo_workflow` | `mock` (mostly) | Repository evidence discovery end to end, explicit `github_repositories` discovery journey, prefer_local linked-worktree local redirect with no remote fetch, and no-match remote fallback with an explicit local-skip reason |
 | `research_workflow` | `mock` (mostly) | Multi-source research discovery end to end |

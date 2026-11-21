@@ -195,6 +195,11 @@ is parsed by the provider's existing parser, so the four-outcome contract is unc
 browser build, a discovered browser, or the browser enabled, the provider reports the HTTP failure
 exactly as before.
 
+The status class is defined once, by `fetch::challenge::is_browser_gated_status`, and
+`meta::engines::render::is_browser_gated` delegates to it, so search escalation and fetch
+escalation cannot disagree about which statuses a browser may serve. `meta` may depend on
+`fetch`; the reverse stays forbidden.
+
 The contract is `meta::engines::render::SerpRenderer`; engines never import the browser module.
 The implementation lives in `src/serp_render/browser.rs`, above both `meta` and `fetch`, so
 `src/fetch/**` stays independent of `src/meta/**`. The server state installs it when

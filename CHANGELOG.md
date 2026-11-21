@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `web_fetch`, `batch_fetch` web items, the unified `fetch` tool, and CLI `eggsearch fetch` now
+  reach a browser-gated origin for the same reason `web_search` already did. A `429` or `5xx` from
+  such an origin escalates once to the shipped browser render under `render: "auto"` instead of
+  returning `http_status`; a rendered document replaces the error only when the render ended on
+  `2xx`/`3xx` or completed a recognised wall, so a genuine `5xx` outage still errors and says so.
+  Under auto a gated status is not retried, `401`/`402`/`403`/`404` never render, and an origin
+  the browser served is not charged to the HTTP circuit breaker. CLI `eggsearch fetch` honours
+  `[fetch.browser].policy` (`auto` by default) with no new flag.
+
 - `brave` and `yahoo` return results when the origin gates access on browser execution. Both
   engines keep the HTTP request as the first attempt and fall back once, inside the same request
   deadline, to the shipped browser render when that attempt is blocked or answered with `429`/

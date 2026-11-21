@@ -395,27 +395,8 @@ impl ServerState {
         #[cfg(feature = "browser")]
         let browser_discovery_state = discover_browser(config.fetch.browser.executable.as_deref());
         #[cfg(feature = "browser")]
-        let browser_config = {
-            let render_policy: crate::fetch::browser::RenderPolicy = serde_json::from_value(
-                serde_json::Value::String(config.fetch.browser.policy.clone()),
-            )
-            .unwrap_or_default();
-            crate::fetch::browser::BrowserConfig {
-                enabled: config.fetch.browser.enabled,
-                policy: render_policy,
-                executable: config.fetch.browser.executable.clone(),
-                startup_timeout_ms: config.fetch.browser.startup_timeout_ms,
-                navigation_timeout_ms: config.fetch.browser.navigation_timeout_ms,
-                post_load_wait_ms: config.fetch.browser.post_load_wait_ms,
-                verification_wait_ms: config.fetch.browser.verification_wait_ms,
-                max_requests: config.fetch.browser.max_requests,
-                max_dom_bytes: config.fetch.browser.max_dom_bytes,
-                global_concurrency: config.fetch.browser.global_concurrency,
-                per_origin_concurrency: config.fetch.browser.per_origin_concurrency,
-                block_media: config.fetch.browser.block_media,
-                persistent_profiles: config.fetch.browser.persistent_profiles.clone(),
-            }
-        };
+        let browser_config =
+            crate::fetch::browser::BrowserConfig::from_settings(&config.fetch.browser);
         #[cfg(feature = "browser")]
         let browser_lifecycle = if config.fetch.browser.enabled {
             let discovery = browser_discovery_state.discovery().cloned();

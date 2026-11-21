@@ -11,7 +11,7 @@ pub use capture::{
     CaptureError, ScreenshotCapture, MAX_SCREENSHOT_BYTES, MAX_SCREENSHOT_HEIGHT,
     MAX_SCREENSHOT_WIDTH,
 };
-pub use classify::{classify_response, FetchDisposition};
+pub use classify::{classify_response, rendered_result_serves, FetchDisposition};
 pub use discover::{browser_capability_report, discover_browser};
 pub use intercept::{is_request_allowed, is_request_allowed_with_dns, PolicyViolation};
 pub use lifecycle::{BrowserLaunchError, BrowserLifecycle, BrowserLifecycleStatus};

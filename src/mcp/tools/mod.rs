@@ -18,6 +18,9 @@ mod repo_search;
 mod research_search;
 mod security_search;
 mod web_fetch;
+#[cfg(feature = "browser")]
+mod web_fetch_escalation;
+mod web_fetch_window;
 mod web_search;
 
 pub(crate) use batch_fetch::run_batch_fetch_with_host_scope_and_progress;
