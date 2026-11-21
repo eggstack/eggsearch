@@ -96,6 +96,17 @@ rather than swallowed:
   With Mojeek and Startpage now working out of the box, rebalancing that set is a separate product
   decision; this milestone deliberately does not change it.
 
+**Reconciled 2026-11-21:** the paragraph above was wrong to describe these failures as egress
+refusals. In-app browser verification on the same egress shows both origins serving results to a
+real browser: Brave serves a proof-of-work captcha (its HTTP 429 body **is** the 80 KiB challenge
+document, a script-rendered shell whose text lives in the embedded i18n dictionary) and returns
+results after the browser completes it, reusing the pass cookie on the next search; Yahoo renders a
+complete results page with no visible challenge. The defect is our client's detection and challenge
+handling, not the address. Brave's classification is corrected under
+`plans/implementation/agentic-retrieval-integrity/045-browser-fidelity-provider-access.md`
+work package 1 (a non-success challenge page is now `blocked`, not `rate_limited`); work package 2
+of that milestone owns browser-rendered SERP access, which is what actually produces results.
+
 ## Hosted qualification
 
 On candidate `7b28436`, all on attempt 1:

@@ -1971,7 +1971,7 @@ fn html_scrape_engines_use_automatic_decompression() {
             "{rel} must retain explicit total deadline alongside automatic decompression"
         );
         assert!(
-            non_test.contains("read_bounded_body("),
+            non_test.contains("read_bounded_body(") || non_test.contains("read_search_body("),
             "{rel} must retain streaming byte cap alongside automatic decompression"
         );
     }

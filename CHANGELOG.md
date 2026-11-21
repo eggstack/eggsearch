@@ -330,6 +330,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tarball. `packaging/check-packaged-assets.py` now compares
   `cargo package --list` against every `include_str!`/`include_bytes!` literal
   under `src/`.
+- A challenge page served with a non-success status is classified as `blocked` instead
+  of a transport failure. Brave answers its proof-of-work wall with HTTP 429 and an
+  80 KiB challenge document; the engine previously reported `rate_limited` without
+  reading the body. Every HTML engine now reads and classifies the body for any
+  status, so the outcome names the challenge and the status, and a non-success
+  body that matches no marker keeps `BadStatus`.
 - A cold local `repo_search` no longer spends its whole request budget on the
   first inventory build: the scan deadline starts when that build finishes, and
   the build keeps its own 5-second git bound. A content-only query in a small

@@ -176,6 +176,12 @@ empty-state marker. Ordering: parsed rows win; then a blocked marker; then an em
 `ParseFailed` with a reason that names the container (`missing` versus `produced no parseable
 results`).
 
+A challenge page can arrive with a non-success status: Brave answers its proof-of-work wall with
+HTTP 429 while serving the challenge document. The body is therefore read for every status and run
+through the same blocked markers, so the outcome is `Blocked` with the status named in the reason,
+never `rate_limited` from the bare status. A non-success body that matches no marker keeps
+`BadStatus`.
+
 `EngineError::Blocked` classifies as `ErrorClass::Blocked` (`blocked`) and mirrors as
 `FailureClass::Blocked`; it is a provider failure with a rate-limit cooldown, never absence.
 `ParseFailed` maps to `parse_error` and to `parse_shape = shifted`.

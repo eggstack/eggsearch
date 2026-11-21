@@ -35,15 +35,7 @@ pub async fn search(
         .send()
         .await
         .map_err(|e| super::map_request_error(ENGINE, e))?;
-    if !resp.status().is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: resp.status().as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
-
-    let body = String::from_utf8_lossy(&bytes).into_owned();
+    let body = super::read_search_body(resp, ENGINE, &SHAPE, MAX_BODY_BYTES, &[]).await?;
 
     parse(&body, max_results)
 }

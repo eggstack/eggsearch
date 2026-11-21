@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M044 closed)
+Status: active (M001–M044 closed; M045 active)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -134,6 +134,7 @@ M031 ──> M033 fetch-side pass-cookie reuse ──> M034 fetch-side stale pas
 ADR-0018 ──> M034 fetch-side stale pass-cookie recovery
 ADR-0019 ──> M035 browser challenge completion
 ADR-0019 §4 ──> M044 challenge solving on by default (corrective to M035)
+ADR-0006 + ADR-0019 §5 ──> M045 browser-fidelity provider access (work package 1 complete)
 M029 unified fetch ──> M036 unified fetch repo-item budget and outcome
 M006 repo workflow ──> M037 local repo-search relevance and scope
 M006 routing ──> M038 security-search native advisory routing
@@ -191,6 +192,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M040 — local content-aware candidate generation | capability (corrective to M037) | `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md` | hard M037 (closed) | A content or symbol query finds matches beyond the path-ranked window inside a scan bound; truncation and no-match describe the scan honestly |
 | M041 — linked worktree identity resolution and prefer-local honesty | capability (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/041-linked-worktree-identity-resolution.md` | hard M037 (closed); hard M040 (closed) | A checkout in a linked git worktree resolves its remote identity through the common directory, so `prefer_local` returns the local copy instead of silently falling back to a remote fetch; a skipped local copy is stated |
 | M042 — fetch item shape diagnostics | invariant (corrective to M029) | `plans/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md` | hard M029 (closed) | A `fetch` item with a missing or unknown `type` tag returns an actionable error naming the accepted shapes; no fetch error names a private Rust type |
+| M045 — browser-fidelity provider access | correctness | `plans/implementation/agentic-retrieval-integrity/045-browser-fidelity-provider-access.md` | hard ADR-0006, ADR-0019 (accepted); interface M044 (closed) | A challenge page served with a non-success status is classified as `blocked` (work package 1, complete), and a browser-gated origin is reachable through the shipped browser render path so a real results page is returned (work package 2, designed) |
 | M044 — challenge solving on by default | invariant (corrective to M035, ADR-0019 §4) | `plans/implementation/agentic-retrieval-integrity/044-challenge-solving-on-by-default.md` | hard ADR-0019 (accepted); interface M035 (closed) | Closed at `7b28436ce913bbed52bd7fdc3ba5cf14f9c85f70`: `[search.challenge].enabled` defaults to true at `max_difficulty 6`, `max_attempts 100000000`, `timeout_ms 10000`, so a challenged `mojeek` or `startpage` request returns results without operator configuration (1.6 s / 2.6 s first, then sub-second reuse); `enabled = false` restores the previous behaviour. Closure: `plans/closure/agentic-retrieval-integrity/044-status.md`. |
 | M043 — local repo-search empty-result determinism | invariant (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md` | hard M037 (closed); hard M040 (closed); interface M041 (closed) | A local `repo_search` whose bounded content pass did not run or was clipped is distinguishable from a true no-match, and the content-only positive fixture is deterministic under saturated parallel load |
 

@@ -11,6 +11,13 @@ const ENGINE: &str = "brave";
 const BRAVE_URL: &str = "https://search.brave.com/search";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
+/// The captcha page is a script-rendered shell: its visible text lives in the
+/// embedded i18n dictionary, which rendered-text matching deliberately skips.
+const STATUS_CHALLENGE_MARKERS: &[&str] = &[
+    "Verifying you're not a bot",
+    "Switch to traditional captcha",
+];
+
 const SHAPE: ScrapeShape = ScrapeShape {
     result_container: "div[data-type='web']",
     empty_markers: &[
@@ -18,7 +25,12 @@ const SHAPE: ScrapeShape = ScrapeShape {
         PageMarker::Selector("div.fallback-snippet"),
         PageMarker::Text("Not many great matches came back for your search"),
     ],
-    blocked_markers: &[PageMarker::Text("Please verify you are a human")],
+    blocked_markers: &[
+        PageMarker::Text("Verifying you're not a bot"),
+        PageMarker::Text("Quick check before you continue searching."),
+        PageMarker::Text("Switch to traditional CAPTCHA"),
+        PageMarker::Text("Please verify you are a human"),
+    ],
 };
 
 pub async fn search(
@@ -27,8 +39,18 @@ pub async fn search(
     max_results: usize,
     timeout: Duration,
 ) -> Result<Vec<SearchResult>, EngineError> {
+    search_at(client, BRAVE_URL, query, max_results, timeout).await
+}
+
+pub(super) async fn search_at(
+    client: &Client,
+    base_url: &str,
+    query: &str,
+    max_results: usize,
+    timeout: Duration,
+) -> Result<Vec<SearchResult>, EngineError> {
     let resp = client
-        .get(BRAVE_URL)
+        .get(base_url)
         .map_err(|e| EngineError::Http {
             engine: ENGINE,
             source: e,
@@ -38,15 +60,14 @@ pub async fn search(
         .send()
         .await
         .map_err(|e| super::map_request_error(ENGINE, e))?;
-    if !resp.status().is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: resp.status().as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
-
-    let body = String::from_utf8_lossy(&bytes).into_owned();
+    let body = super::read_search_body(
+        resp,
+        ENGINE,
+        &SHAPE,
+        MAX_BODY_BYTES,
+        STATUS_CHALLENGE_MARKERS,
+    )
+    .await?;
 
     parse(&body, max_results)
 }
@@ -177,5 +198,65 @@ mod tests {
         let results = parse(html, 10).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://valid.com");
+    }
+
+    #[tokio::test]
+    async fn challenge_served_with_429_is_blocked_not_a_status_failure() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(429)
+                .header("content-type", "text/html")
+                .body(
+                    r#"<html><head><script>const dict = {"Verifying you're not a bot":"Verifying you're not a bot"};</script></head><body><div id="app"></div></body></html>"#,
+                );
+        });
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
+
+        let error = search_at(
+            &client,
+            &server.url("/search"),
+            "rust",
+            10,
+            Duration::from_secs(5),
+        )
+        .await
+        .expect_err("a challenge page must not parse as results");
+        mock.assert();
+        match error {
+            EngineError::Blocked { reason, .. } => {
+                assert!(reason.contains("challenge page detected"), "{reason}");
+                assert!(reason.contains("HTTP 429"), "{reason}");
+            }
+            other => panic!("expected Blocked, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_500_stays_a_status_failure() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(500);
+        });
+        let client = crate::meta::engines::build_http_client(None).expect("test client");
+
+        let error = search_at(
+            &client,
+            &server.url("/search"),
+            "rust",
+            10,
+            Duration::from_secs(5),
+        )
+        .await
+        .expect_err("an empty 500 must not parse as results");
+        match error {
+            EngineError::BadStatus { status, .. } => assert_eq!(status, 500),
+            other => panic!("expected BadStatus, got {other:?}"),
+        }
     }
 }

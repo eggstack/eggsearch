@@ -1321,6 +1321,10 @@ fn resolve_user_agent(user_agent: Option<&str>) -> &str {
     user_agent.unwrap_or(DEFAULT_USER_AGENT)
 }
 
+mod response;
+
+pub(crate) use response::read_search_body;
+
 /// A marker that only appears on a documented non-results page.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum PageMarker {
@@ -1398,7 +1402,7 @@ pub(crate) fn sel(engine: &'static str, selector: &str) -> Result<scraper::Selec
     })
 }
 
-fn marker_matches(
+pub(super) fn marker_matches(
     engine: &'static str,
     marker: PageMarker,
     document: &scraper::Html,
