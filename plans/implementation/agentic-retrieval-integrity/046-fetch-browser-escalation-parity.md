@@ -1,6 +1,6 @@
 # M046 — Fetch Browser-Escalation Parity
 
-Status: active
+Status: closed
 Date: 2026-11-21
 Subsystem: agentic retrieval integrity
 Milestone class: correctness (corrective to M045)
