@@ -186,18 +186,18 @@ solving those in-process; it permits nothing else.
 
 ### Enabling
 
-Off by default. Opt in per deployment:
+On by default and bounded. Disable per deployment:
 
 ```toml
 [search.challenge]
-enabled = true
+enabled = false
 ```
 
 ### Capabilities
 
 - Solves the methods the engine set actually encounters: Anubis `fast`, `slow` (an alias of `fast`), `preact`, `metarefresh`, and WASM `sha256`, plus ALTCHA `PBKDF2/SHA-256` (Mojeek); `argon2id` and `hashx` stay unsupported
 - Search engines share the solver in `src/meta/challenge/`; fetch-path detect/solve/replay is owned by `src/challenge_replay/`
-- With solving enabled, `web_fetch`, `batch_fetch`, unified `fetch` web items, remote `repo_fetch`, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
+- With solving on (the default), `web_fetch`, `batch_fetch`, unified `fetch` web items, remote `repo_fetch`, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
 - A fetch-path ALTCHA solve takes its challenge document and its verification endpoint from the page's own `altcha-widget` publication, same-origin only; a cross-origin, scheme-changing, or malformed publication is refused before any request is issued
 - A fetch-path pass cookie is reused for a later fetch to the same origin, from a process-local cache keyed by origin. The window is the upstream-published lifetime clamped by `cookie_ttl_seconds`; a fetch that crossed an origin stores nothing and reuses nothing
 - A pair set the upstream refuses is evicted, and the same call then solves the challenge it was already holding and replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is attempted

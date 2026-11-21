@@ -167,6 +167,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Computational challenge solving is now on by default, as ADR-0019 §4 specified:
+  `[search.challenge].enabled` defaults to `true`, and the shipped ceilings cover the
+  walls the supported upstreams serve today (`max_difficulty = 6`,
+  `max_attempts = 20000000`, `timeout_ms = 10000`). A challenged `startpage` or
+  `mojeek` request therefore returns results instead of `blocked` without operator
+  configuration; `enabled = false` restores the previous behaviour. Interactive
+  CAPTCHA, OCR, third-party solving, and every other prohibition in ADR-0009 are
+  unchanged, and each solve still runs inside the call deadline with one solve per
+  provider per reuse window.
 - `fetch` now enforces `max_total_chars` against the emitted payload instead of
   the readable-text measure alone. Each item reports `payload_chars` (the
   serialized character count of its response value before projection) and the

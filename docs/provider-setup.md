@@ -19,7 +19,7 @@ All credentialed providers are disabled or non-routable unless explicitly config
 
 ## Web Search Providers
 
-These providers require no API key and parse public search-result HTML. Like SearXNG, eggsearch is a metasearch system: it queries independent upstream engines and combines their results rather than maintaining a web index. HTML is an upstream format, not a stable API, so markup changes, rate limits, and challenge pages can cause provider-specific failures. eggsearch distinguishes those failures from a confirmed empty result. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) for observed HTML providers. Respect each upstream's terms and rate limits. Challenge solving is opt-in and limited to bounded computational proof-of-work; interactive CAPTCHAs, third-party solvers, proxy rotation, and user-agent spoofing are not supported. See [Capabilities and Optional Features](features.md#bounded-challenge-solving).
+These providers require no API key and parse public search-result HTML. Like SearXNG, eggsearch is a metasearch system: it queries independent upstream engines and combines their results rather than maintaining a web index. HTML is an upstream format, not a stable API, so markup changes, rate limits, and challenge pages can cause provider-specific failures. eggsearch distinguishes those failures from a confirmed empty result. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) for observed HTML providers. Respect each upstream's terms and rate limits. Challenge solving is on by default and limited to bounded computational proof-of-work; set `[search.challenge].enabled = false` to disable it. Interactive CAPTCHAs, third-party solvers, proxy rotation, and user-agent spoofing are not supported. See [Capabilities and Optional Features](features.md#bounded-challenge-solving).
 
 The SearXNG provider below is different: it calls a SearXNG instance's JSON API, not its HTML page.
 
@@ -44,19 +44,17 @@ The SearXNG provider below is different: it calls a SearXNG instance's JSON API,
 - ID: `startpage`
 - Enabled by default, but not included in `default_providers`
 - No API key is required
-- The upstream may present a proof-of-work challenge. Without challenge solving, eggsearch reports the provider as `blocked`.
-- To opt in, enable the provider and bounded challenge solving:
+- The upstream presents a proof-of-work challenge at difficulty 6; the shipped solver solves it by default.
+- To select the provider, enable it (challenge solving is already on):
 
   ```toml
   [search.providers]
   startpage = true
-
-  [search.challenge]
-  enabled = true
   ```
 
-Challenge solving is off by default and can add time to a search. Its difficulty,
-attempt, and timeout limits are configurable. See [Capabilities and Optional
+Challenge solving is on by default and can add time to a search. If you disable it
+(`[search.challenge]\nenabled = false`), a challenged provider reports `blocked`. Its
+difficulty, attempt, and timeout limits are configurable. See [Capabilities and Optional
 Features](features.md#bounded-challenge-solving) for limits and restrictions.
 
 ### Yahoo (default)
@@ -76,10 +74,9 @@ Features](features.md#bounded-challenge-solving) for limits and restrictions.
   ```toml
   [search.providers]
   mojeek = true
-
-  [search.challenge]
-  enabled = true
   ```
+
+  Its ALTCHA proof-of-work wall is solved by the default solver settings.
 
 The upstream may require an ALTCHA proof-of-work challenge. Challenge solving is
 off by default, uses configured limits, and can add CPU time. See

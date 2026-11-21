@@ -117,7 +117,7 @@ All 44 built-in providers:
 |----------|------|----------|-------|
 | `duckduckgo` | html_scrape | none | Default generic provider |
 | `brave` | html_scrape | none | Default generic provider |
-| `startpage` | html_scrape | none | Selectable; the upstream Anubis proof-of-work wall is solved when `[search.challenge].enabled = true` |
+| `startpage` | html_scrape | none | Selectable; the upstream Anubis proof-of-work wall is solved by default |
 | `yahoo` | html_scrape | none | Default generic provider |
 | `mojeek` | html_scrape | none | |
 | `searxng` | json_api | `base_url` | Requires `[search.searxng]` config |
@@ -316,23 +316,23 @@ Some keyless upstreams answer a request with a computational proof-of-work
 challenge instead of results. ADR-0009 permits solving those in-process and
 permits nothing else: no interactive CAPTCHA, image puzzle, OCR, human or
 third-party solving service, credential bypass, proxy rotation, or
-user-agent spoofing. The capability is off by default.
+user-agent spoofing. The capability is on by default.
 
 ```toml
 [search.challenge]
-enabled = false           # operator opt-in
-max_difficulty = 5        # Anubis ceiling; difficulty 6 is ~16.8M candidates
-max_attempts = 2000000    # candidate / PBKDF2-derivation ceiling per solve
-timeout_ms = 2000         # wall-clock ceiling per solve
+enabled = true            # default; set false to disable the solver
+max_difficulty = 6        # Anubis ceiling; difficulty 6 is ~16.8M candidates
+max_attempts = 100000000  # candidate / PBKDF2-derivation ceiling per solve
+timeout_ms = 10000        # wall-clock ceiling per solve
 cookie_ttl_seconds = 240  # pass-cookie reuse window, per provider and per fetch origin
 ```
 
 | Setting | Default | Bounds | Meaning |
 |---------|---------|--------|---------|
-| `enabled` | `false` | none | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
-| `max_difficulty` | `5` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
-| `max_attempts` | `2000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default matches the default difficulty ceiling of 5; raise it together with `max_difficulty`. |
-| `timeout_ms` | `2000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
+| `enabled` | `true` | none | Turns the solver on. While off, every challenged provider behaves exactly as it did before the capability existed. |
+| `max_difficulty` | `6` | `1`–`10` | Refuses an Anubis challenge whose published `rules.difficulty` is above this. This is the operator cost knob, not a fixed engine constant. The default covers the difficulty Startpage publishes today. A `sha256` challenge publishes leading zero bits and is compared as `ceil(bits / 4)`, so the same ceiling stays fast-equivalent. |
+| `max_attempts` | `100000000` | `1`–`100000000` | Hard candidate ceiling for one solve. A solve that reaches it fails; it never loops. The default sits above what the wall clock can spend at measured release speed, so `timeout_ms` governs the cost while the ceiling still refuses a projected difficulty 7 (`16^7` candidates). |
+| `timeout_ms` | `10000` | `100`–`30000` | Wall-clock ceiling for one solve. A difficulty-6 Anubis challenge needs at least `8000`. |
 | `cookie_ttl_seconds` | `240` | `0`–`3600` | How long the replayed pass-cookie pair set is reused for that provider, and for an origin on the fetch path. `0` disables reuse, so every request re-solves. |
 
 Challenge solving is supported for bounded, non-interactive proof-of-work

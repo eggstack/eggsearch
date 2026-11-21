@@ -202,8 +202,8 @@ Requirements for any change to an HTML parser:
 ## Challenge solving
 
 ADR-0009 permits in-process solving of published computational proof-of-work challenges and
-nothing else. The capability is off by default; when it is off or the budget is exhausted, the
-provider reports `blocked` exactly as it does today. Nothing in this section authorizes answering
+nothing else. The capability is on by default (ADR-0019 §4); when it is explicitly off or the
+budget is exhausted, the provider reports `blocked` exactly as the unsolved case does. Nothing in this section authorizes answering
 an interactive CAPTCHA, driving a browser, or contacting a solving service.
 
 Two upstreams in the engine set use this gate. Measured parameters on 2026-11-11:
@@ -447,9 +447,9 @@ IDs below are exactly `KNOWN_PROVIDER_IDS` order, grouped by category. Capabilit
 |-------------|--------|------------------------|
 | `duckduckgo` | `DuckDuckGoEngine` | HTML scrape, keyless |
 | `brave` | `BraveEngine` | HTML scrape, keyless (distinct from `brave_api`) |
-| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). With `[search.challenge]` disabled or `max_difficulty` below the published difficulty the engine reports `blocked`; a permitted solve replays the pairs the pass response issued. Not in `default_providers` |
+| `startpage` | `StartpageEngine` | HTML scrape, keyless; upstream serves an Anubis proof-of-work wall (`#anubis_challenge`). The solver is on by default at `max_difficulty = 6`; with `[search.challenge]` disabled or a lower ceiling the engine reports `blocked`, and a permitted solve replays the pairs the pass response issued. Not in `default_providers` |
 | `yahoo` | `YahooEngine` | HTML scrape, keyless |
-| `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. With `[search.challenge]` disabled the engine reports `blocked`; with it enabled the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs |
+| `mojeek` | `MojeekEngine` | HTML scrape, keyless; upstream serves an ALTCHA proof-of-work wall. By default the ALTCHA challenge is solved once, `chllg` is replayed, and the normal `ul.results-standard` parser runs; with `[search.challenge]` disabled the engine reports `blocked` |
 | `searxng` | `SearxngEngine` | JSON API, self-hosted `base_url` required; skipped as `missing_searxng_config` otherwise; no native capability flags claimed |
 | `brave_api` | `BraveApiEngine` | JSON API, `BRAVE_API_KEY`; native safe-search, freshness/date-range, language, region, news, result timestamps |
 | `exa` | `ExaEngine` | JSON API (`POST /search`), `EXA_API_KEY`; native freshness/date-range, domain filters, result timestamps; highlights fetched only on excerpt demand |

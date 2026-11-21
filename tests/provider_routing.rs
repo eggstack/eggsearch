@@ -1332,7 +1332,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
     let block = empty["challenge_solver"]
         .as_object()
         .expect("challenge_solver is always present");
-    assert_eq!(block["enabled"], serde_json::json!(false));
+    assert_eq!(block["enabled"], serde_json::json!(true));
     assert_eq!(block["untracked_providers"], serde_json::json!(0));
     assert_eq!(
         block["providers"],
