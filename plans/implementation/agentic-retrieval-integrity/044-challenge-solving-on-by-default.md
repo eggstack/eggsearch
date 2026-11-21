@@ -1,6 +1,6 @@
 # M044 — Challenge Solving On by Default
 
-Status: ready
+Status: closed
 Date: 2026-11-21
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective to M035 and to ADR-0019 §4)
