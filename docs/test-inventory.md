@@ -194,13 +194,14 @@ Source of truth: `fuzz/Cargo.toml` [[bin]] entries.
 | `provider_capability_contract` | Provider native-capability enforcement contract |
 | `egress_qualify_contract` | Egress qualification CI contract (exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage) |
 
-## Tool Consolidation Contracts (4 suites)
+## Tool Consolidation Contracts (5 suites)
 
 | Suite | Tests | Focus |
 |-------|-------|-------|
 | `mcp_tool_contract` | 22 | Canonical registry parity, sanitization, deterministic fingerprints, compact-profile size/all-name contract, and the fetch canonical argument-property surface |
-| `mcp_schema_slimming` | 21 | Full/compact schema budgets, batch per-target option advertisement, and legacy-field acceptance |
+| `mcp_schema_slimming` | 26 | Full/compact schema budgets, batch per-target option advertisement, legacy-field acceptance, and cross-profile goal/research_domain enum parity |
 | `mcp_2026_protocol` | 14 | Structured results, output schemas, repairable error contract |
+| `tool_inventory_parity` | 4 | One inventory across the contract registry, core follow-up gate, presets, SDK discovery, documented preset table, and documented canonical list; compatibility aliases stay routed but undiscoverable |
 | `mcp_projection` | 35 | Brief/compact/standard/diagnostic projections: status, trust, security applicability summary and budget retention, provider and batch failure summaries, bounded failure details, repository/research reduction, character budgets, UTF-8 framing, intact over-800-character document extraction within budget, native advisory summary retention, payload budget fields retained, 15-task byte/retention trace, bundle identity |
 
 ## Tool-Surface Evaluation (2 suites)

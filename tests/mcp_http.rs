@@ -188,7 +188,7 @@ async fn legacy_http_lifecycle_lists_tools_and_calls_local_tool() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(names.len(), 10);
+    assert_eq!(names.len(), 9);
     assert!(names.contains(&"knowledge_brief"));
     assert!(names.contains(&"web_search"));
     assert!(names.contains(&"build_evidence_bundle"));
@@ -231,7 +231,7 @@ async fn compact_profile_is_used_by_initialized_http_tools_list() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(names.len(), 10);
+    assert_eq!(names.len(), 9);
     assert!(names.contains(&"knowledge_brief"));
     assert!(names.contains(&"security_search"));
     assert!(names.contains(&"research_search"));
@@ -354,7 +354,7 @@ async fn current_http_protocol_uses_request_metadata_without_a_session() {
     assert_eq!(tools.status().as_u16(), 200);
     let tools = sse_payload(tools).await;
     let listed = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(listed.len(), 10);
+    assert_eq!(listed.len(), 9);
     assert!(listed.iter().any(|tool| tool["name"] == "knowledge_brief"));
     server.stop().await;
 }
@@ -497,7 +497,7 @@ async fn modern_tools_list_is_deterministic_and_carries_output_schemas() {
     let second = modern_list(&server, 21).await;
     let first_tools = first["result"]["tools"].as_array().unwrap();
     let second_tools = second["result"]["tools"].as_array().unwrap();
-    assert_eq!(first_tools.len(), 10);
+    assert_eq!(first_tools.len(), 9);
     assert_eq!(first_tools, second_tools);
     let names: Vec<&str> = first_tools
         .iter()
@@ -729,7 +729,7 @@ async fn minimal_preset_advertises_three_tools_and_still_executes_hidden_tools()
             .as_array()
             .unwrap()
             .len(),
-        7
+        6
     );
     assert!(payload["mcp_advertisement"]["hidden_tools"]
         .as_array()

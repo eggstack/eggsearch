@@ -18,7 +18,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
 | `tests/property_*.rs` (18 suites) | Pure-function `proptest` coverage |
 | `tests/dispatch_fault_injection.rs` | Provider failure/timeout/concurrency/panic |
-| `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
+| `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs`, `tests/tool_inventory_parity.rs` | Documentation, inventory parity, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
 | `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate, shipped-default-set routing gate and keyword-query admission predicate; ignored live observation and recorder |
@@ -222,7 +222,7 @@ which runs `cargo bench --locked --all-features --bench perf --no-run`.
 
 ## Tool-surface evaluation
 
-`tests/tool_surface_evaluation.rs` runs a deterministic tool-selection regression over the labeled corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across generic web, repo, fetch, exact-error, security, research, evidence, diagnostics, and ambiguity categories; every stable tool is an expected primary at least once). Full and compact advertised descriptions are scored independently against every case; both must meet top-1/recall@3/MRR thresholds and avoid forbidden-primary results. The suite also asserts description, total, instructions, and compact byte budgets, known-tool and next-action reference validity, and synthetic Layer 2 hydration mechanics (next actions stay within the ten stable tools and compact discovery stays below full definitions). The fingerprints and per-category accuracy print with `-- --nocapture` or `make eval-tool-surface`:
+`tests/tool_surface_evaluation.rs` runs a deterministic tool-selection regression over the labeled corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across generic web, repo, fetch, exact-error, security, research, evidence, diagnostics, and ambiguity categories; every stable tool is an expected primary at least once). Full and compact advertised descriptions are scored independently against every case; both must meet top-1/recall@3/MRR thresholds and avoid forbidden-primary results. The suite also asserts description, total, instructions, and compact byte budgets, known-tool and next-action reference validity, and synthetic Layer 2 hydration mechanics (next actions stay within the nine stable tools and compact discovery stays below full definitions). The fingerprints and per-category accuracy print with `-- --nocapture` or `make eval-tool-surface`:
 
 ```bash
 cargo test --locked --all-features --test tool_surface_evaluation

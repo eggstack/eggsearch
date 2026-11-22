@@ -43,6 +43,8 @@ This ADR supersedes only the exact-ten inventory, no-removal/rename, and fixed-n
 
 ADR-0020, accepted 2026-11-20, supersedes only the clause that fixes the canonical advertised count at nine, and only to permit one added tool, `knowledge_brief`. Fetch unification, alias behavior, tool ownership, and the M029 qualification are unchanged. This record is not otherwise rewritten.
 
+ADR-0022, accepted 2026-11-22, supersedes only this record's retention of `repo_fetch` as a canonical specialist and its clause fixing the advertised count at nine. `repo_fetch` now follows the same callable-but-unadvertised compatibility shape this record established for `web_fetch` and `batch_fetch`. The alias mechanism, fetch unification, and every other contract here remain in force.
+
 The long-term specification is amended to state the nine-tool target. Historical plans and closure records that describe the former ten-tool baseline remain accurate historical evidence and are not rewritten.
 
 ## Consequences and tradeoffs

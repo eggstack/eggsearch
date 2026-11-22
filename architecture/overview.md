@@ -22,9 +22,7 @@ This document is the bird's-eye view: what each module is for, how they connect,
 ┌─────────────────────────────────────────────────────────────────┐
 │                        MCP Server                               │
 │              src/mcp/ (rmcp stdio + HTTP transports)            │
-│  10 tools: web_search, web_fetch, batch_fetch, provider_status │
-│            repo_search, repo_fetch, repo_map, security_search  │
-│            research_search, build_evidence_bundle               │
+│  Canonical tool list and schemas: docs/tool-matrix.md           │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
               ┌─────────────┼─────────────┐
@@ -65,7 +63,7 @@ meta + fetch ← serp_render ← mcp
 2. **meta** builds on `core` — engines use `eggfetch-core`, adapter orchestrates everything
 3. **fetch** is independent of `meta` — HTTP client, extraction, caching, browser rendering
 4. **challenge_replay** depends on `fetch` and `meta`, and owns shared fetch-path challenge orchestration
-5. **mcp** wires `core` + `meta` + `fetch` + `challenge_replay` into 10 tool endpoints
+5. **mcp** wires `core` + `meta` + `fetch` + `challenge_replay` into nine advertised tools plus three callable compatibility aliases
 6. **commands** (binary-only `src/commands/`) uses `challenge_replay` for CLI fetch alongside its other shared modules
 7. **serp_render** depends on `meta` and `fetch` and implements the engine layer's
    `SerpRenderer` contract over the browser, so `fetch` stays independent of `meta`
@@ -85,8 +83,8 @@ meta + fetch ← serp_render ← mcp
 | Browser rendering & profiles | `src/fetch/browser/` (8 files) | Optional headless Chrome/Chromium via CDP; persistent origin-scoped login profiles | [fetch.md](fetch.md#9-browser-rendering-browser-8-files-feature-browser) |
 | Browser-rendered provider pages | `src/serp_render/` | Implements the engine layer's `SerpRenderer` contract over the shared browser lifecycle, so a browser-gated HTML provider is parsed from the rendered DOM | [engines.md](engines.md#browser-rendered-access) |
 | HTML rendering | `src/fetch/render/` (8 files) | Structural rendering: blocks, text, markdown, code, CSV, notebooks | [fetch.md](fetch.md#6-render-subsystem-render-8-files) |
-| MCP server & tools | `src/mcp/` (7 modules + `tools/` with 10 tool modules plus `mod`/`common`/`canonical`/`tests`) | rmcp ServerHandler with 10 tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
-| Native SDK facade | `src/sdk.rs` | Narrow direct Rust operation API delegating to the same ten MCP handlers | [python-library.md](python-library.md) |
+| MCP server & tools | `src/mcp/` with per-tool modules and shared support modules | rmcp ServerHandler with nine advertised tools, stdio and loopback Streamable HTTP | [mcp.md](mcp.md) |
+| Native SDK facade | `src/sdk.rs` | Narrow direct Rust operation API delegating to the same nine canonical MCP handlers | [python-library.md](python-library.md) |
 | Python native package | `bindings/python/` | PyO3 asyncio client, named Python methods, and typed agent-facing JSON contracts | [python-library.md](python-library.md) |
 | CLI commands | `src/commands/` (binary-only, `mod` + 9 modules) | Subcommand wiring: doctor, search, fetch, providers, update, integrate, startup, restart, croncheck, mcp stdio/serve, browser-login/profiles | [commands.md](commands.md) |
 | Agent/IDE integrations | `src/integrations/` (10 files, 7 clients) | Client-specific render/apply adapters with atomic JSON edits and protocol verification | [integrations.md](integrations.md) |
@@ -156,7 +154,7 @@ All implement one trait (`SearchEngine`) with defaulted advisory methods; unsupp
 
 ### fetch — bounded URL fetching ([fetch.md](fetch.md))
 
-Independent of the search path; used by `web_fetch`/`batch_fetch`/`repo_fetch` and suggested-fetch follow-ups.
+Independent of the search path; used by canonical `fetch` and the direct-call compatibility aliases `web_fetch`/`batch_fetch`/`repo_fetch`, plus suggested-fetch follow-ups.
 
 - `validate_fetch_target()` blocks SSRF vectors before any network I/O
 - `FetchClient` enforces byte caps, timeouts, redirect limits, content-type checks
@@ -182,7 +180,7 @@ Binary-only thin wrappers over the same library pieces; `mcp stdio` is the clien
 
 ---
 
-## The 10 MCP Tools
+## The 9 MCP Tools
 
 Registration lives in `src/mcp/server.rs` (`#[tool]` attrs with contract-aligned short descriptions and `read_only_hint`/`open_world_hint` annotations); implementations in `src/mcp/tools/` (per-tool modules with shared `common.rs` and `canonical.rs` translators). The canonical semantic contract lives in `src/mcp/tool_contract.rs` (purpose, use-when/not-for, domain, disclosure, keywords, aliases, related/next, `discovery_text()`, `is_known_tool()`); `tools/list` is name-sorted with an FNV-1a content fingerprint for caching.
 
@@ -191,11 +189,10 @@ Ordinary agent schemas are slimmed: canonical `goal` (`understand`, `architectur
 | Tool | Purpose | Key Parameters |
 |------|---------|----------------|
 | `web_search` | Live metasearch over configured providers | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `excerpt_count` |
-| `web_fetch` | Bounded extraction of one HTTP(S) URL | `url`, `max_chars`, `extract_mode` |
-| `batch_fetch` | Batch fetch over URLs or repo locators with per-target controls | Web-item PDF/render/profile/cache/focus options; repo-item span/source-selection/`prefer_local`/focus options; `max_chars_per_item`, `max_total_chars`, telemetry |
+| `fetch` | Bounded retrieval of tagged web/repo items with per-target controls | `items` (web or repo), item source/span/extract/cache/render/focus options, `max_chars_per_item`, `max_total_chars` |
+| `knowledge_brief` | Cutoff-aware public-evidence delta | Query and model/cutoff, refresh, and related-topic controls |
 | `provider_status` | Diagnostic provider configuration report with optional bounded live probe | (none; `probe`, `recipe_detail`) |
 | `repo_search` | Structured repository evidence discovery | `query`, `goal`, `sources`, repo locator/package fields, `include_local` |
-| `repo_fetch` | Repository file fetch by locator | `locator`, `line_start`, `line_end`, `symbol` |
 | `repo_map` | Repository structure discovery | `owner`, `repo`, `ref`, `path` |
 | `security_search` | Security-oriented vulnerability retrieval | `query`, `identifiers`, `package`, `ecosystem`, `goal`, `include` |
 | `research_search` | Research-oriented evidence discovery | `query`, `depth`, `domain`, `goal`, `include` |
@@ -237,12 +234,12 @@ MCP tool call
 ### Fetch flow
 
 ```
-web_fetch / batch_fetch / repo_fetch call
+fetch (web/repo items) / web_fetch / batch_fetch / repo_fetch call
   → policy check (Live/DryRun/Offline)
   → validate_fetch_target() SSRF/scheme validation
   → cache lookup (raw tier → derived tier; fresh raw hits re-derive locally)
   → miss: FetchClient bounded HTTP fetch (or browser transport if needed)
-  → content detection → extraction/rendering → span selection (repo_fetch)
+  → content detection → extraction/rendering → span selection (repo items)
   → sanitized bounded response, cached under scope + params
 ```
 

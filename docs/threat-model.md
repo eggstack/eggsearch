@@ -164,7 +164,7 @@ Tier 3 scans for seven heuristic patterns:
 | `text` | Yes | Yes | Bounded by `max_chars`, framed when sanitization enabled |
 | `document` blocks | Yes | Yes | Structured extraction, bounded per block |
 | `links` | Capped | Yes | Link count capped |
-| `raw_text` | Yes (50k cap) | No | Internal-only for `repo_fetch` line/span selection |
+| `raw_text` | Yes (50k cap) | No | Internal-only for repository-item line/span selection |
 | `raw_text_chars_returned` | N/A | No | Internal-only metadata |
 | `raw_text_truncated` | N/A | No | Internal-only metadata |
 | `raw_text_cap` | N/A | No | Internal-only metadata |

@@ -230,7 +230,7 @@ fn collect_unresolved_local_refs(
 #[test]
 fn every_compact_schema_resolves_local_references() {
     let tools = compact_tool_definitions();
-    assert_eq!(tools.len(), 10);
+    assert_eq!(tools.len(), 9);
     for tool in tools {
         let schema = serde_json::to_value(tool.input_schema).expect("schema serializes");
         let mut unresolved = Vec::new();
@@ -310,8 +310,8 @@ fn full_and_compact_advertisements_are_smaller_than_the_ten_tool_baseline() {
         .len();
     println!("m029-advertisement-bytes full={full_bytes} compact={compact_bytes} baseline_full=78072 baseline_compact=22540");
     assert!(
-        full_bytes < 78_072,
-        "full tools/list {full_bytes} must be below the exact ten-tool baseline 78072"
+        full_bytes < 40_000,
+        "full tools/list {full_bytes} must stay below the 40000 budget after the evidence-bundle passthrough projection"
     );
     assert!(
         compact_bytes < 22_540,
@@ -344,8 +344,18 @@ fn search_four_schema_bytes_stay_slim() {
         })
         .sum();
     assert!(
-        total <= 78_250,
-        "all tool definitions total {total} bytes exceeds 78250 budget (pre-slim baseline 74694 input-only; +~4k for MCP 2026 outputSchema coverage added in 003 with compact stable envelopes; +~1k for 004 response_detail projection control; +411 for M020 offset addressing on web_fetch, batch_fetch and research_search; +37 for M015 provider_status challenge_solver; +632 for explicit behavior hints on all ten tools and the web_search evidence-only sentence; +2,532 for M002 documented per-target batch controls; +272 for M003 screenshot request properties)"
+        total <= 40_000,
+        "all tool definitions total {total} bytes exceeds the 40000 budget (M002 replaced the inlined build_evidence_bundle input type graph with a bounded passthrough projection; earlier +~4k outputSchema coverage, +~1k response_detail projection, +411 offset addressing, +37 challenge_solver, +632 behavior hints, +2,532 per-target batch controls, +272 screenshot properties remain included)"
+    );
+}
+
+#[test]
+fn evidence_bundle_input_schema_stays_bounded() {
+    let bytes = serialized_bytes("build_evidence_bundle");
+    println!("evidence-bundle-definition-bytes={bytes}");
+    assert!(
+        bytes <= 3_000,
+        "build_evidence_bundle definition {bytes} bytes exceeds the bounded passthrough projection"
     );
 }
 
@@ -694,4 +704,98 @@ fn security_include_conflict_reports_repair() {
     );
     let err = r.unwrap_err().to_string();
     assert!(err.contains("Repair"), "got: {err}");
+}
+
+fn field_string_enum(schema: &serde_json::Value, field: &str) -> Vec<String> {
+    schema
+        .pointer(&format!("/properties/{field}/enum"))
+        .and_then(serde_json::Value::as_array)
+        .unwrap_or_else(|| panic!("{field} must advertise a string enum in {schema}"))
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn sort_enum_values(mut values: Vec<String>) -> Vec<String> {
+    values.sort_unstable();
+    values
+}
+
+#[test]
+fn every_compact_field_exists_in_the_full_schema() {
+    let mut missing = Vec::new();
+    for tool in tool_definitions() {
+        let Some(fields) = eggsearch::mcp::tools::compact_fields(tool.name.as_ref()) else {
+            continue;
+        };
+        let schema = serde_json::to_value(&tool.input_schema).expect("schema serializes");
+        for field in fields {
+            if !has_prop(&schema, field) {
+                missing.push(format!("{}.{}", tool.name, field));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "compact fields missing from full schemas: {missing:?}"
+    );
+}
+
+#[test]
+fn goal_and_research_domain_enums_match_between_profiles_and_runtime() {
+    use eggsearch::core::research::{ResearchDomain, RESEARCH_DOMAIN_VALUES};
+    use eggsearch::mcp::tools::canonical::{
+        parse_repo_goal, parse_research_goal, parse_security_goal, REPO_GOAL_VALUES,
+        RESEARCH_GOAL_VALUES, SECURITY_GOAL_VALUES,
+    };
+
+    let cases = [
+        ("repo_search", "goal", REPO_GOAL_VALUES),
+        ("research_search", "goal", RESEARCH_GOAL_VALUES),
+        ("security_search", "goal", SECURITY_GOAL_VALUES),
+        ("research_search", "research_domain", RESEARCH_DOMAIN_VALUES),
+    ];
+    for (tool, field, expected) in cases {
+        let full = schema_for(tool);
+        let compact = compact_schema_for(tool);
+        let full_values = field_string_enum(&full, field);
+        let compact_values = field_string_enum(&compact, field);
+        let expected = expected.iter().map(|value| (*value).to_owned()).collect();
+        assert_eq!(
+            sort_enum_values(full_values.clone()),
+            sort_enum_values(compact_values),
+            "{tool}.{field} differs by schema profile"
+        );
+        assert_eq!(
+            sort_enum_values(full_values),
+            sort_enum_values(expected),
+            "{tool}.{field} differs from its vocabulary constant"
+        );
+    }
+
+    for value in REPO_GOAL_VALUES {
+        assert!(
+            parse_repo_goal(value).is_some(),
+            "repo goal {value} rejected"
+        );
+    }
+    for value in RESEARCH_GOAL_VALUES {
+        assert!(
+            parse_research_goal(value).is_some(),
+            "research goal {value} rejected"
+        );
+    }
+    for value in SECURITY_GOAL_VALUES {
+        assert!(
+            parse_security_goal(value).is_some(),
+            "security goal {value} rejected"
+        );
+    }
+    for value in RESEARCH_DOMAIN_VALUES {
+        assert!(
+            ResearchDomain::parse(value).is_some(),
+            "research domain {value} rejected"
+        );
+    }
 }

@@ -77,7 +77,6 @@ EXPECTED_TOOLS = {
     "knowledge_brief",
     "provider_status",
     "repo_search",
-    "repo_fetch",
     "repo_map",
     "security_search",
     "research_search",
@@ -89,7 +88,6 @@ REQUEST_TYPES = {
     "fetch": eggsearch_types.FetchRequest,
     "provider_status": eggsearch_types.ProviderStatusRequest,
     "repo_search": eggsearch_types.RepoSearchRequest,
-    "repo_fetch": eggsearch_types.RepoFetchRequest,
     "repo_map": eggsearch_types.RepoMapRequest,
     "security_search": eggsearch_types.SecuritySearchRequest,
     "research_search": eggsearch_types.ResearchSearchRequest,
@@ -129,7 +127,7 @@ def config_path(tmp_path):
 
 def test_native_module_import_and_tool_inventory():
     names = tool_names()
-    assert len(names) == 10
+    assert len(names) == 9
     assert set(names) == EXPECTED_TOOLS
     assert len(set(names)) == len(names)
 

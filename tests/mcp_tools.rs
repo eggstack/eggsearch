@@ -219,7 +219,6 @@ async fn all_ten_canonical_tools_advertised() {
         "knowledge_brief",
         "provider_status",
         "repo_search",
-        "repo_fetch",
         "repo_map",
         "security_search",
         "research_search",
@@ -249,7 +248,7 @@ fn fetch_disabled_state() -> Arc<ServerState> {
 
 #[cfg(feature = "mock")]
 #[test]
-fn mcp_tool_surface_all_ten_canonical_tools_with_mock_state() {
+fn mcp_tool_surface_all_canonical_tools_with_mock_state() {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
     let server = eggsearch::mcp::EggsearchServer::new(state);
@@ -258,8 +257,8 @@ fn mcp_tool_surface_all_ten_canonical_tools_with_mock_state() {
 
     assert_eq!(
         names.len(),
-        10,
-        "expected exactly ten canonical tools, got: {names:?}"
+        9,
+        "expected exactly nine canonical tools, got: {names:?}"
     );
     assert!(
         names.contains(&"web_search".to_string()),
@@ -276,10 +275,6 @@ fn mcp_tool_surface_all_ten_canonical_tools_with_mock_state() {
     assert!(
         names.contains(&"repo_search".to_string()),
         "missing repo_search: {names:?}"
-    );
-    assert!(
-        names.contains(&"repo_fetch".to_string()),
-        "missing repo_fetch: {names:?}"
     );
     assert!(
         names.contains(&"repo_map".to_string()),
@@ -506,14 +501,10 @@ fn provider_status_pdf_capabilities_track_feature_and_config() {
 #[test]
 fn provider_status_reports_active_mcp_advertisement() {
     let cases = [
-        (
-            eggsearch::core::config::McpToolPreset::Full,
-            10usize,
-            0usize,
-        ),
-        (eggsearch::core::config::McpToolPreset::Research, 7, 3),
-        (eggsearch::core::config::McpToolPreset::Code, 7, 3),
-        (eggsearch::core::config::McpToolPreset::Minimal, 3, 7),
+        (eggsearch::core::config::McpToolPreset::Full, 9usize, 0usize),
+        (eggsearch::core::config::McpToolPreset::Research, 6, 3),
+        (eggsearch::core::config::McpToolPreset::Code, 6, 3),
+        (eggsearch::core::config::McpToolPreset::Minimal, 3, 6),
     ];
     for (preset, advertised, hidden) in cases {
         let mut cfg = AppConfig::default();

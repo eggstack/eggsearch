@@ -61,6 +61,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/retrieval_quality.rs` | `mock` (live observation and recorder ignored) | Synthetic retrieval relevance corpus (`tests/fixtures/retrieval_quality/cases.json`), candidate-snapshot replay through production selection (`candidate_snapshots.json`, tier-2 `recorded_snapshots.json`, tier-3 into `target/snapshots/`), seeded negative controls, derived-intent rollout gate (`make eval-retrieval-quality`) |
 | `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | None | Tool consolidation contracts: registry parity, schema budgets, structured errors, response projection |
+| `tests/tool_inventory_parity.rs` | 4 | One-inventory parity across contract registry, workflow gate, presets, SDK discovery, and documented tables; compatibility alias boundary |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |
 | `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |

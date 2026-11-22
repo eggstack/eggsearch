@@ -128,7 +128,7 @@ impl ToolContract {
     }
 }
 
-/// Whether a name is one of the ten stable canonical tool names.
+/// Whether a name is one of the nine stable canonical tool names.
 ///
 /// Harnesses must ignore `next_actions` entries whose `tool` fails this
 /// check; unknown or malicious names never widen execution authority.
@@ -140,7 +140,7 @@ pub fn is_known_tool(name: &str) -> bool {
 pub static ALL_CONTRACTS: &[ToolContract] = &[
     ToolContract {
         name: "build_evidence_bundle",
-        description: "Package already-selected search and fetch evidence for handoff. Use with gathered `sources` and `fetches`; does not search, fetch, or summarize.",
+        description: "Package already-selected search and fetch evidence for handoff. Pass prior tool output verbatim in `sources` and `fetches`; nested metadata is accepted but not re-advertised. Does not search, fetch, or summarize.",
         purpose: "deterministic evidence packaging for handoff",
         use_when: "evidence is already gathered and must be handed off without summarization",
         not_for: "search, fetch, synthesis, or summarization",
@@ -152,11 +152,9 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         idempotent: true,
         related_tools: &[
             "fetch",
-            "repo_fetch",
             "repo_search",
             "research_search",
             "security_search",
-            "fetch",
             "web_search",
         ],
         next_tools: &[],
@@ -165,7 +163,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "fetch",
-        description: "Fetch one or more explicitly selected web URLs or repo targets in one bounded call; pass a tagged `items` object or an array. Not for search or crawling.",
+        description: "Fetch one or more explicitly selected web URLs or repository targets in one bounded call. Repo items take a structured locator with optional symbol or line span. Not for search or crawling.",
         purpose: "bounded single- or multi-target web and repository fetching",
         use_when: "one or more explicit web URLs or repo locators must be read",
         not_for: "search, crawling, or following links",
@@ -175,9 +173,12 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         destructive: false,
         idempotent: true,
-        related_tools: &["repo_fetch", "repo_search", "web_search"],
+        related_tools: &["repo_search", "web_search"],
         next_tools: &["build_evidence_bundle"],
-        keywords: &["url", "page", "extract", "read", "inspect", "repository", "file", "multiple", "offset", "limit"],
+        keywords: &[
+            "url", "page", "extract", "read", "inspect", "repository", "file", "multiple",
+            "offset", "limit", "locator", "symbol", "span", "lines",
+        ],
         aliases: &["web", "repository", "page", "read"],
     },
     ToolContract {
@@ -223,26 +224,6 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         aliases: &["providers", "health", "diagnostics"],
     },
     ToolContract {
-        name: "repo_fetch",
-        description: "Fetch a known repository file or span by structured locator. Use after `repo_search` with `owner`, `repo`, `path`; for arbitrary URLs use `fetch`.",
-        purpose: "bounded repository file or span inspection",
-        use_when: "a concrete repository file or line span is already known",
-        not_for: "repository discovery or arbitrary URL fetching",
-        domain: ToolDomain::Repository,
-        disclosure: ToolDisclosureHint::Deferred,
-        read_only: true,
-        open_world: true,
-        destructive: false,
-        idempotent: true,
-        related_tools: &["fetch", "repo_map", "repo_search", "fetch"],
-        next_tools: &["build_evidence_bundle"],
-        keywords: &[
-            "file", "span", "symbol", "locator", "source", "read", "inspect", "known",
-            "line", "range",
-        ],
-        aliases: &["read_file", "code_fetch", "repo_read"],
-    },
-    ToolContract {
         name: "repo_map",
         description: "Describe a repository layout without file contents. Use to orient before `repo_search` with `owner`, `repo`; not a substitute for search or fetch.",
         purpose: "repository structure discovery without contents",
@@ -254,7 +235,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         destructive: false,
         idempotent: true,
-        related_tools: &["repo_fetch", "repo_search"],
+        related_tools: &["repo_search"],
         next_tools: &["repo_search"],
         keywords: &[
             "structure",
@@ -269,7 +250,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "repo_search",
-        description: "Discover evidence for a repository across source, docs, issues, releases, and package metadata. Use for codebase investigation; use `repo_fetch` only after a concrete file/span is known.",
+        description: "Discover evidence for a repository across source, docs, issues, releases, and package metadata. Use for codebase investigation; use `fetch` with a repo item only after a concrete file/span is known.",
         purpose: "structured repository evidence discovery",
         use_when: "investigating a specific codebase, package, or repository",
         not_for: "fetching a known file span or general web lookup",
@@ -279,8 +260,8 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         open_world: true,
         destructive: false,
         idempotent: true,
-        related_tools: &["repo_fetch", "repo_map", "web_search"],
-        next_tools: &["fetch", "repo_fetch", "repo_map"],
+        related_tools: &["fetch", "repo_map", "web_search"],
+        next_tools: &["fetch", "repo_map"],
         keywords: &[
             "code",
             "repository",
@@ -306,7 +287,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
         destructive: false,
         idempotent: true,
         related_tools: &["fetch", "repo_search", "fetch", "web_search"],
-        next_tools: &["fetch", "build_evidence_bundle", "repo_fetch", "fetch"],
+        next_tools: &["fetch", "build_evidence_bundle"],
         keywords: &[
             "architecture",
             "comparison",
@@ -392,10 +373,10 @@ mod tests {
         assert_eq!(names, sorted, "contracts must stay in alphabetical order");
         let mut dedup = sorted.clone();
         dedup.dedup();
-        assert_eq!(dedup.len(), 10, "exactly ten contracts expected");
+        assert_eq!(dedup.len(), 9, "exactly nine contracts expected");
         names.sort_unstable();
         names.dedup();
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 9);
     }
 
     #[test]

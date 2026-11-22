@@ -273,7 +273,7 @@ capped `top_symbols`, heuristic `test_relationships`, CI/Dockerfile/Makefile
 `build_configs`, and `structure_truncated` on any cap breach. Caps come from
 the `[local]` budgets; the scan never executes workspace code.
 
-Local `repo_fetch` validates the requested path, then reads it with
+A local repo item in `fetch` validates the requested path, then reads it with
 `safe_read_file()` relative to the selected workspace root; it never reopens
 the canonicalized pathname. With `prefer_local: true`, an enabled local backend
 first resolves the requested host/owner/repository against local checkout
@@ -284,8 +284,7 @@ existing validation error when its required local workspace or matching repo is
 not available. It identifies PDFs by case-insensitive `.pdf` extension or a
 safely read `%PDF-` prefix. PDF bytes use `pdf_max_file_bytes` and the existing
 PDF feature plus `[fetch].pdf_enabled` gates, then flow through the shared
-byte-slice extractor. `repo_fetch` and batch repo items do not accept PDF page
-selection. PDF remains in `BINARY_EXTENSIONS`, so local indexing and repo-map
+byte-slice extractor. Repo items in `fetch` do not accept PDF page selection. PDF remains in `BINARY_EXTENSIONS`, so local indexing and repo-map
 filtering are unchanged. Local `repo_map` structure enrichment uses the same
 bounded opener for manifest, source, and test contents. Its structural walk
 skips symlink entries even when local search permits following symlinks, so map

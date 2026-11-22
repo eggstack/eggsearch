@@ -1,9 +1,9 @@
 # MCP Server Deep Dive
 
 **Location:** `src/mcp/` (8 modules + `tools/` with 11 behavior modules plus `mod`/`common`/`canonical`/`tests`)
-**Purpose:** Stable MCP protocol surface for AI agents: 10 canonical tools over client-owned stdio or explicit loopback-only Streamable HTTP, backed by `MetadataSearchAdapter` and the bounded fetch pipeline.
+**Purpose:** Stable MCP protocol surface for AI agents: nine canonical tools over client-owned stdio or explicit loopback-only Streamable HTTP, backed by `MetadataSearchAdapter` and the bounded fetch pipeline.
 
-Canonical tool names in this document are derived from `src/mcp/server.rs` (`#[tool(name = ...)]` registrations), excluding the `web_fetch` and `batch_fetch` compatibility aliases. There are exactly 10 canonical tools. No other tool-like names are valid.
+Canonical tool names in this document are derived from `src/mcp/server.rs` (`#[tool(name = ...)]` registrations), excluding the `web_fetch`, `batch_fetch`, and `repo_fetch` compatibility aliases. There are exactly nine canonical tools. No other tool-like names are valid.
 
 ---
 
@@ -12,7 +12,7 @@ Canonical tool names in this document are derived from `src/mcp/server.rs` (`#[t
 | File | Responsibility |
 |------|---------------|
 | `mod.rs` | Module declarations, `build_server(AppConfig) -> anyhow::Result<EggsearchServer>` factory, re-exports of `EggsearchServer`, `ServerState`, `Policy`, `McpPath`, `ServeOptions` |
-| `server.rs` | `EggsearchServer`: rmcp `ServerHandler` impl, 12 `#[tool]` handlers (10 canonical plus two compatibility aliases), `apply_contract_metadata()`, FNV-1a `contract_fingerprint()`, `EGGSEARCH_INSTRUCTIONS` |
+| `server.rs` | `EggsearchServer`: rmcp `ServerHandler` impl, 12 `#[tool]` handlers (nine canonical plus three compatibility aliases), `apply_contract_metadata()`, FNV-1a `contract_fingerprint()`, `EGGSEARCH_INSTRUCTIONS` |
 | `state.rs` | `ServerState`: shared `Arc`-wrapped config, adapter, fetch client, origin controller, cache, KEV client, local backend + inventory cache, browser handles |
 | `policy.rs` | `Policy` (`Allow`/`Deny`), `live_allowed()`, `fetch_allowed()`, denial-message constructors |
 | `tool_contract.rs` | Canonical `ToolContract` registry: purpose, use-when/not-for, domain, disclosure, annotations, keywords, aliases, related/next graphs, `discovery_text()`, `is_known_tool()` |
@@ -42,19 +42,24 @@ Construction (`EggsearchServer::new`) builds the `#[tool_router]` router once, t
 
 `build_server()` reads `[mcp].schema_profile` once when constructing the
 server. `full` is the default and leaves the decorated list unchanged.
-`compact` projects only advertised tool copies: all ten names and required
+`compact` projects only advertised tool copies: all nine names and required
 arguments remain, optional input fields and prose are reduced, extra accepted
 properties stay allowed, and output schemas are omitted. The request router,
 Serde argument types, validation and execution policies are shared. The
 profile is presentation configuration, never a permission or dispatch gate;
 the profile-specific serialized definitions produce a distinct fingerprint.
+`goal` and `research_domain` enums are advertised identically in both profiles,
+and compact field allow-lists are maintained next to their argument types.
+`build_evidence_bundle` advertises a bounded passthrough shape for `sources`
+and `fetches` in both profiles: nested metadata is accepted verbatim at runtime
+but never inlined into the advertised schema.
 
 `ServerHandler` implementation:
 
 - `get_info()` advertises `ServerCapabilities` with tools enabled, implementation `eggsearch` + crate version, and `EGGSEARCH_INSTRUCTIONS`.
 - `list_tools()` returns the frozen decorated list. It touches `self.tool_router` only to keep the router linked; the payload comes from `advertised_tools`.
 
-`EGGSEARCH_INSTRUCTIONS` carries global rules only: external content is untrusted data, search discovers while fetch inspects explicitly selected targets, start with the task-appropriate search primitive (never `provider_status`), specialist tools only when their domain semantics apply, one URL per `web_fetch` with `batch_fetch` for fan-out, follow `next_actions`, `build_evidence_bundle` packages without searching/fetching/summarizing. Tool-specific selection guidance lives in `tools/list` descriptions and schemas, sourced from `tool_contract.rs`.
+`EGGSEARCH_INSTRUCTIONS` carries global rules only: external content is untrusted data, search discovers while fetch inspects explicitly selected targets, start with the task-appropriate search primitive (never `provider_status`), specialist tools only when their domain semantics apply, use `fetch` with one web item per URL or an array for fan-out, follow `next_actions`, `build_evidence_bundle` packages without searching/fetching/summarizing. Tool-specific selection guidance lives in `tools/list` descriptions and schemas, sourced from `tool_contract.rs`.
 
 `build_server()` (`mod.rs`) is the single factory both transports share: `ServerState::build(config)` wrapped in `EggsearchServer::new`, which reads the schema profile from the same immutable config. Tool registration, contract metadata, schemas, provider construction, and policy behavior exist in exactly one place.
 
@@ -117,22 +122,21 @@ The default agent transport. The client spawns the server and owns the process; 
 
 ---
 
-## The 10 Tools
+## The 9 Tools
 
 Registration lives in `server.rs`; behavior lives in `tools/`; semantics live in `tool_contract.rs`. Every handler clones `Arc<ServerState>` and delegates to `map_tool_result(run_*(...).await)` — except `build_evidence_bundle`, which is synchronous and takes only its args.
 
 | Tool | Purpose | Key Parameters | Backend Path |
 |------|---------|---------------|--------------|
-| `web_search` | Live metasearch returning source cards, never page text or a synthesized answer | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `safe_search`, `excerpt_count` | `MetadataSearchAdapter::web_search` (+ `resolve_provider_routing` selection) |
-| `web_fetch` | Bounded extraction of one explicit HTTP(S) URL | `url`, `max_chars`, `timeout_ms`, `extract_mode`, `include_links`, `pdf`, `cache_policy`, `focus`/`focus_max_chunks`/`focus_max_chars`, `render`, `browser_profile` | `FetchClient` (+ cache tiers, `OriginController`, optional browser transport) |
-| `batch_fetch` | Bounded fan-out over explicit URLs or repo locators, per-item results | `items`: web entries accept `extract_mode`, `include_links`, `pdf` (including per-URL `pages`), `render`, `browser_profile`, cache, and focus controls; repo entries accept locator/ref, line/context, symbol/match-text/block-expansion, `prefer_local`, and focus controls; plus `max_items`, `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error` | Shared web-fetch handler per web item + repo-fetch handler per repo item; deterministic `project_*` per payload |
-| `provider_status` | Diagnostic provider/capability report with optional bounded live probe | `probe`, `recipe_detail` (`none`/`summary`/`full`) | `adapter.provider_status()` + health registry; probe path uses the shared probe service |
-| `repo_search` | Structured repository evidence discovery with grouped bundles | `query`, `goal`, `sources`, repo locator/package fields, `include_local` | `MetadataSearchAdapter::repo_search` (+ `LocalWorkspaceBackend` when local-only or mixed) |
-| `repo_fetch` | Repository file/span fetch by structured locator | `locator` (`owner`/`repo`/`path`/`ref`), `line_start`/`line_end`, context windows, `symbol`/`symbol_kind`, `match_text`, block expansion, `prefer_local`, `test_fetch_url` (test-only override) | `workspace://` local path bypasses fetch policy and extracts named PDFs through the bounded PDF reader; remote path uses forge raw URL via shared `FetchClient` |
-| `repo_map` | Repository layout discovery without file contents | `owner`, `repo`, `ref`, `path`, security-policy toggles | `forge_adapter::fetch_tree` for supported hosts, `repo_mapper::build_fallback_response` otherwise; local backend when workspace-scoped |
-| `security_search` | Vulnerability/advisory retrieval with applicability context | `query`, `identifiers` (CVE/GHSA/OSV), `package`, `ecosystem`, `goal`, `include` (`kev`, `exploit_context`, `defensive_guidance`, `vendor_advisories`) | `MetadataSearchAdapter` security path (advisory engines + KEV client) |
-| `research_search` | Multi-source evidence discovery with grouped bundles, no synthesis | `query`, `depth` (`quick`/`standard`/`deep`), `domain`, `goal`, `include` (`counterpoints`, `primary_sources`, `recent_discussion`, `security_considerations`) | `MetadataSearchAdapter::research_search` |
 | `build_evidence_bundle` | Deterministic packaging of already-selected evidence for handoff | `goal`, `sources`, `fetches`, `include_unfetched_sources`, `max_sources` (default 50, cap 200), `max_fetched_items` (default 20, cap 100), `max_total_chars` (default 100000, cap 500000), `response_detail` (accepted, identity-preserving) | Pure local: `meta::evidence_bundle::build_evidence_bundle`; no adapter, no fetch, no network |
+| `fetch` | Bounded retrieval of one or more tagged web/repo targets | `items` (web or repo), per-item extraction/source/span/cache/render/focus controls, `max_items`, `max_chars_per_item`, `max_total_chars`, `timeout_ms`, `continue_on_error` | Shared web-fetch handler for web items and repo-item path; deterministic per-item projection |
+| `knowledge_brief` | Cutoff-aware public-evidence delta | Query and model/cutoff, refresh, and related-topic controls | `tools/knowledge_brief.rs` cutoff-aware brief runner |
+| `provider_status` | Diagnostic provider/capability report with optional bounded live probe | `probe`, `recipe_detail` (`none`/`summary`/`full`) | `adapter.provider_status()` + health registry; probe path uses the shared probe service |
+| `repo_map` | Repository layout discovery without file contents | `owner`, `repo`, `ref`, `path`, security-policy toggles | `forge_adapter::fetch_tree` for supported hosts, `repo_mapper::build_fallback_response` otherwise; local backend when workspace-scoped |
+| `repo_search` | Structured repository evidence discovery with grouped bundles | `query`, `goal`, `sources`, repo locator/package fields, `include_local` | `MetadataSearchAdapter::repo_search` (+ `LocalWorkspaceBackend` when local-only or mixed) |
+| `research_search` | Multi-source evidence discovery with grouped bundles, no synthesis | `query`, `depth` (`quick`/`standard`/`deep`), `domain`, `goal`, `include` (`counterpoints`, `primary_sources`, `recent_discussion`, `security_considerations`) | `MetadataSearchAdapter::research_search` |
+| `security_search` | Vulnerability/advisory retrieval with applicability context | `query`, `identifiers` (CVE/GHSA/OSV), `package`, `ecosystem`, `goal`, `include` (`kev`, `exploit_context`, `defensive_guidance`, `vendor_advisories`) | `MetadataSearchAdapter` security path (advisory engines + KEV client) |
+| `web_search` | Live metasearch returning source cards, never page text or a synthesized answer | `query`, `max_results`, `intent`, `freshness`/`date_range`, `include_domains`/`exclude_domains`, `language`/`region`, `safe_search`, `excerpt_count` | `MetadataSearchAdapter::web_search` (+ `resolve_provider_routing` selection) |
 
 All response-bearing search/fetch tools accept optional `response_detail`
 (`brief`/`compact`/`standard`/`diagnostic`). Omitted detail is
@@ -141,7 +145,7 @@ per-call values win. `provider_status` remains diagnostic-only.
 
 ### Per-tool notes
 
-**`web_search`** — general web source discovery. `query` (1–512 chars, validated against `max_query_chars`); `max_results` resolved via `resolve_max_results` against `default_max_results`/`max_results_cap` with a clamp warning on both channels when downgraded. `freshness` and `date_range` are mutually exclusive. `include_domains`/`exclude_domains` are natively enforced only by providers advertising `supports_domain_filters`, otherwise locally approximated with `capability_enforcement` telemetry marking `enforced`/`approximated`/`not_enforced`. `intent = news` routes natively (Brave API news endpoint, Tavily `topic=news`). Returns source cards plus `providers_queried`/`providers_failed`, string + structured warnings, trust markers, `routing_decision`, retrieval/conflict/role postprocessing, and `next_actions` pointing at `web_fetch`/`batch_fetch`.
+**`web_search`** — general web source discovery. `query` (1–512 chars, validated against `max_query_chars`); `max_results` resolved via `resolve_max_results` against `default_max_results`/`max_results_cap` with a clamp warning on both channels when downgraded. `freshness` and `date_range` are mutually exclusive. `include_domains`/`exclude_domains` are natively enforced only by providers advertising `supports_domain_filters`, otherwise locally approximated with `capability_enforcement` telemetry marking `enforced`/`approximated`/`not_enforced`. `intent = news` routes natively (Brave API news endpoint, Tavily `topic=news`). Returns source cards plus `providers_queried`/`providers_failed`, string + structured warnings, trust markers, `routing_decision`, retrieval/conflict/role postprocessing, and `next_actions` pointing at `fetch`.
 
 **`web_fetch`** — single-URL bounded inspection. `url` must be `http`/`https` and non-empty; `validate_fetch_target()` blocks SSRF vectors before any I/O. Supports `max_chars`, per-call `timeout_ms` override, `extract_mode` (`text`/`markdown`/`metadata_only`), `include_links`, PDF options, `cache_policy`/`max_cache_age_seconds`, deterministic `focus` chunk selection over already-extracted content (no extra traversal), and `render`/`browser_profile` escalation (feature-gated). Raw + derived cache tiers are consulted before any network fetch. Returns the fetch envelope (`url`, `final_url`, `status`, `fetched`, `truncated`, `text`, warnings, trust markers, transport metadata).
 
@@ -151,7 +155,7 @@ per-call values win. `provider_status` remains diagnostic-only.
 
 **`repo_search`** — codebase investigation across source, docs, issues, releases, and package metadata. `goal` selects the workflow (with `debug` enabling exact-error behavior); `sources` overrides the goal defaults; repo locator/package fields scope the search; `include_local` mixes in the workspace backend. When `[search].mode = "off"` only the local-only path is allowed. Returns grouped bundles (docs, code, issues, releases) with resolved hints, telemetry, package resolution, and security context. Legacy `profile`/`mode`/`workflow`/`include_*`/`providers`/`timeout_ms` are accepted but hidden (see canonical section below).
 
-**`repo_fetch`** — known-file inspection by structured `locator` (`owner`/`repo`/`path`/`ref`) with `line_start`/`line_end` spans and `symbol` expansion. `workspace://` locators resolve through the local backend and bypass the fetch policy (no network I/O). Remote locators resolve to a canonical forge raw URL (Gitea/Forgejo permalink preferred) fetched through the shared `FetchClient` under fetch policy. Control chars are stripped per line, injection markers scanned when `sanitize_output` is set, and trust markers recorded.
+**`fetch` repo items** — known-file inspection uses `type: "repo"` with `host`, `owner`, `repo`, and `path`, plus optional `ref_name`, `commit_sha`, line ranges, symbol selection, block expansion, and `prefer_local`. Workspace items resolve through the local backend and bypass the fetch policy (no network I/O); remote items resolve to a canonical forge raw URL under fetch policy. Control chars are stripped per line, injection markers scanned when `sanitize_output` is set, and trust markers recorded.
 
 **`repo_map`** — orientation before search: repository tree without file contents. `owner`/`repo` plus optional `ref`/`path`. Supported forge hosts go through `forge_adapter::fetch_tree` under a bounded endpoint policy with timeout fallback; anything else (or timeout) returns `repo_mapper::build_fallback_response` with explicit `mode_reason` telemetry. Workspace-scoped requests use the local backend under the local-only policy path. Never a substitute for search or fetch.
 
@@ -221,7 +225,7 @@ search/fetch servers. `web_fetch` accepts `max_length` for `max_chars`,
 not a second schema property: the canonical field's description names the
 accepted spelling, and sending a canonical field together with its alias is a
 duplicate-field deserialization error (a repairable invalid-arguments result),
-not a silent precedence rule. Aliases never change validation, budgeting, or
+not a silent precedence rule. The `web_fetch`, `batch_fetch`, and `repo_fetch` aliases remain directly callable but are not advertised; aliases never change validation, budgeting, or
 response shape.
 
 ---
@@ -234,15 +238,15 @@ One `ToolContract` per stable tool is the authoritative source for selection sem
 - `description` — concise selection-oriented text (budget: `MAX_TOOL_DESCRIPTION_LEN` = 300 bytes), applied verbatim to `tools/list` by `apply_contract_metadata()`.
 - `purpose` / `use_when` / `not_for` — one-phrase capability, selection trigger, explicit non-goal.
 - `domain` — `web`, `fetch`, `repository`, `security`, `research`, `evidence`, `diagnostic`.
-- `disclosure` — advisory host hint only, never policy-enforcing: `core` (`web_search`, `web_fetch`, `repo_search`), `deferred` (specialists), `diagnostic` (`provider_status`).
-- `read_only` / `destructive` / `idempotent` / `open_world` — static MCP annotation hints, always emitted explicitly. All 10 tools report `readOnlyHint=true`, `destructiveHint=false`, and `idempotentHint=true`; all except `provider_status` and `build_evidence_bundle` report `openWorldHint=true`. `provider_status` uses `openWorldHint=false` even though `probe=true` performs bounded live checks, because annotations never vary by arguments.
-- `keywords` — discovery terms (e.g. `cve`, `ghsa`, `kev` for `security_search`; `batch`, `fan-out` for `batch_fetch`).
+- `disclosure` — advisory host hint only, never policy-enforcing: `core` (`web_search`, `fetch`, `repo_search`), `deferred` (specialists), `diagnostic` (`provider_status`).
+- `read_only` / `destructive` / `idempotent` / `open_world` — static MCP annotation hints, always emitted explicitly. All nine tools report `readOnlyHint=true`, `destructiveHint=false`, and `idempotentHint=true`; all except `provider_status` and `build_evidence_bundle` report `openWorldHint=true`. `provider_status` uses `openWorldHint=false` even though `probe=true` performs bounded live checks, because annotations never vary by arguments.
+- `keywords` — discovery terms (e.g. `cve`, `ghsa`, `kev` for `security_search`; `batch`, `fan-out` for `fetch`).
 - `aliases` — discovery-only index names (e.g. `websearch`, code-search alias, `deep_research`). Never wire names; never valid in `next_actions`.
-- `related_tools` / `next_tools` — semantic neighborhood and likely follow-ups (e.g. `web_search` → `web_fetch`, `batch_fetch`; `repo_search` → `repo_fetch`, `repo_map`).
+- `related_tools` / `next_tools` — semantic neighborhood and likely follow-ups (e.g. `web_search` → `fetch`; `repo_search` → `fetch`, `repo_map`).
 - `discovery_text()` — concatenates name, domain, disclosure, purpose, guidance, keywords, aliases, and both graphs into one indexable string for host BM25/keyword catalogs. Hosts index this text without returning full schemas in ordinary discovery results.
 - `is_known_tool()` — the harness filter for `next_actions` targets. Unknown or malicious names never widen execution authority.
 
-The registry is tested sorted, unique, and exactly 10 entries.
+The registry is tested sorted, unique, and exactly nine entries.
 
 ---
 
@@ -353,15 +357,14 @@ Output schemas (`output_schema.rs`) are permissive stable envelopes (`type: obje
 
 | Tool | Envelope keys advertised |
 |------|-------------------------|
-| `batch_fetch` | `results` (required), `fetched`, `failed`, `warnings`, `structured_warnings`, `telemetry` |
 | `build_evidence_bundle` | `sources`, `fetches`, `warnings` |
 | `provider_status` | `providers` (required), `mode`, `server_capabilities`, `probe` |
-| `repo_fetch` | `text`, `warnings`, `structured_warnings`, `trust_markers` |
+| `fetch` | `results` (required), `fetched`, `failed`, `warnings`, `structured_warnings`, `telemetry` |
 | `repo_map` | `warnings`, `structured_warnings`, `structure_truncated` |
 | `repo_search` | `results`, `warnings`, `structured_warnings`, `next_actions`, `retrieval_summary` |
 | `research_search` | `results`, `warnings`, `structured_warnings`, `next_actions` |
 | `security_search` | `results`, `warnings`, `structured_warnings`, `next_actions` |
-| `web_fetch` | `url`, `final_url`, `status`, `fetched`, `truncated` (all five required), `text`, `warnings`, `structured_warnings` |
+| `knowledge_brief` | Cutoff-aware brief and coverage metadata |
 | `web_search` | `query`, `results` (required), `providers_queried`, `warnings`, `structured_warnings`, `next_actions` |
 
 Tool behavior modules carry unit coverage in-file plus the shared `tools/tests.rs` (bundle caps, budget accounting, host/locator validation, warning and trust-marker payload shape); protocol-level conformance lives in the behavioral suites (`mcp_tools`, `mcp_tool_contract`, `mcp_schema_slimming`, `mcp_2026_protocol`, `mcp_projection`, `mcp_http`).
@@ -388,10 +391,9 @@ Per-tool reducers (`projection.rs`):
 | `repo_search` | group excerpts → 1/card; drops `resolved_hints`, `telemetry`, `package_resolution`, `security_context`, `error_context`, `workflow_coverage`, `evidence_role_summary` | full telemetry (minus `routing_decision`), `retrieval_summary`, `conflict_metadata`, coverage/role summaries |
 | `research_search` | group excerpts → 1/card; drops `subqueries`, `telemetry`, `workflow_context`, `source_quality`, coverage/role summaries; merges both conflict channels into the indicator | same full set as `repo_search` |
 | `security_search` | strips per-vulnerability `references`/`details`; routing/capability/retrieval/conflict summarized as in `web_search`; drops `workflow_coverage`, `evidence_role_summary`, `security_evidence_summary` | full `retrieval_summary`, `conflict_metadata`, coverage/role summaries, `capability_enforcement` |
-| `web_fetch` | drops `raw_text*`, `raw_body`, `response_headers`, `fetch_transform`, `document`, `description`, `links` (keeping `links_seen` + `links_omitted_in_compact`), `browser_profile`, backoff fields | full document, links, fetch/cache metadata |
-| `repo_fetch` | drops `document`, `lines`, `code_context`, `fetched_url`, `raw_url` | full lines, code context, document |
+| `knowledge_brief` | identity-preserving in the brief projection | unchanged |
+| `fetch` | projects each web/repo item into the bounded result envelope; drops internal raw fields | standard-level per-item payloads |
 | `repo_map` | entries/`root_entries` capped at 50 (`projection_entries_truncated`); drops `telemetry`, `language_distribution`, `test_relationships`, `build_configs` | full entries; drops only `telemetry` |
-| `batch_fetch` | applies the web/repo item reducers per payload `item_type` | same, with `standard`-level item payloads |
 | `build_evidence_bundle` | identity-preserving: unchanged in all modes | unchanged |
 | `provider_status` | no projection (diagnostic-only tool) | n/a |
 
@@ -404,10 +406,10 @@ Per-tool reducers (`projection.rs`):
 `Policy` is a two-variant allow/deny switch; the multi-state concept lives one level up in `core::config::Mode` (`Live` / `Off`, default `Live`):
 
 - `live_allowed(mode)` — gates the search path (`web_search`, `repo_search`, `security_search`, `research_search`, `repo_map` unless workspace-local). `Mode::Off` denies; the tool returns a repairable `policy_denied`-class message naming `[search].mode = "live"`.
-- `fetch_allowed(fetch_enabled)` — gates the fetch path (`web_fetch`, `batch_fetch`, remote `repo_fetch`). Disabled when `[fetch].enabled = false`; the tool returns a message naming `[fetch].enabled = true`.
+- `fetch_allowed(fetch_enabled)` — gates canonical `fetch` and direct-call compatibility aliases. Disabled when `[fetch].enabled = false`; the tool returns a message naming `[fetch].enabled = true`.
 Policy checks run before any adapter, cache, or network work, so denied calls are cheap and side-effect-free.
 
-`workspace://` local `repo_fetch` bypasses the fetch policy because it performs no network I/O. `repo_map` and `repo_search` take the local-only path under `Mode::Off` when a workspace backend is present, so on-disk investigation keeps working with live search disabled. Denial constructors (`policy_message()`, `live_search_denied_message()`, `web_search_denied_message()`, `web_fetch_denied_message()`) produce stable human-readable strings that tests pin.
+Local repo items bypass the fetch policy because they perform no network I/O. `repo_map` and `repo_search` take the local-only path under `Mode::Off` when a workspace backend is present, so on-disk investigation keeps working with live search disabled. Denial constructors (`policy_message()`, `live_search_denied_message()`, `web_search_denied_message()`, `web_fetch_denied_message()`) produce stable human-readable strings that tests pin.
 
 ---
 
@@ -424,7 +426,7 @@ Policy checks run before any adapter, cache, or network work, so denied calls ar
 The surface described here is pinned by behavioral suites, not prose:
 
 - `tests/docs_tool_names.rs` derives the documented tool inventory from `src/mcp/server.rs` — prose inventing a tool-like name fails the gate.
-- `tool_contract.rs` unit tests pin alphabetical order, uniqueness, exactly 10 entries, and the 300-byte description budget.
+- `tool_contract.rs` unit tests pin alphabetical order, uniqueness, exactly nine entries, and the 300-byte description budget.
 - `output_schema.rs` unit tests pin one schema per stable tool, object type, and the 1200-byte budget.
 - `tests/mcp_tool_contract.rs` pins registry/registration agreement, the deterministic order, the annotation hints, the global-rules-only instruction text, related/next-tool validity, and the content-based fingerprint.
 - `tests/mcp_schema_slimming.rs` pins the advertised property counts, the hidden advanced fields (`providers`, `timeout_ms`, `profile`, `mode`, `workflow`, `include_*`), the canonical `goal`/`sources`/`include` surface, and that the legacy fields still deserialize.

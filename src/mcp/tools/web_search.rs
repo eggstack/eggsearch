@@ -5,9 +5,24 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "query",
+    "max_results",
+    "safe_search",
+    "intent",
+    "freshness",
+    "date_range",
+    "include_domains",
+    "exclude_domains",
+    "language",
+    "region",
+    "excerpt_count",
+    "response_detail",
+];
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebSearchArgs {
-    /// Search query.
+    /// Query.
     pub query: String,
     /// Max results.
     #[serde(default)]
@@ -15,16 +30,13 @@ pub struct WebSearchArgs {
     #[serde(default)]
     #[schemars(skip)]
     pub providers: Vec<String>,
-    /// Safe-search mode.
     #[serde(default)]
     pub safe_search: Option<crate::core::SafeSearch>,
     #[serde(default)]
     #[schemars(skip)]
     pub timeout_ms: Option<u64>,
-    /// Intent hint: web, docs, code, issues, releases, security, news.
     #[serde(default)]
     pub intent: Option<crate::core::query::SearchIntent>,
-    /// Freshness: any, day, week, month, year.
     #[serde(default)]
     pub freshness: Option<crate::core::query::Freshness>,
     /// Exact date range (YYYY-MM-DD start/end). Exclusive with non-any freshness.
@@ -45,7 +57,6 @@ pub struct WebSearchArgs {
     /// Excerpt demand (0-3). Defaults to 0.
     #[serde(default)]
     pub excerpt_count: Option<usize>,
-    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default)]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }

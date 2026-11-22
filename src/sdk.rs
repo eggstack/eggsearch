@@ -28,12 +28,11 @@ pub enum ToolName {
 }
 
 impl ToolName {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 9] = [
         Self::BuildEvidenceBundle,
         Self::Fetch,
         Self::KnowledgeBrief,
         Self::ProviderStatus,
-        Self::RepoFetch,
         Self::RepoMap,
         Self::RepoSearch,
         Self::ResearchSearch,
@@ -66,6 +65,7 @@ impl FromStr for ToolName {
         match value {
             "web_fetch" => return Ok(Self::WebFetch),
             "batch_fetch" => return Ok(Self::BatchFetch),
+            "repo_fetch" => return Ok(Self::RepoFetch),
             _ => {}
         }
         if !crate::mcp::tool_contract::is_known_tool(value) {

@@ -80,4 +80,11 @@ capability-skip accounting. The guard fails closed on direct engine calls.
 
 ## Supersession
 
-None.
+ADR-0016, accepted 2026-11-20, supersedes only the exact-ten inventory and fixed-name
+constraints to the extent needed to replace the advertised `web_fetch` and `batch_fetch`
+entries with `fetch`.
+
+ADR-0022, accepted 2026-11-22, supersedes only the clause that fixes the canonical advertised
+inventory at ten tools, and only to retire `repo_fetch` from the advertised surface, leaving
+nine and keeping `repo_fetch` callable as a compatibility alias. Adapter ownership and every
+other contract in this record remain in force.

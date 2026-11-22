@@ -294,6 +294,18 @@ impl FetchItem {
     }
 }
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "items",
+    "max_items",
+    "max_chars_per_item",
+    "max_total_chars",
+    "timeout_ms",
+    "continue_on_error",
+    "offset",
+    "limit",
+    "response_detail",
+];
+
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub(crate) struct FetchArgs {
     pub items: FetchItems,

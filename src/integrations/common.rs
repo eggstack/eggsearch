@@ -16,9 +16,8 @@ use super::{claude, codegg, codex, cursor, opencode, vscode, zed};
 
 pub const HTTP_ENDPOINT: &str = "http://127.0.0.1:11320/mcp";
 const REQUIRED_TOOLS: [&str; 2] = ["web_search", "fetch"];
-const RECOMMENDED_TOOLS: [&str; 7] = [
+const RECOMMENDED_TOOLS: [&str; 6] = [
     "repo_search",
-    "repo_fetch",
     "repo_map",
     "security_search",
     "research_search",

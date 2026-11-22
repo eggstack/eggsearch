@@ -42,5 +42,21 @@ pub(crate) use web_fetch::run_web_fetch_outcome_with_progress;
 pub use web_fetch::{run_web_fetch, run_web_fetch_with_progress, WebFetchArgs};
 pub use web_search::{run_web_search, WebSearchArgs};
 
+/// Compact fields retained in an advertised tool schema.
+pub fn compact_fields(name: &str) -> Option<&'static [&'static str]> {
+    Some(match name {
+        "web_search" => web_search::COMPACT_FIELDS,
+        "provider_status" => provider_status::COMPACT_FIELDS,
+        "repo_search" => repo_search::COMPACT_FIELDS,
+        "fetch" => fetch::COMPACT_FIELDS,
+        "security_search" => security_search::COMPACT_FIELDS,
+        "research_search" => research_search::COMPACT_FIELDS,
+        "repo_map" => repo_map::COMPACT_FIELDS,
+        "build_evidence_bundle" => evidence_bundle::COMPACT_FIELDS,
+        "knowledge_brief" => knowledge_brief::COMPACT_FIELDS,
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests;

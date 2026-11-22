@@ -14,6 +14,8 @@ use crate::meta::knowledge_delta::{
     EvidenceFetchFuture, FetchedEvidence, KnowledgeEvidenceFetcher,
 };
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[];
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct KnowledgeBriefArgs {
     /// Topic passed through unchanged as the first subquery.

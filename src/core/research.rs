@@ -35,6 +35,25 @@ pub enum ResearchDomain {
     Infrastructure,
 }
 
+/// Values accepted by [`ResearchDomain::parse`].
+pub const RESEARCH_DOMAIN_VALUES: &[&str] = &[
+    "general",
+    "software_architecture",
+    "architecture",
+    "api_design",
+    "api",
+    "distributed_systems",
+    "distributed",
+    "security",
+    "performance",
+    "language_ecosystem",
+    "ecosystem",
+    "machine_learning",
+    "ml",
+    "infrastructure",
+    "infra",
+];
+
 impl ResearchDomain {
     /// Parse a research-domain string, accepting common aliases used by MCP callers.
     pub fn parse(s: &str) -> Option<Self> {

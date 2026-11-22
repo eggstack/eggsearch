@@ -20,13 +20,14 @@ use crate::mcp::tasks::{
     complete_response, is_eligible, run_cancellable, task_response, TaskRuntime,
 };
 use crate::mcp::tools::{
-    map_tool_outcome, map_tool_result, run_batch_fetch_with_host_scope_and_progress,
-    run_build_evidence_bundle, run_fetch_with_host_scope_and_progress, run_knowledge_brief,
-    run_provider_status_async, run_repo_fetch_with_host_scope, run_repo_map_with_host_scope,
-    run_repo_search_with_host_scope, run_research_search_with_progress, run_security_search,
-    run_web_fetch_outcome_with_progress, run_web_search, BatchFetchArgs, EvidenceBundleArgs,
-    FetchArgs, KnowledgeBriefArgs, ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, RepoSearchArgs,
-    ResearchSearchArgs, SecuritySearchArgs, ToolError, ToolOutcome, WebFetchArgs, WebSearchArgs,
+    compact_fields, map_tool_outcome, map_tool_result,
+    run_batch_fetch_with_host_scope_and_progress, run_build_evidence_bundle,
+    run_fetch_with_host_scope_and_progress, run_knowledge_brief, run_provider_status_async,
+    run_repo_fetch_with_host_scope, run_repo_map_with_host_scope, run_repo_search_with_host_scope,
+    run_research_search_with_progress, run_security_search, run_web_fetch_outcome_with_progress,
+    run_web_search, BatchFetchArgs, EvidenceBundleArgs, FetchArgs, KnowledgeBriefArgs,
+    ProviderStatusArgs, RepoFetchArgs, RepoMapArgs, RepoSearchArgs, ResearchSearchArgs,
+    SecuritySearchArgs, ToolError, ToolOutcome, WebFetchArgs, WebSearchArgs,
 };
 
 fn batch_contains_screenshot(items: &[crate::core::batch_fetch::BatchFetchItem]) -> bool {
@@ -68,9 +69,12 @@ impl EggsearchServer {
             .into_iter()
             .filter(|tool| crate::mcp::tool_contract::is_known_tool(tool.name.as_ref()))
             .collect();
-        let mut advertised_tools = apply_contract_metadata(canonical_tools);
+        let mut advertised_tools =
+            apply_search_schema_enums(apply_contract_metadata(canonical_tools));
         if profile == crate::core::config::McpSchemaProfile::Compact {
             advertised_tools = apply_compact_profile(advertised_tools);
+        } else {
+            advertised_tools = apply_evidence_bundle_projection(advertised_tools);
         }
         let advertised_tools = advertisement::filter_tools(preset, advertised_tools);
         let advertised_tools = Arc::new(advertised_tools);
@@ -215,7 +219,6 @@ fn compact_description(name: &str) -> Option<&'static str> {
         "provider_status" => "Check configured provider availability and diagnostics.",
         "repo_search" => "Search repository code, documentation, issues, and releases.",
         "fetch" => "Fetch one or more selected web or repository targets with bounded results; do not search or crawl.",
-        "repo_fetch" => "Fetch a known repository file or span by structured locator.",
         "security_search" => "Find vulnerability evidence and assess package applicability.",
         "research_search" => "Gather grouped evidence for complex research questions.",
 
@@ -229,147 +232,39 @@ fn compact_description(name: &str) -> Option<&'static str> {
 
 fn compact_schema(name: &str, schema: &mut serde_json::Value) {
     const COMMON: &[&str] = &["response_detail"];
-    let allowed: &[&str] = match name {
-        "web_search" => &[
-            "query",
-            "max_results",
-            "safe_search",
-            "intent",
-            "freshness",
-            "date_range",
-            "include_domains",
-            "exclude_domains",
-            "language",
-            "region",
-            "excerpt_count",
-            "response_detail",
-        ],
-        "provider_status" => &["probe"],
-        "repo_search" => &[
-            "query",
-            "owner",
-            "repo",
-            "host",
-            "profile",
-            "goal",
-            "sources",
-            "include_local",
-            "response_detail",
-        ],
-        "fetch" => &[
-            "items",
-            "max_items",
-            "max_chars_per_item",
-            "max_total_chars",
-            "timeout_ms",
-            "continue_on_error",
-            "offset",
-            "limit",
-            "response_detail",
-        ],
-        "repo_fetch" => &[
-            "owner",
-            "repo",
-            "path",
-            "ref",
-            "commit_sha",
-            "line_start",
-            "line_end",
-            "symbol",
-            "max_chars",
-            "response_detail",
-        ],
-        "security_search" => &[
-            "query",
-            "package",
-            "version",
-            "ecosystem",
-            "assess_applicability",
-            "dependency_files",
-            "goal",
-            "response_detail",
-        ],
-        "research_search" => &[
-            "query",
-            "domain",
-            "research_domain",
-            "goal",
-            "depth",
-            "compare_targets",
-            "constraints",
-            "known_context",
-            "offset",
-            "limit",
-            "response_detail",
-        ],
-
-        "repo_map" => &[
-            "owner",
-            "repo",
-            "host",
-            "ref",
-            "path",
-            "max_depth",
-            "response_detail",
-        ],
-        "build_evidence_bundle" => &[
-            "goal",
-            "sources",
-            "fetches",
-            "max_sources",
-            "max_fetched_items",
-            "max_total_chars",
-            "include_unfetched_sources",
-            "response_detail",
-        ],
-        _ => COMMON,
-    };
+    let allowed = compact_fields(name).unwrap_or(COMMON);
     compact_schema_value(schema, allowed, name == "fetch", true);
-    compact_workflow_schema(name, schema);
     if name == "build_evidence_bundle" {
-        compact_evidence_bundle_schema(schema);
+        project_evidence_bundle_schema(schema);
     }
 }
 
-fn compact_workflow_schema(name: &str, schema: &mut serde_json::Value) {
-    if name != "research_search" && name != "security_search" {
-        return;
-    }
-    let Some(properties) = schema
-        .get_mut("properties")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return;
-    };
-    if name == "research_search" {
-        if let Some(domain) = properties.get_mut("research_domain") {
-            set_string_schema_enum(
-                domain,
-                &[
-                    "general",
-                    "software_architecture",
-                    "architecture",
-                    "api_design",
-                    "api",
-                    "distributed_systems",
-                    "distributed",
-                    "security",
-                    "performance",
-                    "language_ecosystem",
-                    "ecosystem",
-                    "machine_learning",
-                    "ml",
-                    "infrastructure",
-                    "infra",
-                ],
-            );
+fn apply_search_schema_enums(mut tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
+    for tool in &mut tools {
+        let (field, values) = match tool.name.as_ref() {
+            "repo_search" => ("goal", crate::mcp::tools::canonical::REPO_GOAL_VALUES),
+            "research_search" => ("goal", crate::mcp::tools::canonical::RESEARCH_GOAL_VALUES),
+            "security_search" => ("goal", crate::mcp::tools::canonical::SECURITY_GOAL_VALUES),
+            _ => continue,
+        };
+        let mut schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+        if let Some(field_schema) = schema.pointer_mut(&format!("/properties/{field}")) {
+            set_string_schema_enum(field_schema, values);
         }
-        if let Some(goal) = properties.get_mut("goal") {
-            set_string_schema_enum(goal, crate::mcp::tools::canonical::RESEARCH_GOAL_VALUES);
+        if let Some(object) = schema.as_object() {
+            tool.input_schema = Arc::new(object.clone());
         }
-    } else if let Some(goal) = properties.get_mut("goal") {
-        set_string_schema_enum(goal, crate::mcp::tools::canonical::SECURITY_GOAL_VALUES);
+        if tool.name.as_ref() == "research_search" {
+            let mut schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+            if let Some(field_schema) = schema.pointer_mut("/properties/research_domain") {
+                set_string_schema_enum(field_schema, crate::core::research::RESEARCH_DOMAIN_VALUES);
+            }
+            if let Some(object) = schema.as_object() {
+                tool.input_schema = Arc::new(object.clone());
+            }
+        }
     }
+    tools
 }
 
 fn set_string_schema_enum(schema: &mut serde_json::Value, values: &[&str]) {
@@ -421,7 +316,21 @@ fn set_string_schema_enum(schema: &mut serde_json::Value, values: &[&str]) {
     }
 }
 
-fn compact_evidence_bundle_schema(schema: &mut serde_json::Value) {
+fn apply_evidence_bundle_projection(mut tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::Tool> {
+    for tool in &mut tools {
+        if tool.name.as_ref() != "build_evidence_bundle" {
+            continue;
+        }
+        let mut schema = serde_json::Value::Object(tool.input_schema.as_ref().clone());
+        project_evidence_bundle_schema(&mut schema);
+        if let Some(object) = schema.as_object() {
+            tool.input_schema = Arc::new(object.clone());
+        }
+    }
+    tools
+}
+
+fn project_evidence_bundle_schema(schema: &mut serde_json::Value) {
     let Some(properties) = schema
         .get_mut("properties")
         .and_then(serde_json::Value::as_object_mut)
@@ -563,7 +472,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "repo_search",
-        description = "Discover evidence for a repository across source, docs, issues, releases, and package metadata. Use for codebase investigation; use `repo_fetch` only after a concrete file/span is known.",
+        description = "Discover evidence for a repository across source, docs, issues, releases, and package metadata. Use for codebase investigation; use `fetch` with a repo item only after a concrete file/span is known.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -605,7 +514,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "fetch",
-        description = "Fetch one or more explicitly selected web URLs or repo targets in one bounded call; pass a tagged `items` object or an array. Not for search or crawling.",
+        description = "Fetch one or more explicitly selected web URLs or repository targets in one bounded call. Repo items take a structured locator with optional symbol or line span. Not for search or crawling.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -794,7 +703,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "build_evidence_bundle",
-        description = "Package already-selected search and fetch evidence for handoff. Use with gathered `sources` and `fetches`; does not search, fetch, or summarize.",
+        description = "Package already-selected search and fetch evidence for handoff. Pass prior tool output verbatim in `sources` and `fetches`; nested metadata is accepted but not re-advertised. Does not search, fetch, or summarize.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

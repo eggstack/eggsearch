@@ -190,6 +190,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The advertised MCP inventory is nine tools. `fetch` is the only advertised repository
+  read: a repo item carries the locator, ref, symbol, line range, and `prefer_local`
+  controls that `repo_fetch` accepted, and mixed web/repo arrays still work. `repo_fetch`
+  stays routed and callable with its unchanged request and response, and is now a
+  compatibility alias alongside `web_fetch` and `batch_fetch`: absent from `tools/list`,
+  presets, `next_actions`, and SDK discovery. Generated follow-ups name `fetch` and carry a
+  repo item, so a suggestion never asks the caller to reconstruct a locator
+  (ADR-0022).
+- Advertised search vocabularies are now single-sourced. `goal` is advertised for
+  `repo_search`, `research_search`, and `security_search`, and `research_domain` for
+  `research_search`, from the same constants the parsers accept, identically in the full
+  and compact profiles. Compact per-tool field allow-lists live with their argument types.
+- The `build_evidence_bundle` input schema advertises a bounded passthrough shape for
+  `sources` and `fetches` instead of inlining 39 transitive definitions. Nested metadata is
+  accepted verbatim at runtime and bundle identity is unchanged; the tool definition drops
+  from 40,152 to 2,578 bytes and the full advertisement from 72,368 to 31,511 bytes.
+- `tests/tool_inventory_parity.rs` now asserts that the contract registry, core
+  follow-up gate, presets, SDK discovery, documented preset table, and documented
+  canonical list all agree, and that the compatibility aliases stay routed but
+  undiscoverable.
+
 - Computational challenge solving is now on by default, as ADR-0019 §4 specified:
   `[search.challenge].enabled` defaults to `true`, and the shipped ceilings cover the
   walls the supported upstreams serve today (`max_difficulty = 6`,

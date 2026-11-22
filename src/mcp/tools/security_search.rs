@@ -5,6 +5,17 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "query",
+    "package",
+    "version",
+    "ecosystem",
+    "assess_applicability",
+    "dependency_files",
+    "goal",
+    "response_detail",
+];
+
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SecuritySearchArgs {
     /// Query. May contain CVE/GHSA/RustSec identifiers.
@@ -69,13 +80,11 @@ pub struct SecuritySearchArgs {
     /// Dependency file paths for applicability.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_files: Vec<String>,
-    /// Task goal (usually omit; defaults to security_review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub workflow: Option<String>,
-    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }

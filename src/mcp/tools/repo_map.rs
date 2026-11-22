@@ -4,6 +4,9 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] =
+    &["owner", "repo", "host", "max_depth", "response_detail"];
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoMapArgs {
     /// Code host. Optional; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo.

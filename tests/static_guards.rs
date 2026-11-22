@@ -1,5 +1,7 @@
 use std::fs;
 
+use eggsearch::{core::workflow::STABLE_TOOL_NAMES, mcp::advertisement, sdk::ToolName};
+
 fn read_source(path: &str) -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     fs::read_to_string(format!("{manifest_dir}/{path}"))
@@ -1184,27 +1186,45 @@ fn stable_tool_registration_count_and_names() {
     let expected = [
         "web_search",
         "fetch",
-        "web_fetch",
-        "batch_fetch",
         "knowledge_brief",
         "provider_status",
         "repo_search",
-        "repo_fetch",
         "repo_map",
         "security_search",
         "research_search",
         "build_evidence_bundle",
     ];
+    let aliases = ["web_fetch", "batch_fetch", "repo_fetch"];
     for name in &expected {
         assert!(
             source.contains(&format!("name = \"{name}\"")),
             "server.rs must register tool `{name}`"
         );
     }
+    for alias in aliases {
+        assert!(
+            source.contains(&format!("name = \"{alias}\"")),
+            "server.rs must register compatibility alias {alias}"
+        );
+        assert!(
+            !ToolName::ALL.iter().any(|tool| tool.as_str() == alias),
+            "compatibility alias {alias} must stay out of ToolName::ALL"
+        );
+        assert!(
+            !STABLE_TOOL_NAMES.contains(&alias),
+            "compatibility alias {alias} must stay out of STABLE_TOOL_NAMES"
+        );
+        for preset in advertisement::ALL_PRESETS {
+            assert!(
+                !advertisement::tools_for(*preset).contains(&alias),
+                "compatibility alias {alias} must stay out of {preset:?}"
+            );
+        }
+    }
     assert_eq!(
         source.matches("name = \"").count(),
-        expected.len(),
-        "server.rs must register exactly ten canonical tools and two compatibility aliases"
+        expected.len() + aliases.len(),
+        "server.rs must register exactly the canonical tools and named compatibility aliases"
     );
     assert!(
         !source.contains("local_search"),

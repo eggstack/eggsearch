@@ -6,6 +6,8 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &["probe"];
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderStatusArgs {
     /// When `true`, perform bounded active liveness probes against

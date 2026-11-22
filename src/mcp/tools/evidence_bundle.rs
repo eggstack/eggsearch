@@ -2,15 +2,32 @@ use serde::{Deserialize, Serialize};
 
 use super::common::*;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "goal",
+    "sources",
+    "fetches",
+    "max_sources",
+    "max_fetched_items",
+    "max_total_chars",
+    "include_unfetched_sources",
+    "response_detail",
+];
+
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EvidenceBundleArgs {
     /// Optional goal description for this bundle.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
     /// Source cards from search responses to include in the bundle.
+    ///
+    /// Pass entries verbatim from a prior tool response. Nested fields are
+    /// accepted but not re-advertised in the input schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<crate::core::evidence_bundle::EvidenceSourceInput>,
     /// Fetched items from fetch responses to include in the bundle.
+    ///
+    /// Pass entries verbatim from a prior tool response. Nested fields are
+    /// accepted but not re-advertised in the input schema.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fetches: Vec<crate::core::evidence_bundle::EvidenceFetchInput>,
     /// Whether to include unfetched sources (default true).

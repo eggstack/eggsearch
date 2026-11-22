@@ -791,6 +791,67 @@ fn build_evidence_bundle_with_fetches_populates_limits() {
     );
 }
 
+#[cfg(feature = "mock")]
+#[test]
+fn evidence_bundle_identity_is_stable_under_bounded_input_schema() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let request = serde_json::json!({
+        "goal": "identity snapshot",
+        "sources": [{
+            "id": "src_captured",
+            "url": "https://docs.example.test/guide",
+            "title": "Guide",
+            "snippet": "Captured search card",
+            "providers": ["duckduckgo"],
+            "trust": "external_untrusted",
+            "metadata": {
+                "source_kind": "official_docs",
+                "domain": "docs.example.test"
+            }
+        }],
+        "fetches": [{
+            "source_id": "src_captured",
+            "url": "https://raw.example.test/owner/repo/main/src/lib.rs",
+            "locator": {
+                "kind": "remote",
+                "owner": "owner",
+                "repo": "repo",
+                "ref_name": "main",
+                "path": "src/lib.rs"
+            },
+            "fetched": true,
+            "content_type": "text/plain",
+            "line_start": 10,
+            "line_end": 20,
+            "text": "fn captured() {}",
+            "trust": "external_untrusted",
+            "warnings": []
+        }]
+    });
+    let args: EvidenceBundleArgs =
+        serde_json::from_value(request).expect("captured request parses");
+    let value = run_build_evidence_bundle(args).expect("bundle builds");
+    assert_eq!(value["bundle_id"], "bundle_27becfbe6b86541c");
+    assert_eq!(
+        value["sources"][0]["source_id"], "src_673bbf9ba38b7620",
+        "source identity is content-derived and must not move"
+    );
+    assert_eq!(value["sources"][0]["source_kind"], "official_docs");
+    assert_eq!(
+        value["sources"][0]["metadata"]["source_kind"], "official_docs",
+        "nested metadata must still reach the builder"
+    );
+    assert_eq!(
+        value["fetched_items"][0]["fetch_id"], "fetch_6609ffa1b98e12f7",
+        "fetch identity is content-derived and must not move"
+    );
+    assert_eq!(value["fetched_items"][0]["locator"]["path"], "src/lib.rs");
+    assert_eq!(value["fetched_items"][0]["line_start"], 10);
+    assert_eq!(value["fetched_items"][0]["line_end"], 20);
+    assert_eq!(value["trust_summary"]["external_untrusted_count"], 1);
+}
+
 fn repo_fetch_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;

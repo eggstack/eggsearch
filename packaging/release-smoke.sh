@@ -48,7 +48,6 @@ expected_tools = {
     "fetch",
     "knowledge_brief",
     "provider_status",
-    "repo_fetch",
     "repo_map",
     "repo_search",
     "research_search",

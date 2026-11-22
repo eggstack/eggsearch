@@ -28,7 +28,6 @@ const KNOWN_TOOLS: &[&str] = &[
     "knowledge_brief",
     "provider_status",
     "repo_search",
-    "repo_fetch",
     "repo_map",
     "security_search",
     "research_search",
@@ -130,13 +129,13 @@ const KEYWORDS: &[(&str, &str, i32)] = &[
     ("repo_map", "directories", 4),
     ("repo_map", "structure", 4),
     ("fetch", "fetch", 4),
-    ("repo_fetch", "fetch", 3),
-    ("repo_fetch", "fetch file", 10),
-    ("repo_fetch", "fetch symbol", 10),
-    ("repo_fetch", "main branch", 5),
-    ("repo_fetch", "line range", 6),
-    ("repo_fetch", "lines", 3),
-    ("repo_fetch", "symbol", 5),
+    ("fetch", "fetch", 3),
+    ("fetch", "fetch file", 10),
+    ("fetch", "fetch symbol", 10),
+    ("fetch", "main branch", 5),
+    ("fetch", "line range", 6),
+    ("fetch", "lines", 3),
+    ("fetch", "symbol", 5),
     ("fetch", "these three urls", 12),
     ("fetch", "three urls", 10),
     ("fetch", "multiple", 6),
@@ -285,14 +284,14 @@ fn score_tool(
     if has_owner_repo_pattern(query_lower) {
         match tool {
             "repo_search" => score += 6,
-            "repo_fetch" => score += 4,
+            "fetch" => score += 4,
             "repo_map" => score += 4,
             _ => {}
         }
     }
     if query_lower.contains("src/") {
         match tool {
-            "repo_fetch" => score += 5,
+            "fetch" => score += 5,
             "repo_search" => score += 3,
             _ => {}
         }

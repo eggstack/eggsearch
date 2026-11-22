@@ -62,7 +62,7 @@ try {
     Send-Request @{ jsonrpc = '2.0'; method = 'notifications/initialized'; params = @{} }
     Send-Request @{ jsonrpc = '2.0'; id = 2; method = 'tools/list'; params = @{} }
     $Tools = Receive-Response 2
-    $ExpectedTools = @('build_evidence_bundle', 'fetch', 'knowledge_brief', 'provider_status', 'repo_fetch', 'repo_map', 'repo_search', 'research_search', 'security_search', 'web_search')
+    $ExpectedTools = @('build_evidence_bundle', 'fetch', 'knowledge_brief', 'provider_status', 'repo_map', 'repo_search', 'research_search', 'security_search', 'web_search')
     $ActualTools = @($Tools.result.tools | ForEach-Object { $_.name } | Sort-Object)
     if ((Compare-Object ($ExpectedTools | Sort-Object) $ActualTools).Length -gt 0) {
         throw "Unexpected MCP tool set: $($ActualTools -join ', ')"
@@ -150,7 +150,7 @@ try {
     if ($ToolsResponse.Response.StatusCode -ne 200) { throw "HTTP tools/list failed: $($ToolsResponse.Response.StatusCode)" }
     $ToolsEvent = ($ToolsResponse.Text -split "`n" | Where-Object { $_ -like 'data: *' -and $_.Trim() -ne 'data:' } | Select-Object -First 1).Substring(6) | ConvertFrom-Json
     $ActualTools = @($ToolsEvent.result.tools | ForEach-Object { $_.name } | Sort-Object)
-    $ExpectedTools = @('build_evidence_bundle', 'fetch', 'knowledge_brief', 'provider_status', 'repo_fetch', 'repo_map', 'repo_search', 'research_search', 'security_search', 'web_search') | Sort-Object
+    $ExpectedTools = @('build_evidence_bundle', 'fetch', 'knowledge_brief', 'provider_status', 'repo_map', 'repo_search', 'research_search', 'security_search', 'web_search') | Sort-Object
     if ((Compare-Object $ExpectedTools $ActualTools).Length -gt 0) { throw "Unexpected HTTP MCP tool set: $($ActualTools -join ', ')" }
 } finally {
     $HttpClient.Dispose()

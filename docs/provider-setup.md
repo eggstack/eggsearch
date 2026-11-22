@@ -624,7 +624,7 @@ respect_gitignore = true
 follow_symlinks = false
 ```
 
-Local results appear in `repo_search` and are fetched via `repo_fetch` with `host = "workspace"`.
+Local results appear in `repo_search` and are fetched with `fetch` using a repo item, for example `{"items":[{"type":"repo","host":"workspace","owner":"<workspace-root>","path":"src/lib.rs"}]}`.
 
 ## Provider Selection
 

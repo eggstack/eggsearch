@@ -2,7 +2,7 @@
 
 **Purpose:** Keep the post-consolidation repository from re-concentrating into new monoliths. Contributor contract for adding tools, providers, workflows, parsers, and tests.
 
-The crate is application-first: the stable contract is MCP tools (10) plus CLI, with the narrow `src/sdk.rs` application facade for native consumers. The remaining Rust module tree is an implementation detail for the binary, integration tests, and fuzz harnesses. Dependency flow: `core <- meta <- mcp <- commands`; `challenge_replay` depends on `fetch` and `meta` and is used by `mcp` and `commands`; `fetch` remains independent of `meta`. Factual claims about tools and providers must agree with the code; inventories below are guard-enforced, the rest is kept in sync by discipline.
+The crate is application-first: the stable contract is nine advertised MCP tools plus CLI, with the narrow `src/sdk.rs` application facade for native consumers. The remaining Rust module tree is an implementation detail for the binary, integration tests, and fuzz harnesses. Dependency flow: `core <- meta <- mcp <- commands`; `challenge_replay` depends on `fetch` and `meta` and is used by `mcp` and `commands`; `fetch` remains independent of `meta`. Factual claims about tools and providers must agree with the code; inventories below are guard-enforced, the rest is kept in sync by discipline.
 
 ---
 
@@ -33,7 +33,7 @@ Guard-enforced by `tests/static_guards.rs` (fail-closed). Transports call tool s
 | Fetch execution | `src/fetch/` (client, limits, cache, origin, browser); `accept.rs` owns representation-policy selection and `negotiate.rs` owns the bounded Markdown→HTML fallback | Search ranking, evidence roles |
 | Outbound HTTP transport | `eggfetch-core` (transport, pooling, TLS, decompression, deadlines, bounded reads, pinned routing, redirect mechanics, typed failures); optional `src/fetch/egress.rs` (`EggressDialer` beneath the eggfetch `Dialer` seam, provider-only, fail-closed, credential-indirected); rmcp transitively owns only its Streamable HTTP client transport | eggsearch-local reqwest clients or facades; SSRF/retry/truncation policy stays in eggsearch; dynamic `FetchClient` targets never use egress |
 | Release/deploy surface | `src/platform.rs`, `src/update.rs`, `src/startup.rs`, `packaging/` | Search/fetch policy |
-| Native SDK facade | `src/sdk.rs` delegates to the ten `src/mcp/tools/` handlers and owns only dispatch, config-backed shared state, and structured errors | Provider selection, validation, policy, projection, and tool semantics |
+| Native SDK facade | `src/sdk.rs` delegates to the `src/mcp/tools/` handlers and owns only dispatch, config-backed shared state, and structured errors | Provider selection, validation, policy, projection, and tool semantics |
 
 Overlap ratchets (each a named guard):
 
@@ -52,9 +52,11 @@ Overlap ratchets (each a named guard):
 
 ### New MCP tools
 
-Dedicated module under `src/mcp/tools/` with shared validation in `common.rs` and goal/workflow resolution in `canonical.rs`. Register in `src/mcp/server.rs` via `#[tool]` attrs. Guard `stable_tool_registration_count_and_names` requires exactly these registrations (ten canonical tools plus the `web_fetch` and `batch_fetch` aliases):
+Dedicated module under `src/mcp/tools/` with shared validation in `common.rs` and goal/workflow resolution in `canonical.rs`. Register in `src/mcp/server.rs` via `#[tool]` attrs. Guard `stable_tool_registration_count_and_names` requires nine canonical tools plus three direct-call compatibility aliases:
 
-`web_search`, `fetch`, `web_fetch`, `batch_fetch`, `knowledge_brief`, `provider_status`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`
+Canonical: `web_search`, `fetch`, `knowledge_brief`, `provider_status`, `repo_search`, `repo_map`, `security_search`, `research_search`, `build_evidence_bundle`.
+
+Compatibility aliases: `web_fetch`, `batch_fetch`, `repo_fetch`.
 
 Count changes only when the tool-matrix, docs contract tests (`tests/docs_tool_names.rs`, derived from `server.rs`), and CodeGG integration docs move in the same change. Legacy `local_search` and `search_and_fetch` must never return.
 
@@ -209,7 +211,7 @@ Unit tests for private functions live at the bottom of the source file. Preserve
 - Canonical `000`–`003` (specification, terminology, roadmap, process) stay stable.
 - ADRs live in `plans/adrs/`; roadmaps in `plans/subsystems/`; handoffs in `plans/implementation/<subsystem>/NNN-*.md`; evidence gates in `plans/closure/<subsystem>/NNN-status.md`; history in `plans/archive/`; control surface in `plans/registry.md`.
 - Status vocabulary: `proposed`, `ready`, `active`, `blocked`, `closing`, `closed`, `conditionally closed`, `superseded`, `archived`. `conditionally closed` names its outstanding condition explicitly and is not a softer `closed`.
-- Current state (the registry is the authority when this sentence drifts): active roadmaps are **repository security, supply-chain, and maintenance hardening** (M001 conditionally closed via M007, M002 conditionally closed, M006 superseded by ADR-0014 (chromiumoxide `reqwest` edge accepted and guard-bounded), M007 conditionally closed pending a scheduled `dependency-security` run), **Python PyPI distribution** (M001–M003 closed, M004 blocked on ARMv7 physical evidence), **retrieval quality evidence extension** (closing), and **agentic retrieval integrity and context economy** (M001–M005 dependency-ready at baseline `cd81f4d`, no closure record yet). Tool-surface M001–M007 are closed; treat that surface as maintenance, not an open milestone.
+- Current state (the registry is the authority when this sentence drifts): active roadmaps are **repository security, supply-chain, and maintenance hardening** (M001 conditionally closed via M007, M002 conditionally closed, M006 superseded by ADR-0014 (chromiumoxide `reqwest` edge accepted and guard-bounded), M007 conditionally closed pending a scheduled `dependency-security` run), **Python PyPI distribution** (M001–M003 closed, M004 blocked on ARMv7 physical evidence), **retrieval quality evidence extension** (closing), and **agentic retrieval integrity and context economy** (M001–M005 dependency-ready at baseline `cd81f4d`, no closure record yet). Tool-surface M001–M007 are closed, and **MCP tool-surface succession** M001–M004 are closed: the advertised inventory is nine tools with `repo_fetch` callable as a compatibility alias (ADR-0022).
 - **Do not create unregistered work.** Closed workstreams (phases now under `plans/archive/phase-*.md`) are historical evidence — do not reopen or extend them; register new milestones under the owning subsystem roadmap.
 - **Corrective work is a new plan** referencing the original milestone and closure record, never a silent amendment to an archived plan.
 - Registry, roadmap status, and closure record for a milestone update in the same closure commit. Qualification is SHA-specific; re-qualify a different eventual release candidate before publication.

@@ -153,3 +153,9 @@ A maintainer either accepts this proposed ten-tool contract, including the
 comparison rule and preset membership above, or rejects it and chooses an
 alternative. No milestone may mark itself ready while the status remains
 proposed.
+
+## Supersession note
+
+ADR-0022, accepted 2026-11-22, supersedes only this record's clause fixing the canonical
+advertised count at ten. `knowledge_brief` remains canonical; the retirement concerns
+`repo_fetch` alone.

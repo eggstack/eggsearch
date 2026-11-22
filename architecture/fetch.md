@@ -3,8 +3,8 @@
 **Location:** `src/fetch/` (11 top-level files + `browser/` + `render/`, 8 files each)
 **Purpose:** Bounded single-URL HTTP(S) fetch with SSRF enforcement, two-tier
 cache, origin control, content detection, structural rendering, and sanitized
-output. Independent of `meta`; consumed by `web_fetch`, `batch_fetch`,
-`repo_fetch` follow-ups, and CLI `fetch`. Entry: `src/fetch/mod.rs`.
+output. Independent of `meta`; consumed by canonical `fetch` web/repo items,
+`web_fetch`, `batch_fetch`, `repo_fetch` follow-ups, and CLI `fetch`. Entry: `src/fetch/mod.rs`.
 
 ---
 
@@ -25,25 +25,24 @@ validate_fetch_target (SSRF)
 
 ### Typed target routing
 
-The MCP tools keep their distinct request and response contracts. Their shared
-internal `FetchLocator` resolution distinguishes the route before handing work
-to its owning handler:
+Canonical `fetch` repo items and the direct-call compatibility aliases keep their
+request and response contracts. Shared internal `FetchLocator` resolution
+distinguishes the route before handing work to its owning handler:
 
 | Locator | Owning path | Boundary |
 |---|---|---|
 | `WebUrl` | `web_fetch` or a batch web item through the bounded fetch path | HTTP(S) validation, `FetchClient` SSRF/redirect policy, content detection, and existing PDF/HTML/browser behavior remain authoritative. |
-| `Repo` | `repo_fetch` remote-source path | Structured host/owner/repo/ref/path and source-span semantics remain authoritative; a detected PDF retains the fetch document outcome and is not decoded as source code. |
-| `Local` | `repo_fetch` workspace path | Root name and relative path only; authorized workspace resolution and `safe_read_file` remain the read boundary. Local PDF extraction belongs to PDF M008. |
+| `Repo` | Repo-item handler (canonical `fetch` and `repo_fetch` alias) | Structured host/owner/repo/ref/path and source-span semantics remain authoritative; a detected PDF retains the fetch document outcome and is not decoded as source code. |
+| `Local` | Repo-item workspace handler (canonical `fetch` and `repo_fetch` alias) | Root name and relative path only; authorized workspace resolution and `safe_read_file` remain the read boundary. Local PDF extraction belongs to PDF M008. |
 
 Resolution is classification, not a transport shortcut: it cannot bypass the
-owning handler's validation or security policy, and it does not expose a generic
-MCP fetch schema. Batch preflight uses the same typed resolution before any
+owning handler's validation or security policy. Canonical `fetch` exposes tagged
+web and repo items; batch preflight uses the same typed resolution before any
 fetch starts. Web items carry `pdf`, `render`, and `browser_profile` controls
 through the shared web-fetch path, alongside per-item cache and focus options;
-repo items carry source selection through the repo-fetch handler. The trusted
+repo items carry source selection through the repo-item handler. The trusted
 `codegg/host-local-scope` metadata is forwarded unchanged to repo items, so
-workspace reads retain the same authorized root and root-relative path boundary
-as `repo_fetch`. Batch order, per-item failures, and aggregate budgets remain
+workspace reads retain the authorized root and root-relative path boundary. Batch order, per-item failures, and aggregate budgets remain
 owned by the batch envelope.
 
 ### Batch returned-character and emitted-payload budgets
@@ -100,7 +99,7 @@ distinct from `total_payload_chars`.
 5. **Render.** HTML goes through `render/blocks.rs`; code, CSV, notebooks, and
    Markdown sources go through their dedicated renderers; PDFs take the
    feature-gated `pdf.rs` path (§6, §7).
-6. **Project.** `repo_fetch` line/symbol selection uses `span::select_span`;
+6. **Project.** Repo-item line/symbol selection uses `span::select_span`;
    `web_fetch` / `batch_fetch` focus queries project over the extracted
    `FetchDocument` via `core/fetch_policy.rs`. Both are post-extraction
    projections: they never change what is cached.
@@ -137,7 +136,7 @@ reported via `FetchTransform`.
    `document_chars = max_chars_cap`, while the returned `text` is projected at
    `window_chars = caller max_chars` (or `max_chars_default`), clamped to
    `max_chars_cap`. `raw_text` stays at `max_chars_cap` so internal consumers
-   (`repo_fetch` line/span selection) see full source text.
+   (repo-item line/span selection) see full source text.
    `document.document_truncated` reports extraction stopping at the document
    budget; `document.text_truncated` reports window clipping. `document.blocks`
    / `document.chunks` can therefore cover a document larger than one `text`
@@ -681,17 +680,16 @@ bounded body, `status`, and `fetched: true` — it is not a transport failure �
 the family. Detection adds no request, retry, or delay, and ordinary pages, markdown bodies, and
 PDFs are never marked. Under `render: "auto"` the same classification is an escalation trigger, so
 a detected Anubis or ALTCHA wall is rendered by the browser when one is available instead of being
-returned as a stub; `render: "http_only"` keeps the marked body. The remote
-`repo_fetch` response always serializes `manual_interaction_required`; when a challenge page
-is returned, `fetch_challenge_page` is surfaced through `structured_warnings`. Its workspace
-path always sets the flag to false.
+returned as a stub; `render: "http_only"` keeps the marked body. Remote repo-item results always serialize `manual_interaction_required`; when a
+challenge page is returned, `fetch_challenge_page` is surfaced through
+`structured_warnings`. The workspace path always sets the flag to false.
 
 When `[search.challenge].enabled` is true, a detected Anubis or ALTCHA page can be solved
 and replayed once. `src/challenge_replay/` owns the shared fetch-path detect → solve → replay →
 classify sequence, combining the bounded fetch client with the solvers in
-`src/meta/challenge/anubis.rs` and `src/meta/challenge/altcha.rs`. `web_fetch`, `batch_fetch`,
-and unified `fetch` web items delegate through the shared web-fetch handler; the remote
-`repo_fetch` path and CLI `eggsearch fetch` use the same orchestration. Each fetch-path solve
+`src/meta/challenge/anubis.rs` and `src/meta/challenge/altcha.rs`. `web_fetch`, `batch_fetch`, and unified `fetch` web items delegate through the
+shared web-fetch handler; canonical `fetch` repo items and CLI `eggsearch fetch`
+use the same orchestration. Each fetch-path solve
 uses the ledger label `fetch` and is bounded by `max_attempts`, `timeout_ms`, and the remaining
 call deadline. `max_difficulty` gates the Anubis family only; an ALTCHA solve publishes no
 difficulty and is bounded by its PBKDF2 `cost`, the attempt ceiling, and the wall clock.
@@ -906,7 +904,7 @@ symlink and path-escape rejection, an `allowed_profiles` allowlist, a
 
 ## 10. Span and Focus Projection
 
-### `span.rs`: symbol-aware block expansion for `repo_fetch`
+### `span.rs`: symbol-aware block expansion for repo items
 
 `select_span(lines, language, symbol, symbol_kind, match_text, explicit range,
 expand_to_block, max_block_lines)` is deterministic and lexical — regex

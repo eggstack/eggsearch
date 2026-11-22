@@ -213,11 +213,7 @@ pub fn generate_suggested_fetches_with_mode(
                 .map(|r| r.as_str().to_string())
                 .collect();
 
-            let preferred_tool = if candidate.structured_repo_fetch {
-                Some("repo_fetch".to_string())
-            } else {
-                Some("fetch".to_string())
-            };
+            let preferred_tool = Some("fetch".to_string());
 
             let recommended_focus_query = structured_repo_fetch
                 .as_ref()
@@ -335,7 +331,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -362,7 +358,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -390,7 +386,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -425,7 +421,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -947,8 +943,8 @@ mod tests {
         assert!(!fetches.is_empty());
         assert_eq!(
             fetches[0].preferred_tool.as_deref(),
-            Some("repo_fetch"),
-            "candidate with structured_repo_fetch should prefer repo_fetch"
+            Some("fetch"),
+            "candidate with structured_repo_fetch should prefer fetch"
         );
     }
 
@@ -1283,8 +1279,8 @@ mod tests {
             if s.reason != "changelog_source" {
                 assert_eq!(
                     s.preferred_tool.as_deref(),
-                    Some("repo_fetch"),
-                    "non-changelog complementary suggestions should prefer repo_fetch"
+                    Some("fetch"),
+                    "non-changelog complementary suggestions should prefer fetch"
                 );
             }
         }

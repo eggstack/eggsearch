@@ -141,7 +141,6 @@ pub const STABLE_TOOL_NAMES: &[&str] = &[
     "fetch",
     "knowledge_brief",
     "provider_status",
-    "repo_fetch",
     "repo_map",
     "repo_search",
     "research_search",

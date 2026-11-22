@@ -15,9 +15,10 @@ Eggsearch is a lightweight MCP search/fetch server for AI agents: live
 metasearch with RRF dedup, bounded fetch, and deterministic evidence bundles.
 
 - Single library + binary crate, not a workspace.
-- Stable contract is ten canonical MCP tools plus CLI. The canonical fetch
+- Stable contract is nine canonical MCP tools plus CLI. The canonical fetch
   tool replaces the advertised `web_fetch` and `batch_fetch` entries under
-  ADR-0016; those names remain callable compatibility aliases but are not
+  ADR-0016, and `repo_fetch` was retired from the advertised surface under
+  ADR-0022; those names remain callable compatibility aliases but are not
   advertised or included in canonical discovery and `next_actions`. The narrow
   `src/sdk.rs` facade is an additional application interface for native
   consumers; the remaining Rust module tree is an implementation detail with
@@ -30,13 +31,12 @@ metasearch with RRF dedup, bounded fetch, and deterministic evidence bundles.
 
 ## 2. Stable MCP tool contract
 
-The ten canonical tools are:
+The nine canonical tools are:
 
 - `build_evidence_bundle`
 - `fetch`
 - `knowledge_brief`
 - `provider_status`
-- `repo_fetch`
 - `repo_map`
 - `repo_search`
 - `research_search`
@@ -44,15 +44,18 @@ The ten canonical tools are:
 - `web_search`
 
 `fetch` accepts one typed web or repo item or a non-empty array of items. The
-legacy names `web_fetch` and `batch_fetch` remain callable compatibility
-aliases but are absent from `tools/list`, canonical tool metadata, and
-`next_actions`; their legacy request/response contracts remain intact. ADR-0016
-is the explicit, narrow exception authorizing this replacement. ADR-0020 is
-the explicit, narrow exception authorizing `knowledge_brief` and the move from
-nine advertised tools to ten. The canonical inventory MUST remain exactly ten;
+legacy names `web_fetch`, `batch_fetch`, and `repo_fetch` remain callable
+compatibility aliases but are absent from `tools/list`, canonical tool
+metadata, and `next_actions`; their legacy request/response contracts remain
+intact. ADR-0016 is the explicit, narrow exception authorizing the fetch-name
+replacement. ADR-0020 is the explicit, narrow exception authorizing
+`knowledge_brief`. ADR-0022 is the explicit, narrow exception that retires
+`repo_fetch` from the advertised surface, moving the inventory from ten
+advertised tools to nine. The canonical inventory MUST remain exactly nine;
 a further count/name change requires a later accepted ADR and coordinated
 updates to the tool matrix, contract tests, and CodeGG integration
-documentation (enforced by `tests/static_guards.rs`).
+documentation (enforced by `tests/static_guards.rs` and
+`tests/tool_inventory_parity.rs`).
 MCP tools MUST call the `MetadataSearchAdapter`, never engines directly. New
 tools REQUIRE a dedicated module under `src/mcp/tools/` with shared validation
 in `common.rs` and goal/workflow resolution in `canonical.rs`, registered in
@@ -139,7 +142,8 @@ discover -> rank -> select -> bounded fetch -> deterministic evidence handoff
 ## 7. Performance and footprint
 
 Optimization is optimization-with-equivalence. It MUST NOT change the
-ten-tool canonical surface established by ADR-0016 and extended by ADR-0020, ranking weights,
+nine-tool canonical surface established by ADR-0016, extended by ADR-0020 and
+retired to nine by ADR-0022, ranking weights,
 trust/SSRF semantics, cache policy, batch budget semantics, public Rust
 compatibility, browser/PDF availability, provider coverage, or integration
 verification merely to improve benchmark or binary-size numbers.

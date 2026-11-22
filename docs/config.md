@@ -48,7 +48,7 @@ roots = []
 
 ## MCP Tool Schema Profile
 
-The server advertises the complete ten-tool schema by default. Direct clients
+The server advertises the complete nine-tool schema by default. Direct clients
 with tight model contexts can opt into a smaller advertisement in the same
 config file:
 
@@ -60,7 +60,7 @@ excerpt_budget_chars = 4000
 tool_preset = "full"
 ```
 
-Compact mode keeps all ten tool names and required inputs, trims optional
+Compact mode keeps all nine tool names and required inputs, trims optional
 schema guidance, and omits `outputSchema` metadata. Runtime argument parsing
 and tool behavior are unchanged; advanced accepted inputs can still be sent.
 Omitted `response_detail` defaults to `brief` in compact mode; explicit
@@ -83,10 +83,10 @@ pre-capability advertisement.
 
 | Preset | Tools advertised |
 |--------|------------------|
-| `full` | all ten |
-| `research` | `provider_status`, `web_search`, `web_fetch`, `research_search`, `repo_fetch`, `batch_fetch`, `build_evidence_bundle` |
-| `code` | `provider_status`, `web_search`, `web_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `batch_fetch`, `build_evidence_bundle` |
-| `minimal` | `web_search`, `web_fetch`, `batch_fetch`, `build_evidence_bundle` |
+| `full` | `build_evidence_bundle`, `fetch`, `knowledge_brief`, `provider_status`, `repo_map`, `repo_search`, `research_search`, `security_search`, `web_search` |
+| `research` | `provider_status`, `web_search`, `knowledge_brief`, `research_search`, `fetch`, `build_evidence_bundle` |
+| `code` | `provider_status`, `web_search`, `repo_search`, `repo_map`, `fetch`, `build_evidence_bundle` |
+| `minimal` | `web_search`, `fetch`, `build_evidence_bundle` |
 
 Hidden tools are hidden from `tools/list` only. They still execute when called
 directly, their argument schemas are unchanged, and no tool is removed or
@@ -825,14 +825,14 @@ Local workspace search is disabled by default.
 | `max_total_symbols` | `5_000` |
 | `repo_map_structure_cap` | `500` |
 
-`repo_fetch` extracts an explicitly named workspace PDF when its path ends in
+A repo item in `fetch` extracts an explicitly named workspace PDF when its path ends in
 `.pdf` (case-insensitive) or its first bytes contain `%PDF-`. Local PDFs use
 `pdf_max_file_bytes`; other files keep `max_file_bytes`. The PDF feature and
 `[fetch].pdf_enabled` gates still apply. PDFs remain excluded from local search,
-symbol parsing, and repo-map indexing. `repo_fetch` does not accept PDF page
-selection.
+symbol parsing, and repo-map indexing. Repo items in `fetch` do not accept PDF
+page selection.
 
-When enabled, local results use `local_trusted` trust labels and can be surfaced through `repo_search`, `repo_fetch`, and `repo_map`. They remain provenance-trusted, not instruction-trusted.
+When enabled, local results use `local_trusted` trust labels and can be surfaced through `repo_search`, repo items in `fetch`, and `repo_map`. They remain provenance-trusted, not instruction-trusted.
 
 ## Browser Rendering
 

@@ -24,7 +24,7 @@ fn tool_names_from_server() -> Vec<String> {
     }
     names.sort();
     names.dedup();
-    names.retain(|name| !matches!(name.as_str(), "web_fetch" | "batch_fetch"));
+    names.retain(|name| !matches!(name.as_str(), "web_fetch" | "batch_fetch" | "repo_fetch"));
     names
 }
 
@@ -81,7 +81,7 @@ fn tool_names_in_docs() {
     let tools = tool_names_from_server();
     assert_eq!(
         tools.len(),
-        10,
+        9,
         "server.rs must expose exactly ten canonical tools, got: {tools:?}"
     );
     let text = read_all_docs();
@@ -139,7 +139,7 @@ fn no_phantom_tool_names_in_docs() {
             && !tools.iter().any(|t| t == token)
             && !matches!(
                 token,
-                "generic_search" | "safe_search" | "web_fetch" | "batch_fetch"
+                "generic_search" | "safe_search" | "web_fetch" | "batch_fetch" | "repo_fetch"
             )
         {
             phantom.push(token.to_string());

@@ -166,10 +166,10 @@ pub fn repo_search_next_actions(
     let mut actions = Vec::new();
     if has_suggested_fetches && !source_ids.is_empty() {
         actions.push(AgentNextAction::new(
-            "repo_fetch",
+            "fetch",
             "fetch_top_source",
             1,
-            serde_json::json!({"owner": "<owner>", "repo": "<repo>", "path": "<path>"}),
+            serde_json::json!({"items": [{"type": "repo", "owner": "<owner>", "repo": "<repo>", "path": "<path>"}]}),
             source_ids.iter().take(1).cloned().collect(),
             None,
         ));
@@ -278,10 +278,10 @@ pub fn research_search_next_actions(
         ));
         actions.push(
             AgentNextAction::new(
-                "repo_fetch",
+                "fetch",
                 "inspect_repo_source",
                 2,
-                serde_json::json!({"owner": "<owner>", "repo": "<repo>", "path": "<path>"}),
+                serde_json::json!({"items": [{"type": "repo", "owner": "<owner>", "repo": "<repo>", "path": "<path>"}]}),
                 source_ids.iter().take(1).cloned().collect(),
                 None,
             )
@@ -582,10 +582,10 @@ fn repository_investigation() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 4,
-                tool: "repo_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch specific code spans or files".into(),
                 input_hints: vec![
-                    "host, owner, repo, path: file locator".into(),
+                    "items[].type: 'repo' with host, owner, repo, path".into(),
                     "symbol or line_start/line_end: target span".into(),
                     "expand_to_block: expand to enclosing block".into(),
                 ],
@@ -1013,10 +1013,10 @@ fn local_workspace_investigation() -> AgentWorkflowRecipe {
             },
             AgentWorkflowStep {
                 order: 3,
-                tool: "repo_fetch".into(),
+                tool: "fetch".into(),
                 purpose: "Fetch exact file spans from local workspace".into(),
                 input_hints: vec![
-                    "host: 'workspace'".into(),
+                    "items[].type: 'repo' with host: 'workspace'".into(),
                     "owner: root directory name".into(),
                     "repo: root-relative file path".into(),
                     "line_start, line_end: optional line range".into(),
@@ -1122,7 +1122,6 @@ mod tests {
             "build_evidence_bundle",
             "fetch",
             "provider_status",
-            "repo_fetch",
             "repo_map",
             "repo_search",
             "research_search",
@@ -1149,7 +1148,6 @@ mod tests {
             "build_evidence_bundle",
             "fetch",
             "provider_status",
-            "repo_fetch",
             "repo_map",
             "repo_search",
             "research_search",

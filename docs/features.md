@@ -65,7 +65,7 @@ includes local results by default; a request that names a host, owner, repositor
 or organization includes them only with explicit `include_local: true`, and
 `include_local: false` disables them everywhere.
 
-For `repo_fetch`, `prefer_local: true` tries an enabled local workspace first. A
+For a repo item in `fetch`, `prefer_local: true` tries an enabled local workspace first. A
 matching checkout is fetched locally; otherwise the remote path remains the
 fallback and the response warning explains that the local copy was skipped.
 Authorized host scopes retain their existing error when no matching local
@@ -131,11 +131,11 @@ syntax before fetching; page numbers beyond the fetched document fail only that
 item. Non-PDF URLs and `metadata_only` follow the same behavior as `web_fetch`.
 
 An explicitly named PDF under an enabled `[local]` root is also extracted by
-`repo_fetch` with `host = "workspace"`. Detection uses a case-insensitive `.pdf`
+`fetch` with a repo item whose `host` is `"workspace"`. Detection uses a case-insensitive `.pdf`
 extension or `%PDF-` prefix. Local reads use `[local].pdf_max_file_bytes`
 (default 16 MiB, range 1 byte to 256 MiB) and the same PDF feature and
-`[fetch].pdf_enabled` gates. Page selection is not available on `repo_fetch` or
-batch repo items; local PDFs remain excluded from local indexing and repo maps.
+`[fetch].pdf_enabled` gates. Page selection is not available on repo items; local
+PDFs remain excluded from local indexing and repo maps.
 
 ### Limits
 
@@ -197,7 +197,7 @@ enabled = false
 
 - Solves the methods the engine set actually encounters: Anubis `fast`, `slow` (an alias of `fast`), `preact`, `metarefresh`, and WASM `sha256`, plus ALTCHA `PBKDF2/SHA-256` (Mojeek); `argon2id` and `hashx` stay unsupported
 - Search engines share the solver in `src/meta/challenge/`; fetch-path detect/solve/replay is owned by `src/challenge_replay/`
-- With solving on (the default), `web_fetch`, `batch_fetch`, unified `fetch` web items, remote `repo_fetch`, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
+- With solving on (the default), `web_fetch`, `batch_fetch`, unified `fetch` web/repo items, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
 - A fetch-path ALTCHA solve takes its challenge document and its verification endpoint from the page's own `altcha-widget` publication, same-origin only; a cross-origin, scheme-changing, or malformed publication is refused before any request is issued
 - A fetch-path pass cookie is reused for a later fetch to the same origin, from a process-local cache keyed by origin. The window is the upstream-published lifetime clamped by `cookie_ttl_seconds`; a fetch that crossed an origin stores nothing and reuses nothing
 - A pair set the upstream refuses is evicted, and the same call then solves the challenge it was already holding and replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is attempted
@@ -510,7 +510,7 @@ When routed, only vendored provider search-engine upstreams use the
 configured chain. The following remain direct by design and are guarded by
 static tests:
 
-- `web_fetch`, `batch_fetch`, and `repo_fetch` dynamic targets keep
+- Canonical `fetch` web/repo items and its direct-call aliases `web_fetch`, `batch_fetch`, and `repo_fetch` keep
   resolved-address pinning on the direct route. Eggfetch 0.2.0 rejects the
   custom-dialer plus `resolved_addresses` combination, so these SSRF-sensitive
   paths cannot silently migrate to proxy DNS.

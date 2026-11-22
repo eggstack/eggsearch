@@ -53,10 +53,9 @@ operation futures, waits for them to drop, and rejects later calls with
 The generic `execute(tool, arguments)` method and these named async methods use
 the canonical tool names and pass accepted arguments to the Rust SDK:
 
-- `web_search`, `web_fetch`, and `batch_fetch`
-- `provider_status`
-- `repo_search`, `repo_fetch`, and `repo_map`
-- `security_search` and `research_search`
+- `web_search`, `fetch`, `knowledge_brief`, and `provider_status`
+- `repo_search` and `repo_map`
+- `research_search` and `security_search`
 - `build_evidence_bundle`
 
 Each method accepts keyword arguments matching its tool's snake_case fields,
@@ -64,7 +63,7 @@ including advanced fields. Omitted keys remain omitted; explicit `None`,
 `False`, empty lists, and zero values keep their JSON meanings through the
 native boundary and are validated by Rust. The generic `execute` method is
 available for dynamic tool dispatch. `tool_names()` returns the canonical
-ten-name inventory. `client.tool_contracts()` returns the MCP input/output
+nine-name inventory. `client.tool_contracts()` returns the MCP input/output
 schemas and their content fingerprint directly from Rust's server
 definitions. The package tests check that each Python request `TypedDict`
 covers every advertised input property.
