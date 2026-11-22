@@ -163,6 +163,8 @@ pub struct ProviderSolveStats {
     pub cookie_hits: u64,
     /// Pass-cookie cache misses.
     pub cookie_misses: u64,
+    /// Walls a browser render completed on the fetch path.
+    pub browser_completions: u64,
     /// Attempts consumed by the most recent attempt.
     pub last_candidates: u64,
     /// Bounded-computation milliseconds of the most recent attempt.
@@ -255,6 +257,16 @@ impl SolveLedger {
         } else {
             stats.cookie_misses = stats.cookie_misses.saturating_add(1);
         }
+    }
+
+    /// Record one wall a browser render completed. A completion is not a
+    /// solve: it moves no solve or refusal counter.
+    pub fn record_browser_completion(&self, provider: &str) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(stats) = tracked(&mut state, self.capacity, provider) else {
+            return;
+        };
+        stats.browser_completions = stats.browser_completions.saturating_add(1);
     }
 
     /// Copy the current totals.
@@ -497,6 +509,22 @@ mod tests {
         assert_eq!(mojeek.cookie_misses, 2);
         assert_eq!(mojeek.solves_attempted, 0);
         assert_eq!(stats(&ledger, "startpage").cookie_hits, 1);
+    }
+
+    #[test]
+    fn browser_completions_are_counted_separately_from_solves() {
+        let ledger = SolveLedger::new(MAX_LEDGER_PROVIDERS);
+        ledger.record_browser_completion("fetch");
+        ledger.record_browser_completion("fetch");
+        let fetch = stats(&ledger, "fetch");
+        assert_eq!(fetch.browser_completions, 2);
+        assert_eq!(fetch.solves_attempted, 0);
+        assert_eq!(fetch.solves_succeeded, 0);
+        assert_eq!(fetch.refusals.total(), 0);
+        ledger.record_outcome("fetch", RecordedOutcome::Solved, 1, Duration::ZERO);
+        let fetch = stats(&ledger, "fetch");
+        assert_eq!(fetch.browser_completions, 2);
+        assert_eq!(fetch.solves_attempted, 1);
     }
 
     #[test]

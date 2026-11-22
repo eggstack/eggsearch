@@ -5,6 +5,7 @@ use crate::core::query::{resolve_max_results, Freshness, SearchIntent};
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{SourceCard, SourceKind};
+use crate::core::validation::{require_char_limit, require_non_empty, require_positive};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +35,25 @@ pub enum ResearchDomain {
     /// Infrastructure, deployment, and DevOps.
     Infrastructure,
 }
+
+/// Values accepted by [`ResearchDomain::parse`].
+pub const RESEARCH_DOMAIN_VALUES: &[&str] = &[
+    "general",
+    "software_architecture",
+    "architecture",
+    "api_design",
+    "api",
+    "distributed_systems",
+    "distributed",
+    "security",
+    "performance",
+    "language_ecosystem",
+    "ecosystem",
+    "machine_learning",
+    "ml",
+    "infrastructure",
+    "infra",
+];
 
 impl ResearchDomain {
     /// Parse a research-domain string, accepting common aliases used by MCP callers.
@@ -422,24 +442,15 @@ pub struct ResearchSearchRequest {
 impl ResearchSearchRequest {
     /// Validate the request, returning an error if invalid.
     pub fn validate(&self, max_query_chars: usize) -> Result<(), String> {
-        if self.query.trim().is_empty() {
-            return Err("query must not be empty".to_string());
-        }
-        if self.query.chars().count() > max_query_chars {
-            return Err(format!("query must be <= {max_query_chars} characters"));
-        }
-        if let Some(0) = self.max_results {
-            return Err("max_results must be > 0".to_string());
-        }
-        if let Some(0) = self.max_groups {
-            return Err("max_groups must be > 0".to_string());
-        }
-        if let Some(0) = self.max_per_group {
-            return Err("max_per_group must be > 0".to_string());
-        }
-        if let Some(0) = self.timeout_ms {
-            return Err("timeout_ms must be > 0".to_string());
-        }
+        require_non_empty("query", &self.query)?;
+        require_char_limit("query", &self.query, max_query_chars)?;
+        require_positive("max_results", self.max_results)?;
+        require_positive("max_groups", self.max_groups)?;
+        require_positive("max_per_group", self.max_per_group)?;
+        require_positive(
+            "timeout_ms",
+            self.timeout_ms.map(|value| if value == 0 { 0 } else { 1 }),
+        )?;
         if self.desired_source_types.len() > 12 {
             return Err("desired_source_types must have <= 12 entries".to_string());
         }
@@ -788,7 +799,7 @@ mod tests {
             query: "   ".to_string(),
             ..Default::default()
         };
-        assert!(req.validate(512).is_err());
+        assert_eq!(req.validate(512).unwrap_err(), "query must not be empty");
     }
 
     #[test]
@@ -797,7 +808,10 @@ mod tests {
             query: "a".repeat(1000),
             ..Default::default()
         };
-        assert!(req.validate(512).is_err());
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "query must be <= 512 characters"
+        );
     }
 
     #[test]

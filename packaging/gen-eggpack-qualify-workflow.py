@@ -33,6 +33,103 @@ def job_blocks(text):
     }, [(match.group(1), section_start + match.start()) for match in matches]
 
 
+def insert_before_job_step(text, job_name, anchor, inserted, label):
+    jobs, matches = job_blocks(text)
+    start = jobs[job_name]
+    end = next((job_start for _, job_start in matches if job_start > start), len(text))
+    block = replace_once(text[start:end], anchor, inserted + anchor, label)
+    return text[:start] + block + text[end:]
+
+
+def footprint_steps(target, platform, artifact):
+    if platform == "linux":
+        step = """      - name: Measure stripped binary size and startup RSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="@TARGET@"
+          build_root="$RUNNER_TEMP/eggpack/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          binary="$build_root/$target/release/eggsearch"
+          test -x "$binary"
+          candidate_sha="$(git rev-parse HEAD)"
+          binary_bytes="$(wc -c < "$binary" | tr -d '[:space:]')"
+          rss_samples=""
+          for _ in 1 2 3 4 5; do
+            sample="$(/usr/bin/time -f '%M' "$binary" --version 2>&1 >/dev/null)"
+            [[ "$sample" =~ ^[0-9]+$ ]]
+            if [[ -n "$rss_samples" ]]; then rss_samples="$rss_samples,"; fi
+            rss_samples="$rss_samples$sample"
+          done
+          mkdir -p eggpack-footprint
+          printf '{"candidate_sha":"%s","target":"%s","binary_bytes":%s,"probe":"eggsearch --version","peak_rss_kib_samples":[%s],"threshold_applied":false}\\n' "$candidate_sha" "$target" "$binary_bytes" "$rss_samples" | tee "eggpack-footprint/$target.json"
+      - name: Upload footprint evidence
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          name: "eggsearch-footprint-@ARTIFACT@"
+          path: "eggpack-footprint/@TARGET@.json"
+          if-no-files-found: error
+          retention-days: 7
+"""
+    elif platform == "windows":
+        step = """      - name: Measure stripped binary size and startup RSS
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $target = "@TARGET@"
+          $buildRoot = [System.IO.Path]::Combine($env:RUNNER_TEMP, "eggpack", "$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)")
+          $binary = [System.IO.Path]::Combine($buildRoot, $target, "release", "eggsearch.exe")
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Release binary not found: $binary" }
+          $candidateSha = (git rev-parse HEAD).Trim()
+          $binaryBytes = [long](Get-Item -LiteralPath $binary).Length
+          $rssSamples = @()
+          for ($attempt = 0; $attempt -lt 10 -and $rssSamples.Count -lt 5; $attempt++) {
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo.FileName = $binary
+            $process.StartInfo.Arguments = "--version"
+            $process.StartInfo.UseShellExecute = $false
+            $process.StartInfo.CreateNoWindow = $true
+            $process.StartInfo.RedirectStandardOutput = $true
+            $process.StartInfo.RedirectStandardError = $true
+            if (-not $process.Start()) { throw "Could not start release binary" }
+            $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+            $stderrTask = $process.StandardError.ReadToEndAsync()
+            $rssSample = 0L
+            do {
+              $process.Refresh()
+              if ($process.HasExited) { break }
+              $currentSample = [long]$process.PeakWorkingSet64
+              $process.Refresh()
+              if (-not $process.HasExited -and $currentSample -gt $rssSample) { $rssSample = $currentSample }
+              if ($process.WaitForExit(1)) { break }
+            } while ($true)
+            $process.WaitForExit()
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
+            if ($process.ExitCode -ne 0) { throw "--version exited with $($process.ExitCode): $stderr" }
+            if ($rssSample -gt 0) { $rssSamples += $rssSample }
+            $process.Dispose()
+          }
+          if ($rssSamples.Count -ne 5) { throw "Collected $($rssSamples.Count) valid peak working set samples; expected 5" }
+          $record = [ordered]@{ candidate_sha = $candidateSha; target = $target; binary_bytes = $binaryBytes; probe = "eggsearch --version"; peak_working_set_bytes_samples = $rssSamples; threshold_applied = $false }
+          $json = $record | ConvertTo-Json -Compress
+          $outputDir = Join-Path $PWD "eggpack-footprint"
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+          $outputPath = Join-Path $outputDir "$target.json"
+          Set-Content -LiteralPath $outputPath -Value $json -NoNewline -Encoding utf8
+          Write-Output $json
+      - name: Upload footprint evidence
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          name: "eggsearch-footprint-@ARTIFACT@"
+          path: "eggpack-footprint/@TARGET@.json"
+          if-no-files-found: error
+          retention-days: 7
+"""
+    else:
+        raise SystemExit(f"unsupported footprint platform: {platform}")
+    return step.replace("@TARGET@", target).replace("@ARTIFACT@", artifact)
+
+
 def render(source):
     jobs, matches = job_blocks(source)
     expected = {
@@ -126,6 +223,22 @@ def render(source):
     output = replace_once(output, 'name: "eggpack-finalized-release"', 'name: "eggpack-candidate-qualified"', "candidate artifact name")
     output = output.replace("release_tag", "candidate_sha")
     output = output.replace("Eggpack candidate builds", "Eggpack exact-SHA candidate qualification")
+
+    footprint_jobs = [
+        ("build_aarch64_pc_windows_msvc", "aarch64-pc-windows-msvc", "windows", "windows-arm64"),
+        ("build_aarch64_unknown_linux_gnu", "aarch64-unknown-linux-gnu", "linux", "linux-arm64"),
+        ("build_x86_64_pc_windows_msvc", "x86_64-pc-windows-msvc", "windows", "windows-x64"),
+        ("build_x86_64_unknown_linux_gnu", "x86_64-unknown-linux-gnu", "linux", "linux-x64"),
+    ]
+    anchor = "      - name: Capture canonical build handoff\n"
+    for job_name, target, platform, artifact in footprint_jobs:
+        output = insert_before_job_step(
+            output,
+            job_name,
+            anchor,
+            footprint_steps(target, platform, artifact),
+            f"{target} footprint measurement",
+        )
 
     windows_start = output.index("  validate_build_x86_64_pc_windows_msvc:\n")
     _, job_matches = job_blocks(output)

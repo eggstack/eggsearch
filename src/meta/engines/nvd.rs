@@ -327,6 +327,7 @@ fn convert_cve(cve: &NvdCve) -> VulnerabilityMetadata {
         ghsa_ids: Vec::new(),
         osv_ids: Vec::new(),
         rustsec_ids: Vec::new(),
+        summary: None,
         ecosystem,
         package: package_name,
         affected_ranges,

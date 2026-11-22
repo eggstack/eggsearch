@@ -74,7 +74,10 @@ below). It also fails closed on two crate-wide invariants that are not about
 release targets: `packaging/check-workflow-pins.py` requires every non-local
 `uses:` in `.github/workflows/*.yml` to be pinned to a full 40-hex commit SHA,
 and `packaging/check-planning-consistency.py` rejects closed-range shorthand
-in planning status tables. `packaging/check-egress-qualify-contract.sh` plus
+in planning status tables. `packaging/check-packaged-assets.py` compares
+`cargo package --list` against every `include_str!`/`include_bytes!` literal
+under `src/`, so an asset the published crate compiles is always present in the
+crate tarball and in the maturin sdist. `packaging/check-egress-qualify-contract.sh` plus
 `tests/egress_qualify_contract.rs` guard the separate non-publishing egress
 feature qualification across the same seven targets.
 

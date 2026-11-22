@@ -8,6 +8,7 @@ use crate::core::repo_query::RepoQueryHints;
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{SourceCard, SourceKind};
+use crate::core::validation::{require_char_limit, require_positive};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
@@ -319,7 +320,7 @@ pub struct RepoSearchRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_migration_guides: Option<bool>,
     /// Optional. Include local workspace results when local backend is enabled.
-    /// Default: None (uses profile-based default).
+    /// When omitted, local results are included for unscoped requests only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_local: Option<bool>,
     /// Optional. Search mode. `"normal"` (default) uses standard repo-search
@@ -386,18 +387,13 @@ impl RepoSearchRequest {
         } else {
             max_query_chars
         };
-        if self.query.chars().count() > effective_max {
-            return Err(format!("query must be <= {effective_max} characters"));
-        }
-        if let Some(0) = self.max_results {
-            return Err("max_results must be > 0".to_string());
-        }
-        if let Some(0) = self.max_per_group {
-            return Err("max_per_group must be > 0".to_string());
-        }
-        if let Some(0) = self.timeout_ms {
-            return Err("timeout_ms must be > 0".to_string());
-        }
+        require_char_limit("query", &self.query, effective_max)?;
+        require_positive("max_results", self.max_results)?;
+        require_positive("max_per_group", self.max_per_group)?;
+        require_positive(
+            "timeout_ms",
+            self.timeout_ms.map(|value| if value == 0 { 0 } else { 1 }),
+        )?;
         // Validate package coordinate: ecosystem requires package name and vice versa.
         if self.ecosystem.is_some() != self.package.is_some() {
             return Err("both 'ecosystem' and 'package' must be provided together".to_string());
@@ -505,9 +501,15 @@ impl RepoSearchRequest {
         self.include_security_context.unwrap_or(false)
     }
 
-    /// Whether local results should be included (default true when local backend is available).
+    /// Whether local results should be included under the resolved repository scope.
     pub fn include_local_enabled(&self) -> bool {
-        self.include_local.unwrap_or(true)
+        self.include_local.unwrap_or_else(|| {
+            let hints = self.resolved_hints();
+            hints.host.is_none()
+                && hints.owner.is_none()
+                && hints.repo.is_none()
+                && hints.org.is_none()
+        })
     }
 
     /// Build a PackageCoordinate from the request fields if package fields are present.
@@ -624,7 +626,7 @@ pub struct RepoSuggestedFetch {
     /// Whether this fetch comes from a stable/pinned source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stable: Option<bool>,
-    /// Recommended tool for this fetch (e.g. "repo_fetch", "web_fetch").
+    /// Recommended tool for this fetch (e.g. "fetch").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_tool: Option<String>,
     /// Recommended focus query for bounded batch retrieval. Additive;
@@ -759,8 +761,10 @@ mod tests {
             query: String::new(),
             ..Default::default()
         };
-        let err = req.validate(512).unwrap_err();
-        assert!(err.contains("repository locator"));
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "repo_search requires a non-empty query or a repository locator such as owner+repo or repo:owner/name"
+        );
     }
 
     #[test]
@@ -844,7 +848,10 @@ mod tests {
             query: "a".repeat(1000),
             ..Default::default()
         };
-        assert!(req.validate(512).is_err());
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "query must be <= 512 characters"
+        );
     }
 
     #[test]

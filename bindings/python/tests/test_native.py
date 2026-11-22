@@ -2,10 +2,20 @@ import asyncio
 import json
 import math
 import os
+import typing
 
 import pytest
 
-from eggsearch import AsyncEggsearch, EggsearchError, tool_names
+from eggsearch import (
+    AsyncEggsearch,
+    EggsearchError,
+    FetchItem,
+    FetchRequest,
+    FetchResponse,
+    RepoFetchItem,
+    WebFetchItem,
+    tool_names,
+)
 from eggsearch import types as eggsearch_types
 
 
@@ -63,11 +73,10 @@ def _mojeek_enabled(status):
 
 EXPECTED_TOOLS = {
     "web_search",
-    "web_fetch",
-    "batch_fetch",
+    "fetch",
+    "knowledge_brief",
     "provider_status",
     "repo_search",
-    "repo_fetch",
     "repo_map",
     "security_search",
     "research_search",
@@ -76,14 +85,13 @@ EXPECTED_TOOLS = {
 
 REQUEST_TYPES = {
     "web_search": eggsearch_types.WebSearchRequest,
-    "web_fetch": eggsearch_types.WebFetchRequest,
-    "batch_fetch": eggsearch_types.BatchFetchRequest,
+    "fetch": eggsearch_types.FetchRequest,
     "provider_status": eggsearch_types.ProviderStatusRequest,
     "repo_search": eggsearch_types.RepoSearchRequest,
-    "repo_fetch": eggsearch_types.RepoFetchRequest,
     "repo_map": eggsearch_types.RepoMapRequest,
     "security_search": eggsearch_types.SecuritySearchRequest,
     "research_search": eggsearch_types.ResearchSearchRequest,
+    "knowledge_brief": eggsearch_types.KnowledgeBriefRequest,
     "build_evidence_bundle": eggsearch_types.EvidenceBundleRequest,
 }
 
@@ -119,9 +127,81 @@ def config_path(tmp_path):
 
 def test_native_module_import_and_tool_inventory():
     names = tool_names()
-    assert len(names) == 10
+    assert len(names) == 9
     assert set(names) == EXPECTED_TOOLS
     assert len(set(names)) == len(names)
+
+
+def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
+    assert FetchItem is eggsearch_types.FetchItem
+    assert FetchRequest is eggsearch_types.FetchRequest
+    assert FetchResponse is eggsearch_types.FetchResponse
+    assert RepoFetchItem is eggsearch_types.RepoFetchItem
+    assert WebFetchItem is eggsearch_types.WebFetchItem
+    assert set(typing.get_args(FetchItem)) == {WebFetchItem, RepoFetchItem}
+
+    web_fields = typing.get_type_hints(WebFetchItem, include_extras=True)
+    repo_fields = typing.get_type_hints(RepoFetchItem, include_extras=True)
+    request_fields = typing.get_type_hints(FetchRequest, include_extras=True)
+
+    assert web_fields["type"] == typing.Required[typing.Literal["web"]]
+    assert repo_fields["type"] == typing.Required[typing.Literal["repo"]]
+    assert set(web_fields) == {
+        "type",
+        "url",
+        "extract_mode",
+        "include_links",
+        "max_chars",
+        "cache_policy",
+        "max_cache_age_seconds",
+        "focus",
+        "focus_max_chunks",
+        "focus_max_chars",
+        "pdf",
+        "render",
+        "browser_profile",
+        "include_screenshot",
+        "offset",
+        "limit",
+    }
+    assert set(repo_fields) == {
+        "type",
+        "host",
+        "owner",
+        "repo",
+        "ref_name",
+        "commit_sha",
+        "path",
+        "line_start",
+        "line_end",
+        "context_before",
+        "context_after",
+        "max_chars",
+        "focus",
+        "focus_max_chunks",
+        "focus_max_chars",
+        "symbol",
+        "symbol_kind",
+        "match_text",
+        "expand_to_block",
+        "max_block_lines",
+        "prefer_local",
+    }
+    assert web_fields["url"] == typing.Required[str]
+    assert repo_fields["owner"] == typing.Required[str]
+    assert repo_fields["repo"] == typing.Required[str]
+    assert repo_fields["path"] == typing.Required[str]
+    assert request_fields["items"] == typing.Required[FetchItem | list[FetchItem]]
+    assert {
+        "max_items",
+        "max_chars_per_item",
+        "max_total_chars",
+        "timeout_ms",
+        "continue_on_error",
+        "offset",
+        "limit",
+        "response_detail",
+    } <= set(request_fields)
 
 
 def test_typed_requests_cover_canonical_rust_input_schemas():
@@ -145,14 +225,14 @@ def test_typed_requests_cover_canonical_rust_input_schemas():
 def test_native_client_executes_all_operations_without_an_mcp_process(config_path):
     arguments = {
         "web_search": {"query": "native parity"},
-        "web_fetch": {"url": "file:///etc/passwd"},
-        "batch_fetch": {"items": []},
+        "fetch": {"items": {"type": "web", "url": "https://example.invalid"}},
         "provider_status": {},
         "repo_search": {"query": "native parity"},
         "repo_fetch": {"owner": "invalid owner", "repo": "bad", "path": "README.md"},
         "repo_map": {"owner": "invalid owner", "repo": "bad"},
         "security_search": {"query": "CVE-2024-1234"},
         "research_search": {"query": "native parity"},
+        "knowledge_brief": {"topic": "native parity"},
         "build_evidence_bundle": {"sources": [{}]},
     }
 
@@ -164,7 +244,7 @@ def test_native_client_executes_all_operations_without_an_mcp_process(config_pat
         )
         assert len(outcomes) == 10
         assert all(isinstance(value, (dict, EggsearchError)) for value in outcomes)
-        assert isinstance(outcomes[3], dict)
+        assert isinstance(outcomes[2], dict)
         assert isinstance(outcomes[9], dict)
         assert isinstance(outcomes[0], EggsearchError)
         assert outcomes[0].code
@@ -273,6 +353,51 @@ def test_named_methods_delegate_without_rewriting_arguments():
                 "arguments": arguments,
             }
         assert calls == list(methods.items())
+
+    asyncio.run(run())
+
+
+def test_fetch_wrapper_forwards_scalar_and_array_items():
+    web_item: WebFetchItem = {
+        "type": "web",
+        "url": "https://example.invalid",
+        "offset": 2,
+        "limit": 8,
+    }
+    repo_item: RepoFetchItem = {
+        "type": "repo",
+        "owner": "acme",
+        "repo": "widget",
+        "path": "README.md",
+    }
+
+    async def run():
+        client = AsyncEggsearch()
+        calls = []
+
+        async def execute(tool, arguments):
+            calls.append((tool, arguments))
+            return {"tool": tool, "arguments": arguments}
+
+        client.execute = execute
+        scalar = {"items": web_item, "max_items": 1, "offset": 0, "limit": 10}
+        array = {
+            "items": [web_item, repo_item],
+            "max_chars_per_item": 500,
+            "max_total_chars": 900,
+            "timeout_ms": 1000,
+            "continue_on_error": False,
+            "response_detail": "compact",
+        }
+        assert await client.fetch(**scalar) == {
+            "tool": "fetch",
+            "arguments": scalar,
+        }
+        assert await client.fetch(**array) == {
+            "tool": "fetch",
+            "arguments": array,
+        }
+        assert calls == [("fetch", scalar), ("fetch", array)]
 
     asyncio.run(run())
 

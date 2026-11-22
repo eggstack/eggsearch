@@ -16,12 +16,14 @@
 //! execution, or depend only on `core` types and the MCP/CLI contract, not
 //! on engines, adapters, tool internals, or deployment/update machinery.
 //!
+//! - [`challenge_replay`]: shared bounded challenge solve and replay for
+//!   every fetch surface.
 //! - [`core`]:    source card model, config, error, query types.
 //! - [`meta`]:    metasearch adapter with vendored search engines.
-//! - [`mcp`]:     MCP server (rmcp) exposing ten stable tools:
-//!   `web_search`, `web_fetch`, `batch_fetch`, `provider_status`,
-//!   `repo_search`, `repo_fetch`, `repo_map`, `security_search`,
-//!   `research_search`, and `build_evidence_bundle`.
+//! - [`mcp`]:     MCP server (rmcp) exposing nine canonical tools:
+//!   `web_search`, `fetch`, `provider_status`, `repo_search`, `repo_fetch`,
+//!   `repo_map`, `security_search`, `research_search`, and
+//!   `build_evidence_bundle`. `web_fetch` and `batch_fetch` remain callable aliases.
 //!
 //! The `mock` feature exposes the test-only mock engine harness used by
 //! the integration tests.
@@ -46,6 +48,7 @@
 #![warn(missing_docs)]
 #![deny(unsafe_code)]
 
+pub mod challenge_replay;
 pub mod core;
 pub mod fetch;
 pub mod integrations;
@@ -54,6 +57,7 @@ pub mod meta;
 pub mod platform;
 pub(crate) mod process;
 pub mod sdk;
+pub mod serp_render;
 pub mod startup;
 pub mod update;
 

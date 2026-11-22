@@ -29,6 +29,8 @@ pub mod fetch_policy;
 pub mod focus;
 /// Deterministic cross-tool identity model for stable source/fetch/suggested IDs.
 pub mod identity;
+/// Cutoff comparison, knowledge-delta vocabulary, and operator cutoff config.
+pub mod knowledge_delta;
 /// Local workspace search types: config, file entries, and search requests.
 pub mod local;
 /// Package coordinate types and ecosystem resolution for repo_search.
@@ -44,6 +46,7 @@ pub mod repo_map;
 /// Repo-oriented query hint parser for structured search.
 pub mod repo_query;
 pub mod repo_search;
+pub(crate) mod repo_target;
 pub mod research;
 pub mod result;
 /// Response-level distinctions between evidence absence and retrieval failure.
@@ -52,6 +55,7 @@ pub mod sanitize;
 pub mod security;
 pub mod security_applicability;
 pub mod source_card;
+pub(crate) mod validation;
 /// Structured warning model with stable codes, severity, and deduplication.
 pub mod warning;
 /// Agent workflow recipes and next-action hints for tool sequencing guidance.

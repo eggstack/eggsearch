@@ -373,22 +373,8 @@ async fn e21_keyless_web_fetch_succeeds_without_credentials() {
     let result = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/get"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;

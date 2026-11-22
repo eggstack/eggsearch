@@ -14,11 +14,12 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | Location | Purpose |
 |----------|---------|
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
+| `tests/support/mod.rs` | Shared integration-test harness: git fixture and mock/local state builders, imported with `mod support;` (a module, never a suite target) |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
 | `tests/property_*.rs` (18 suites) | Pure-function `proptest` coverage |
 | `tests/dispatch_fault_injection.rs` | Provider failure/timeout/concurrency/panic |
-| `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs` | Documentation, hygiene, and identity contracts |
+| `tests/docs_*.rs`, `tests/static_guards.rs`, `tests/schema_identity_registry.rs`, `tests/tool_inventory_parity.rs` | Documentation, inventory parity, hygiene, and identity contracts |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | Tool consolidation contracts |
 | `tests/tool_surface_evaluation.rs`, `tests/tool_surface_live.rs` | Tool-selection corpus + opt-in live-model comparison |
 | `tests/retrieval_quality.rs` | Retrieval relevance metrics over the synthetic reference corpus, candidate-snapshot replay through the production selection path (tier-1 synthetic gate, tier-2 recorded, tier-3 recorded into `target/snapshots/`), seeded negative controls, and the derived-intent rollout gate, shipped-default-set routing gate and keyword-query admission predicate; ignored live observation and recorder |
@@ -36,17 +37,23 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 
 | Suite | Contract |
 |-------|----------|
-| `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs) |
+| `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs), and deterministic opt-in screenshot bounds, capability/conflict errors, JSON/cache separation, and batch image association |
 | `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds, derived-intent reporting/applied reranking, search-result cache and coalescing equivalence |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
 | `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |
+| `knowledge_delta_brief` | Cutoff-aware brief: comparison labeling, unknown cutoff, provider failure, and live-versus-index modes |
+| `knowledge_delta_index` | Optional local evidence index: precision, partitions, refusal, and restart |
+| `knowledge_delta_discovery` | One-step source-backed topic expansion and negative controls |
+| `knowledge_delta_catalog` | Bundled cutoff catalog: manifest/snapshot agreement, alias collisions, precision fidelity, and resolver coverage |
+| `knowledge_delta_quality` | Frozen-corpus discovery qualification: per-variant precision, temporal correctness, duplicates, and output budget (see `docs/knowledge-delta-evaluation.md`) |
 | `security_workflow` | Advisory retrieval, applicability assessment, safety handling |
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |
-| `batch_fetch_retrieval` | Mixed focused/unfocused batch, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
+| `batch_fetch_retrieval` | Mixed web/repo/workspace target parity, per-target PDF/render/profile and source-selection controls, host-local-scope authorization, preflight, order/budget, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
+| `engine_api_conformance` | Table-driven invariants for the nine forge API engines: status mapping, malformed JSON, zero-result no-request, per-page limit, auth header, invalid-URL skipping, and one conversion case per engine |
 | `provider_request_contract` | `EngineSearchRequest` fidelity, date/domain validation, wire compression behavior |
 | `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
 | `provider_workstream_regression` | Provider inventory, capability descriptors, URL dedup with stable IDs |
@@ -101,6 +108,7 @@ Feature flags in `Cargo.toml`:
 | `browser` | Headless rendering via `chromiumoxide` |
 | `egress` | Opt-in listener-free HTTP/SOCKS proxy-chain route for provider upstreams only; excluded from default binaries |
 | `live-smoke` | Live network smoke tests; implies `mock`; manual opt-in only |
+| `live-mcp-smoke` | Real MCP-protocol live smoke; no `mock`; Cargo default `pdf`/`browser` features remain on |
 
 Browser suites are feature-gated separately:
 
@@ -119,11 +127,12 @@ Tests must pass keyless. CI blanks all credential environment variables, so miss
 
 ## Live-smoke opt-in
 
-Network tests are never part of the default gate. `live-smoke` implies `mock` and marks its tests `#[ignore]`d:
+Network tests are never part of the default gate. `live-smoke` implies `mock`; the separate `live-mcp-smoke` does not, retains Cargo defaults (`pdf` and `browser`), and exercises live MCP calls against keyless providers, a public PDF, and browser rendering. These tests are `#[ignore]`d by default:
 
 ```bash
 cargo test --locked --features live-smoke --test corpus_runner -- --ignored
 cargo test --locked --all-features --test tool_surface_live -- --ignored
+make live-mcp-smoke
 ```
 
 `tool_surface_live` additionally supports a manual multi-model comparison entry point gated by `EGGSEARCH_EVAL_MODEL`. It keeps the Layer 3 report contract in CI and holds exactly one ignored comparison test for operator-driven runs. Native forge smoke suites follow the same pattern and require operator-provided credentials plus fixture configuration; they are maintainer-only diagnostics, never release evidence.
@@ -217,7 +226,7 @@ which runs `cargo bench --locked --all-features --bench perf --no-run`.
 
 ## Tool-surface evaluation
 
-`tests/tool_surface_evaluation.rs` runs a deterministic tool-selection regression over the labeled corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across generic web, repo, fetch, exact-error, security, research, evidence, diagnostics, and ambiguity categories; every stable tool is an expected primary at least once). Full and compact advertised descriptions are scored independently against every case; both must meet top-1/recall@3/MRR thresholds and avoid forbidden-primary results. The suite also asserts description, total, instructions, and compact byte budgets, known-tool and next-action reference validity, and synthetic Layer 2 hydration mechanics (next actions stay within the ten stable tools and compact discovery stays below full definitions). The fingerprints and per-category accuracy print with `-- --nocapture` or `make eval-tool-surface`:
+`tests/tool_surface_evaluation.rs` runs a deterministic tool-selection regression over the labeled corpus in `tests/fixtures/tool_surface/cases.json` (43 fixtures across generic web, repo, fetch, exact-error, security, research, evidence, diagnostics, and ambiguity categories; every stable tool is an expected primary at least once). Full and compact advertised descriptions are scored independently against every case; both must meet top-1/recall@3/MRR thresholds and avoid forbidden-primary results. The suite also asserts description, total, instructions, and compact byte budgets, known-tool and next-action reference validity, and synthetic Layer 2 hydration mechanics (next actions stay within the nine stable tools and compact discovery stays below full definitions). The fingerprints and per-category accuracy print with `-- --nocapture` or `make eval-tool-surface`:
 
 ```bash
 cargo test --locked --all-features --test tool_surface_evaluation
@@ -291,7 +300,7 @@ cargo test --locked --features pdf --test pdf_fidelity -- --nocapture
 
 ## Hygiene and packaging contract
 
-`make hygiene` runs the deterministic `packaging/check-repo-hygiene.sh`: no forbidden transcript or log artifacts, no ANSI escapes in unexpected root text artifacts, no tracked build outputs (`target/`, `node_modules/`), no oversized unexpected root blobs over 100 KiB (allowlist: `Cargo.lock`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `LICENSE`), and no tracked editor or temp files. `make dependency-policy` runs the two dependency-policy Python scripts plus a pinned `cargo deny check` against the root `deny.toml`. `make packaging-check` runs `packaging/check-contract.sh`, which keeps `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, the egress qualification matrix, installers, the updater, and the install docs synchronized, and additionally fails closed on movable (non-40-hex-SHA) action pins and on planning-status inconsistencies. Installer behavior itself is exercised by `packaging/test-install.sh` (Unix, always) and `packaging/test-install.ps1` (Windows, only when `pwsh` is available), not by `cargo test`.
+`make hygiene` runs the deterministic `packaging/check-repo-hygiene.sh`: no forbidden transcript or log artifacts, no ANSI escapes in unexpected root text artifacts, no tracked build outputs (`target/`, `node_modules/`), no oversized unexpected root blobs over 100 KiB (allowlist: `Cargo.lock`, `CHANGELOG.md`, `README.md`, `AGENTS.md`, `LICENSE`), and no tracked editor or temp files. `make dependency-policy` runs the two dependency-policy Python scripts plus a pinned `cargo deny check` against the root `deny.toml`. `make packaging-check` runs `packaging/check-contract.sh`, which keeps `packaging/release-targets.txt`, `packaging/release-inputs.txt`, the release workflow, the egress qualification matrix, installers, the updater, and the install docs synchronized, and additionally fails closed on movable (non-40-hex-SHA) action pins, on planning-status inconsistencies, and on packaged-artifact asset completeness (`packaging/check-packaged-assets.py`: every `include_str!`/`include_bytes!` asset under `src/` must appear in `cargo package --list`). Installer behavior itself is exercised by `packaging/test-install.sh` (Unix, always) and `packaging/test-install.ps1` (Windows, only when `pwsh` is available), not by `cargo test`.
 
 `tests/static_guards.rs` is the fail-closed crate-wide policy suite. It enforces module ownership (MCP tools call the `MetadataSearchAdapter`, never engines directly; new tools live in dedicated modules under `src/mcp/tools/` and register in `src/mcp/server.rs`; the stable tool count and names are pinned), bounded production process capture with exactly one session owner, shared forge policy/budget ownership, every forge response path going through a bounded reader with no unbounded body reads or unbounded git output, shell wrappers rejected in production `src/`, the crate-wide unsafe policy (`crate_roots_deny_unsafe_code` plus `unsafe_allow_inventory_is_explicit_and_minimal`), the eggfetch and egress feature budgets, the exact Tokio feature policy, egress route separation from dynamic fetch, browser, and loopback paths, fetch-timeout effective-limit enforcement, Windows startup portability, planning-status consistency, and the module-size ratchet. The ratchet is `orchestration_module_size_ratchet` (explicit per-file ceilings) plus `ordinary_module_size_ceiling_enforced`, which sweeps every `src/**/*.rs` and fails on any file above the ordinary 1,600-line / 80 KB ceiling that lacks a ratchet entry. The `http` crate dependency shape is checked separately by `packaging/check-http-dependency-shape.py` under `make dependency-policy`. `tests/schema_identity_registry.rs` pins schema and deterministic-ID fixtures so contract drift fails loudly. The HTTP integration-verifier unit tests in `src/integrations/http_verification.rs` cover bounded JSON/SSE parsing, the initialize/initialized/tools-list/delete lifecycle, and failure cases.
 

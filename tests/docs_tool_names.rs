@@ -24,6 +24,7 @@ fn tool_names_from_server() -> Vec<String> {
     }
     names.sort();
     names.dedup();
+    names.retain(|name| !matches!(name.as_str(), "web_fetch" | "batch_fetch" | "repo_fetch"));
     names
 }
 
@@ -38,13 +39,50 @@ fn read_all_docs() -> String {
     combined
 }
 
+fn python_release_smoke_tools(source: &str) -> Vec<String> {
+    let set = source
+        .split("expected_tools = {")
+        .nth(1)
+        .expect("release-smoke.sh declares expected tools")
+        .split('}')
+        .next()
+        .unwrap_or_default();
+    set.lines()
+        .filter_map(|line| {
+            line.trim()
+                .trim_end_matches(',')
+                .strip_prefix('"')
+                .and_then(|name| name.strip_suffix('"'))
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+fn powershell_release_smoke_tool_sets(source: &str) -> Vec<Vec<String>> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let values = line.split("$ExpectedTools = @(").nth(1)?;
+            let values = values.split(')').next()?;
+            Some(
+                values
+                    .split("'")
+                    .skip(1)
+                    .step_by(2)
+                    .map(str::to_owned)
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
 #[test]
 fn tool_names_in_docs() {
     let tools = tool_names_from_server();
     assert_eq!(
         tools.len(),
-        10,
-        "server.rs must register exactly ten stable tools, got: {tools:?}"
+        9,
+        "server.rs must expose exactly nine canonical tools, got: {tools:?}"
     );
     let text = read_all_docs();
     let mut missing = Vec::new();
@@ -57,6 +95,24 @@ fn tool_names_in_docs() {
 
     if !missing.is_empty() {
         panic!("the following MCP tools are not mentioned in any scanned docs: {missing:?}");
+    }
+}
+
+#[test]
+fn release_smoke_tool_inventories_match_server() {
+    let expected = tool_names_from_server();
+    let posix = fs::read_to_string("packaging/release-smoke.sh").expect("read POSIX release smoke");
+    let mut posix_tools = python_release_smoke_tools(&posix);
+    posix_tools.sort();
+    assert_eq!(posix_tools, expected);
+
+    let powershell =
+        fs::read_to_string("packaging/release-smoke.ps1").expect("read PowerShell release smoke");
+    let mut powershell_sets = powershell_release_smoke_tool_sets(&powershell);
+    assert_eq!(powershell_sets.len(), 2);
+    for tools in &mut powershell_sets {
+        tools.sort();
+        assert_eq!(tools, &expected);
     }
 }
 
@@ -81,7 +137,10 @@ fn no_phantom_tool_names_in_docs() {
             || token == "build_evidence_bundle";
         if is_tool_like
             && !tools.iter().any(|t| t == token)
-            && !matches!(token, "generic_search" | "safe_search")
+            && !matches!(
+                token,
+                "generic_search" | "safe_search" | "web_fetch" | "batch_fetch" | "repo_fetch"
+            )
         {
             phantom.push(token.to_string());
         }

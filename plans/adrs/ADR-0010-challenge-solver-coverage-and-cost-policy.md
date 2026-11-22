@@ -107,3 +107,9 @@ Adoption authorizes the wider class; it does not by itself change behaviour. Imp
 through registered plans with synthetic fixtures per method, budget-exhaustion tests, an
 unsupported-method fail-closed test, and a live verification record where a method can be observed.
 Until those plans close, an unlisted method continues to report `blocked` exactly as it does today.
+
+ADR-0019 supersedes this record in part: the coverage bullet's fixed registry list is replaced by a
+property-based class, and the blanket statement that every ADR-0009 prohibition stands unchanged is
+qualified for user-agent spoofing to the extent of ADR-0019 §5. The single-threaded policy, the
+cost-asymmetry constraint, and the determinism, caching, and classification guarantees stand;
+ADR-0019 adds a memory ceiling to the cost policy.

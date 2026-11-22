@@ -741,6 +741,46 @@ fn batch_partial_failure_and_budget_preserved() {
 }
 
 #[test]
+fn batch_payload_budget_fields_survive_compact_and_standard() {
+    let payload = json!({
+        "fetched": 1,
+        "failed": 0,
+        "truncated": false,
+        "total_chars_returned": 12,
+        "total_payload_chars": 90,
+        "results": [{
+            "index": 0,
+            "item_type": "repo",
+            "label": "owner/repo#src/lib.rs",
+            "stable_id": "s0",
+            "ok": true,
+            "response": {"text": "hello", "document": {"kind": "file"}, "lines": []},
+            "error": null,
+            "chars_returned": 12,
+            "payload_chars": 90,
+            "degraded_fields": ["document"],
+            "truncated": false
+        }],
+        "warnings": [],
+        "structured_warnings": [],
+        "telemetry": {"items_requested": 1, "items_completed": 1, "items_failed": 0}
+    });
+    for detail in [ResponseDetail::Compact, ResponseDetail::Standard] {
+        let projected = project("batch_fetch", payload.clone(), detail);
+        assert_eq!(
+            projected
+                .get("total_payload_chars")
+                .and_then(|v| v.as_u64()),
+            Some(90),
+            "{detail:?}"
+        );
+        let result = &projected["results"][0];
+        assert_eq!(result["payload_chars"], 90, "{detail:?}");
+        assert_eq!(result["degraded_fields"][0], "document", "{detail:?}");
+    }
+}
+
+#[test]
 fn repo_trust_distinction_preserved() {
     let local = json!({
         "locator": {"path": "src/main.rs"},

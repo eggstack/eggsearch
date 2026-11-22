@@ -4,11 +4,23 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "query",
+    "research_domain",
+    "goal",
+    "depth",
+    "compare_targets",
+    "constraints",
+    "known_context",
+    "offset",
+    "limit",
+    "response_detail",
+];
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResearchSearchArgs {
-    /// Research query.
+    /// Query.
     pub query: String,
-    /// Research domain hint.
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "domain")]
     pub research_domain: Option<String>,
     /// Source types to include.
@@ -52,7 +64,6 @@ pub struct ResearchSearchArgs {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(skip)]
     pub providers: Vec<String>,
-    /// Task goal: understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,7 +87,6 @@ pub struct ResearchSearchArgs {
     /// Max groups from `offset`; clamped to the server maximum.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
-    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }

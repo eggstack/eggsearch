@@ -19,8 +19,8 @@ use eggsearch::mcp::state::ServerState;
 // Re-measured after every tool began advertising all four behavior hints and
 // `web_search` stated that it returns no synthesized answer: +660 definition
 // bytes, +165 estimated tokens.
-const BASELINE_TOTAL_BYTES: i64 = 75108;
-const BASELINE_EST_TOKENS: i64 = 18777;
+const BASELINE_TOTAL_BYTES: i64 = 78049;
+const BASELINE_EST_TOKENS: i64 = 19513;
 const BASELINE_MAX_DESC: i64 = 186;
 const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 
@@ -61,7 +61,7 @@ fn live_report(model: &str, surface: &str) -> serde_json::Value {
         "tool_contract_fingerprint": fingerprint,
         "configuration": surface,
         "model": model,
-        "aggregate": {"cases": 43, "source": "tests/fixtures/tool_surface/cases.json"},
+        "aggregate": {"cases": 44, "source": "tests/fixtures/tool_surface/cases.json"},
         "per_category_failures": {},
         "byte_metrics": {
             "total_definition_bytes": total_bytes,
@@ -79,7 +79,7 @@ fn live_report(model: &str, surface: &str) -> serde_json::Value {
 
 #[test]
 fn tool_surface_live_report_contract() {
-    let report = live_report("none/deterministic-baseline", "baseline-full");
+    let report = live_report("none/deterministic-baseline", "candidate-full");
     for key in [
         "schema_version",
         "commit_sha",
@@ -94,9 +94,15 @@ fn tool_surface_live_report_contract() {
         assert!(report.get(key).is_some(), "live report must carry `{key}`");
     }
     let deltas = &report["token_byte_deltas_from_baseline"];
-    assert!(
-        deltas["total_definition_bytes"].as_i64() == Some(0),
-        "offline baseline run must report zero byte delta: {deltas}"
+    assert_eq!(
+        deltas["total_definition_bytes"].as_i64(),
+        Some(-46_550),
+        "candidate tool definitions must record the measured M029 byte reduction: {deltas}"
+    );
+    assert_eq!(
+        deltas["estimated_tokens"].as_i64(),
+        Some(-11_638),
+        "candidate tool definitions must record the measured M029 token reduction: {deltas}"
     );
 }
 
@@ -105,7 +111,7 @@ fn tool_surface_live_report_contract() {
 fn tool_surface_live_model_comparison() {
     let model = std::env::var("EGGSEARCH_EVAL_MODEL").unwrap_or_else(|_| "unconfigured".into());
     let surface =
-        std::env::var("EGGSEARCH_EVAL_SURFACE").unwrap_or_else(|_| "baseline-full".into());
+        std::env::var("EGGSEARCH_EVAL_SURFACE").unwrap_or_else(|_| "candidate-full".into());
     if model == "unconfigured" {
         println!("tool-surface-live skipped: set EGGSEARCH_EVAL_MODEL=vendor/model/version");
         return;

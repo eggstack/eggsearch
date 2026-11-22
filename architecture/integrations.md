@@ -218,9 +218,9 @@ streaming byte cap, so oversized or `Content-Length`-less payloads fail
 closed before they are fully buffered. Missing required tools are a hard
 error here; the recommended-tool warning is stdio-only.
 
-`check_tools()` (the stdio verifier) requires `web_search` and `web_fetch`;
+`check_tools()` (the stdio verifier) requires `web_search` and `fetch`;
 any other absence is a stderr warning listing the missing recommended tools
-(`batch_fetch`, `repo_search`, `repo_fetch`, `repo_map`, `security_search`,
+(`knowledge_brief`, `repo_search`, `repo_map`, `security_search`,
 `research_search`, `build_evidence_bundle`, `provider_status`). The success
 message is `registered and verified minimum MCP tool set`.
 

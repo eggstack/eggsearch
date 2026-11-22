@@ -3,6 +3,10 @@
 //!
 //! Behavior-oriented suite partitioned from the historical `integration.rs` mega-suite.
 
+mod support;
+
+use support::*;
+
 use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
@@ -44,51 +48,6 @@ fn state_with_mode_off() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.search.mode = Mode::Off;
     Arc::new(ServerState::build(cfg).expect("off state"))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_arc_engines(
-    cfg: AppConfig,
-    engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(engines, timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines_sanitize(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let adapter =
-        MetadataSearchAdapter::from_engines_with_sanitize(mock_engines(engines), timeout, sanitize);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn test_cfg() -> AppConfig {
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 2_000;
-    cfg.search.max_query_chars = 256;
-    cfg.search.default_max_results = 10;
-    cfg.search.max_results_cap = 50;
-    // Register mock provider ids so resolve_providers() accepts them.
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.search.providers.insert("mock_b".to_string(), true);
-    cfg
 }
 
 /// Build a `WebSearchArgs` that uses the given mock provider ids
@@ -184,6 +143,88 @@ async fn repo_search_query_hint_triggers_local_matching() {
         has_match,
         "query hint repo:owner/name should trigger local matching: {warnings:?}"
     );
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_search_remote_scope_requires_explicit_local_opt_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    setup_git_repo_with_remote(
+        root,
+        "https://github.com/test-owner/test-repo.git",
+        "test-owner",
+        "test-repo",
+    );
+    fs::write(root.join("README.md"), "unrelated workspace readme").unwrap();
+
+    let query = "repo:test-owner/test-repo main.rs".to_string();
+    let omitted = run_repo_search(
+        state_with_local_backend(root),
+        RepoSearchArgs {
+            query: query.clone(),
+            providers: vec!["mock_a".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search without local opt-in");
+    assert!(omitted["providers_queried"]
+        .as_array()
+        .is_none_or(|providers| providers.iter().all(|id| id != "local_workspace")));
+    assert!(omitted["groups"].as_array().is_none_or(|groups| {
+        groups.iter().all(|group| {
+            group["results"]
+                .as_array()
+                .is_none_or(|results| results.is_empty())
+        })
+    }));
+
+    let included = run_repo_search(
+        state_with_local_backend(root),
+        RepoSearchArgs {
+            query: query.clone(),
+            providers: vec!["mock_a".to_string()],
+            include_local: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search with local opt-in");
+    assert!(included["providers_queried"]
+        .as_array()
+        .is_some_and(|providers| providers.iter().any(|id| id == "local_workspace")));
+    let mut titles = Vec::new();
+    for group in included["groups"].as_array().expect("groups array") {
+        if let Some(results) = group["results"].as_array() {
+            for result in results {
+                titles.push(result["title"].as_str().unwrap_or_default().to_string());
+            }
+        }
+    }
+    assert_eq!(titles, vec!["main.rs".to_string()]);
+
+    let disabled = run_repo_search(
+        state_with_local_backend(root),
+        RepoSearchArgs {
+            query,
+            providers: vec!["mock_a".to_string()],
+            include_local: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("repo_search with local disabled");
+    assert!(disabled["providers_queried"]
+        .as_array()
+        .is_none_or(|providers| providers.iter().all(|id| id != "local_workspace")));
+    assert!(disabled["groups"].as_array().is_none_or(|groups| {
+        groups.iter().all(|group| {
+            group["results"]
+                .as_array()
+                .is_none_or(|results| results.is_empty())
+        })
+    }));
 }
 
 #[cfg(feature = "mock")]
@@ -370,24 +411,26 @@ async fn prefer_local_rejects_path_traversal() {
     // Try to use prefer_local with path traversal
     let args = RepoFetchArgs {
         host: Some("github".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: Some("main".to_string()),
-        commit_sha: None,
-        path: "../../../etc/passwd".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "../../../etc/passwd".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
 
@@ -1009,21 +1052,6 @@ async fn repo_search_off_mode_include_local_false_is_denied() {
 }
 
 #[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let state = ServerState::build(cfg).expect("state");
-    let mut state = state;
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
 #[tokio::test]
 async fn repo_map_with_local_checkout() {
     let dir = tempfile::tempdir().unwrap();
@@ -1145,44 +1173,6 @@ async fn repo_map_with_local_checkout() {
 // =========================================================================
 
 /// Helper: create a temp git repo with a remote URL for local matching tests.
-#[cfg(feature = "mock")]
-fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
-    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
-
-    git_cmd().arg("init").arg(root).output().ok();
-
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("remote")
-        .arg("add")
-        .arg("origin")
-        .arg(remote_url)
-        .output()
-        .ok();
-
-    // Create initial commit so dirty state detection works
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("add")
-        .arg(".")
-        .output()
-        .ok();
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("-c")
-        .arg("user.name=ci")
-        .arg("-c")
-        .arg("user.email=ci@test.com")
-        .arg("commit")
-        .arg("-m")
-        .arg("init")
-        .arg("--allow-empty")
-        .output()
-        .ok();
-}
 
 #[tokio::test]
 async fn repo_map_fallback_mode_warns_no_native_provider() {
@@ -1716,24 +1706,26 @@ async fn repo_fetch_symbol_definition_via_mock() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: Some("Config".into()),
+                symbol_kind: Some("struct".into()),
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: Some("Config".into()),
-            symbol_kind: Some("struct".into()),
-            match_text: None,
-            expand_to_block: Some(true),
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -1767,10 +1759,22 @@ async fn repo_fetch_symbol_definition_via_mock() {
     );
 
     let text = v["text"].as_str().expect("text should be present");
-    assert!(
-        text.contains("pub struct Config"),
-        "text should contain struct definition: {text}"
+    assert_eq!(
+        text,
+        "/// A configuration store.\npub struct Config {\nname: String,\nvalues: HashMap<String, String>,\n}"
     );
+    assert_eq!(
+        v["lines"],
+        serde_json::json!([
+            {"number": 3, "text": "/// A configuration store."},
+            {"number": 4, "text": "pub struct Config {"},
+            {"number": 5, "text": "name: String,"},
+            {"number": 6, "text": "values: HashMap<String, String>,"},
+            {"number": 7, "text": "}"}
+        ])
+    );
+    assert_eq!(v["stable_id"], "fetch_fff990eb67a6ecac");
+    assert_eq!(v["code_span"]["span_id"], "span_f9fbcbe39f0984eb");
 }
 
 #[tokio::test]
@@ -1804,24 +1808,26 @@ async fn repo_fetch_symbol_fn_via_mock() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/main.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/main.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: Some("helper".into()),
+                symbol_kind: Some("function".into()),
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
-            symbol: Some("helper".into()),
-            symbol_kind: Some("function".into()),
-            match_text: None,
-            expand_to_block: Some(true),
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -1878,24 +1884,26 @@ async fn repo_fetch_match_text_via_mock() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/app.py".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/app.py".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: Some("MyApp".into()),
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/app.py")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: Some("MyApp".into()),
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -1935,24 +1943,26 @@ async fn repo_fetch_explicit_range_no_expand() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/main.rs".into(),
-            line_start: Some(2),
-            line_end: Some(4),
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/main.rs".into(),
+                line_start: Some(2),
+                line_end: Some(4),
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -1994,24 +2004,26 @@ async fn repo_fetch_symbol_not_found_warns() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/main.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/main.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: Some("nonexistent".into()),
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
-            symbol: Some("nonexistent".into()),
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: Some(true),
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2030,6 +2042,72 @@ async fn repo_fetch_symbol_not_found_warns() {
         has_no_match_warning,
         "should warn about no match: {warnings:?}"
     );
+}
+
+#[cfg(feature = "pdf")]
+#[tokio::test]
+async fn repo_fetch_remote_pdf_retains_document_outcome() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let pdf_body = include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf");
+    server.mock(|when, then| {
+        when.method(GET).path("/docs/guide.pdf");
+        then.status(200)
+            .header("content-type", "application/pdf")
+            .body(pdf_body.as_slice());
+    });
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.pdf_enabled = true;
+    cfg.fetch.sanitize_output = false;
+    let state = Arc::new(ServerState::build(cfg).expect("repo_fetch state"));
+
+    let response = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "example".into(),
+                repo: "docs".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "docs/guide.pdf".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/docs/guide.pdf")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("remote PDF fetch should retain its document outcome");
+
+    assert_eq!(response["content_type"], "application/pdf");
+    assert_eq!(response["document"]["kind"], "pdf");
+    let block_text = response["document"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|block| block["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(block_text.contains("Clean text sample"));
+    assert!(response["language"].is_null());
+    assert!(response["selected_span"].is_null());
+    assert!(response["code_span"].is_null());
 }
 
 #[cfg(feature = "mock")]
@@ -2083,28 +2161,30 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
     // Request remote-style repo_fetch with prefer_local = true
     let args = RepoFetchArgs {
         host: Some("github".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: Some("add".to_string()),
+            symbol_kind: Some("function".to_string()),
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: Some(10),
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
 
-    let v = run_repo_fetch(state, args)
+    let v = run_repo_fetch(state.clone(), args)
         .await
         .expect("prefer_local repo_fetch should succeed");
 
@@ -2117,6 +2197,256 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         text.contains("pub fn add"),
         "fetched text should contain the function: {text}"
     );
+
+    let batch = run_batch_fetch(
+        state,
+        BatchFetchArgs {
+            items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
+                host: Some("github".to_string()),
+                target: eggsearch::core::repo_fetch::RepoTarget {
+                    owner: "test-owner".to_string(),
+                    repo: "test-repo".to_string(),
+                    ref_name: None,
+                    commit_sha: None,
+                    path: "lib.rs".to_string(),
+                    line_start: None,
+                    line_end: None,
+                    context_before: None,
+                    context_after: None,
+                    max_chars: None,
+                    symbol: Some("add".to_string()),
+                    symbol_kind: Some("function".to_string()),
+                    match_text: None,
+                    expand_to_block: Some(true),
+                    max_block_lines: Some(10),
+                    prefer_local: Some(true),
+                },
+                focus: None,
+                focus_max_chunks: None,
+                focus_max_chars: None,
+            }],
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: None,
+            timeout_ms: None,
+            continue_on_error: None,
+            offset: None,
+            limit: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("prefer_local batch fetch should succeed");
+    let batched = &batch["results"][0]["response"];
+    assert_eq!(batched["trust"], "local_trusted");
+    assert_eq!(batched["text"], v["text"]);
+    assert_eq!(batched["selected_span"], v["selected_span"]);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_uses_linked_worktree_without_remote_fetch() {
+    use httpmock::prelude::*;
+
+    let parent = tempfile::tempdir().unwrap();
+    let main = parent.path().join("main");
+    let linked = parent.path().join("linked");
+    fs::create_dir_all(main.join("src")).unwrap();
+    fs::write(
+        main.join("src/lib.rs"),
+        "pub fn linked_worktree_value() -> &'static str { \"local worktree\" }",
+    )
+    .unwrap();
+
+    let mut command = std::process::Command::new("git");
+    command.args(["init", "-b", "main"]).current_dir(&main);
+    run_git_checked(&mut command, "initialize linked-worktree source");
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(&main);
+    run_git_checked(&mut command, "configure linked-worktree email");
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["config", "user.name", "Test"])
+        .current_dir(&main);
+    run_git_checked(&mut command, "configure linked-worktree name");
+    let mut command = std::process::Command::new("git");
+    command.args(["add", "-A"]).current_dir(&main);
+    run_git_checked(&mut command, "stage linked-worktree source");
+    let mut command = std::process::Command::new("git");
+    command.args(["commit", "-m", "initial"]).current_dir(&main);
+    run_git_checked(&mut command, "commit linked-worktree source");
+    let mut command = std::process::Command::new("git");
+    command
+        .args([
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/test-owner/test-repo.git",
+        ])
+        .current_dir(&main);
+    run_git_checked(&mut command, "configure linked-worktree remote");
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["worktree", "add", "-b", "linked-fixture"])
+        .arg(&linked)
+        .arg("HEAD")
+        .current_dir(&main);
+    run_git_checked(&mut command, "create linked worktree");
+
+    let server = httpmock::MockServer::start();
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn remote_value() {}");
+    });
+    let state = repo_fetch_state_with_local_workspace(&linked);
+    let response = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: Some(true),
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("linked-worktree prefer_local fetch");
+
+    assert_eq!(response["locator"]["kind"], "workspace");
+    assert_eq!(response["trust"], "local_trusted");
+    assert!(response["text"]
+        .as_str()
+        .is_some_and(|text| text.contains("local worktree")));
+    assert_eq!(remote.hits(), 0);
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_reports_skip_and_returns_remote_result() {
+    use httpmock::prelude::*;
+
+    let root = tempfile::tempdir().unwrap();
+    let server = httpmock::MockServer::start();
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn remote_fallback_value() {}");
+    });
+    let response = run_repo_fetch(
+        repo_fetch_state_with_local_workspace(root.path()),
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "remote-owner".into(),
+                repo: "remote-repository".into(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: Some(true),
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("remote fallback should succeed");
+
+    assert_eq!(response["trust"], "external_untrusted");
+    assert!(response["text"]
+        .as_str()
+        .is_some_and(|text| text.contains("remote_fallback_value")));
+    assert_eq!(remote.hits(), 1);
+    assert!(response["warnings"].as_array().is_some_and(|warnings| {
+        warnings.iter().any(|warning| {
+            warning.as_str().is_some_and(|message| {
+                message.contains("prefer_local_skipped")
+                    && message.contains("local copy was skipped")
+                    && message.contains("no matching local repository")
+            })
+        })
+    }));
+}
+
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn repo_fetch_prefer_local_names_the_skip_reason_when_the_remote_fails() {
+    use httpmock::prelude::*;
+
+    let root = tempfile::tempdir().unwrap();
+    let server = httpmock::MockServer::start();
+    let remote = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(404);
+    });
+    let error = run_repo_fetch(
+        repo_fetch_state_with_local_workspace(root.path()),
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "remote-owner".into(),
+                repo: "remote-repository".into(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: Some(true),
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect_err("a failed remote fetch must surface as an error");
+
+    assert_eq!(remote.hits(), 1);
+    assert!(
+        error.to_string().contains("prefer_local_skipped")
+            && error.to_string().contains("no matching local repository"),
+        "got: {error}"
+    );
 }
 
 #[tokio::test]
@@ -2126,24 +2456,26 @@ async fn repo_fetch_validation_error_zero_max_block_lines() {
         state,
         RepoFetchArgs {
             host: None,
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: Some(0),
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: Some(0),
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2202,24 +2534,26 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
     let state = state_with_local_backend(root);
     let args = RepoFetchArgs {
         host: Some("not-a-host".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
 
@@ -2230,26 +2564,6 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
         err.to_string().contains("unknown host"),
         "error should mention unknown host: {err}"
     );
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
 }
 
 #[cfg(feature = "mock")]
@@ -4284,86 +4598,237 @@ mod corrective_closure_exact_error {
 // Task 6: Security-context safety and source-quality integration tests
 // =========================================================================
 
-fn repo_fetch_state() -> Arc<ServerState> {
+#[cfg(feature = "mock")]
+fn repo_fetch_state_with_local_workspace(root: &std::path::Path) -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
     cfg.fetch.sanitize_output = false;
-    Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
+    cfg.local.enabled = true;
+    cfg.local.roots = vec![root.to_path_buf()];
+    Arc::new(ServerState::build(cfg).expect("local repo_fetch state"))
+}
+
+fn repo_fetch_state_with_challenge() -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.sanitize_output = false;
+    cfg.search.challenge.enabled = true;
+    Arc::new(ServerState::build(cfg).expect("repo_fetch challenge state"))
+}
+
+const ANUBIS_PASS_COOKIE: &str = "pass-cookie-123";
+
+fn anubis_fast_challenge_page() -> String {
+    let payload = serde_json::json!({
+        "rules": {"algorithm": "fast", "difficulty": 2},
+        "challenge": {
+            "issuedAt": "2026-11-11T00:00:00Z",
+            "metadata": {"User-Agent": "eggsearch"},
+            "id": "01a1cc17-0000-7000-8000-000000000000",
+            "method": "fast",
+            "randomData": "abc123def456",
+            "redir": "/",
+            "policyRuleHash": "00",
+            "difficulty": 2,
+            "spent": false
+        }
+    });
+    format!(
+        r#"<html><head><script id="anubis_challenge" type="application/json">{payload}</script></head><body><div id="app"></div></body></html>"#
+    )
+}
+
+#[tokio::test]
+async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
+    use httpmock::prelude::*;
+
+    let server = challenge_server();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/src/lib.rs")
+            .header("cookie", format!("spchal-auth={ANUBIS_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n");
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(anubis_fast_challenge_page());
+    });
+    let pass = server.mock(|when, then| {
+        when.method(GET)
+            .path("/.within.website/x/cmd/anubis/api/pass-challenge");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("spchal-auth={ANUBIS_PASS_COOKIE}; Path=/; HttpOnly"),
+            )
+            .body("");
+    });
+
+    let state = repo_fetch_state_with_challenge();
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should solve the challenge");
+
+    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(
+        pass.hits(),
+        1,
+        "repo_fetch must attempt the published challenge"
+    );
+    assert_eq!(
+        replay.hits(),
+        1,
+        "repo_fetch must replay with the issued cookie"
+    );
+    assert_eq!(v["manual_interaction_required"], false);
+    let text = v["text"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("pub fn add"),
+        "repo_fetch must return the replayed source: {text}"
+    );
+}
+
+/// A mock server whose origin carries no pass cookie from an earlier test.
+///
+/// The fetch-side pass-cookie cache is process-local and keyed by origin, and
+/// a loopback port can be recycled between tests, so every challenge test
+/// starts from an origin that holds no pair set.
+fn challenge_server() -> httpmock::MockServer {
+    let server = httpmock::MockServer::start();
+    if let Some(origin) = eggsearch::challenge_replay::cache::origin_key(&server.url("/")) {
+        eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().remove(&origin);
+    }
+    server
+}
+
+const ALTCHA_PASS_COOKIE: &str = "altcha-pass-cookie";
+
+const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
+
+#[tokio::test]
+async fn repo_fetch_remote_solves_a_published_altcha_challenge() {
+    use httpmock::prelude::*;
+
+    let server = challenge_server();
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/src/lib.rs")
+            .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body("pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n");
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/src/lib.rs");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(
+                "<html><body><div class=\"captcha-wrap\"><altcha-widget challenge=\"/captcha/challenge\"></altcha-widget></div></body></html>",
+            );
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+            )
+            .body("");
+    });
+
+    let state = repo_fetch_state_with_challenge();
+    let v = run_repo_fetch(
+        state,
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/lib.rs")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("repo_fetch should solve the challenge");
+
+    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(
+        replay.hits(),
+        1,
+        "repo_fetch must replay with the issued cookie"
+    );
+    assert_eq!(v["manual_interaction_required"], false);
+    let text = v["text"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("pub fn add"),
+        "repo_fetch must return the replayed source: {text}"
+    );
 }
 
 fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     Arc::new(ServerState::build(cfg).expect("state with fetch disabled"))
-}
-
-fn git_cmd() -> std::process::Command {
-    let mut cmd = std::process::Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-    cmd
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 30_000;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_sanitize(
-    temp_dir: &std::path::Path,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines_with_sanitize(
-        mock_engines(engines),
-        Duration::from_secs(5),
-        sanitize,
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    cfg.fetch.sanitize_output = sanitize;
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
-    let output = cmd
-        .output()
-        .unwrap_or_else(|error| panic!("{operation} could not start: {error}"));
-    assert!(
-        output.status.success(),
-        "{operation} failed with status {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
 }
 
 /// Plan 003 §5, journey 5: the CodeGG legacy `github` hint maps to the

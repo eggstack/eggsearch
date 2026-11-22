@@ -40,6 +40,60 @@ pub enum BatchRepoHost {
     Workspace,
 }
 
+pub(crate) enum FetchTarget<'a> {
+    WebUrl(&'a str),
+    Repo {
+        host: BatchRepoHost,
+        owner: &'a str,
+        repo: &'a str,
+        ref_name: Option<&'a str>,
+        commit_sha: Option<&'a str>,
+        path: &'a str,
+    },
+}
+
+pub(crate) fn resolve_fetch_target(target: FetchTarget<'_>) -> Result<FetchLocator, String> {
+    match target {
+        FetchTarget::WebUrl(url) => Ok(FetchLocator::WebUrl(validate_web_url(url)?)),
+        FetchTarget::Repo {
+            host,
+            owner,
+            repo,
+            ref_name,
+            commit_sha,
+            path,
+        } => {
+            if owner.trim().is_empty() {
+                return Err("owner must not be empty".to_string());
+            }
+            if matches!(host, BatchRepoHost::Remote(_)) && repo.trim().is_empty() {
+                return Err("repo must not be empty".to_string());
+            }
+            validate_repo_path(path)?;
+            match host {
+                BatchRepoHost::Workspace => Ok(FetchLocator::Local(LocalLocator {
+                    root: owner.to_string(),
+                    path: path.to_string(),
+                })),
+                BatchRepoHost::Remote(CodeHost::Unknown) => Err(
+                    "host 'unknown' is not supported for repo_fetch; use github, gitlab, codeberg, gitea, or forgejo"
+                        .to_string(),
+                ),
+                BatchRepoHost::Remote(host) => Ok(FetchLocator::Repo(RepoLocator {
+                    kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
+                    host: Some(host),
+                    owner: Some(owner.to_string()),
+                    repo: Some(repo.to_string()),
+                    ref_name: Some(ref_name.unwrap_or("main").to_string()),
+                    commit_sha: commit_sha.map(String::from),
+                    path: path.to_string(),
+                    workspace_root: None,
+                })),
+            }
+        }
+    }
+}
+
 /// Validate an explicit web URL for batch fetching.
 pub fn validate_web_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
@@ -66,7 +120,7 @@ pub fn validate_repo_path(path: &str) -> Result<(), String> {
         .components()
         .any(|c| matches!(c, Component::ParentDir))
     {
-        return Err("path must not contain '..'".to_string());
+        return Err("path must not contain '..' (path traversal)".to_string());
     }
     if path_obj.is_absolute()
         || path_obj
@@ -112,26 +166,16 @@ pub fn batch_repo_item_to_locator(
     if owner.trim().is_empty() {
         return Err("owner must not be empty".to_string());
     }
-    if repo.trim().is_empty() {
-        return Err("repo must not be empty".to_string());
-    }
     validate_repo_path(path)?;
-    match parse_batch_repo_host(host)? {
-        BatchRepoHost::Workspace => Ok(FetchLocator::Local(LocalLocator {
-            root: owner.to_string(),
-            path: path.to_string(),
-        })),
-        BatchRepoHost::Remote(code_host) => Ok(FetchLocator::Repo(RepoLocator {
-            kind: crate::core::repo_fetch::RepoLocatorKind::Remote,
-            host: Some(code_host),
-            owner: Some(owner.to_string()),
-            repo: Some(repo.to_string()),
-            ref_name: Some(ref_name.unwrap_or("main").to_string()),
-            commit_sha: commit_sha.map(String::from),
-            path: path.to_string(),
-            workspace_root: None,
-        })),
-    }
+    let host = parse_batch_repo_host(host)?;
+    resolve_fetch_target(FetchTarget::Repo {
+        host,
+        owner,
+        repo,
+        ref_name,
+        commit_sha,
+        path,
+    })
 }
 
 /// Convert a code host to its canonical string form.
@@ -154,16 +198,7 @@ pub fn structured_repo_fetch_to_batch_item(
     let host = req.host.map(code_host_to_string);
     BatchFetchItem::Repo {
         host,
-        owner: req.owner.clone(),
-        repo: req.repo.clone(),
-        ref_name: req.ref_name.clone(),
-        commit_sha: req.commit_sha.clone(),
-        path: req.path.clone(),
-        line_start: req.line_start,
-        line_end: req.line_end,
-        context_before: req.context_before,
-        context_after: req.context_after,
-        max_chars: req.max_chars,
+        target: req.target.clone(),
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
@@ -185,6 +220,10 @@ pub fn url_to_batch_web_item(
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        pdf: None,
+        render: None,
+        browser_profile: None,
+        include_screenshot: None,
     }
 }
 
@@ -198,6 +237,55 @@ mod tests {
         assert!(validate_web_url("ftp://example.com").is_err());
         assert!(validate_web_url("https://example.com").is_ok());
         assert!(validate_web_url("HTTP://example.com").is_ok());
+    }
+
+    #[test]
+    fn target_resolution_preserves_typed_routes() {
+        let web = resolve_fetch_target(FetchTarget::WebUrl(" https://example.com ")).unwrap();
+        assert!(matches!(web, FetchLocator::WebUrl(url) if url == "https://example.com"));
+
+        let remote = resolve_fetch_target(FetchTarget::Repo {
+            host: BatchRepoHost::Remote(CodeHost::Github),
+            owner: "tokio-rs",
+            repo: "axum",
+            ref_name: Some("v1"),
+            commit_sha: Some("abc123"),
+            path: "src/lib.rs",
+        })
+        .unwrap();
+        assert!(matches!(remote, FetchLocator::Repo(locator)
+            if locator.host == Some(CodeHost::Github)
+                && locator.owner.as_deref() == Some("tokio-rs")
+                && locator.repo.as_deref() == Some("axum")
+                && locator.ref_name.as_deref() == Some("v1")
+                && locator.commit_sha.as_deref() == Some("abc123")
+                && locator.path == "src/lib.rs"));
+
+        let local = resolve_fetch_target(FetchTarget::Repo {
+            host: BatchRepoHost::Workspace,
+            owner: "workspace-root",
+            repo: "",
+            ref_name: None,
+            commit_sha: None,
+            path: "src/main.rs",
+        })
+        .unwrap();
+        assert!(matches!(local, FetchLocator::Local(locator)
+            if locator.root == "workspace-root" && locator.path == "src/main.rs"));
+    }
+
+    #[test]
+    fn target_resolution_rejects_invalid_routes() {
+        assert!(resolve_fetch_target(FetchTarget::WebUrl("file:///tmp/a")).is_err());
+        assert!(resolve_fetch_target(FetchTarget::Repo {
+            host: BatchRepoHost::Remote(CodeHost::Github),
+            owner: "owner",
+            repo: "repo",
+            ref_name: None,
+            commit_sha: None,
+            path: "../secret",
+        })
+        .is_err());
     }
 
     #[test]
@@ -243,5 +331,19 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(loc, FetchLocator::Local(_)));
+
+        let loc =
+            batch_repo_item_to_locator(Some("workspace"), "myroot", "", None, None, "src/main.rs")
+                .unwrap();
+        assert!(matches!(loc, FetchLocator::Local(_)));
+        assert!(batch_repo_item_to_locator(
+            Some("github"),
+            "tokio-rs",
+            "",
+            None,
+            None,
+            "src/lib.rs",
+        )
+        .is_err());
     }
 }

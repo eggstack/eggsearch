@@ -97,7 +97,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
                 println!();
                 println!("Session setup complete for '{display_name}'.");
                 println!(
-                    "Use with web_fetch: {{ \"url\": \"{}\", \"browser_profile\": \"{display_name}\" }}",
+                    "Use with fetch: {{ \"items\": {{ \"type\": \"web\", \"url\": \"{}\", \"browser_profile\": \"{display_name}\" }} }}",
                     meta.allowed_origin
                 );
             }

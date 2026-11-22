@@ -126,6 +126,12 @@ to conceal an outage. Opt-in default-off behaviour, the four ceilings, determini
 for fields the upstream verifies, per-provider pass-cookie caching, and `blocked`-never-empty
 classification also stand.
 
+ADR-0019 supersedes four further clauses of this record in part: the permitted-class bullet, the
+opt-in default-off bullet, the `user-agent spoofing` item in the prohibition list to the extent of
+its §5, and the dependency-budget sentence to the extent of the already-shipped optional browser
+feature. The blanket sentence above that every prohibition stands is therefore qualified for those
+four items only; every other prohibition and every other guarantee in this record still stands.
+
 ## Verification and status
 
 Adoption authorizes the capability; it does not by itself change production behaviour. Enabling it

@@ -48,6 +48,18 @@ pub struct ProviderAdvisoryOutcome<T> {
 }
 
 impl MetadataSearchAdapter {
+    /// Return instantiated providers advertising native advisory operations.
+    pub fn enabled_native_advisory_provider_ids(&self) -> Vec<String> {
+        self.engines
+            .iter()
+            .filter_map(|engine| {
+                let capabilities = engine.advisory_capabilities();
+                (capabilities.lookup_by_id || capabilities.query_by_package)
+                    .then(|| engine.name().to_string())
+            })
+            .collect()
+    }
+
     fn selected_advisory_engines(&self, allowed_provider_ids: &[String]) -> EngineList {
         if allowed_provider_ids.is_empty() {
             self.engines.clone()

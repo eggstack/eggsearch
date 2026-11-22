@@ -3,8 +3,8 @@
 //! Exposes a stable tool surface:
 //!
 //! - `web_search`          — live metasearch over configured upstream providers.
-//! - `web_fetch`           — bounded extraction of one explicit HTTP(S) URL.
-//! - `batch_fetch`         — bounded batch fetch over explicit URLs or structured repo locators.
+//! - `fetch`               — bounded fetch of one or more explicit web or repository targets.
+//! - The `web_fetch` and `batch_fetch` names remain callable direct aliases but are not advertised.
 //! - `provider_status`     — diagnostic report of configured providers and server capabilities.
 //! - `repo_search`         — structured repository evidence discovery with grouped result bundles.
 //! - `repo_fetch`          — structured repository file fetch by locator with line ranges and symbols.

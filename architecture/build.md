@@ -34,7 +34,8 @@ Docs.rs: `all-features = true`, targets `x86_64-unknown-linux-gnu`, `x86_64-appl
 | `pdf` | `dep:lopdf` (0.42, `default-features = false`) | PDF text extraction |
 | `browser` | `dep:chromiumoxide` (0.9, `default-features = false`) | Headless Chrome/Chromium rendering |
 | `egress` | `dep:eggress-outbound` + `dep:eggress-uri` + `dep:eggress-core` (all `=1.0.8`, `default-features = false`) | Opt-in listener-free HTTP/SOCKS proxy-chain route for provider upstreams only; source-build opt-in, excluded from prebuilt/default binaries |
-| `live-smoke` | implies `mock` (`live-smoke = ["mock"]`) | Live network smoke tests; `#[ignore]`d by default, manual only |
+| `live-smoke` | implies `mock` (`live-smoke = ["mock"]`) | Existing opt-in live network suites; `#[ignore]`d by default, manual only |
+| `live-mcp-smoke` | nothing; Cargo defaults stay enabled | Real MCP-protocol live smoke using keyless default providers with PDF/browser; no `mock`, `#[ignore]`d by default |
 
 Rules enforced by `tests/static_guards.rs`:
 
@@ -161,6 +162,7 @@ Live and forge smokes are explicit opt-in only and never part of `check`:
 | Target | Command | Purpose |
 |--------|---------|---------|
 | `live-smoke` | `cargo test --features live-smoke --test corpus_runner -- --ignored` | Live network corpus |
+| `live-mcp-smoke` | `cargo test --locked --features live-mcp-smoke --test mcp_http live_canonical_tools_and_aliases_work_over_mcp_http -- --ignored --nocapture` | Real MCP protocol, default keyless providers, default PDF/browser features, no mock engine |
 | `native-forge-smoke-github/gitlab/codeberg/gitea/all` | `cargo test --locked --features live-smoke --test native_forge_smoke -- --ignored [filter]` | Per-host live forge diagnostics; maintainer-only, not release evidence |
 
 The egress qualification workflow (`.github/workflows/egress-feature-qualify.yml`) triggers on the egress-route construction seams (`src/fetch/egress.rs`, `src/meta/engines/mod.rs`, `src/meta/adapter/{mod,builders}.rs`, `src/mcp/state.rs`, `src/core/config.rs`, `src/startup.rs`, `src/process.rs`, `src/update.rs`, `src/meta/safe_open.rs`), the egress suites and `tests/static_guards.rs`, `Cargo.toml`/`Cargo.lock`, `packaging/release-targets.txt`, `packaging/check-egress-qualify-contract.sh`, and both `egress-feature-qualify.yml` and `ci.yml`. It verifies the 7-target matrix equals `packaging/release-targets.txt` in exact set terms, runs `check-egress-qualify-contract.sh`, compile-checks `--features egress` per target (Linux x86_64/aarch64/armv7, macOS x86_64/aarch64, Windows x86_64/aarch64), and re-checks `--all-features` on MSRV 1.89. No egress-enabled binary is published.

@@ -9,6 +9,311 @@ fn descriptor(id: &str) -> eggsearch::core::provider::ProviderDescriptor {
 }
 
 #[test]
+fn capability_matrix_matches_the_pinned_table() {
+    const MATRIX: &[(&str, &[&str])] = &[
+        ("duckduckgo", &[]),
+        ("brave", &[]),
+        ("startpage", &[]),
+        ("yahoo", &[]),
+        ("mojeek", &[]),
+        ("searxng", &[]),
+        (
+            "brave_api",
+            &[
+                "supports_safe_search",
+                "supports_freshness",
+                "supports_language",
+                "supports_region",
+                "supports_news",
+                "supports_result_timestamps",
+            ],
+        ),
+        (
+            "github_code",
+            &[
+                "supports_code_search",
+                "supports_repo_filter",
+                "supports_org_filter",
+                "supports_path_filter",
+                "supports_language_filter",
+                "supports_symbol_hint",
+            ],
+        ),
+        (
+            "github_issues",
+            &[
+                "supports_repo_filter",
+                "supports_org_filter",
+                "supports_issue_search",
+                "supports_result_timestamps",
+            ],
+        ),
+        (
+            "github_releases",
+            &[
+                "supports_repo_filter",
+                "supports_release_search",
+                "supports_result_timestamps",
+            ],
+        ),
+        (
+            "gitlab_code",
+            &[
+                "supports_code_search",
+                "supports_repo_filter",
+                "supports_org_filter",
+                "supports_path_filter",
+            ],
+        ),
+        (
+            "gitlab_issues",
+            &[
+                "supports_repo_filter",
+                "supports_org_filter",
+                "supports_issue_search",
+                "supports_result_timestamps",
+            ],
+        ),
+        (
+            "gitlab_releases",
+            &[
+                "supports_repo_filter",
+                "supports_release_search",
+                "supports_result_timestamps",
+            ],
+        ),
+        ("gitea_code", &["supports_code_search"]),
+        (
+            "gitea_issues",
+            &["supports_issue_search", "supports_result_timestamps"],
+        ),
+        (
+            "gitea_releases",
+            &["supports_release_search", "supports_result_timestamps"],
+        ),
+        ("osv", &["supports_security_search"]),
+        (
+            "github_advisory",
+            &[
+                "supports_security_search",
+                "supports_advisory_lookup_by_id",
+                "supports_advisory_lookup_by_package",
+            ],
+        ),
+        (
+            "nvd",
+            &["supports_security_search", "supports_advisory_lookup_by_id"],
+        ),
+        (
+            "cisa_kev",
+            &[
+                "supports_advisory_lookup_by_id",
+                "supports_exploit_kev_status",
+            ],
+        ),
+        (
+            "rustsec",
+            &["supports_security_search", "supports_advisory_lookup_by_id"],
+        ),
+        (
+            "crates_io",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "pypi",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "npm_registry",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "go_pkg",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "maven_central",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "nuget",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "rubygems",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "packagist",
+            &["supports_package_metadata", "supports_structured_changelog"],
+        ),
+        (
+            "local_workspace",
+            &[
+                "supports_code_search",
+                "supports_path_filter",
+                "supports_language_filter",
+            ],
+        ),
+        (
+            "openalex",
+            &[
+                "supports_result_timestamps",
+                "supports_scholarly_search",
+                "supports_doi_lookup",
+            ],
+        ),
+        (
+            "crossref",
+            &["supports_scholarly_search", "supports_doi_lookup"],
+        ),
+        (
+            "semantic_scholar",
+            &["supports_scholarly_search", "supports_doi_lookup"],
+        ),
+        (
+            "sourcegraph",
+            &[
+                "supports_code_search",
+                "supports_path_filter",
+                "supports_language_filter",
+                "supports_repo_indexing",
+            ],
+        ),
+        (
+            "firecrawl_developer",
+            &["supports_repo_filter", "supports_issue_search"],
+        ),
+        (
+            "exa",
+            &[
+                "supports_freshness",
+                "supports_domain_filters",
+                "supports_result_timestamps",
+            ],
+        ),
+        (
+            "tavily",
+            &[
+                "supports_safe_search",
+                "supports_freshness",
+                "supports_language",
+                "supports_region",
+                "supports_domain_filters",
+                "supports_news",
+            ],
+        ),
+        (
+            "serpapi",
+            &[
+                "supports_safe_search",
+                "supports_language",
+                "supports_region",
+            ],
+        ),
+        (
+            "kagi",
+            &[
+                "supports_safe_search",
+                "supports_freshness",
+                "supports_region",
+                "supports_domain_filters",
+                "supports_result_timestamps",
+            ],
+        ),
+        ("wikipedia", &["supports_result_timestamps"]),
+        (
+            "arxiv",
+            &["supports_scholarly_search", "supports_result_timestamps"],
+        ),
+        (
+            "pubmed",
+            &["supports_scholarly_search", "supports_result_timestamps"],
+        ),
+        (
+            "hn_algolia",
+            &["supports_freshness", "supports_result_timestamps"],
+        ),
+        ("github_repositories", &["supports_result_timestamps"]),
+    ];
+
+    let mut seen = std::collections::HashSet::new();
+    for &(id, flags) in MATRIX {
+        assert!(seen.insert(id), "duplicate provider id in matrix: {id}");
+        assert!(
+            KNOWN_PROVIDER_IDS.contains(&id),
+            "unknown provider id in matrix: {id}"
+        );
+        let mut expected = ProviderCapabilities {
+            supports_safe_search: false,
+            supports_freshness: false,
+            supports_language: false,
+            supports_region: false,
+            supports_domain_filters: false,
+            supports_news: false,
+            supports_code_search: false,
+            supports_repo_filter: false,
+            supports_org_filter: false,
+            supports_path_filter: false,
+            supports_language_filter: false,
+            supports_symbol_hint: false,
+            supports_issue_search: false,
+            supports_release_search: false,
+            supports_result_timestamps: false,
+            supports_security_search: false,
+            supports_package_metadata: false,
+            supports_advisory_lookup_by_id: false,
+            supports_advisory_lookup_by_package: false,
+            supports_exploit_kev_status: false,
+            supports_scholarly_search: false,
+            supports_doi_lookup: false,
+            supports_repo_indexing: false,
+            supports_structured_changelog: false,
+        };
+        for flag in flags {
+            match *flag {
+                "supports_safe_search" => expected.supports_safe_search = true,
+                "supports_freshness" => expected.supports_freshness = true,
+                "supports_language" => expected.supports_language = true,
+                "supports_region" => expected.supports_region = true,
+                "supports_domain_filters" => expected.supports_domain_filters = true,
+                "supports_news" => expected.supports_news = true,
+                "supports_code_search" => expected.supports_code_search = true,
+                "supports_repo_filter" => expected.supports_repo_filter = true,
+                "supports_org_filter" => expected.supports_org_filter = true,
+                "supports_path_filter" => expected.supports_path_filter = true,
+                "supports_language_filter" => expected.supports_language_filter = true,
+                "supports_symbol_hint" => expected.supports_symbol_hint = true,
+                "supports_issue_search" => expected.supports_issue_search = true,
+                "supports_release_search" => expected.supports_release_search = true,
+                "supports_result_timestamps" => expected.supports_result_timestamps = true,
+                "supports_security_search" => expected.supports_security_search = true,
+                "supports_package_metadata" => expected.supports_package_metadata = true,
+                "supports_advisory_lookup_by_id" => expected.supports_advisory_lookup_by_id = true,
+                "supports_advisory_lookup_by_package" => {
+                    expected.supports_advisory_lookup_by_package = true
+                }
+                "supports_exploit_kev_status" => expected.supports_exploit_kev_status = true,
+                "supports_scholarly_search" => expected.supports_scholarly_search = true,
+                "supports_doi_lookup" => expected.supports_doi_lookup = true,
+                "supports_repo_indexing" => expected.supports_repo_indexing = true,
+                "supports_structured_changelog" => expected.supports_structured_changelog = true,
+                _ => panic!("unknown capability flag for {id}: {flag}"),
+            }
+        }
+        let actual = built_in_provider_descriptor(id, true, false, true, true, None, None)
+            .unwrap_or_else(|| panic!("unknown provider id: {id}"))
+            .capabilities;
+        assert_eq!(actual, expected, "capability mismatch for {id}");
+    }
+    assert_eq!(seen.len(), KNOWN_PROVIDER_IDS.len());
+    assert!(
+        KNOWN_PROVIDER_IDS.iter().all(|id| seen.contains(*id)),
+        "matrix must cover every known provider id"
+    );
+}
+
+#[test]
 fn provider_inventory_count_is_stable() {
     assert_eq!(
         KNOWN_PROVIDER_IDS.len(),

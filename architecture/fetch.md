@@ -3,8 +3,8 @@
 **Location:** `src/fetch/` (11 top-level files + `browser/` + `render/`, 8 files each)
 **Purpose:** Bounded single-URL HTTP(S) fetch with SSRF enforcement, two-tier
 cache, origin control, content detection, structural rendering, and sanitized
-output. Independent of `meta`; consumed by `web_fetch`, `batch_fetch`,
-`repo_fetch` follow-ups, and CLI `fetch`. Entry: `src/fetch/mod.rs`.
+output. Independent of `meta`; consumed by canonical `fetch` web/repo items,
+`web_fetch`, `batch_fetch`, `repo_fetch` follow-ups, and CLI `fetch`. Entry: `src/fetch/mod.rs`.
 
 ---
 
@@ -23,6 +23,68 @@ validate_fetch_target (SSRF)
   -> sanitize (core/sanitize.rs, three tiers)
 ```
 
+### Typed target routing
+
+Canonical `fetch` repo items and the direct-call compatibility aliases keep their
+request and response contracts. Shared internal `FetchLocator` resolution
+distinguishes the route before handing work to its owning handler:
+
+| Locator | Owning path | Boundary |
+|---|---|---|
+| `WebUrl` | `web_fetch` or a batch web item through the bounded fetch path | HTTP(S) validation, `FetchClient` SSRF/redirect policy, content detection, and existing PDF/HTML/browser behavior remain authoritative. |
+| `Repo` | Repo-item handler (canonical `fetch` and `repo_fetch` alias) | Structured host/owner/repo/ref/path and source-span semantics remain authoritative; a detected PDF retains the fetch document outcome and is not decoded as source code. |
+| `Local` | Repo-item workspace handler (canonical `fetch` and `repo_fetch` alias) | Root name and relative path only; authorized workspace resolution and `safe_read_file` remain the read boundary. Local PDF extraction belongs to PDF M008. |
+
+Resolution is classification, not a transport shortcut: it cannot bypass the
+owning handler's validation or security policy. Canonical `fetch` exposes tagged
+web and repo items; batch preflight uses the same typed resolution before any
+fetch starts. Web items carry `pdf`, `render`, and `browser_profile` controls
+through the shared web-fetch path, alongside per-item cache and focus options;
+repo items carry source selection through the repo-item handler. The trusted
+`codegg/host-local-scope` metadata is forwarded unchanged to repo items, so
+workspace reads retain the authorized root and root-relative path boundary. Batch order, per-item failures, and aggregate budgets remain
+owned by the batch envelope.
+
+### Batch returned-character and emitted-payload budgets
+
+The unified `fetch` envelope keeps the M036 readable measure, `chars_returned`,
+unchanged: Unicode scalar values in top-level `text`, plus `title`,
+`description`, visible link URL/text metadata, and for repo items string-valued
+locator and returned URL fields. Repo `document` and `lines` are structural copies
+of the text and are not counted again in this readable measure.
+
+The aggregate `max_total_chars` budget is enforced against the emitted-payload
+measure. For each item, `payload_chars` is the Unicode scalar count of
+`serde_json::to_string(&response_value)`, where `response_value` is that item's
+`response` JSON value; an unmeasurable response is treated as unfittable and
+omitted. It is measured before
+`response_detail` projection; `total_payload_chars` sums this measure for emitted
+items, while omitted items contribute zero. The budget covers the sum of these
+response values, not the complete serialized envelope: item wrappers, the results
+array, aggregate counts and telemetry, warnings, addressing fields, and projection
+stamps are envelope overhead outside the measure. Compact and standard projections
+can remove response fields after measurement, so `payload_chars` and
+`total_payload_chars` may conservatively over-count the projected response.
+
+When a repo response exceeds the remaining budget, preserve requested text by
+applying this ladder in order, remeasuring the serialized response after each
+step and stopping as soon as it fits: remove `document.blocks` and
+`document.chunks` together; remove `document`; remove `lines`; then clip top-level
+`text`. Never clip text while one of those structural fields remains. Each removed
+field is listed in `degraded_fields`; structural drops made by the budget do not
+set `truncated`, which continues to mean text was clipped. Web responses retain their existing
+title/description/links trimming and text clipping, with the final fit decided by
+`payload_chars`. An item that still cannot fit is omitted under M036's contract:
+`ok: false`, `response: null`, `chars_returned: 0`, a budget error, and a warning.
+
+Each degraded item emits one `batch_payload_budget_degraded` legacy warning naming
+the sanitized item label, comma-separated dropped-field markers, measured
+`payload_chars`, remaining budget, and `max_total_chars`; the structured warning
+uses the existing `fetch_content_truncated` code. The batch-level
+`batch_total_budget_exhausted` warning is retained for the first budget-limited
+item. `total_chars_returned` continues to sum the M036 readable measure and is
+distinct from `total_payload_chars`.
+
 1. **Validate.** `limits::validate_url` (sync shape check) runs first;
    `limits::validate_fetch_target` / `validate_fetch_target_with_resolved_addrs`
    (async full check + DNS) runs per attempt and per redirect hop.
@@ -37,7 +99,7 @@ validate_fetch_target (SSRF)
 5. **Render.** HTML goes through `render/blocks.rs`; code, CSV, notebooks, and
    Markdown sources go through their dedicated renderers; PDFs take the
    feature-gated `pdf.rs` path (§6, §7).
-6. **Project.** `repo_fetch` line/symbol selection uses `span::select_span`;
+6. **Project.** Repo-item line/symbol selection uses `span::select_span`;
    `web_fetch` / `batch_fetch` focus queries project over the extracted
    `FetchDocument` via `core/fetch_policy.rs`. Both are post-extraction
    projections: they never change what is cached.
@@ -74,7 +136,7 @@ reported via `FetchTransform`.
    `document_chars = max_chars_cap`, while the returned `text` is projected at
    `window_chars = caller max_chars` (or `max_chars_default`), clamped to
    `max_chars_cap`. `raw_text` stays at `max_chars_cap` so internal consumers
-   (`repo_fetch` line/span selection) see full source text.
+   (repo-item line/span selection) see full source text.
    `document.document_truncated` reports extraction stopping at the document
    budget; `document.text_truncated` reports window clipping. `document.blocks`
    / `document.chunks` can therefore cover a document larger than one `text`
@@ -173,10 +235,11 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 - `DerivedCacheKey { scope, raw_content_hash, extraction_key }` where the hash
   is `xxh3_64(body)` (`build_raw_response_hash`) and `ExtractionCacheKey`
   covers `extract_mode`, exact `max_chars`, `include_links`, `pdf_pages`,
-  `pdf_ocr`, `include_media`, `renderer_version: 4`, and `sanitize_output`.
-  Version 3 isolates entries derived before PDF page classification stopped
-  depending on `include_media`; version 2 isolated entries written before
-  representation negotiation existed.
+  `pdf_ocr`, `include_media`, `renderer_version: 5`, and `sanitize_output`.
+  Version 5 isolates document-scoped extraction; version 4 isolates the
+  encrypted-PDF refusal behavior; version 3 isolates entries derived before
+  PDF page classification stopped depending on `include_media`; version 2
+  isolated entries written before representation negotiation existed.
 - `DerivedDocumentCacheEntry` stores the extracted title/description/text,
   `raw_text`, links, truncation flags, the structured `FetchDocument` (blocks,
   outline, chunks), trust markers, and transport tag.
@@ -434,7 +497,7 @@ An `/Encrypt` document is refused before decryption is ever considered:
 `Document::authenticate_password` validated a password but never replaced
 ciphertext, and ciphertext cannot be measured by the scan. `pdf_password` stays
 in the tool schema for wire compatibility and is documented as unsupported.
-That outcome narrowing is why the derived cache `renderer_version` is 4.
+That outcome narrowing advanced the derived-cache renderer version to 4; the current version is 5 after document-scoped extraction.
 
 ---
 
@@ -474,6 +537,9 @@ agent contract; the fetch-layer error variants of the same names remain reserved
 for direct library use. `RenderPolicy::Auto` never errors:
 when escalation was warranted but unavailable, the call returns the HTTP document
 with the `browser_unavailable` structured warning and `browser_escalated: false`.
+Escalation is triggered by wall-shaped `2xx` content or by a browser-gated status
+(`429` or `5xx`); § Browser challenge completion states the status seam, the
+return rule, and the retry interaction.
 
 | File | Responsibility |
 |------|---------------|
@@ -547,9 +613,18 @@ initial URL with `is_request_allowed_with_dns`, then:
    reading content.
 3. `classify_response` maps status/title/text-length/body-snippet to
    `UsefulContent`, `JavascriptShell`, `NonInteractiveVerification`,
-   `InteractiveChallenge`, and HTTP error dispositions. Interactive challenges
-   error immediately; non-interactive verifications wait up to
-   `verification_timeout_ms`.
+   `InteractiveChallenge`, and HTTP error dispositions. A wall marker outranks
+   the document status, because an interstitial is commonly served with a
+   non-success status (Brave answers 429 with its proof-of-work page); after
+   client-side rendering the DOM is authoritative, so `202`/`429` carrying a real
+   page and no wall marker is `UsefulContent`, while `403`, `404`, and other
+   `5xx` keep their meaning. Interactive challenges error immediately, and their
+   markers are specific (`cf-turnstile`, `g-recaptcha`, `h-captcha`,
+   `challenge-platform`), so a page that merely offers a traditional CAPTCHA
+   beside its scripted challenge is not refused. A script-driven wall polls the
+   live classification every 500 ms, clicks the page's own `Verify` control at
+   most once, and is returned marked when it does not resolve; see
+   § Browser challenge completion.
 4. DOM length is checked before and after `page.content()` against
    `max_dom_bytes`; the DOM converts through `browser_result_to_response` — the
    same render + detect + link + sanitize pipeline as HTTP, tagged
@@ -560,6 +635,39 @@ credentials, private-hostname/IP literal rejection (including IPv4-mapped and
 IPv4-compatible IPv6 via the shared `limits::classify_ip`), and a 3 s DNS
 resolution check rejecting private resolutions. It does not take
 `allow_localhost` / `allow_private_network` overrides.
+
+### Browser identity
+
+The launched browser presents the identity of the Chrome build it actually is. Chromium's headless
+mode announces itself with a `HeadlessChrome/` token that origins gate on: Yahoo answers that user
+agent with HTTP 500 and a zero-byte body, and the same Chrome with an ordinary identity with its
+results page. `lifecycle.rs` therefore passes `--user-agent` built from the discovered major
+version and the host platform, so the version in the header is the version running. This is
+ADR-0019 §5's browser-like identity, never a third party's. An unparseable discovered version leaves
+the flag off rather than claiming a build that was not detected.
+
+Flags reach Chromium as `(key, value)` pairs. chromiumoxide renders the pair itself, so a literal
+`"--key=value"` argument becomes `----key=value` and is silently ignored by Chrome; every flag
+with a value, including `--user-agent` and `--user-data-dir`, is passed as a pair for that reason.
+The same lifecycle also serves provider result pages; see `architecture/engines.md`
+§ Browser-rendered access.
+
+### Viewport screenshot capture
+
+`include_screenshot = true` on `web_fetch` or a `batch_fetch` web item forces
+`RenderPolicy::Browser`, even when the configured policy is `http_only`; an
+explicit per-call `render = "http_only"` is a pre-I/O conflict. Capture runs
+after normal DOM extraction and before the page closes, using the existing
+1280×720 viewport. It requests PNG with no full-page extension, scrolling, input,
+or other interaction. The PNG signature, IHDR dimensions, and encoded size are
+checked before result assembly; width and height may not exceed 1280×720 and the
+PNG may not exceed 4 MiB. Capture failures are explicit errors, not text-only
+successes. Recognized PDF main responses skip capture and add a warning; repo
+and local workspace targets never enter this browser path.
+
+Screenshot requests bypass both cache reads and writes, regardless of the
+requested cache policy. Image bytes travel outside `WebFetchResponse` and the
+cache structures. The ordinary JSON response and its output schema are unchanged.
 
 ### Challenge pages on the HTTP path
 
@@ -572,22 +680,211 @@ bounded body, `status`, and `fetched: true` — it is not a transport failure �
 the family. Detection adds no request, retry, or delay, and ordinary pages, markdown bodies, and
 PDFs are never marked. Under `render: "auto"` the same classification is an escalation trigger, so
 a detected Anubis or ALTCHA wall is rendered by the browser when one is available instead of being
-returned as a stub; `render: "http_only"` keeps the marked body.
+returned as a stub; `render: "http_only"` keeps the marked body. Remote repo-item results always serialize `manual_interaction_required`; when a
+challenge page is returned, `fetch_challenge_page` is surfaced through
+`structured_warnings`. The workspace path always sets the flag to false.
 
-When `[search.challenge].enabled` is true, a detected Anubis page is not merely marked.
-`src/mcp/tools/web_fetch.rs` — the one module allowed to depend on both trees — solves the
-published challenge once through the shared solver in `src/meta/challenge/anubis.rs` under
-`max_difficulty`, `max_attempts`, `timeout_ms`, and the remaining call deadline, then replays the
-same request once with the cookie pairs the pass response issued, joined with `; `. The pair set is
-opaque — its names are whatever the deployment publishes (`spchal-auth`,
-`techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and it is sent on
-the first hop only, so a redirect cannot forward it to another origin. It is never stored: the
-response returned and cached is the replay's document, with `transport: "http"`,
-`manual_interaction_required: false`, and no `fetch_challenge_page` warning. Solving disabled, no
-parseable published challenge, a refusal at any ceiling, an error, an exhausted deadline, or a
-replay that is itself a challenge all leave today's marking exactly as it was, at most one solve and
-one replay per call. The browser path keeps priority: a successful `render: "auto"` render replaces
-the payload before the solver runs. `batch_fetch` does not solve (residual).
+When `[search.challenge].enabled` is true, a detected Anubis or ALTCHA page can be solved
+and replayed once. `src/challenge_replay/` owns the shared fetch-path detect → solve → replay →
+classify sequence, combining the bounded fetch client with the solvers in
+`src/meta/challenge/anubis.rs` and `src/meta/challenge/altcha.rs`. `web_fetch`, `batch_fetch`, and unified `fetch` web items delegate through the
+shared web-fetch handler; canonical `fetch` repo items and CLI `eggsearch fetch`
+use the same orchestration. Each fetch-path solve
+uses the ledger label `fetch` and is bounded by `max_attempts`, `timeout_ms`, and the remaining
+call deadline. `max_difficulty` gates the Anubis family only; an ALTCHA solve publishes no
+difficulty and is bounded by its PBKDF2 `cost`, the attempt ceiling, and the wall clock.
+
+The solve replays the same request once with the cookie pairs the pass response issued, joined with
+`; `. The pair set is opaque — its names are whatever the deployment publishes (`spchal-auth`,
+`techaro.lol-anubis-auth`, or a dynamic suffix), never a name the client formats — and is sent on
+the first hop only, so a redirect cannot forward it to another origin. It is never written to
+disk; a pair set a fetch issued is reused from the process-local origin-keyed cache described
+below. An
+ALTCHA solve replays with the `chllg` pass cookie its verification endpoint issued. A
+successful replay returns the document with `manual_interaction_required: false` and no
+`fetch_challenge_page` warning. Solving disabled, no parseable published challenge, a refusal at
+any ceiling, an error, an exhausted deadline, or a replay that is itself a challenge all leave the
+original response marking unchanged, with at most one solve and one replay per call. For web fetch
+the solver keeps priority: under `render: "auto"` a solvable Anubis or ALTCHA wall is solved and
+replayed before any browser escalation is considered, and the browser receives only what the solver
+left unsolved. `batch_fetch` inherits solve behavior through the shared web-fetch handler.
+
+### ALTCHA endpoint derivation
+
+An ALTCHA wall publishes its proof-of-work material in the widget markup, so a general fetch has to
+derive two things from the page itself: the challenge document, and the endpoint that verifies a
+solution. `src/challenge_replay/altcha.rs` owns both. The rule is fixed and bounded, and every
+refusal happens before a request is issued.
+
+**Accepted publication.** The page must carry an `altcha-widget` element, the upstream web
+component. Two attributes are read from it:
+
+| Purpose | Accepted attributes |
+|---|---|
+| Challenge material | `challenge` (upstream v2+: inline JSON or a URL), `challengeurl` (upstream v1) |
+| Verification endpoint | `verifyurl` (upstream v1), `data-verify-url` |
+
+A `challenge` value that starts with `{` is the published challenge document itself, read inline
+and bounded to 64 KiB. Any other `challenge` value, and any `challengeurl` value, is a published
+challenge endpoint. A page that publishes neither carries no solvable challenge.
+
+**Endpoint form.** A published endpoint is accepted only when every one of these holds:
+
+1. The trimmed value is at most 256 characters.
+2. It resolves — with `Url::join` against the challenge page's own URL, never by string
+   concatenation — to an absolute URL.
+3. The resolved scheme is the challenge page's own scheme, and that scheme is `http` or `https`.
+   A scheme change fails closed.
+4. The resolved URL carries no credentials, no query, and no fragment.
+5. The resolved origin — host and effective port — is the challenge page's own origin. A
+   cross-origin target fails closed, which is what stops a page from steering a solve at another
+   site.
+6. The resolved path matches the fixed allowed shape: one to four segments, each at most 32
+   characters drawn from `[A-Za-z0-9._~-]`, whose last segment is exactly `challenge` for a
+   challenge endpoint and exactly `verify` for a verification endpoint.
+
+A challenge endpoint that passes is requested with `Accept: application/json` and a bounded body of
+at most 64 KiB.
+
+**Verification endpoint.** A published verification endpoint is used as published, under the same
+six rules. When the page publishes none, the verification endpoint is derived from the published
+challenge endpoint by replacing its final `challenge` segment with `verify`, keeping the origin
+and the prefix; a page that publishes an inline challenge and no verification endpoint falls back
+to the canonical `/captcha/verify` on its own origin. The request URL is rebuilt from the
+resolved URL's own parsed components; no page text is spliced into a URL string.
+
+**Refusals.** A cross-origin, scheme-changing, credentialed, query-bearing, unparseable, or
+over-long endpoint, and an unsupported published algorithm, fail closed as `unsupported scheme`. A
+published challenge document that does not parse into the documented parameter set fails closed as
+`malformed parameters`. The published PBKDF2 `cost` is part of that parameter set: it is the work
+factor of one counter iteration, so a cost above the solver's ceiling is refused rather than
+started. Both are existing refusal keys; the vocabulary does not grow. Every refusal leaves the
+original response exactly as it was.
+
+### Fetch-side pass-cookie reuse
+
+A pass cookie the fetch path is issued is reused for a later fetch to the same origin instead of
+being solved again every time. The reuse window is the same rule the search side already uses, and
+the reuse itself is bounded by the same origin rule the ALTCHA derivation uses.
+
+**Owner.** `src/challenge_replay/cache.rs` owns the cache. It is process-local: a stored pair set
+lives in memory for the life of the process and is never written to disk, never persisted to a
+cache directory, and never serialized into a response, a diagnostic, or a fixture. The cache is the
+only place a fetch-path pair set is retained, and only `src/challenge_replay/` may reach it.
+
+**Origin key.** The key is the origin of the *request* URL: scheme, host, and effective port. It is
+derived without following a redirect. An entry is stored and looked up only when the origin that
+served the challenge page is that same origin. A fetch that crossed an origin — a redirect to
+another host, another scheme, or another port — has no reusable key, because the issuing origin
+cannot be established without following the redirect; such a fetch stores nothing and reuses
+nothing. A cached pair set is therefore never replayed to an origin other than the one that issued
+it, and the replay itself still travels on the first hop only.
+
+**Reuse window.** The window is M014's rule, unchanged. `src/meta/challenge/cookie.rs` resolves the
+lifetime the upstream published — `Max-Age` over `Expires`, `Expires` in the past never usable —
+and clamps it to `[search.challenge].cookie_ttl_seconds`. `cookie_ttl_seconds = 0` stores
+nothing; an unstated lifetime falls back to the ceiling; a malformed lifetime, a zero lifetime, or
+an expiry at or before now stores nothing. The shipped default is unchanged.
+
+**Sequence.** On a detected Anubis or ALTCHA page the shared module consults the cache before it
+solves. A hit replays the request once with the stored pair set and performs no solve. A miss
+solves as usual and, when the replay returns the document, stores the issued pair set under its
+published lifetime. The one-solve-one-replay rule is unchanged: a fetch never solves and replays
+twice, and it never uses a cached cookie to avoid a solve inside the same call.
+
+**Stale pair set.** A stored pair set the upstream refuses is not a final outcome for the call that
+found it. When the replay comes back as a challenge page, the entry is evicted and the same call
+falls through to the ordinary solve path, inside the same budget. The rejected pair set is never
+presented a second time, and the call still performs at most one solve and one replay: the replay
+budget is spent on the fresh pair set, not on the refused one. ADR-0018 records that bound.
+
+The eviction is unconditional and happens before the solve, so a refused pair set is never offered
+to the upstream again, and the entry a fresh solve stores is the only entry the origin holds.
+
+A refusal is a challenge page, and nothing else. A transport error, a timeout, and a non-2xx
+status are not refusals: the stored pair set is kept, no solve is attempted, and the call leaves
+the original response exactly as it was. A transient failure therefore never spends the call's
+solve budget, and a usable pair set is never discarded because of one.
+
+This bounds the degradation M033 removed. A stale pair set used to cost one degraded fetch: the
+call returned the marked challenge page, the entry was evicted, and the *next* fetch solved. Now the
+call that discovers the stale pair set solves it, so a caller never has to await a second fetch to
+get a document. The cost is one extra upstream request in that call — the refused replay — which
+the ordinary solve path would have spent on the challenge page anyway.
+
+The budget is unchanged and still binds. The refused replay and the fresh solve share the call's
+single solve: a refused pair set costs no solve attempt of its own, because no solve was performed
+for it. A solve that then refuses, errors, exhausts the deadline, or replays into another challenge
+page leaves the original response exactly as it was, and the origin is left with no entry. The
+fresh pair set is stored under the same published-lifetime and ceiling rules as any other, so the
+reuse window is never extended by the recovery.
+
+**Bounds.** The cache holds at most 32 origins and at most 64 KiB of stored pair-set bytes. Both
+bounds are explicit: an insertion that would exceed either bound evicts the entry closest to
+expiry first, and an insertion larger than the byte ceiling on its own is not stored at all.
+
+### Browser challenge completion
+
+The browser is a completion mechanism for script-driven walls. It is neither a replacement for the
+cheap solver nor a way to return a wall as a document. Three rules fix the order and the outcome.
+
+**Order of mechanisms.** When a plain HTTP fetch returns a wall and `render: "auto"` is in effect,
+the solver runs first. `src/challenge_replay/` decides whether the response is a solvable Anubis or
+ALTCHA page, and a solve that returns the document ends the call before any browser work is
+considered. Only a response that is still a wall — solving disabled, no parseable challenge, a
+refusal at a ceiling, a failed replay, or a family the solver does not own — reaches the browser,
+under the same `browser` feature, availability check, and remaining-deadline floor as any other
+auto escalation. A call therefore performs at most one solve-and-replay and at most one escalation,
+in that order, and a solvable puzzle never reaches Chrome. `render: "http_only"` keeps the marked
+body and never escalates; an explicit `render: "browser"` stays a direct render with its existing
+semantics.
+
+**Gated statuses.** `src/fetch/client.rs` rejects any status outside `200..300` with
+`FetchError::HttpStatus` before a response exists to classify, so the wall-shaped trigger above
+cannot fire for the class these origins actually serve: Brave answers `429` with its proof-of-work
+page, and Yahoo answers `500` with an empty body. Under `render: "auto"` the tool escalates at that
+error seam instead: once per call, before any origin failure is recorded, when
+`fetch::challenge::is_browser_gated_status` holds (`429`, `500..=599`), a browser is available, and
+at least 2 s of the call budget remain. Search escalation calls the same predicate through
+`meta::engines::render::is_browser_gated`, so the two surfaces cannot disagree about the class;
+`401`, `402`, `403`, and `404` never match it.
+
+A rendered document replaces the error only when `rendered_result_serves` accepts it: the render
+ended on `200..400`, or it completed a recognised wall. A `5xx` page the browser merely
+re-rendered is still the origin's outage, so the original `http_status` error is returned with the
+attempted escalation named in its message. Under `auto`, a gated status leaves the retry loop to
+the escalation, because an automated retry meets the same wall; `http_only` keeps its retry
+behaviour unchanged. An origin the browser served is recorded as a success, never as an HTTP
+failure, and `browser_completions` increments only when the render completed a wall.
+
+**Completion rule.** After the page loads and `post_load_wait_ms` elapses, the render classifies the
+live page with `classify_response` over the current status, content type, title,
+`document.body.innerText` length, and bounded body. A page classified `JavascriptShell` or
+`NonInteractiveVerification`, or one `src/fetch/challenge.rs` recognises as a challenge family, is
+treated as a script-driven wall: the render polls the same live state every 500 ms until the page
+stops being one of those two dispositions, bounded by `verification_wait_ms` and the call deadline.
+A wall that gates its challenge script behind a button the page renders (`Verify`) is clicked once
+per render inside that wait: the click starts the page's own script, so it is the same act as
+letting it run rather than a human judgement, and the label set is limited to scripted-verification
+wording (`verify`, `start verification`, `verify now`, `continue verification`). A wall whose
+only control is an interactive CAPTCHA never matches that set and stays an error.
+Completion is decided by that classification, never by the title, so a page that clears without
+changing its title is no longer treated as unresolved and a legitimate page whose title happens to
+carry a verification phrase is no longer treated as a wall. `InteractiveChallenge` remains an
+immediate `manual_interaction_required` error and is never polled.
+
+**Completed or marked.** A wall that resolves inside the wait returns the document. A wall that does
+not resolve is returned, not errored: the response carries the rendered body,
+`manual_interaction_required: true`, and the existing `fetch_challenge_page` structured warning when
+`src/fetch/challenge.rs` recognises the family. A page that was never a wall keeps today's response
+and `manual_interaction_required: false`, so a legitimate document is never reported as a
+challenge. A wall completed by the browser is counted once in
+`provider_status.challenge_solver.providers.fetch.browser_completions`; the counter is a count only
+and carries no cookie, nonce, challenge id, pass token, or profile path.
+
+A wall whose own failure page presents ordinary content is indistinguishable from a document once
+rendered, so it is returned as one. That case is recorded as residual risk in the milestone closure
+rather than guessed at from a title or a status code.
 
 ### Profiles: opaque IDs, origin-scoped logins
 
@@ -607,7 +904,7 @@ symlink and path-escape rejection, an `allowed_profiles` allowlist, a
 
 ## 10. Span and Focus Projection
 
-### `span.rs`: symbol-aware block expansion for `repo_fetch`
+### `span.rs`: symbol-aware block expansion for repo items
 
 `select_span(lines, language, symbol, symbol_kind, match_text, explicit range,
 expand_to_block, max_block_lines)` is deterministic and lexical — regex

@@ -303,6 +303,7 @@ fn convert_to_metadata(advisory: &RustSecAdvisory) -> VulnerabilityMetadata {
         ghsa_ids,
         osv_ids: Vec::new(),
         rustsec_ids,
+        summary: None,
         ecosystem: Some("crates.io".to_string()),
         package: advisory.package.clone(),
         affected_ranges,

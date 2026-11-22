@@ -449,6 +449,7 @@ fn convert_to_metadata(advisory: &GhAdvisory) -> VulnerabilityMetadata {
         ghsa_ids,
         osv_ids: Vec::new(),
         rustsec_ids: Vec::new(),
+        summary: None,
         ecosystem: ecosystem.or_else(|| advisory.ecosystem.clone()),
         package: package_name.or_else(|| advisory.package.clone()),
         affected_ranges,

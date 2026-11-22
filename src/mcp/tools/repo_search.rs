@@ -4,6 +4,17 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "query",
+    "owner",
+    "repo",
+    "host",
+    "goal",
+    "sources",
+    "include_local",
+    "response_detail",
+];
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoSearchArgs {
     /// Query. May contain repo hints (repo:owner/name).
@@ -33,7 +44,6 @@ pub struct RepoSearchArgs {
     /// Symbol hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
-    /// Task goal: understand, architecture, debug, migration, security, dependency, performance, compare, pre_change, post_change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
     /// Source set override. Omit for goal defaults.
@@ -111,7 +121,6 @@ pub struct RepoSearchArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub workflow: Option<String>,
-    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }

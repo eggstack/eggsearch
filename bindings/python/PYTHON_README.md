@@ -114,11 +114,10 @@ $ curl -s http://127.0.0.1:11320/healthz
 | Tool | Purpose |
 |------|---------|
 | `web_search` | Live metasearch over configured providers |
-| `web_fetch` | Bounded extraction of one HTTP(S) URL |
-| `batch_fetch` | Bounded batch fetch over URLs or repo locators |
+| `fetch` | Bounded fetch of tagged web/repo items |
+| `knowledge_brief` | Cutoff-aware public evidence delta |
 | `provider_status` | Diagnostic provider config, health, and recipes |
 | `repo_search` | Structured repository evidence discovery |
-| `repo_fetch` | Repository file fetch by locator, line range, or symbol |
 | `repo_map` | Bounded repository structure discovery |
 | `security_search` | Vulnerability and advisory search |
 | `research_search` | Multi-source evidence discovery |

@@ -165,6 +165,33 @@ impl Default for BrowserConfig {
 }
 
 impl BrowserConfig {
+    /// The browser configuration described by the `[fetch.browser]` section.
+    ///
+    /// The render policy is parsed from its operator spelling so the CLI and
+    /// the MCP server read one setting into one value; an unrecognised
+    /// spelling falls back to `http_only`, exactly as the server does.
+    #[must_use]
+    pub fn from_settings(settings: &crate::core::config::FetchBrowserSection) -> Self {
+        let policy: RenderPolicy =
+            serde_json::from_value(serde_json::Value::String(settings.policy.clone()))
+                .unwrap_or_default();
+        Self {
+            enabled: settings.enabled,
+            policy,
+            executable: settings.executable.clone(),
+            startup_timeout_ms: settings.startup_timeout_ms,
+            navigation_timeout_ms: settings.navigation_timeout_ms,
+            post_load_wait_ms: settings.post_load_wait_ms,
+            verification_wait_ms: settings.verification_wait_ms,
+            max_requests: settings.max_requests,
+            max_dom_bytes: settings.max_dom_bytes,
+            global_concurrency: settings.global_concurrency,
+            per_origin_concurrency: settings.per_origin_concurrency,
+            block_media: settings.block_media,
+            persistent_profiles: settings.persistent_profiles.clone(),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), Vec<String>> {
         let mut errors = Vec::new();
 
@@ -325,6 +352,31 @@ impl BrowserDiscoveryState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_map_to_the_browser_configuration() {
+        let mut settings = crate::core::config::FetchBrowserSection {
+            enabled: true,
+            ..Default::default()
+        };
+        for (spelling, expected) in [
+            ("http_only", RenderPolicy::HttpOnly),
+            ("auto", RenderPolicy::Auto),
+            ("browser", RenderPolicy::Browser),
+            ("render", RenderPolicy::HttpOnly),
+        ] {
+            settings.policy = spelling.to_string();
+            let config = BrowserConfig::from_settings(&settings);
+            assert_eq!(config.policy, expected, "policy {spelling}");
+            assert!(config.enabled);
+        }
+        settings.policy = "auto".to_string();
+        settings.enabled = false;
+        assert!(
+            !BrowserConfig::from_settings(&settings).enabled,
+            "the operator's enable flag is carried, not assumed"
+        );
+    }
 
     #[test]
     fn default_config_passes_validation() {

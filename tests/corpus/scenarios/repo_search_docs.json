@@ -38,7 +38,7 @@
     "warnings_contain": [],
     "suggested_fetches": {
       "min": 1,
-      "preferred_tool": "repo_fetch",
+      "preferred_tool": "fetch",
       "contains_url_pattern": "docs.rs"
     },
     "trust": "external_untrusted"

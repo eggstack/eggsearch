@@ -66,26 +66,17 @@ fn build_structured_fetch(
         | CodeHost::Gitlab
         | CodeHost::Codeberg
         | CodeHost::Gitea
-        | CodeHost::Forgejo => Some(RepoFetchRequest {
-            host: Some(host),
-            owner: owner.to_owned(),
-            repo: repo.to_owned(),
-            ref_name: Some(ref_name.to_owned()),
-            commit_sha: None,
-            path: path.to_owned(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
-            timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
-        }),
+        | CodeHost::Forgejo => {
+            let mut request = RepoFetchRequest::from(crate::core::repo_fetch::RepoTarget {
+                owner: owner.to_owned(),
+                repo: repo.to_owned(),
+                ref_name: Some(ref_name.to_owned()),
+                path: path.to_owned(),
+                ..Default::default()
+            });
+            request.host = Some(host);
+            Some(request)
+        }
         _ => None,
     }
 }

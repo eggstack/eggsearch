@@ -5,7 +5,7 @@ tool-surface evaluation plan. Offline, no model or network access.
 
 ## Layout
 
-- `cases.json` — 43 labeled tool-selection fixtures.
+- `cases.json` — 44 labeled tool-selection fixtures.
 - Runner: `tests/tool_surface_evaluation.rs` (routine CI).
 - Opt-in live comparison: `tests/tool_surface_live.rs` (`#[ignore]`d).
 
@@ -29,6 +29,7 @@ alternatives are acceptable).
 | `evidence` | 2 | `build_evidence_bundle` |
 | `diagnostics` | 4 | `provider_status` (2), negatives (2) |
 | `ambiguity` | 7 | preferred tool plus documented acceptable alternatives |
+| `knowledge_delta` | 1 | `knowledge_brief` |
 
 Every stable tool appears as `expected_primary` at least once, so the
 runner can prove all capabilities remain discoverable. Negatives pin

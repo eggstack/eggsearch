@@ -5,6 +5,17 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 
+pub(super) const COMPACT_FIELDS: &[&str] = &[
+    "query",
+    "package",
+    "version",
+    "ecosystem",
+    "assess_applicability",
+    "dependency_files",
+    "goal",
+    "response_detail",
+];
+
 #[derive(Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SecuritySearchArgs {
     /// Query. May contain CVE/GHSA/RustSec identifiers.
@@ -69,13 +80,11 @@ pub struct SecuritySearchArgs {
     /// Dependency file paths for applicability.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_files: Vec<String>,
-    /// Task goal (usually omit; defaults to security_review).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub workflow: Option<String>,
-    /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
@@ -248,7 +257,7 @@ pub async fn run_security_search(
         dependency_file_roots = roots;
     }
 
-    let routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
+    let mut routing_decision = crate::meta::provider_diagnostics::resolve_provider_routing(
         &req.providers,
         None,
         state.adapter.provider_ids(),
@@ -263,6 +272,23 @@ pub async fn run_security_search(
         state.config.search.default_max_results,
         state.config.search.max_results_cap,
     );
+
+    if args.providers.is_empty()
+        && (req.cve_id.is_some()
+            || req.ghsa_id.is_some()
+            || req.osv_id.is_some()
+            || req.rustsec_id.is_some()
+            || req
+                .package
+                .as_deref()
+                .is_some_and(|package| !package.trim().is_empty()))
+    {
+        for provider_id in state.adapter.enabled_native_advisory_provider_ids() {
+            if !routing_decision.selected_providers.contains(&provider_id) {
+                routing_decision.selected_providers.push(provider_id);
+            }
+        }
+    }
 
     let mut req = req;
     req.providers = routing_decision.selected_providers.clone();

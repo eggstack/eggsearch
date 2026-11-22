@@ -7,7 +7,7 @@ from eggsearch import AsyncEggsearch, EggsearchError, tool_names
 
 
 async def main():
-    if len(tool_names()) != 10:
+    if len(tool_names()) != 9:
         raise AssertionError("unexpected canonical tool inventory")
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)

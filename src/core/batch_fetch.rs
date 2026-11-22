@@ -1,9 +1,13 @@
-//! Batch fetch request/response types for the `batch_fetch` tool.
+//! Fetch request/response types for the canonical fetch tool.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::fetch::ExtractMode;
+
+fn is_none_or_false(value: &Option<bool>) -> bool {
+    !value.unwrap_or(false)
+}
 
 /// A single item in a batch fetch request.
 ///
@@ -12,7 +16,7 @@ use crate::core::fetch::ExtractMode;
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BatchFetchItem {
-    /// Fetch an explicit HTTP(S) URL.
+    /// Fetch an explicit HTTP(S) URL; controls match `fetch`.
     Web {
         /// The URL to fetch. Must be a valid HTTP(S) URL.
         url: String,
@@ -34,7 +38,7 @@ pub enum BatchFetchItem {
         max_cache_age_seconds: Option<u64>,
         /// Optional focus query for deterministic query-focused chunk
         /// selection over the extracted document. Same validation as
-        /// `web_fetch` focus. No extra URL traversal.
+        /// `fetch` focus. No extra URL traversal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<String>,
         /// Maximum focused chunks to return (1-5, default 5).
@@ -44,50 +48,40 @@ pub enum BatchFetchItem {
         /// effective per-item `max_chars` budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
+        /// PDF options for this item; same fields and validation as `fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pdf: Option<crate::core::fetch::PdfFetchOptions>,
+        /// Render policy: `http_only`, `auto`, or `browser`; same as `fetch`.
+        #[schemars(with = "Option<crate::core::fetch::RenderPolicy>")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        render: Option<String>,
+        /// Named browser profile; same authorization as `fetch`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        browser_profile: Option<String>,
+        #[schemars(description = "Include a bounded viewport screenshot as MCP image content.")]
+        #[allow(missing_docs)]
+        #[serde(default, skip_serializing_if = "is_none_or_false")]
+        include_screenshot: Option<bool>,
     },
-    /// Fetch a repository file by structured locator.
+    /// Fetch a repository file by structured locator; controls match `repo_fetch`.
     Repo {
-        /// Code host. Accepted values: `github` (alias `gh`), `gitlab` (alias `gl`),
-        /// `codeberg` (alias `cb`), `gitea`, `forgejo`, or `workspace`.
+        /// Code host. Accepted values: github (alias gh), gitlab (alias gl),
+        /// codeberg (alias cb), gitea, forgejo, or workspace.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host: Option<String>,
-        /// Repository owner (or workspace root name for workspace locators).
-        owner: String,
-        /// Repository name.
-        repo: String,
-        /// Branch, tag, or commit ref.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        ref_name: Option<String>,
-        /// Full commit SHA for stable permalink construction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        commit_sha: Option<String>,
-        /// File path relative to repository root (or workspace root for workspace locators).
-        path: String,
-        /// First line to return (1-indexed, inclusive).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        line_start: Option<u32>,
-        /// Last line to return (1-indexed, inclusive).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        line_end: Option<u32>,
-        /// Extra lines of context before `line_start`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        context_before: Option<u32>,
-        /// Extra lines of context after `line_end`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        context_after: Option<u32>,
-        /// Maximum characters to return.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_chars: Option<usize>,
+        /// Structured repository target fields.
+        #[serde(flatten)]
+        target: crate::core::repo_fetch::RepoTarget,
         /// Optional focus query applied as a deterministic projection
         /// after the underlying repo fetch returns a bounded
-        /// document/span. Same validation as `web_fetch` focus.
+        /// document/span. Same validation as fetch focus. No extra URL traversal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<String>,
         /// Maximum focused chunks to return (1-5, default 5).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chunks: Option<usize>,
         /// Maximum focused characters to return. Defaults to the
-        /// effective per-item `max_chars` budget.
+        /// effective per-item max_chars budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
     },
@@ -98,15 +92,9 @@ impl BatchFetchItem {
     pub fn label(&self) -> String {
         match self {
             BatchFetchItem::Web { url, .. } => url.clone(),
-            BatchFetchItem::Repo {
-                owner,
-                repo,
-                path,
-                host,
-                ..
-            } => {
+            BatchFetchItem::Repo { target, host, .. } => {
                 let h = host.as_deref().unwrap_or("github");
-                format!("{h}:{owner}/{repo}/{path}")
+                format!("{h}:{}/{}/{}", target.owner, target.repo, target.path)
             }
         }
     }
@@ -115,7 +103,7 @@ impl BatchFetchItem {
     pub fn max_chars(&self) -> Option<usize> {
         match self {
             BatchFetchItem::Web { max_chars, .. } => *max_chars,
-            BatchFetchItem::Repo { max_chars, .. } => *max_chars,
+            BatchFetchItem::Repo { target, .. } => target.max_chars,
         }
     }
 
@@ -177,8 +165,8 @@ pub struct BatchFetchResult {
     pub stable_id: Option<String>,
     /// Whether this item was fetched successfully.
     pub ok: bool,
-    /// Serialized response payload (web_fetch or repo_fetch response shape).
-    /// Present only when `ok = true`.
+    /// Serialized response payload (fetch or repo_fetch response shape).
+    /// Budget-omitted items carry `null`; successful items carry their payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response: Option<serde_json::Value>,
     /// Error message. Present only when `ok = false`.
@@ -186,11 +174,17 @@ pub struct BatchFetchResult {
     pub error: Option<String>,
     /// Approximate character count of the returned text content.
     pub chars_returned: usize,
+    /// Unicode scalar count of the serialized response value before projection.
+    #[serde(default)]
+    pub payload_chars: usize,
+    /// Response fields removed to fit the aggregate payload budget.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub degraded_fields: Vec<String>,
     /// Whether this item's text was truncated at the per-item max_chars cap.
     pub truncated: bool,
 }
 
-/// Aggregate telemetry for a `batch_fetch` response.
+/// Aggregate telemetry for a canonical `fetch` response.
 ///
 /// All counters are deterministic derivations of the request and the
 /// per-item outcomes. Focus projection never changes stable item IDs;
@@ -240,7 +234,7 @@ fn is_zero(n: &usize) -> bool {
     *n == 0
 }
 
-/// Response type for the `batch_fetch` tool.
+/// Response type for the canonical `fetch` tool.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct BatchFetchResponse {
     /// Number of items successfully fetched.
@@ -251,6 +245,9 @@ pub struct BatchFetchResponse {
     pub truncated: bool,
     /// Approximate total characters returned across all items.
     pub total_chars_returned: usize,
+    /// Sum of serialized response-value characters across emitted items.
+    #[serde(default)]
+    pub total_payload_chars: usize,
     /// Per-item results, in input order.
     pub results: Vec<BatchFetchResult>,
     /// Batch-level warnings (e.g. budget exhaustion, partial failure).
@@ -280,6 +277,10 @@ mod tests {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         };
         let v = serde_json::to_value(&web).unwrap();
         assert_eq!(v["type"], "web");
@@ -287,16 +288,24 @@ mod tests {
 
         let repo = BatchFetchItem::Repo {
             host: Some("github".to_string()),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
@@ -318,26 +327,106 @@ mod tests {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         };
         assert_eq!(web.label(), "https://example.com");
 
         let repo = BatchFetchItem::Repo {
             host: None,
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
         };
         assert_eq!(repo.label(), "github:tokio-rs/axum/src/lib.rs");
+    }
+
+    #[test]
+    fn batch_fetch_target_options_default_and_round_trip() {
+        let legacy_web = serde_json::json!({
+            "type": "web",
+            "url": "https://example.com"
+        });
+        let parsed_web: BatchFetchItem = serde_json::from_value(legacy_web.clone()).unwrap();
+        match &parsed_web {
+            BatchFetchItem::Web {
+                pdf,
+                render,
+                browser_profile,
+                ..
+            } => {
+                assert!(pdf.is_none());
+                assert!(render.is_none());
+                assert!(browser_profile.is_none());
+            }
+            _ => panic!("expected web item"),
+        }
+        assert_eq!(serde_json::to_value(parsed_web).unwrap(), legacy_web);
+
+        let configured_web = serde_json::json!({
+            "type": "web",
+            "url": "https://example.com",
+            "pdf": {"pages": "1-2"},
+            "render": "auto",
+            "browser_profile": "docs"
+        });
+        let parsed_web: BatchFetchItem = serde_json::from_value(configured_web.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed_web).unwrap(), configured_web);
+
+        let legacy_repo = serde_json::json!({
+            "type": "repo",
+            "owner": "tokio-rs",
+            "repo": "axum",
+            "path": "src/lib.rs"
+        });
+        let parsed_repo: BatchFetchItem = serde_json::from_value(legacy_repo.clone()).unwrap();
+        match &parsed_repo {
+            BatchFetchItem::Repo { target, .. } => {
+                assert!(target.symbol.is_none());
+                assert!(target.symbol_kind.is_none());
+                assert!(target.match_text.is_none());
+                assert!(target.expand_to_block.is_none());
+                assert!(target.max_block_lines.is_none());
+                assert!(target.prefer_local.is_none());
+            }
+            _ => panic!("expected repo item"),
+        }
+        assert_eq!(serde_json::to_value(parsed_repo).unwrap(), legacy_repo);
+
+        let configured_repo = serde_json::json!({
+            "type": "repo",
+            "owner": "tokio-rs",
+            "repo": "axum",
+            "path": "src/lib.rs",
+            "symbol": "Router",
+            "symbol_kind": "struct",
+            "match_text": "pub struct Router",
+            "expand_to_block": true,
+            "max_block_lines": 80,
+            "prefer_local": true
+        });
+        let parsed_repo: BatchFetchItem = serde_json::from_value(configured_repo.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed_repo).unwrap(), configured_repo);
     }
 
     #[test]

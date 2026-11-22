@@ -41,8 +41,7 @@ fn build_structured_fetch(card: &crate::core::source_card::SourceCard) -> Option
     let repo = ce.repo.as_deref()?;
     let ref_name = ce.ref_name.as_deref()?;
     let path = ce.path.as_deref()?;
-    Some(RepoFetchRequest {
-        host: Some(host),
+    let mut request = RepoFetchRequest::from(crate::core::repo_fetch::RepoTarget {
         owner: owner.to_string(),
         repo: repo.to_string(),
         ref_name: Some(ref_name.to_string()),
@@ -52,20 +51,18 @@ fn build_structured_fetch(card: &crate::core::source_card::SourceCard) -> Option
         line_end: ce.match_line_end,
         context_before: ce.context_line_start.map(|_| 3),
         context_after: ce.context_line_end.map(|_| 3),
-        max_chars: None,
-        timeout_ms: None,
         symbol: ce.matched_symbol.clone(),
-        symbol_kind: ce.symbol_kind,
-        match_text: None,
+        symbol_kind: ce.symbol_kind.map(|kind| kind.as_str().to_string()),
         expand_to_block: Some(matches!(
             ce.source_role,
             Some(crate::core::code_evidence::SourceRole::Implementation)
                 | Some(crate::core::code_evidence::SourceRole::Test)
                 | Some(crate::core::code_evidence::SourceRole::Example)
         )),
-        max_block_lines: None,
-        prefer_local: None,
-    })
+        ..Default::default()
+    });
+    request.host = Some(host);
+    Some(request)
 }
 
 /// Determine expected content kind from source kind.
@@ -213,11 +210,7 @@ pub fn generate_suggested_fetches_with_mode(
                 .map(|r| r.as_str().to_string())
                 .collect();
 
-            let preferred_tool = if candidate.structured_repo_fetch {
-                Some("repo_fetch".to_string())
-            } else {
-                Some("web_fetch".to_string())
-            };
+            let preferred_tool = Some("fetch".to_string());
 
             let recommended_focus_query = structured_repo_fetch
                 .as_ref()
@@ -335,7 +328,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -362,7 +355,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -390,7 +383,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -425,7 +418,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                             stable: None,
                             stable_id: None,
                             source_id: card.stable_id.clone(),
-                            preferred_tool: Some("repo_fetch".to_string()),
+                            preferred_tool: Some("fetch".to_string()),
                             recommended_focus_query: None,
                             batch_item,
                         });
@@ -453,7 +446,7 @@ pub fn generate_complementary_suggestions(groups: &[RepoResultGroup]) -> Vec<Rep
                     stable: None,
                     stable_id: None,
                     source_id: card.stable_id.clone(),
-                    preferred_tool: Some("web_fetch".to_string()),
+                    preferred_tool: Some("fetch".to_string()),
                     recommended_focus_query: None,
                     batch_item: Some(crate::core::fetch_locator::url_to_batch_web_item(
                         &batch_url,
@@ -947,13 +940,13 @@ mod tests {
         assert!(!fetches.is_empty());
         assert_eq!(
             fetches[0].preferred_tool.as_deref(),
-            Some("repo_fetch"),
-            "candidate with structured_repo_fetch should prefer repo_fetch"
+            Some("fetch"),
+            "candidate with structured_repo_fetch should prefer fetch"
         );
     }
 
     #[test]
-    fn web_fetch_preferred_for_non_structured() {
+    fn fetch_preferred_for_non_structured() {
         let groups = vec![make_group(
             RepoResultGroupKind::OfficialDocs,
             vec![make_card("Docs", "https://docs.example.com")],
@@ -964,8 +957,8 @@ mod tests {
         assert!(!fetches.is_empty());
         assert_eq!(
             fetches[0].preferred_tool.as_deref(),
-            Some("web_fetch"),
-            "non-structured candidate should prefer web_fetch"
+            Some("fetch"),
+            "non-structured candidate should prefer fetch"
         );
     }
 
@@ -1279,12 +1272,12 @@ mod tests {
         )];
         let suggestions = generate_complementary_suggestions(&groups);
         for s in &suggestions {
-            // Changelog suggestions use web_fetch, others use repo_fetch
+            // Changelog suggestions use fetch, others use repo_fetch
             if s.reason != "changelog_source" {
                 assert_eq!(
                     s.preferred_tool.as_deref(),
-                    Some("repo_fetch"),
-                    "non-changelog complementary suggestions should prefer repo_fetch"
+                    Some("fetch"),
+                    "non-changelog complementary suggestions should prefer fetch"
                 );
             }
         }

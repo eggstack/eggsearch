@@ -20,22 +20,23 @@ changes follow additive-only evolution (see §8).
 
 ## 1. Stable Tool Surface
 
-Exactly ten tools, canonical names in deterministic alphabetical
+Exactly nine tools, canonical names in deterministic alphabetical
 order (`tool_names()`). `tests/docs_tool_names.rs` fails the build on
 any other count and on phantom tool-like names in docs.
 
 | Tool | Domain | Disclosure | Purpose |
 |------|--------|-----------|---------|
-| `batch_fetch` | fetch | deferred | bounded multi-target fetch over explicit targets |
 | `build_evidence_bundle` | evidence | deferred | deterministic evidence packaging for handoff |
+| `fetch` | fetch | core | bounded single- or multi-target web and repository fetching |
+| `knowledge_brief` | research | deferred | cutoff-aware candidate developments; not a claim that a model lacks a fact |
 | `provider_status` | diagnostic | diagnostic | diagnostic provider and capability report |
-| `repo_fetch` | repository | deferred | bounded repository file or span inspection |
 | `repo_map` | repository | deferred | repository structure discovery without contents |
 | `repo_search` | repository | core | structured repository evidence discovery |
 | `research_search` | research | deferred | multi-source research evidence discovery |
 | `security_search` | security | deferred | vulnerability and advisory evidence discovery |
-| `web_fetch` | web | core | bounded single-URL inspection |
 | `web_search` | web | core | general web source discovery |
+
+`web_fetch`, `batch_fetch` and `repo_fetch` stay callable compatibility aliases. They are not part of the nine canonical names.
 
 Each `ToolContract` carries `name`, `description` (selection-oriented,
 budgeted), `purpose`, `use_when`, `not_for`, `domain`
@@ -53,7 +54,7 @@ even though `probe: true` performs bounded live liveness checks.
 use-when/not-for, keywords, aliases, and the related/next graphs for
 host catalog indexing without returning full input schemas.
 
-`is_known_tool(name)` gates the ten canonical names. Harnesses must
+`is_known_tool(name)` gates the nine canonical names. Harnesses must
 ignore `next_actions` entries whose `tool` fails this check, and
 `sanitize_next_actions()` drops unknown tools and empty reason codes,
 clamps priority to 1–5, and truncates to `MAX_NEXT_ACTIONS`
@@ -338,7 +339,7 @@ Local workspace results include a `workspace_id` string
 from the canonical workspace root, remote URLs, and HEAD commit.
 Use it to track checkout state across tool invocations,
 deduplicate results from the same workspace, and correlate
-`repo_search`, `repo_fetch`, and `repo_map` calls. It changes only
+`repo_search`, `fetch`, and `repo_map` calls. It changes only
 when the root, remotes, or commit change.
 
 ---

@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `web_fetch`, `batch_fetch` web items, the unified `fetch` tool, and CLI `eggsearch fetch` now
+  reach a browser-gated origin for the same reason `web_search` already did. A `429` or `5xx` from
+  such an origin escalates once to the shipped browser render under `render: "auto"` instead of
+  returning `http_status`; a rendered document replaces the error only when the render ended on
+  `2xx`/`3xx` or completed a recognised wall, so a genuine `5xx` outage still errors and says so.
+  Under auto a gated status is not retried, `401`/`402`/`403`/`404` never render, and an origin
+  the browser served is not charged to the HTTP circuit breaker. CLI `eggsearch fetch` honours
+  `[fetch.browser].policy` (`auto` by default) with no new flag.
+
+- `brave` and `yahoo` return results when the origin gates access on browser execution. Both
+  engines keep the HTTP request as the first attempt and fall back once, inside the same request
+  deadline, to the shipped browser render when that attempt is blocked or answered with `429`/
+  `5xx`: Yahoo's empty `500` to a client that announces a headless browser becomes the results
+  page, and Brave's proof-of-work wall is completed by clicking the page's own `Verify` control.
+  The rendered DOM goes through each provider's existing parser, so the four-outcome contract is
+  unchanged. Without the `browser` feature, a discovered browser, or `[fetch.browser].enabled`,
+  the provider reports the HTTP failure exactly as before. A browser-gated search costs one render
+  (seconds, not milliseconds), bounded by the request deadline.
+- The launched browser presents the identity of the Chrome build it actually is instead of
+  `HeadlessChrome/…`, and browser flags reach Chromium as key/value pairs. A literal
+  `--key=value` argument was previously emitted as `----key=value` and silently ignored, so
+  `--user-data-dir` and the autoplay policy never reached the process.
+
+- `knowledge_brief` resolves model cutoffs from a bundled, source-verified catalog that now
+  covers 11 models across OpenAI, Anthropic, and xAI instead of a single row, and reports
+  `model_resolution.catalog_as_of` so a stale catalog is visible. Every shipped row carries the
+  vendor page it was read from and the date it was verified; a model whose vendor publishes no
+  cutoff stays explicitly unresolved rather than guessed. The manifest is validated against the
+  bundled snapshot, so an alias collision, a precision mismatch, or a row missing from either
+  side fails a test. Operator and caller overrides keep precedence.
+- The local evidence index now reports `coverage.index_status: disabled` when a request asks to
+  read or retain while the index is switched off, instead of reusing `offline` for both, and a
+  disabled request never opens or creates the database. An `index` refresh that emits nothing
+  separates `index_not_seeded` from `index_stale` and from a genuine
+  `no_matching_index_hits`, so an operator can tell an empty index from an expired one.
+- `knowledge_brief` coverage now accounts for selected cards as dated/undated and cutoff-relative,
+  reports selected providers that advertise result timestamps, and explains empty delta sets with
+  reason-specific warnings. Dates remain provider-declared publication timestamps only; prose,
+  snippets, and fetched HTML are not used to infer them. Retained excerpts prefer heading-marked
+  chunks over leading site chrome and mark possible residual chrome when heading metadata is absent.
+  Index permission warnings identify the rejected directory, its current mode, and the required
+  `0700` mode.
+- `security_search` selects every provider that configuration already enables and that
+  advertises native advisory lookup for identifier-bearing requests (`cve_id`, `ghsa_id`,
+  `osv_id`, `rustsec_id`, or `package`), so an enabled OSV provider answers a CVE query by
+  default instead of being silently skipped. An explicit `providers` list is unchanged and
+  stays authoritative; no provider is enabled by the code and `default_providers` is
+  untouched. A native vulnerability now carries an optional `summary` (sanitized as external
+  untrusted text and bounded to 500 characters, omitted when the provider publishes none), so
+  the response can say what an advisory is without a second fetch. The
+  `native_advisory_search_unavailable` warning appears only when no enabled provider
+  advertises a native operation, `severity_unavailable` appears only when no returned
+  vulnerability carries severity, and a provider-operation budget skip names its cap.
+- A pass cookie the fetch path is issued is now reused for a later fetch to the same origin
+  instead of being solved again every time. The cache is process-local and keyed by origin
+  (scheme, host, effective port), holds at most 32 origins and 64 KiB, and is never written to
+  disk. The window is the lifetime the upstream published, clamped by `cookie_ttl_seconds`, so
+  `0` still disables reuse and a malformed, zero, or already-expired lifetime stores nothing. A
+  fetch that crossed an origin stores nothing and reuses nothing. A pair set the upstream
+  rejects is evicted, and the same call then solves the challenge it was already holding and
+  replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A
+  transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is
+  attempted. One fetch call still performs at most one solve and one replay; a reused pair set
+  performs no solve at all, and a refused pair set is presented at most once. No tool, argument,
+  schema, or configuration key changes.
+- `web_fetch` and `batch_fetch` web items accept opt-in `include_screenshot` to capture a bounded 1280×720 viewport PNG (maximum 4 MiB) as native MCP image content. Structured JSON remains unchanged; recognized PDF responses are skipped, screenshot requests bypass caches, and screenshot-bearing batches run synchronously with images associated by original item index and label.
+- `batch_fetch` web items accept the same PDF page-selection options as `web_fetch`, with page syntax prevalidated before item fetching. `repo_fetch` extracts explicitly named PDFs under configured local workspace roots by extension or `%PDF-` prefix, under `[local].pdf_max_file_bytes` and the existing PDF feature/config gates; PDFs remain excluded from local indexing and repo maps.
+- `batch_fetch` web items accept `pdf`, `render`, and `browser_profile` with the same routing and cache semantics as `web_fetch`; repo items accept `symbol`, `symbol_kind`, `match_text`, `expand_to_block`, `max_block_lines`, and `prefer_local`. Host-local scope metadata now restricts batch workspace items to the same authorized view as `repo_fetch`. Item order, per-item failures, stable IDs, budgets, and telemetry are unchanged.
 - `web_fetch` accepts the field names used by the reference MCP fetch server and common
   search/fetch servers as compatibility aliases: `max_length` for `max_chars`, `start_index` for
   `offset`, and `question` or `prompt` for `focus`. Aliases are wire-level spellings, not separate
@@ -122,6 +190,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The advertised MCP inventory is nine tools. `fetch` is the only advertised repository
+  read: a repo item carries the locator, ref, symbol, line range, and `prefer_local`
+  controls that `repo_fetch` accepted, and mixed web/repo arrays still work. `repo_fetch`
+  stays routed and callable with its unchanged request and response, and is now a
+  compatibility alias alongside `web_fetch` and `batch_fetch`: absent from `tools/list`,
+  presets, `next_actions`, and SDK discovery. Generated follow-ups name `fetch` and carry a
+  repo item, so a suggestion never asks the caller to reconstruct a locator
+  (ADR-0022).
+- Advertised search vocabularies are now single-sourced. `goal` is advertised for
+  `repo_search`, `research_search`, and `security_search`, and `research_domain` for
+  `research_search`, from the same constants the parsers accept, identically in the full
+  and compact profiles. Compact per-tool field allow-lists live with their argument types.
+- The `build_evidence_bundle` input schema advertises a bounded passthrough shape for
+  `sources` and `fetches` instead of inlining 39 transitive definitions. Nested metadata is
+  accepted verbatim at runtime and bundle identity is unchanged; the tool definition drops
+  from 40,152 to 2,578 bytes and the full advertisement from 72,368 to 31,511 bytes.
+- `tests/tool_inventory_parity.rs` now asserts that the contract registry, core
+  follow-up gate, presets, SDK discovery, documented preset table, and documented
+  canonical list all agree, and that the compatibility aliases stay routed but
+  undiscoverable.
+
+- Computational challenge solving is now on by default, as ADR-0019 §4 specified:
+  `[search.challenge].enabled` defaults to `true`, and the shipped ceilings cover the
+  walls the supported upstreams serve today (`max_difficulty = 6`,
+  `max_attempts = 20000000`, `timeout_ms = 10000`). A challenged `startpage` or
+  `mojeek` request therefore returns results instead of `blocked` without operator
+  configuration; `enabled = false` restores the previous behaviour. Interactive
+  CAPTCHA, OCR, third-party solving, and every other prohibition in ADR-0009 are
+  unchanged, and each solve still runs inside the call deadline with one solve per
+  provider per reuse window.
+- `fetch` now enforces `max_total_chars` against the emitted payload instead of
+  the readable-text measure alone. Each item reports `payload_chars` (the
+  serialized character count of its response value before projection) and the
+  envelope reports `total_payload_chars`. Before any requested text is clipped, a
+  repo item drops optional structure in a fixed order — `document.blocks` and
+  `document.chunks`, then `document`, then `lines` — and records each removal in
+  `degraded_fields` with one `batch_payload_budget_degraded` warning mapped to the
+  existing `fetch_content_truncated` code. `chars_returned` keeps its readable
+  meaning and `truncated` still means text was clipped; an item that cannot fit
+  after the ladder remains a failed, omitted item. No tool, argument, or
+  configuration default changes.
+- Local workspace search continues past the path-ranked first window for content
+  and symbol queries. When the first pass admits fewer than the requested
+  results, one bounded second pass scans the remaining inventory in deterministic
+  relative-path order, accelerated by a bounded `git grep` literal hint that only
+  skips candidates (every match is still validated and read locally). It stops at
+  the result cap, 512 files, 8 MiB, 1.5 seconds, or the request deadline, and a
+  git failure falls back to the walk. A symbol hint can now find a definition
+  without a path hint. `local_search_truncated` means a bound cut the scan short
+  or returned matches were dropped; `local_search_completed_no_matches` now
+  requires the scan to have completed. No tool, argument, schema, configuration
+  key, or shipped default changes.
+- Under `render: "auto"` the fetch path now runs the bounded challenge solver before any browser
+  escalation, so a solvable Anubis or ALTCHA wall returns its document without launching Chrome.
+  A wall the solver leaves unsolved is completed by the browser when one is available, and a wall
+  that does not resolve inside `verification_wait_ms` is returned with
+  `manual_interaction_required: true` and the `fetch_challenge_page` warning instead of as an
+  unmarked document. Completion is decided by live `classify_response` over the rendered page
+  rather than by four title substrings, and
+  `provider_status.challenge_solver.providers.<label>` gains a `browser_completions` count. One
+  solver attempt pair and one escalation per call still hold.
 - Every tool now advertises all four static MCP behavior hints: `readOnlyHint: true`,
   `destructiveHint: false`, `idempotentHint: true`, and an accurate `openWorldHint` (`false` only
   for `provider_status` and `build_evidence_bundle`). The hints are explicit rather than relying on
@@ -187,6 +316,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `fetch` now reports its accepted web and repo item shapes when an item carries a missing or
+  unknown `type` tag, instead of a serde deserialization detail naming an internal Rust type. The
+  accepted shapes, the existing per-field messages for a tagged item, and the advertised schema
+  are unchanged.
+- A checkout that is a linked git worktree now resolves its remote identity through the shared
+  configuration named by the worktree's `commondir`, so `repo_fetch` with `prefer_local: true`
+  returns the local copy instead of silently falling back to a remote fetch. When no local
+  checkout matches, the remote result is still returned and the response states that the local
+  copy was skipped and why.
+- The unified `fetch` envelope charges a repo item for its readable text and bounded metadata
+  instead of its whole serialized response. A repository file that `repo_fetch` returns at
+  default settings is returnable through `fetch` at the default 50,000-character budget:
+  oversized text is clipped with `truncated: true` before an item is omitted, and structural
+  `document`/`lines` copies are not charged twice. An item that cannot fit even its locator
+  and metadata is `ok: false` with `response: null`, `chars_returned: 0`, a
+  `batch_total_budget_exhausted` error and warning, and it counts in `failed` and
+  `telemetry.items_failed` instead of reporting an empty success. A fetch item missing a
+  required locator field now names the field and the accepted shape instead of the
+  untagged-enum deserialization message.
+- Local `repo_search` admits a file only when the query, its path or file name, its content,
+  or a requested symbol matches; source-role bonuses still rank candidates but no longer admit
+  them, so a query that matches nothing in a non-empty workspace returns zero local cards with
+  `local_search_completed_no_matches` instead of README inventory cards. A request that names
+  a remote repository (`host`, `owner`, `repo`, `org`, or a resolved `repo:owner/name`
+  token) adds local results only when `include_local: true` is explicit; an omitted value
+  still includes them for unscoped requests, and `false` still suppresses them everywhere.
+  `local_search_truncated` now means admitted matches were dropped or inventory truncation
+  could have hidden a match, never candidate pruning alone.
 - PDF pre-parse scanning resolves indirect `/Length` references from their object headers instead of refusing every filtered stream that uses them, so ordinary generated PDFs extract in default builds.
 - `web_fetch` `render = "auto"` classifies JavaScript shells from document text rather than the sanitized framing text or the HTML source length, so escalation actually triggers on empty mount-point pages.
 
@@ -210,6 +367,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `duckduckgo` skips sponsored containers (`result--ad`) instead of returning
   paid placements as organic results, and `startpage` classifies the Anubis
   challenge page (`#anubis_challenge`) as `blocked` instead of `parse_error`.
+- The published crate and the Python sdist now carry every asset the library
+  reads at compile time: the bundled knowledge-delta catalog and the
+  release-target mirror were missing from `[package] include`, so `cargo
+  package` verification and the extracted-sdist rebuild failed on a clean
+  tarball. `packaging/check-packaged-assets.py` now compares
+  `cargo package --list` against every `include_str!`/`include_bytes!` literal
+  under `src/`.
+- A challenge page served with a non-success status is classified as `blocked` instead
+  of a transport failure. Brave answers its proof-of-work wall with HTTP 429 and an
+  80 KiB challenge document; the engine previously reported `rate_limited` without
+  reading the body. Every HTML engine now reads and classifies the body for any
+  status, so the outcome names the challenge and the status, and a non-success
+  body that matches no marker keeps `BadStatus`.
+- A cold local `repo_search` no longer spends its whole request budget on the
+  first inventory build: the scan deadline starts when that build finishes, and
+  the build keeps its own 5-second git bound. A content-only query in a small
+  checkout therefore returns its match on a loaded machine instead of an empty
+  result labelled `local_search_timeout`. The second pass also skips its
+  `git grep` hint when fewer than 32 candidates remain unscanned, since walking
+  a small set costs less than one git spawn.
 
 ## [0.4.4] - 2026-10-19
 

@@ -830,9 +830,9 @@ impl EgressSection {
         }
         #[cfg(not(feature = "egress"))]
         {
-            return Err(CoreError::Config(
+            Err(CoreError::Config(
                 "egress route is configured but this binary was built without the `egress` feature; rebuild with --features egress or set [egress].enabled = false".to_string(),
-            ));
+            ))
         }
         #[cfg(feature = "egress")]
         {
@@ -952,6 +952,9 @@ pub struct AppConfig {
     /// Optional MCP presentation settings.
     #[serde(default)]
     pub mcp: McpSection,
+    /// Optional cutoff overrides and local evidence index.
+    #[serde(default)]
+    pub knowledge_delta: crate::core::knowledge_delta::KnowledgeDeltaSection,
 }
 
 impl AppConfig {
@@ -1604,6 +1607,12 @@ impl AppConfig {
         }
 
         // Local config validation
+        if !(1..=PDF_MAX_BYTES_LIMIT).contains(&self.local.pdf_max_file_bytes) {
+            return Err(CoreError::Config(format!(
+                "[local].pdf_max_file_bytes ({}) must be between 1 and {PDF_MAX_BYTES_LIMIT}",
+                self.local.pdf_max_file_bytes
+            )));
+        }
         if self.local.enabled {
             if self.local.roots.is_empty() {
                 return Err(CoreError::Config(
@@ -1684,6 +1693,7 @@ impl AppConfig {
             }
         }
         self.egress.validate()?;
+        self.knowledge_delta.validate()?;
         Ok(())
     }
 

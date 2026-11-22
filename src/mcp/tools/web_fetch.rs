@@ -1,9 +1,18 @@
 use super::common::*;
+#[cfg(feature = "browser")]
+use super::web_fetch_escalation::{escalate_gated_status, GatedEscalation, GatedEscalationRequest};
+use super::web_fetch_window::{windowed_fetch, WindowedFetch};
+#[cfg(feature = "browser")]
+use crate::fetch::browser::gated_status;
 use crate::fetch::FetchClient;
 use crate::mcp::policy::{fetch_allowed, web_fetch_denied_message, Policy};
 use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+fn is_none_or_false(value: &Option<bool>) -> bool {
+    !value.unwrap_or(false)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RenderRequest {
@@ -23,7 +32,97 @@ fn parse_render_request(raw: Option<&str>) -> Result<RenderRequest, ToolError> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub(crate) fn validate_batch_route_options(
+    state: &ServerState,
+    url: &str,
+    render: Option<&str>,
+    browser_profile: Option<&str>,
+    include_screenshot: bool,
+) -> Result<(), ToolError> {
+    #[cfg(not(feature = "browser"))]
+    let _ = url;
+
+    let configured_render = if state.config.fetch.browser.enabled {
+        match state.config.fetch.browser.policy.as_str() {
+            "http_only" | "auto" | "browser" => state.config.fetch.browser.policy.as_str(),
+            _ => "http_only",
+        }
+    } else {
+        "http_only"
+    };
+    let parsed_render_request = parse_render_request(Some(render.unwrap_or(configured_render)))?;
+    if include_screenshot && render == Some("http_only") {
+        return Err(ToolError::conflicting_arguments(
+            "include_screenshot=true conflicts with explicit render=http_only",
+            Some("render"),
+        ));
+    }
+    let render_request = if include_screenshot {
+        RenderRequest::Browser
+    } else {
+        parsed_render_request
+    };
+
+    #[cfg(not(feature = "browser"))]
+    {
+        if matches!(render_request, RenderRequest::Browser) || browser_profile.is_some() {
+            return Err(browser_not_compiled_error());
+        }
+    }
+
+    #[cfg(feature = "browser")]
+    {
+        use crate::fetch::browser::RenderPolicy;
+        let render_policy = match render_request {
+            RenderRequest::HttpOnly => RenderPolicy::HttpOnly,
+            RenderRequest::Auto => RenderPolicy::Auto,
+            RenderRequest::Browser => RenderPolicy::Browser,
+        };
+        if matches!(render_policy, RenderPolicy::HttpOnly) && browser_profile.is_some() {
+            return Err(ToolError::Validation(
+                "browser_profile is not valid with render=http_only".to_string(),
+            ));
+        }
+        let explicit_browser =
+            matches!(render_policy, RenderPolicy::Browser) || browser_profile.is_some();
+        match state.browser_lifecycle() {
+            None if explicit_browser => return Err(browser_disabled_error()),
+            Some(lifecycle) if !lifecycle.is_available() && explicit_browser => {
+                return Err(browser_unavailable_error(
+                    "browser rendering is enabled but no Chrome/Chromium executable was found; \
+                     set [fetch.browser].executable or install Chrome/Chromium",
+                ));
+            }
+            _ => {}
+        }
+        if let Some(profile_name) = browser_profile {
+            let mgr = state.profile_manager.as_ref().ok_or_else(|| {
+                ToolError::Validation(
+                    "browser profiles are not enabled; \
+                     set [fetch.browser].persistent_profiles_enabled = true"
+                        .to_string(),
+                )
+            })?;
+            let parsed_url = url::Url::parse(url)
+                .map_err(|error| ToolError::Validation(format!("invalid URL: {error}")))?;
+            let request_origin = format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
+            mgr.resolve_for_origin(profile_name, &request_origin)
+                .map_err(|error| match error {
+                    crate::fetch::browser::ProfileError::ProfileNotFound(message) => {
+                        ToolError::Validation(format!("browser_profile: {message}"))
+                    }
+                    crate::fetch::browser::ProfileError::ProfilesDisabled => {
+                        ToolError::Validation("browser profiles are not enabled".to_string())
+                    }
+                    other => ToolError::internal(format!("browser_profile: {other}")),
+                })?;
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
     pub url: String,
@@ -78,6 +177,11 @@ pub struct WebFetchArgs {
     /// Requires the `browser` feature.
     #[serde(default)]
     pub browser_profile: Option<String>,
+    #[schemars(
+        description = "Include a bounded viewport screenshot of an HTTP(S) webpage as MCP image content."
+    )]
+    #[serde(default, skip_serializing_if = "is_none_or_false")]
+    pub include_screenshot: Option<bool>,
     /// Zero-based character offset into the addressable document text.
     /// `start_index` is accepted as a compatibility alias.
     #[serde(default, alias = "start_index")]
@@ -104,6 +208,76 @@ pub async fn run_web_fetch_with_progress(
     args: WebFetchArgs,
     progress: &mut crate::mcp::progress::ProgressSink,
 ) -> Result<serde_json::Value, ToolError> {
+    run_web_fetch_outcome_with_progress(state, args, progress)
+        .await
+        .map(|outcome| outcome.value)
+}
+
+pub(crate) async fn run_web_fetch_outcome_with_progress(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+    progress: &mut crate::mcp::progress::ProgressSink,
+) -> Result<ToolOutcome, ToolError> {
+    run_web_fetch_inner(state, args, progress, None, None, true).await
+}
+
+pub(crate) async fn run_web_fetch_with_prepared_client(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+    client: Arc<FetchClient>,
+    budget_ms: u64,
+) -> Result<ToolOutcome, ToolError> {
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    run_web_fetch_inner(
+        state,
+        args,
+        &mut progress,
+        Some(client),
+        Some(budget_ms),
+        true,
+    )
+    .await
+}
+
+pub(crate) async fn run_web_fetch_for_knowledge_brief(
+    state: Arc<ServerState>,
+    url: String,
+    focus: String,
+    max_chars: usize,
+) -> Result<serde_json::Value, ToolError> {
+    let args = WebFetchArgs {
+        url,
+        max_chars: Some(max_chars),
+        timeout_ms: None,
+        extract_mode: Some(crate::core::fetch::ExtractMode::Text),
+        include_links: Some(false),
+        pdf: None,
+        cache_policy: None,
+        max_cache_age_seconds: None,
+        focus: Some(focus),
+        focus_max_chunks: Some(2),
+        focus_max_chars: Some(max_chars),
+        render: Some("http_only".into()),
+        browser_profile: None,
+        include_screenshot: Some(false),
+        offset: None,
+        limit: None,
+        response_detail: Some(crate::mcp::projection::ResponseDetail::Diagnostic),
+    };
+    let mut progress = crate::mcp::progress::ProgressSink::disabled();
+    run_web_fetch_inner(state, args, &mut progress, None, None, false)
+        .await
+        .map(|outcome| outcome.value)
+}
+
+async fn run_web_fetch_inner(
+    state: Arc<ServerState>,
+    args: WebFetchArgs,
+    progress: &mut crate::mcp::progress::ProgressSink,
+    prepared_client: Option<Arc<FetchClient>>,
+    prepared_budget_ms: Option<u64>,
+    allow_challenge_replay: bool,
+) -> Result<ToolOutcome, ToolError> {
     use crate::core::fetch::ExtractMode;
     use crate::fetch::accept::select_accept_policy;
     use crate::fetch::cache::{
@@ -116,18 +290,24 @@ pub async fn run_web_fetch_with_progress(
         return Err(ToolError::Validation(web_fetch_denied_message()));
     }
 
-    if args.url.trim().is_empty() {
-        return Err(ToolError::Validation("url must not be empty".into()));
-    }
-
-    let trimmed_url = args.url.trim();
-    let lower = trimmed_url.to_ascii_lowercase();
-    if !lower.starts_with("http://") && !lower.starts_with("https://") {
-        return Err(ToolError::Validation(format!(
-            "url scheme must be http or https, got: {}",
-            trimmed_url.chars().take(20).collect::<String>()
-        )));
-    }
+    let target = crate::core::fetch_locator::resolve_fetch_target(
+        crate::core::fetch_locator::FetchTarget::WebUrl(&args.url),
+    )
+    .map_err(ToolError::Validation)?;
+    let crate::core::fetch_locator::FetchLocator::WebUrl(resolved_url) = &target else {
+        return Err(ToolError::internal(
+            "web fetch resolved to a non-web target",
+        ));
+    };
+    let trimmed_url = resolved_url.as_str();
+    let include_screenshot = args.include_screenshot.unwrap_or(false);
+    validate_batch_route_options(
+        state.as_ref(),
+        trimmed_url,
+        args.render.as_deref(),
+        args.browser_profile.as_deref(),
+        include_screenshot,
+    )?;
 
     if let Some(0) = args.max_chars {
         return Err(ToolError::Validation("max_chars must be > 0".to_string()));
@@ -163,28 +343,38 @@ pub async fn run_web_fetch_with_progress(
     let effective_timeout_ms = args
         .timeout_ms
         .filter(|ms| *ms < state.config.fetch.timeout_ms);
-    let budget_ms = effective_timeout_ms.unwrap_or(state.config.fetch.timeout_ms);
+    let budget_ms = prepared_budget_ms
+        .unwrap_or_else(|| effective_timeout_ms.unwrap_or(state.config.fetch.timeout_ms));
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
 
-    let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
-        ToolError::internal("fetch client unavailable; is [fetch].enabled = true?".to_string())
-    })?;
-
-    let client =
-        if let Some(ms) = effective_timeout_ms {
-            Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
-                ToolError::internal(format!("failed to create timeout override: {e}"))
-            })?)
-        } else {
-            base_client
-        };
+    let client: Arc<FetchClient> = match prepared_client {
+        Some(client) => client,
+        None => {
+            let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
+                ToolError::internal(
+                    "fetch client unavailable; is [fetch].enabled = true?".to_string(),
+                )
+            })?;
+            if let Some(ms) = effective_timeout_ms {
+                Arc::new(base_client.with_timeout_ms(ms).map_err(|e| {
+                    ToolError::internal(format!("failed to create timeout override: {e}"))
+                })?)
+            } else {
+                base_client
+            }
+        }
+    };
 
     let include_links = args
         .include_links
         .unwrap_or(state.config.fetch.include_links_default);
 
-    let cache_policy = crate::core::fetch_policy::cache_policy_or_default(args.cache_policy);
+    let cache_policy = if include_screenshot {
+        crate::core::fetch::FetchCachePolicy::Bypass
+    } else {
+        crate::core::fetch_policy::cache_policy_or_default(args.cache_policy)
+    };
 
     if let Err(e) = crate::core::fetch_policy::validate_cache_age(args.max_cache_age_seconds) {
         return Err(ToolError::Validation(e));
@@ -235,8 +425,13 @@ pub async fn run_web_fetch_with_progress(
     } else {
         "http_only"
     };
-    let render_request =
+    let parsed_render_request =
         parse_render_request(Some(args.render.as_deref().unwrap_or(configured_render)))?;
+    let render_request = if include_screenshot {
+        RenderRequest::Browser
+    } else {
+        parsed_render_request
+    };
 
     #[cfg(feature = "browser")]
     let render_policy = match render_request {
@@ -413,40 +608,50 @@ pub async fn run_web_fetch_with_progress(
                         include_media,
                         state.config.fetch.sanitize_output,
                     );
-                    let derive = || async {
-                        let mut derived = client.derive_from_raw(
-                            trimmed_url,
-                            raw_entry.final_url.clone(),
-                            raw_entry.status,
-                            raw_entry.content_type.clone(),
-                            raw_entry.headers.clone(),
-                            raw_entry.content_length_header,
-                            raw_entry.redirect_count,
-                            raw_entry.body.to_vec(),
-                            raw_entry.truncated,
-                            budgets,
-                            extract_mode,
-                            include_links,
-                            args.pdf.as_ref(),
-                            None,
-                        )?;
-                        derived.transport = Some(
-                            match raw_entry.representation {
-                                crate::fetch::cache::RawRepresentation::Http => "http",
-                                crate::fetch::cache::RawRepresentation::BrowserDom => "browser",
+                    let derive = |cache_derived: bool| {
+                        let client = &client;
+                        let raw_entry = &raw_entry;
+                        let derived_key = &derived_key;
+                        let pdf = args.pdf.as_ref();
+                        async move {
+                            let mut derived = client.derive_from_raw(
+                                trimmed_url,
+                                raw_entry.final_url.clone(),
+                                raw_entry.status,
+                                raw_entry.content_type.clone(),
+                                raw_entry.headers.clone(),
+                                raw_entry.content_length_header,
+                                raw_entry.redirect_count,
+                                raw_entry.body.to_vec(),
+                                raw_entry.truncated,
+                                budgets,
+                                extract_mode,
+                                include_links,
+                                pdf,
+                                None,
+                            )?;
+                            derived.transport = Some(
+                                match raw_entry.representation {
+                                    crate::fetch::cache::RawRepresentation::Http => "http",
+                                    crate::fetch::cache::RawRepresentation::BrowserDom => "browser",
+                                }
+                                .to_string(),
+                            );
+                            derived.browser_escalated = raw_entry.browser_escalated;
+                            if cache_derived {
+                                cache
+                                    .insert_derived(
+                                        derived_key.clone(),
+                                        derived_cache_entry(raw_hash, derived_key, &derived),
+                                    )
+                                    .await;
                             }
-                            .to_string(),
-                        );
-                        derived.browser_escalated = raw_entry.browser_escalated;
-                        cache
-                            .insert_derived(
-                                derived_key.clone(),
-                                derived_cache_entry(raw_hash, &derived_key, &derived),
-                            )
-                            .await;
-                        Ok::<_, crate::fetch::FetchError>(derived)
+                            Ok::<_, crate::fetch::FetchError>(derived)
+                        }
                     };
                     let locally_fresh = raw_entry.freshness.is_fresh()
+                        && (!raw_entry.freshness.private
+                            || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
                         && entry_satisfies_caller_max_age(&raw_entry);
                     let force_revalidation =
                         cache_policy == crate::core::fetch::FetchCachePolicy::Refresh;
@@ -462,13 +667,15 @@ pub async fn run_web_fetch_with_progress(
                                     state.config.fetch.sanitize_output,
                                 ))
                             } else {
-                                derive().await.ok()
+                                derive(true).await.ok()
                             };
                     } else if matches!(
                         raw_entry.representation,
                         crate::fetch::cache::RawRepresentation::Http
                     ) && !raw_entry.freshness.no_store
                         && !raw_entry.freshness.no_cache
+                        && (!raw_entry.freshness.private
+                            || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
                         && (raw_entry.validators.etag.is_some()
                             || raw_entry.validators.last_modified.is_some())
                     {
@@ -492,7 +699,6 @@ pub async fn run_web_fetch_with_progress(
                                     .await
                                 {
                                     Ok((304, reval_headers, _, _)) => {
-                                        metadata.cache_status = CacheStatus::Revalidated;
                                         let mut updated_freshness = raw_entry.freshness.clone();
                                         let mut updated_validators = raw_entry.validators.clone();
                                         crate::fetch::cache::apply_304_headers(
@@ -500,34 +706,51 @@ pub async fn run_web_fetch_with_progress(
                                             &mut updated_validators,
                                             &reval_headers,
                                         );
+                                        let revalidated_cacheable =
+                                            crate::fetch::cache::should_cache_response(
+                                                raw_entry.status,
+                                                raw_entry.content_type.as_deref(),
+                                                &updated_freshness,
+                                                &scope,
+                                            );
+                                        let revalidated_status = if revalidated_cacheable {
+                                            CacheStatus::Revalidated
+                                        } else {
+                                            CacheStatus::NotCacheable
+                                        };
+                                        metadata.cache_status = revalidated_status;
                                         updated_freshness.fetched_at =
                                             Some(std::time::SystemTime::now());
-                                        cache
-                                            .insert_raw(
-                                                raw_key,
-                                                crate::fetch::cache::RawFetchCacheEntry {
-                                                    freshness: updated_freshness,
-                                                    validators: updated_validators,
-                                                    ..raw_entry.clone()
-                                                },
-                                            )
-                                            .await;
-                                        cached_response = if let Some(derived) =
-                                            cache.get_derived_shared(&derived_key).await
-                                        {
-                                            let mut resp = cached_document_response(
-                                                trimmed_url,
-                                                &raw_entry,
-                                                &derived.response,
-                                                budgets.window_chars(),
-                                                state.config.fetch.sanitize_output,
-                                            );
-                                            resp.cache_status =
-                                                crate::fetch::cache::CacheStatus::Revalidated;
-                                            Some(resp)
+                                        if revalidated_cacheable {
+                                            cache
+                                                .insert_raw(
+                                                    raw_key.clone(),
+                                                    crate::fetch::cache::RawFetchCacheEntry {
+                                                        freshness: updated_freshness,
+                                                        validators: updated_validators,
+                                                        ..raw_entry.clone()
+                                                    },
+                                                )
+                                                .await;
+                                            cached_response = if let Some(derived) =
+                                                cache.get_derived_shared(&derived_key).await
+                                            {
+                                                let mut resp = cached_document_response(
+                                                    trimmed_url,
+                                                    &raw_entry,
+                                                    &derived.response,
+                                                    budgets.window_chars(),
+                                                    state.config.fetch.sanitize_output,
+                                                );
+                                                resp.cache_status = revalidated_status;
+                                                Some(resp)
+                                            } else {
+                                                derive(true).await.ok()
+                                            };
                                         } else {
-                                            derive().await.ok()
-                                        };
+                                            cache.invalidate_raw_response(&raw_key, raw_hash).await;
+                                            cached_response = derive(false).await.ok();
+                                        }
                                     }
                                     Ok(_) => {}
                                     Err(reval_err) => {
@@ -551,7 +774,7 @@ pub async fn run_web_fetch_with_progress(
                                                     budgets.window_chars(),
                                                     state.config.fetch.sanitize_output,
                                                 )),
-                                                None => derive().await.ok(),
+                                                None => derive(true).await.ok(),
                                             };
                                         if let Some(mut resp) = cached {
                                             metadata.cache_status = CacheStatus::Hit;
@@ -580,6 +803,10 @@ pub async fn run_web_fetch_with_progress(
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
     progress.phase("plan");
     let mut auto_escalation_unavailable = false;
+    #[cfg(feature = "browser")]
+    let mut gated_escalation_spent = false;
+    #[allow(unused_mut)]
+    let mut screenshot_png: Option<Vec<u8>> = None;
 
     #[cfg(feature = "browser")]
     let browser_direct = matches!(render_policy, crate::fetch::browser::RenderPolicy::Browser);
@@ -602,13 +829,18 @@ pub async fn run_web_fetch_with_progress(
                         state.config.fetch.sanitize_output,
                         &render_policy,
                         profile_chrome_data_dir.as_deref(),
+                        include_screenshot,
                     ),
                 )
                 .await
                 {
-                    Ok(Ok(result)) => {
+                    Ok(Ok(outcome)) => {
+                        screenshot_png = outcome.screenshot.map(|capture| capture.png().to_vec());
+                        if outcome.result.challenge_completed {
+                            crate::challenge_replay::record_browser_completion();
+                        }
                         let resp = crate::fetch::browser::browser_result_to_response(
-                            result,
+                            outcome.result,
                             trimmed_url,
                             budgets,
                             extract_mode,
@@ -694,57 +926,78 @@ pub async fn run_web_fetch_with_progress(
                         ctrl.record_success(&origin_key).await;
                     }
 
-                    #[cfg(feature = "browser")]
-                    let mut escalated = false;
-                    #[cfg(not(feature = "browser"))]
-                    let escalated = false;
-
-                    #[cfg(feature = "browser")]
-                    if matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto) {
-                        let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                        let text_len = resp
-                            .document
-                            .as_ref()
-                            .map(|document| {
-                                document
-                                    .blocks
-                                    .iter()
-                                    .map(|block| block.text.trim().chars().count())
-                                    .sum::<usize>()
-                            })
-                            .or_else(|| {
-                                resp.text.as_deref().map(|text| text.trim().chars().count())
-                            })
-                            .unwrap_or(0);
-                        let title_str = resp.title.as_deref().unwrap_or("");
-                        let classification = crate::fetch::browser::classify_response(
-                            resp.status,
-                            resp.content_type.as_deref(),
-                            Some(title_str),
-                            text_len,
-                            body_bytes,
-                        );
-                        let challenge_detected = crate::fetch::challenge::detect(
-                            Some(title_str),
-                            &String::from_utf8_lossy(body_bytes),
+                    let challenge_plan = crate::challenge_replay::ChallengePlan {
+                        challenge: &state.config.search.challenge,
+                        user_agent: &state.config.fetch.user_agent,
+                        origin_controller: state.origin_controller.as_deref(),
+                        max_chars: args.max_chars,
+                        extract_mode,
+                        include_links,
+                        pdf_options: args.pdf.as_ref(),
+                        deadline,
+                    };
+                    let solved = if allow_challenge_replay {
+                        crate::challenge_replay::replay_challenge(
+                            client.as_ref(),
+                            args.url.trim(),
+                            &resp,
+                            challenge_cookies,
+                            &challenge_plan,
                         )
-                        .is_some();
-                        let should_escalate = challenge_detected
+                        .await
+                    } else {
+                        None
+                    };
+
+                    if let Some(solved) = solved {
+                        response = Some(solved);
+                    } else {
+                        #[cfg(feature = "browser")]
+                        if matches!(render_policy, crate::fetch::browser::RenderPolicy::Auto) {
+                            let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
+                            let text_len = resp
+                                .document
+                                .as_ref()
+                                .map(|document| {
+                                    document
+                                        .blocks
+                                        .iter()
+                                        .map(|block| block.text.trim().chars().count())
+                                        .sum::<usize>()
+                                })
+                                .or_else(|| {
+                                    resp.text.as_deref().map(|text| text.trim().chars().count())
+                                })
+                                .unwrap_or(0);
+                            let title_str = resp.title.as_deref().unwrap_or("");
+                            let classification = crate::fetch::browser::classify_response(
+                                resp.status,
+                                resp.content_type.as_deref(),
+                                Some(title_str),
+                                text_len,
+                                body_bytes,
+                            );
+                            let challenge_detected = crate::fetch::challenge::detect(
+                                Some(title_str),
+                                &String::from_utf8_lossy(body_bytes),
+                            )
+                            .is_some();
+                            let should_escalate = challenge_detected
                             || matches!(
                                 classification,
                                 crate::fetch::browser::FetchDisposition::JavascriptShell
                                     | crate::fetch::browser::FetchDisposition::NonInteractiveVerification
                             );
-                        if should_escalate {
-                            if !browser_available {
-                                auto_escalation_unavailable = true;
-                            } else {
-                                let remaining =
-                                    deadline.saturating_duration_since(std::time::Instant::now());
-                                if remaining.as_millis() < 2000 {
+                            if should_escalate {
+                                if !browser_available {
                                     auto_escalation_unavailable = true;
                                 } else {
-                                    match tokio::time::timeout(
+                                    let remaining = deadline
+                                        .saturating_duration_since(std::time::Instant::now());
+                                    if remaining.as_millis() < 2000 {
+                                        auto_escalation_unavailable = true;
+                                    } else {
+                                        match tokio::time::timeout(
                                         remaining,
                                         run_browser_fetch(
                                             state.as_ref(),
@@ -752,14 +1005,18 @@ pub async fn run_web_fetch_with_progress(
                                             state.config.fetch.sanitize_output,
                                             &render_policy,
                                             profile_chrome_data_dir.as_deref(),
+                                            false,
                                         ),
                                     )
                                     .await
                                     {
-                                        Ok(Ok(result)) => {
+                                        Ok(Ok(outcome)) => {
+                                            if outcome.result.challenge_completed {
+                                                crate::challenge_replay::record_browser_completion();
+                                            }
                                             let mut browser_resp =
                                                 crate::fetch::browser::browser_result_to_response(
-                                                    result,
+                                                    outcome.result,
                                                     trimmed_url,
                                                     budgets,
                                                     extract_mode,
@@ -768,7 +1025,6 @@ pub async fn run_web_fetch_with_progress(
                                                 );
                                             browser_resp.browser_escalated = true;
                                             response = Some(browser_resp);
-                                            escalated = true;
                                         }
                                         Ok(Err(
                                             crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
@@ -795,59 +1051,108 @@ pub async fn run_web_fetch_with_progress(
                                             auto_escalation_unavailable = true;
                                         }
                                     }
+                                    }
+                                }
+                            }
+                        }
+                        #[cfg(not(feature = "browser"))]
+                        if matches!(render_request, RenderRequest::Auto) {
+                            let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
+                            if crate::fetch::challenge::detect(
+                                resp.title.as_deref(),
+                                &String::from_utf8_lossy(body_bytes),
+                            )
+                            .is_some()
+                            {
+                                auto_escalation_unavailable = true;
+                            }
+                        }
+
+                        if response.is_none() {
+                            response = Some(resp);
+                        }
+                    }
+                    break;
+                }
+                Err(err) => {
+                    #[allow(unused_mut)]
+                    let mut failure = err;
+                    #[allow(unused_mut)]
+                    let mut suppress_retry = false;
+
+                    // A browser-gated origin answers an automated client with a
+                    // status instead of a document, so there is nothing to
+                    // classify and the browser is the only reader left. The
+                    // escalation runs before the failure is recorded: the
+                    // status is the origin refusing this client, not an outage,
+                    // and an origin the browser served must not be charged to
+                    // the HTTP circuit breaker.
+                    #[cfg(feature = "browser")]
+                    if !gated_escalation_spent {
+                        if let Some(status) = gated_status(&failure, &render_policy) {
+                            gated_escalation_spent = true;
+                            suppress_retry = true;
+                            let escalation = escalate_gated_status(GatedEscalationRequest {
+                                state: state.as_ref(),
+                                url: trimmed_url,
+                                status,
+                                sanitize_output: state.config.fetch.sanitize_output,
+                                render_policy: &render_policy,
+                                profile_dir: profile_chrome_data_dir.as_deref(),
+                                browser_available,
+                                used_profile_name: used_profile_name.as_deref(),
+                                origin_key: &origin_key,
+                                budgets,
+                                extract_mode,
+                                include_links,
+                                deadline,
+                            })
+                            .await;
+                            match escalation {
+                                GatedEscalation::Served(served) => {
+                                    response = Some(*served);
+                                    break;
+                                }
+                                GatedEscalation::Failed {
+                                    error,
+                                    escalation_unavailable,
+                                } => {
+                                    auto_escalation_unavailable |= escalation_unavailable;
+                                    failure = error;
+                                }
+                                GatedEscalation::ManualInteraction {
+                                    origin,
+                                    message,
+                                    next_action,
+                                } => {
+                                    return Err(browser_manual_interaction_error(
+                                        &origin,
+                                        &message,
+                                        used_profile_name.as_deref(),
+                                        next_action.as_deref(),
+                                    ));
                                 }
                             }
                         }
                     }
-                    #[cfg(not(feature = "browser"))]
-                    if matches!(render_request, RenderRequest::Auto) {
-                        let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                        if crate::fetch::challenge::detect(
-                            resp.title.as_deref(),
-                            &String::from_utf8_lossy(body_bytes),
-                        )
-                        .is_some()
-                        {
-                            auto_escalation_unavailable = true;
-                        }
-                    }
 
-                    if !escalated {
-                        response = Some(
-                            replay_anubis_challenge(
-                                state.as_ref(),
-                                client.as_ref(),
-                                state.origin_controller.as_deref(),
-                                &args,
-                                extract_mode,
-                                include_links,
-                                &resp,
-                                challenge_cookies,
-                                deadline,
-                            )
-                            .await
-                            .unwrap_or(resp),
-                        );
-                    }
-                    break;
-                }
-                Err(e) => {
-                    let kind = e.kind();
-                    let class = match &e {
+                    let kind = failure.kind();
+                    let class = match &failure {
                         crate::fetch::FetchError::HttpStatus(status, _) => {
                             crate::fetch::origin::classify_http_status(*status)
                         }
-                        _ => classify_network_error(&e.to_string()),
+                        _ => classify_network_error(&failure.to_string()),
                     };
-                    let is_retryable = matches!(
-                        kind,
-                        crate::fetch::FetchErrorKind::Timeout
-                            | crate::fetch::FetchErrorKind::NetworkError
-                    ) || matches!(
-                        class,
-                        crate::fetch::origin::OriginFailureClass::Retryable
-                            | crate::fetch::origin::OriginFailureClass::RateLimited
-                    );
+                    let is_retryable = !suppress_retry
+                        && (matches!(
+                            kind,
+                            crate::fetch::FetchErrorKind::Timeout
+                                | crate::fetch::FetchErrorKind::NetworkError
+                        ) || matches!(
+                            class,
+                            crate::fetch::origin::OriginFailureClass::Retryable
+                                | crate::fetch::origin::OriginFailureClass::RateLimited
+                        ));
 
                     if let Some(ref ctrl) = state.origin_controller {
                         let decision = ctrl.record_failure(&origin_key, class).await;
@@ -857,7 +1162,7 @@ pub async fn run_web_fetch_with_progress(
                                 ..
                             } => {
                                 return Err(ToolError::internal(format!(
-                                    "origin_circuit_open: {e}, retry in {delay_ms}ms"
+                                    "origin_circuit_open: {failure}, retry in {delay_ms}ms"
                                 )));
                             }
                             crate::fetch::origin::OriginBackoffDecision::Backoff {
@@ -886,7 +1191,7 @@ pub async fn run_web_fetch_with_progress(
                         }
                     }
 
-                    last_err = Some(e);
+                    last_err = Some(failure);
                     break;
                 }
             }
@@ -944,20 +1249,17 @@ pub async fn run_web_fetch_with_progress(
     if cache_policy == crate::core::fetch::FetchCachePolicy::Bypass {
         metadata.cache_status = CacheStatus::Bypassed;
     } else if metadata.cache_status == CacheStatus::default() {
-        let default_freshness = crate::fetch::cache::CacheFreshness::default();
-        metadata.cache_status = if should_cache_response(
+        metadata.cache_status = crate::fetch::cache::response_cache_status(
             resp.status,
             resp.content_type.as_deref(),
-            &default_freshness,
+            resp.response_headers.as_ref(),
             &scope,
-        ) {
-            CacheStatus::Miss
-        } else {
-            CacheStatus::NotCacheable
-        };
+        );
     }
 
-    if metadata.cache_status == CacheStatus::Miss || metadata.cache_status == CacheStatus::Bypassed
+    if !include_screenshot
+        && (metadata.cache_status == CacheStatus::Miss
+            || metadata.cache_status == CacheStatus::Bypassed)
     {
         if let Some(ref cache) = state.fetch_cache {
             let raw_key = build_raw_cache_key(
@@ -1173,214 +1475,22 @@ pub async fn run_web_fetch_with_progress(
         state.config.mcp.schema_profile,
     );
     progress.phase("project");
-    Ok(crate::mcp::projection::project_with_budget(
+    let value = crate::mcp::projection::project_with_budget(
         "web_fetch",
         payload,
         detail,
         state.config.mcp.brief_max_chars,
-    ))
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn replay_anubis_challenge(
-    state: &ServerState,
-    client: &FetchClient,
-    origin_controller: Option<&crate::fetch::origin::OriginController>,
-    args: &WebFetchArgs,
-    extract_mode: crate::core::fetch::ExtractMode,
-    include_links: bool,
-    response: &crate::core::fetch::WebFetchResponse,
-    challenge_cookies: Option<String>,
-    deadline: std::time::Instant,
-) -> Option<crate::core::fetch::WebFetchResponse> {
-    use crate::core::fetch::FetchRepresentation;
-    use crate::fetch::challenge::{detect_html, ChallengeKind};
-    use crate::meta::challenge::anubis::solve_and_verify;
-    use crate::meta::challenge::{SolveBudget, SolveOutcome};
-
-    let settings = &state.config.search.challenge;
-    if !settings.enabled {
-        return None;
-    }
-    let is_html = response.representation == Some(FetchRepresentation::Html);
-    let challenge_page = response.raw_body.as_deref().unwrap_or_default();
-    if detect_html(is_html, response.title.as_deref(), challenge_page)
-        != Some(ChallengeKind::Anubis)
-    {
-        return None;
-    }
-    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-    if remaining.is_zero() {
-        return None;
-    }
-    let parsed = url::Url::parse(&response.final_url).ok()?;
-    let base_url = format!("{}://{}", parsed.scheme(), parsed.authority());
-    let timeout = std::time::Duration::from_millis(settings.timeout_ms).min(remaining);
-    let solver_client =
-        crate::meta::engines::build_http_client(Some(&state.config.fetch.user_agent)).ok()?;
-    let mut budget = SolveBudget::new(settings.max_attempts, timeout, settings.max_difficulty);
-    let outcome = solve_and_verify(
-        &solver_client,
-        "web_fetch",
-        &base_url,
-        &String::from_utf8_lossy(challenge_page),
-        &response.final_url,
-        challenge_cookies.as_deref().unwrap_or_default(),
-        timeout,
-        &mut budget,
-    )
-    .await
-    .ok()?;
-    let SolveOutcome::Solved { cookie, .. } = outcome else {
-        return None;
-    };
-    let header = cookie;
-    let replayed = client
-        .fetch_with_cookie(
-            args.url.trim(),
-            args.max_chars,
-            extract_mode,
-            include_links,
-            args.pdf.as_ref(),
-            origin_controller,
-            Some(&header),
-        )
-        .await
-        .ok()?;
-    let replay_page = replayed.raw_body.as_deref().unwrap_or_default();
-    if detect_html(
-        replayed.representation == Some(FetchRepresentation::Html),
-        replayed.title.as_deref(),
-        replay_page,
-    )
-    .is_some()
-    {
-        return None;
-    }
-    Some(replayed)
-}
-
-struct WindowedFetch {
-    text: Option<String>,
-    document: Option<crate::core::document::FetchDocument>,
-    window: Option<AddressWindow>,
-    doc_id: Option<String>,
-}
-
-fn addressable_text(document: &crate::core::document::FetchDocument) -> String {
-    document
-        .chunks
-        .iter()
-        .map(|chunk| chunk.text.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn default_page_chunk_count(
-    document: &crate::core::document::FetchDocument,
-    capacity: usize,
-) -> usize {
-    let mut used = 0usize;
-    let mut count = 0usize;
-    for chunk in &document.chunks {
-        let unit = chunk.text.chars().count().saturating_add(1);
-        let next = used.saturating_add(unit);
-        if count > 0 && next > capacity {
-            break;
-        }
-        used = next;
-        count += 1;
-    }
-    count
-}
-
-fn windowed_chunks(
-    document: &crate::core::document::FetchDocument,
-    window: AddressWindow,
-) -> Vec<crate::core::document::DocumentChunk> {
-    if window.len() == 0 {
-        return Vec::new();
-    }
-    let mut chunks = Vec::new();
-    let mut position = 0usize;
-    for chunk in &document.chunks {
-        let len = chunk.text.chars().count();
-        let start = position;
-        let end = start.saturating_add(len);
-        if start < window.to && end > window.from {
-            chunks.push(chunk.clone());
-        }
-        position = end.saturating_add(1);
-    }
-    chunks
-}
-
-fn windowed_fetch(
-    resp: &crate::core::fetch::WebFetchResponse,
-    capacity: usize,
-    addressed: bool,
-    offset: Option<usize>,
-    sanitize_output: bool,
-) -> WindowedFetch {
-    let unchanged = || WindowedFetch {
-        text: None,
-        document: None,
-        window: None,
-        doc_id: None,
-    };
-    let Some(document) = resp.document.as_ref() else {
-        return unchanged();
-    };
-    if document.chunks.is_empty() {
-        return unchanged();
-    }
-    if !addressed {
-        let count = default_page_chunk_count(document, capacity);
-        if count == document.chunks.len() {
-            return unchanged();
-        }
-        let page_chunks = document.chunks[..count].to_vec();
-        let page = page_chunks
-            .iter()
-            .map(|chunk| chunk.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let page_chars = page.chars().count();
-        let (stripped, _) = crate::core::sanitize::strip_control_chars(&page);
-        let text = if sanitize_output {
-            crate::core::sanitize::frame(&stripped, "text", &resp.final_url)
-        } else {
-            stripped
-        };
-        let mut paged_document = document.clone();
-        paged_document.chunks = page_chunks;
-        paged_document.text_chars_returned = page_chars;
-        paged_document.text_truncated = count < document.chunks.len();
-        return WindowedFetch {
-            text: Some(text),
-            document: Some(paged_document),
-            window: None,
-            doc_id: None,
-        };
-    }
-    let joined = addressable_text(document);
-    let total = joined.chars().count();
-    let window = AddressWindow::resolve(total, offset, capacity);
-    let slice = slice_chars(&joined, window.from, window.to);
-    let (stripped, _) = crate::core::sanitize::strip_control_chars(slice);
-    let text = if sanitize_output && !stripped.is_empty() {
-        crate::core::sanitize::frame(&stripped, "text", &resp.final_url)
+    );
+    let images = if include_screenshot {
+        screenshot_png
+            .into_iter()
+            .map(|png| ImageAttachment {
+                association: None,
+                png,
+            })
+            .collect()
     } else {
-        stripped
+        Vec::new()
     };
-    let mut paged_document = document.clone();
-    paged_document.chunks = windowed_chunks(document, window);
-    paged_document.text_chars_returned = window.len();
-    paged_document.text_truncated = window.next_offset().is_some();
-    WindowedFetch {
-        text: Some(text),
-        document: Some(paged_document),
-        window: Some(window),
-        doc_id: Some(document.doc_id.clone()),
-    }
+    Ok(ToolOutcome { value, images })
 }

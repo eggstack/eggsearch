@@ -3,6 +3,10 @@
 //!
 //! Behavior-oriented suite partitioned from the historical `integration.rs` mega-suite.
 
+mod support;
+
+use support::*;
+
 use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
@@ -46,51 +50,6 @@ fn state_with_mode_off() -> Arc<ServerState> {
     Arc::new(ServerState::build(cfg).expect("off state"))
 }
 
-#[cfg(feature = "mock")]
-fn state_with_engines(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_arc_engines(
-    cfg: AppConfig,
-    engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(engines, timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines_sanitize(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let adapter =
-        MetadataSearchAdapter::from_engines_with_sanitize(mock_engines(engines), timeout, sanitize);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn test_cfg() -> AppConfig {
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 2_000;
-    cfg.search.max_query_chars = 256;
-    cfg.search.default_max_results = 10;
-    cfg.search.max_results_cap = 50;
-    // Register mock provider ids so resolve_providers() accepts them.
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.search.providers.insert("mock_b".to_string(), true);
-    cfg
-}
-
 /// Build a `WebSearchArgs` that uses the given mock provider ids
 /// instead of the configured defaults.
 #[cfg(feature = "mock")]
@@ -119,22 +78,8 @@ async fn web_fetch_disabled_by_policy_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: "https://example.com/".into(),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -170,22 +115,9 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
             extract_mode: Some(ExtractMode::Markdown),
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -210,22 +142,9 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: "https://example.com/".into(),
             max_chars: Some(0),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -259,22 +178,8 @@ async fn web_fetch_respects_include_links_default() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -313,22 +218,8 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -360,22 +251,8 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -417,22 +294,8 @@ async fn web_fetch_sanitize_emits_marker_warning() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/inject"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -472,22 +335,8 @@ async fn web_fetch_empty_url_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: "".into(),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -504,22 +353,8 @@ async fn web_fetch_unsupported_scheme_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: "file:///etc/passwd".into(),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -536,22 +371,8 @@ async fn web_fetch_embedded_credentials_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: "https://user:pass@example.com/secret".into(),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -566,22 +387,8 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
         let res = run_web_fetch(
             state.clone(),
             WebFetchArgs {
-                offset: None,
-                limit: None,
                 url: url.into(),
-                max_chars: None,
-                timeout_ms: None,
-                extract_mode: None,
-                include_links: None,
-                pdf: None,
-                cache_policy: None,
-                render: None,
-                browser_profile: None,
-                max_cache_age_seconds: None,
-                focus: None,
-                focus_max_chunks: None,
-                focus_max_chars: None,
-                response_detail: None,
+                ..Default::default()
             },
         )
         .await;
@@ -613,22 +420,8 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/redirect"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -670,22 +463,9 @@ async fn web_fetch_mcp_level_full_response_shape() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/article"),
             max_chars: Some(5000),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -819,22 +599,9 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
             max_chars: Some(5000),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -887,22 +654,9 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/meta"),
-            max_chars: None,
-            timeout_ms: None,
             extract_mode: Some(ExtractMode::MetadataOnly),
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -965,22 +719,8 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/doc"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1016,22 +756,8 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/plain"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1072,22 +798,9 @@ async fn web_fetch_document_metadata_only_no_body_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/meta"),
-            max_chars: None,
-            timeout_ms: None,
             extract_mode: Some(ExtractMode::MetadataOnly),
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1132,22 +845,9 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/long"),
             max_chars: Some(30),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1199,22 +899,8 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/small"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1264,22 +950,8 @@ async fn web_fetch_document_has_blocks_and_chunks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/structured"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1341,22 +1013,8 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/chunked"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1429,22 +1087,8 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1497,22 +1141,8 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/both"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1566,22 +1196,8 @@ async fn web_fetch_document_outline_populated_from_title() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/outline"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1635,22 +1251,8 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/sanitize"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1701,22 +1303,8 @@ async fn web_fetch_document_rust_source_has_code_kind() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/main.rs"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1765,22 +1353,8 @@ async fn web_fetch_document_json_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/data.json"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1818,22 +1392,8 @@ async fn web_fetch_document_markdown_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/readme.md"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1894,22 +1454,8 @@ async fn web_fetch_document_toml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/Cargo.toml"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -1949,22 +1495,8 @@ async fn web_fetch_document_yaml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/config.yaml"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2001,22 +1533,8 @@ async fn web_fetch_document_diff_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/changes.diff"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2056,22 +1574,8 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/prose.txt"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2120,22 +1624,8 @@ async fn web_fetch_document_code_preserves_line_ranges() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/lib.rs"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2186,22 +1676,8 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/config.json"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2243,22 +1719,9 @@ async fn web_fetch_document_truncation_at_line_boundary() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/big.rs"),
             max_chars: Some(500), // Small budget
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2292,22 +1755,9 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/code.rs"),
-            max_chars: None,
-            timeout_ms: None,
             extract_mode: Some(ExtractMode::MetadataOnly),
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2346,22 +1796,8 @@ async fn web_fetch_document_application_json_no_extension() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/api/data"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2409,22 +1845,9 @@ async fn web_fetch_links_classification() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
             include_links: Some(true),
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2488,22 +1911,9 @@ async fn web_fetch_links_seen_metadata() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
             include_links: Some(true),
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2544,22 +1954,9 @@ async fn web_fetch_links_empty_when_not_requested() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
             include_links: Some(false),
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2603,22 +2000,9 @@ async fn web_fetch_links_same_domain_detection() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
             include_links: Some(true),
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2680,22 +2064,9 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/bundle.json"),
             max_chars: Some(100),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2735,22 +2106,9 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/bundle.js"),
             max_chars: Some(100),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2785,22 +2143,9 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/changes.diff"),
             max_chars: Some(100),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2839,22 +2184,9 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/long.txt"),
             max_chars: Some(100),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -2899,22 +2231,9 @@ async fn web_fetch_code_block_text_covers_the_document_budget() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/minified.js"),
             max_chars: Some(200),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3019,22 +2338,8 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/doc.pdf"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3116,22 +2421,9 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/doc.pdf"),
-            max_chars: None,
-            timeout_ms: None,
             extract_mode: Some(ExtractMode::MetadataOnly),
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3206,22 +2498,8 @@ async fn web_fetch_empty_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/sparse-main"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3262,22 +2540,8 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/rich-main"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3323,22 +2587,8 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/tiny-main"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3377,22 +2627,8 @@ async fn web_fetch_body_only_page_still_works() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/body-only"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3444,22 +2680,9 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/many-links"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
             include_links: Some(true),
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3527,22 +2750,9 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/few-links"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
             include_links: Some(true),
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3604,22 +2814,9 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/truncated-outline"),
             max_chars: Some(12),
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3695,22 +2892,8 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/retry-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3761,22 +2944,9 @@ async fn web_fetch_respects_deadline_during_retry() {
     let result = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/slow-503"),
-            max_chars: None,
             timeout_ms: Some(200),
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await;
@@ -3816,22 +2986,8 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
             run_web_fetch(
                 s,
                 WebFetchArgs {
-                    offset: None,
-                    limit: None,
                     url,
-                    max_chars: None,
-                    timeout_ms: None,
-                    extract_mode: None,
-                    include_links: None,
-                    pdf: None,
-                    cache_policy: None,
-                    render: None,
-                    browser_profile: None,
-                    max_cache_age_seconds: None,
-                    focus: None,
-                    focus_max_chunks: None,
-                    focus_max_chars: None,
-                    response_detail: None,
+                    ..Default::default()
                 },
             )
             .await
@@ -3871,22 +3027,8 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/cache-hit-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3897,22 +3039,8 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/cache-hit-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3943,22 +3071,8 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/refresh-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -3977,22 +3091,9 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/refresh-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Refresh),
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -4024,22 +3125,8 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/bypass-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -4057,22 +3144,9 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/bypass-test"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -4104,22 +3178,8 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/private-page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -4129,27 +3189,59 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/private-page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
     .expect("second fetch ok");
     assert_eq!(v2["cache_status"], "not_cacheable");
+}
+
+#[tokio::test]
+async fn web_fetch_304_policy_update_blocks_index_cacheability() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.fetch.retry_max_attempts = 1;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    for (path, policy) in [
+        ("/revalidate-no-store", "no-store"),
+        ("/revalidate-private", "private"),
+    ] {
+        let mut initial = server.mock(|when, then| {
+            when.method(GET).path(path);
+            then.status(200)
+                .header("content-type", "text/html; charset=utf-8")
+                .header("cache-control", "max-age=0")
+                .header("etag", "\"etag-v1\"")
+                .body("<html><body>cached public evidence</body></html>");
+        });
+        let first = run_web_fetch(state.clone(), fetch_args_for(server.url(path)))
+            .await
+            .expect("initial fetch");
+        assert_eq!(first["cache_status"], "miss");
+        initial.delete();
+
+        let validation = server.mock(|when, then| {
+            when.method(GET)
+                .path(path)
+                .header("if-none-match", "\"etag-v1\"");
+            then.status(304).header("cache-control", policy);
+        });
+        let revalidated = run_web_fetch(state.clone(), fetch_args_for(server.url(path)))
+            .await
+            .expect("304 revalidation");
+        assert_eq!(revalidated["cache_status"], "not_cacheable");
+        let stats = state.fetch_cache.as_ref().unwrap().stats().await;
+        assert_eq!(stats.raw_entries, 0);
+        assert_eq!(stats.derived_entries, 0);
+        validation.assert();
+    }
 }
 
 #[tokio::test]
@@ -4176,22 +3268,8 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/vary-page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -4201,22 +3279,8 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/vary-page"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -4241,22 +3305,10 @@ async fn web_fetch_render_http_only_never_uses_browser() {
     cfg.fetch.allow_private_network = true;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/page", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("http_only".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -4277,22 +3329,10 @@ async fn web_fetch_render_auto_returns_useful_http_content() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/article", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -4313,22 +3353,10 @@ async fn web_fetch_render_auto_no_escalate_401() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/auth", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "401 should return an error");
@@ -4348,22 +3376,10 @@ async fn web_fetch_render_auto_no_escalate_429() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/rate-limited", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "429 should return an error, not escalate");
@@ -4383,22 +3399,10 @@ async fn web_fetch_render_auto_no_escalate_404() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/not-found", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "404 should return an error, not escalate");
@@ -4418,22 +3422,10 @@ async fn web_fetch_render_auto_no_escalate_403() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/forbidden", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err(), "403 should return an error, not escalate");
@@ -4444,22 +3436,9 @@ async fn web_fetch_render_auto_no_escalate_403() {
 async fn web_fetch_render_invalid_returns_validation_error() {
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: "https://example.com".to_string(),
-        max_chars: None,
-        timeout_ms: None,
-        extract_mode: None,
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("invalid_policy".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(
@@ -4479,22 +3458,10 @@ async fn web_fetch_render_invalid_returns_validation_error() {
 async fn web_fetch_profile_with_http_only_rejected() {
     let state = state_with_default();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: "https://example.com".to_string(),
-        max_chars: None,
-        timeout_ms: None,
-        extract_mode: None,
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: Some("test-profile".to_string()),
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4517,22 +3484,10 @@ async fn web_fetch_response_has_transport_field() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("http_only".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert!(result.get("transport").is_some());
@@ -4575,22 +3530,11 @@ async fn web_fetch_profile_lock_acquired_and_released() {
     });
 
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: "https://example.com/page".to_string(),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: Some("test-lock".to_string()),
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(
@@ -4635,22 +3579,11 @@ async fn web_fetch_profile_origin_mismatch_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: "https://other-site.com/page".to_string(),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("http_only".to_string()),
         browser_profile: Some("test-origin".to_string()),
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4682,22 +3615,10 @@ async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: format!("http://localhost:{}/article", server.port()),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await.unwrap();
     assert_eq!(result["transport"], "http");
@@ -4723,22 +3644,10 @@ async fn web_fetch_explicit_browser_unavailable_returns_failure() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: "https://example.com/page".to_string(),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("browser".to_string()),
-        browser_profile: None,
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4776,22 +3685,11 @@ async fn web_fetch_profile_lock_contention_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
-        offset: None,
-        limit: None,
         url: "https://example.com/page".to_string(),
-        max_chars: None,
-        timeout_ms: None,
         extract_mode: Some(ExtractMode::Text),
-        include_links: None,
-        pdf: None,
-        cache_policy: None,
         render: Some("auto".to_string()),
         browser_profile: Some("test-contention".to_string()),
-        max_cache_age_seconds: None,
-        focus: None,
-        focus_max_chunks: None,
-        focus_max_chars: None,
-        response_detail: None,
+        ..Default::default()
     };
     let result = run_web_fetch(state, args).await;
     assert!(result.is_err());
@@ -4802,160 +3700,10 @@ async fn web_fetch_profile_lock_contention_rejected() {
     );
 }
 
-fn repo_fetch_state() -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.fetch.allow_localhost = true;
-    cfg.fetch.allow_private_network = true;
-    cfg.fetch.sanitize_output = false;
-    Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
-}
-
 fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     Arc::new(ServerState::build(cfg).expect("state with fetch disabled"))
-}
-
-fn git_cmd() -> std::process::Command {
-    let mut cmd = std::process::Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-    cmd
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 30_000;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_sanitize(
-    temp_dir: &std::path::Path,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines_with_sanitize(
-        mock_engines(engines),
-        Duration::from_secs(5),
-        sanitize,
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    cfg.fetch.sanitize_output = sanitize;
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let state = ServerState::build(cfg).expect("state");
-    let mut state = state;
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
-    let output = cmd
-        .output()
-        .unwrap_or_else(|error| panic!("{operation} could not start: {error}"));
-    assert!(
-        output.status.success(),
-        "{operation} failed with status {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-}
-
-#[cfg(feature = "mock")]
-fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
-    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
-
-    git_cmd().arg("init").arg(root).output().ok();
-
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("remote")
-        .arg("add")
-        .arg("origin")
-        .arg(remote_url)
-        .output()
-        .ok();
-
-    // Create initial commit so dirty state detection works
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("add")
-        .arg(".")
-        .output()
-        .ok();
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("-c")
-        .arg("user.name=ci")
-        .arg("-c")
-        .arg("user.email=ci@test.com")
-        .arg("commit")
-        .arg("-m")
-        .arg("init")
-        .arg("--allow-empty")
-        .output()
-        .ok();
 }
 
 // ---------------------------------------------------------------------------
@@ -5091,22 +3839,8 @@ async fn web_fetch_pdf_above_max_bytes_within_pdf_budget_extracts() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/paper.pdf"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -5150,22 +3884,8 @@ async fn web_fetch_pdf_above_pdf_budget_returns_size_outcome() {
     let err = run_web_fetch(
         state,
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/huge.pdf"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -5376,6 +4096,7 @@ fn fetch_args_for(url: String) -> WebFetchArgs {
         cache_policy: None,
         render: None,
         browser_profile: None,
+        include_screenshot: None,
         max_cache_age_seconds: None,
         focus: None,
         focus_max_chunks: None,
@@ -5523,7 +4244,7 @@ async fn offset_windows_live() {
 #[tokio::test]
 async fn web_fetch_marks_anubis_and_altcha_challenge_pages() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     server.mock(|when, then| {
         when.method(GET).path("/anubis");
         then.status(200)
@@ -5642,13 +4363,103 @@ fn anubis_wall<'a>(
     (replay, wall, pass)
 }
 
-fn anubis_state(enabled: bool) -> Arc<ServerState> {
+fn challenge_config(enabled: bool) -> AppConfig {
     let mut cfg = AppConfig::default();
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
     cfg.search.challenge.enabled = enabled;
-    Arc::new(ServerState::build(cfg).expect("state builds"))
+    cfg
 }
+
+fn challenge_state(enabled: bool) -> Arc<ServerState> {
+    Arc::new(ServerState::build(challenge_config(enabled)).expect("state builds"))
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn state_with_mock_browser(
+    mut cfg: AppConfig,
+    browser_fetch_override: eggsearch::mcp::state::BrowserFetchOverride,
+) -> Arc<ServerState> {
+    use eggsearch::fetch::browser::{
+        BrowserConfig, BrowserDiscovery, BrowserDiscoveryState, BrowserFamily, BrowserLifecycle,
+        BrowserSource,
+    };
+
+    cfg.fetch.browser.enabled = true;
+    cfg.fetch.browser.policy = "auto".to_string();
+    let mut state = Arc::new(ServerState::build(cfg).expect("state builds"));
+    let discovery = BrowserDiscovery {
+        path: std::path::PathBuf::from("/synthetic/chrome"),
+        family: BrowserFamily::Chrome,
+        version: "Chrome 120.0.0.0".to_string(),
+        source: BrowserSource::AutoDiscovered,
+    };
+    let state_mut = Arc::get_mut(&mut state).expect("unique state");
+    state_mut.browser_discovery_state = BrowserDiscoveryState::Available(discovery.clone());
+    state_mut.browser_lifecycle = Some(Arc::new(BrowserLifecycle::new(
+        Some(discovery),
+        BrowserConfig {
+            enabled: true,
+            ..BrowserConfig::default()
+        },
+    )));
+    state_mut.browser_fetch_override = Some(browser_fetch_override);
+    state
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn browser_outcome(
+    url: &str,
+    classification: eggsearch::fetch::browser::FetchDisposition,
+    challenge: Option<eggsearch::fetch::challenge::ChallengeKind>,
+    challenge_completed: bool,
+) -> eggsearch::fetch::browser::BrowserFetchOutcome {
+    use eggsearch::core::sanitize::TrustMarkers;
+    use eggsearch::fetch::browser::{
+        BrowserFetchOutcome, BrowserFetchResult, FetchTransportKind, TransportResponse,
+        TransportTiming,
+    };
+
+    BrowserFetchOutcome {
+        result: BrowserFetchResult {
+            response: TransportResponse {
+                transport: FetchTransportKind::Browser,
+                requested_url: url.to_string(),
+                final_url: url.to_string(),
+                status: Some(200),
+                headers: Vec::new(),
+                body: b"<html><body><p>rendered</p></body></html>".to_vec(),
+                content_type: Some("text/html".to_string()),
+                redirects: Vec::new(),
+                timing: TransportTiming::default(),
+                classification: Some(classification),
+            },
+            extracted_title: Some("Rendered".to_string()),
+            extracted_text: "<p>rendered</p>".to_string(),
+            trust_markers: TrustMarkers::default(),
+            warnings: Vec::new(),
+            challenge_completed,
+            challenge,
+        },
+        screenshot: None,
+    }
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn browser_completions() -> u64 {
+    eggsearch::meta::challenge::ledger::solve_ledger()
+        .snapshot()
+        .providers
+        .get("fetch")
+        .map_or(0, |stats| stats.browser_completions)
+}
+
+/// Serialises the tests that assert the process-global completion counter.
+///
+/// The solve ledger is process-wide, so two tests that each snapshot, run, and
+/// assert a delta race each other whenever the harness runs them in parallel.
+#[cfg(all(feature = "mock", feature = "browser"))]
+static COMPLETION_COUNTER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 fn challenge_warning_count(value: &serde_json::Value) -> usize {
     value["structured_warnings"]
@@ -5725,13 +4536,13 @@ fn anubis_header_only_metarefresh_page() -> String {
 #[tokio::test]
 async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(
         &server,
         "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
 
@@ -5757,10 +4568,10 @@ async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document(
 #[tokio::test]
 async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
 
-    let value = run_web_fetch(anubis_state(false), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(false), fetch_args_for(server.url("/")))
         .await
         .expect("challenge page fetch succeeds");
 
@@ -5774,7 +4585,7 @@ async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
 #[tokio::test]
 async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(&server, "<html><body><p>unused</p></body></html>");
 
     let mut cfg = AppConfig::default();
@@ -5798,10 +4609,10 @@ async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
 #[tokio::test]
 async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_wall(&server, &anubis_fast_challenge_page());
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("a challenged replay keeps the marked response");
 
@@ -5815,13 +4626,13 @@ async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
 #[tokio::test]
 async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (_, _, _) = anubis_wall(
         &server,
         "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
     let serialized = serde_json::to_string(&value).expect("payload is serializable");
@@ -5837,13 +4648,13 @@ async fn web_fetch_solved_anubis_payload_carries_no_cookie_material() {
 #[tokio::test]
 async fn web_fetch_replays_a_default_anubis_pass_cookie() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, wall, pass) = anubis_default_name_wall(
         &server,
         "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
 
@@ -5873,13 +4684,13 @@ async fn web_fetch_replays_a_default_anubis_pass_cookie() {
 #[tokio::test]
 async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let (replay, _, pass) = anubis_default_name_wall(
         &server,
         "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
     );
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("solved fetch succeeds");
     let serialized = serde_json::to_string(&value).expect("payload is serializable");
@@ -5903,10 +4714,875 @@ async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
     );
 }
 
+const ALTCHA_PASS_COOKIE: &str = "altcha-pass-cookie";
+
+const ALTCHA_SOLVABLE_DOCUMENT: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
+
+fn altcha_wall_page(challenge_attribute: &str) -> String {
+    format!(
+        r#"<html><head><title>Protected</title></head><body><div class="captcha-wrap"><altcha-widget challenge="{challenge_attribute}"></altcha-widget></div></body></html>"#
+    )
+}
+
+fn altcha_wall<'a>(
+    server: &'a httpmock::MockServer,
+    challenge_attribute: &str,
+    document: &str,
+    replay_body: &str,
+) -> (
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page(challenge_attribute));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(document);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+            )
+            .body("");
+    });
+    (replay, wall, challenge, verify)
+}
+
+#[tokio::test]
+async fn web_fetch_solves_a_published_altcha_challenge_and_returns_the_document() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1><p>Rust is fast and reliable.</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+
+    assert_eq!(value["fetched"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust is fast and reliable"),
+        "the replay document must be returned: {value:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&value),
+        0,
+        "a solved fetch carries no challenge warning"
+    );
+    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+}
+
+#[tokio::test]
+async fn web_fetch_marks_the_altcha_challenge_when_solving_is_disabled() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(false), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(
+        challenge.hits(),
+        0,
+        "a disabled solver must not fetch the published challenge"
+    );
+    assert_eq!(verify.hits(), 0);
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_refuses_a_cross_origin_altcha_endpoint() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "https://other.example/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(
+        challenge.hits(),
+        0,
+        "a cross-origin endpoint must never be requested"
+    );
+    assert_eq!(
+        verify.hits(),
+        0,
+        "a refused endpoint issues no verification request"
+    );
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_refuses_a_malformed_altcha_payload() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        r#"{"parameters":{"algorithm":"PBKDF2/SHA-256"}}"#,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(
+        verify.hits(),
+        0,
+        "a malformed payload must be refused before any solve"
+    );
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_mark_when_the_altcha_budget_refuses() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"0000000000000000ffffffffffffffff","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00"},"signature":"00"}"#,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    cfg.search.challenge.max_attempts = 8;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let value = run_web_fetch(state, fetch_args_for(server.url("/")))
+        .await
+        .expect("refused solve keeps the marked response");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(challenge.hits(), 1);
+    assert_eq!(
+        verify.hits(),
+        0,
+        "a refusal stops before the verification request"
+    );
+    assert_eq!(replay.hits(), 0, "a refusal issues no replay");
+}
+
+#[tokio::test]
+async fn web_fetch_refuses_an_unsupported_altcha_algorithm() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, wall, challenge, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        r#"{"parameters":{"algorithm":"PBKDF2/SHA-512","cost":100,"keyLength":32,"keyPrefix":"b054884358ba2e5e24a53c818185502e","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00"},"signature":"00"}"#,
+        "<html><body><p>unused</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("challenge page fetch succeeds");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(challenge.hits(), 1);
+    assert_eq!(
+        verify.hits(),
+        0,
+        "an unsupported algorithm must be refused before any submission"
+    );
+    assert_eq!(replay.hits(), 0);
+}
+
+#[tokio::test]
+async fn web_fetch_solved_altcha_payload_carries_no_cookie_material() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let (replay, _, _, verify) = altcha_wall(
+        &server,
+        "/captcha/challenge",
+        ALTCHA_SOLVABLE_DOCUMENT,
+        "<html><head><title>Rust</title></head><body><p>Rust is fast.</p></body></html>",
+    );
+
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
+        .await
+        .expect("solved fetch succeeds");
+    let serialized = serde_json::to_string(&value).expect("payload is serializable");
+
+    for canary in [
+        ALTCHA_PASS_COOKIE,
+        "chllg",
+        "b054884358ba2e5e24a53c818185502e",
+    ] {
+        assert!(
+            !serialized.contains(canary),
+            "challenge material {canary} must not reach the payload: {serialized}"
+        );
+    }
+    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+}
+
+fn altcha_wall_with_cookie<'a>(
+    server: &'a httpmock::MockServer,
+    pass_cookie: &str,
+    set_cookie: &str,
+    replay_body: &str,
+) -> (
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+    httpmock::Mock<'a>,
+) {
+    use httpmock::prelude::*;
+    let replay = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("chllg={pass_cookie}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(replay_body);
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200).header("set-cookie", set_cookie).body("");
+    });
+    (replay, wall, challenge, verify)
+}
+
+fn challenge_fetch_args(url: String) -> WebFetchArgs {
+    let mut args = fetch_args_for(url);
+    args.cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::Bypass);
+    args
+}
+
+/// A mock server whose origin carries no pass cookie from an earlier test.
+///
+/// The fetch-side pass-cookie cache is process-local and keyed by origin, and
+/// a loopback port can be recycled between tests, so every challenge test
+/// starts from an origin that holds no pair set.
+fn challenge_server() -> httpmock::MockServer {
+    let server = httpmock::MockServer::start();
+    clear_fetch_pass_cookie(&server.url("/"));
+    server
+}
+
+fn clear_fetch_pass_cookie(url: &str) {
+    if let Some(origin) = eggsearch::challenge_replay::cache::origin_key(url) {
+        eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().remove(&origin);
+    }
+}
+
+/// Store a pair set for an origin the way an earlier fetch would have.
+///
+/// The cache is process-local, so a stale pair set is the only state a test
+/// cannot reach by fetching first.
+fn seed_fetch_pass_cookie(url: &str, cookie: &str) {
+    let origin = eggsearch::challenge_replay::cache::origin_key(url)
+        .expect("a loopback URL has an origin key");
+    eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().put(
+        &origin,
+        cookie,
+        Duration::from_secs(300),
+    );
+}
+
+/// The pair set the cache currently holds for an origin.
+fn stored_fetch_pass_cookie(url: &str) -> Option<String> {
+    let origin = eggsearch::challenge_replay::cache::origin_key(url)?;
+    eggsearch::challenge_replay::cache::fetch_pass_cookie_cache().get(&origin)
+}
+
+#[tokio::test]
+async fn web_fetch_reuses_a_pass_cookie_for_a_second_challenge_to_the_same_origin() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+
+    for (name, value) in [("first", &first), ("second", &second)] {
+        assert!(
+            value["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Rust programming language"),
+            "the {name} fetch must return the document: {value:?}"
+        );
+        assert_eq!(
+            challenge_warning_count(value),
+            0,
+            "the {name} fetch carries no challenge warning"
+        );
+    }
+    assert_eq!(
+        verify.hits(),
+        1,
+        "the second fetch replays the stored pair set and solves nothing"
+    );
+    assert_eq!(
+        challenge.hits(),
+        1,
+        "the published challenge is fetched once"
+    );
+    assert_eq!(wall.hits(), 2, "each fetch meets the wall once");
+    assert_eq!(replay.hits(), 2, "each fetch replays once");
+
+    let serialized = serde_json::to_string(&second).expect("payload is serializable");
+    for canary in [ALTCHA_PASS_COOKIE, "chllg"] {
+        assert!(
+            !serialized.contains(canary),
+            "challenge material {canary} must not reach the payload: {serialized}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_reuses_an_anubis_pass_cookie_for_the_same_origin() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, pass) = anubis_wall(
+        &server,
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    for _ in 0..2 {
+        let value = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+            .await
+            .expect("fetch succeeds");
+        assert!(
+            value["text"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("Rust programming language"),
+            "each fetch must return the document: {value:?}"
+        );
+        assert_eq!(challenge_warning_count(&value), 0);
+    }
+
+    assert_eq!(
+        pass.hits(),
+        1,
+        "the second fetch replays the stored pair set and solves nothing"
+    );
+    assert_eq!(wall.hits(), 2, "each fetch meets the wall once");
+    assert_eq!(replay.hits(), 2, "each fetch replays once");
+}
+
+#[tokio::test]
+async fn web_fetch_solves_again_after_the_published_lifetime_expires() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=1"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(first["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Rust programming language"));
+
+    tokio::time::sleep(Duration::from_millis(1300)).await;
+
+    let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert!(second["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Rust programming language"));
+    assert_eq!(
+        verify.hits(),
+        2,
+        "an expired pair set is solved again, never replayed"
+    );
+    assert_eq!(
+        challenge.hits(),
+        2,
+        "the published challenge is fetched twice"
+    );
+    assert_eq!(wall.hits(), 2);
+    assert_eq!(replay.hits(), 2);
+}
+
+#[tokio::test]
+async fn web_fetch_solves_again_when_the_published_lifetime_is_malformed() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=not-a-number"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    for _ in 0..2 {
+        let value = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+            .await
+            .expect("fetch succeeds");
+        assert!(value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"));
+    }
+
+    assert_eq!(
+        verify.hits(),
+        2,
+        "a malformed lifetime stores nothing and reuses nothing"
+    );
+    assert_eq!(challenge.hits(), 2);
+    assert_eq!(wall.hits(), 2);
+    assert_eq!(replay.hits(), 2);
+}
+
+#[tokio::test]
+async fn web_fetch_recovers_in_call_when_the_upstream_rejects_the_stored_pair_set() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let serve_fresh = server.mock(|when, then| {
+        when.method(GET).path("/").header("cookie", "chllg=fresh-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>");
+    });
+    let reject_stale = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "chllg=stale-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                "chllg=fresh-pass; Path=/; HttpOnly; Max-Age=300",
+            )
+            .body("");
+    });
+
+    seed_fetch_pass_cookie(&url, "chllg=stale-pass");
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(
+        first["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"),
+        "the refused pair set is recovered inside the same call: {first:?}"
+    );
+    assert_eq!(
+        challenge_warning_count(&first),
+        0,
+        "a recovered fetch carries no challenge warning"
+    );
+    assert_eq!(
+        reject_stale.hits(),
+        1,
+        "the refused pair set is presented exactly once"
+    );
+    assert_eq!(serve_fresh.hits(), 1, "the fresh pair set is replayed once");
+    assert_eq!(challenge.hits(), 1, "the recovery solves exactly once");
+    assert_eq!(verify.hits(), 1, "the recovery verifies exactly once");
+    assert_eq!(wall.hits(), 1, "the fetch meets the wall once");
+
+    let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert!(
+        second["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"),
+        "the fresh pair set is reused by the next fetch: {second:?}"
+    );
+    assert_eq!(
+        verify.hits(),
+        1,
+        "the fresh pair set is reused, so the next fetch solves nothing"
+    );
+    assert_eq!(
+        serve_fresh.hits(),
+        2,
+        "the fresh pair set is replayed again"
+    );
+    assert_eq!(
+        reject_stale.hits(),
+        1,
+        "the refused pair set is never presented again"
+    );
+
+    let serialized = serde_json::to_string(&first).expect("payload is serializable");
+    for canary in ["chllg", "fresh-pass", "stale-pass"] {
+        assert!(
+            !serialized.contains(canary),
+            "challenge material {canary} must not reach the payload: {serialized}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn web_fetch_keeps_the_original_response_when_the_recovery_fails() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (mut replay, mut wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(first["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Rust programming language"));
+    assert_eq!(verify.hits(), 1);
+
+    replay.delete();
+
+    let second = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert_eq!(
+        challenge_warning_count(&second),
+        1,
+        "a failed recovery leaves the original marking unchanged"
+    );
+    assert_eq!(
+        verify.hits(),
+        2,
+        "the refused pair set is re-solved in the same call"
+    );
+    assert_eq!(challenge.hits(), 2, "the recovery solves exactly once");
+    assert_eq!(
+        wall.hits(),
+        4,
+        "the second fetch meets the wall, its refused replay meets it again, and the recovery's replay meets it again"
+    );
+    assert_eq!(
+        stored_fetch_pass_cookie(&url),
+        None,
+        "a failed recovery leaves the origin with no pair set"
+    );
+
+    wall.delete();
+    let replay_again = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", format!("chllg={ALTCHA_PASS_COOKIE}"));
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>");
+    });
+    let wall_again = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+
+    let third = run_web_fetch(state, challenge_fetch_args(url.clone()))
+        .await
+        .expect("third fetch succeeds");
+    assert!(
+        third["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"),
+        "the next fetch starts cold and solves again: {third:?}"
+    );
+    assert_eq!(
+        verify.hits(),
+        3,
+        "the evicted pair set is solved again on the next fetch"
+    );
+    assert_eq!(challenge.hits(), 3);
+    assert_eq!(replay_again.hits(), 1);
+    assert_eq!(wall_again.hits(), 1);
+}
+
+#[tokio::test]
+async fn web_fetch_does_not_reuse_a_stored_pair_set_when_solving_is_disabled() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let reject_stale = server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "chllg=stale-pass");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(altcha_wall_page("/captcha/challenge"));
+    });
+    let challenge = server.mock(|when, then| {
+        when.method(GET).path("/captcha/challenge");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(ALTCHA_SOLVABLE_DOCUMENT);
+    });
+    let verify = server.mock(|when, then| {
+        when.method(POST).path("/captcha/verify");
+        then.status(200)
+            .header(
+                "set-cookie",
+                "chllg=fresh-pass; Path=/; HttpOnly; Max-Age=300",
+            )
+            .body("");
+    });
+
+    seed_fetch_pass_cookie(&url, "chllg=stale-pass");
+
+    let value = run_web_fetch(challenge_state(false), challenge_fetch_args(url.clone()))
+        .await
+        .expect("challenge page fetch succeeds");
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    assert_eq!(wall.hits(), 1, "the fetch meets the wall once");
+    assert_eq!(
+        reject_stale.hits(),
+        0,
+        "a disabled opt-in never presents the stored pair set"
+    );
+    assert_eq!(challenge.hits(), 0, "a disabled opt-in solves nothing");
+    assert_eq!(verify.hits(), 0, "a disabled opt-in verifies nothing");
+    assert_eq!(
+        stored_fetch_pass_cookie(&url).as_deref(),
+        Some("chllg=stale-pass"),
+        "a disabled opt-in never consults the cache, so the stored pair set is untouched"
+    );
+}
+
+#[tokio::test]
+async fn web_fetch_never_replays_a_pass_cookie_to_another_origin() {
+    use httpmock::prelude::*;
+    let first_server = challenge_server();
+    let first_url = first_server.url("/");
+    let (first_replay, _, _, first_verify) = altcha_wall_with_cookie(
+        &first_server,
+        "origin-one-pass",
+        "chllg=origin-one-pass; Path=/; HttpOnly; Max-Age=300",
+        "<html><head><title>One</title></head><body><h1>Origin one document</h1></body></html>",
+    );
+
+    let second_server = challenge_server();
+    let second_url = second_server.url("/");
+    let leak = second_server.mock(|when, then| {
+        when.method(GET)
+            .path("/")
+            .header("cookie", "chllg=origin-one-pass");
+        then.status(500)
+            .body("the first origin's pair set reached the second origin");
+    });
+    let (second_replay, _, _, second_verify) = altcha_wall_with_cookie(
+        &second_server,
+        "origin-two-pass",
+        "chllg=origin-two-pass; Path=/; HttpOnly; Max-Age=300",
+        "<html><head><title>Two</title></head><body><h1>Origin two document</h1></body></html>",
+    );
+
+    let state = challenge_state(true);
+    let first = run_web_fetch(state.clone(), challenge_fetch_args(first_url.clone()))
+        .await
+        .expect("first fetch succeeds");
+    assert!(first["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Origin one document"));
+
+    let second = run_web_fetch(state, challenge_fetch_args(second_url.clone()))
+        .await
+        .expect("second fetch succeeds");
+    assert!(
+        second["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Origin two document"),
+        "the second origin solves for itself: {second:?}"
+    );
+    assert_eq!(
+        leak.hits(),
+        0,
+        "the first origin's pair set must never reach the second origin"
+    );
+    assert_eq!(first_replay.hits(), 1);
+    assert_eq!(first_verify.hits(), 1);
+    assert_eq!(second_replay.hits(), 1);
+    assert_eq!(second_verify.hits(), 1);
+}
+
+#[tokio::test]
+async fn web_fetch_solves_again_when_the_reuse_ceiling_is_zero() {
+    use httpmock::prelude::*;
+    let server = challenge_server();
+    let url = server.url("/");
+    let (replay, wall, challenge, verify) = altcha_wall_with_cookie(
+        &server,
+        ALTCHA_PASS_COOKIE,
+        &format!("chllg={ALTCHA_PASS_COOKIE}; Path=/; HttpOnly; Max-Age=300"),
+        "<html><head><title>Rust</title></head><body><h1>Rust programming language</h1></body></html>",
+    );
+
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.challenge.enabled = true;
+    cfg.search.challenge.cookie_ttl_seconds = 0;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    for _ in 0..2 {
+        let value = run_web_fetch(state.clone(), challenge_fetch_args(url.clone()))
+            .await
+            .expect("fetch succeeds");
+        assert!(value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Rust programming language"));
+    }
+
+    assert_eq!(
+        verify.hits(),
+        2,
+        "a zero reuse ceiling stores nothing and reuses nothing"
+    );
+    assert_eq!(challenge.hits(), 2);
+    assert_eq!(wall.hits(), 2);
+    assert_eq!(replay.hits(), 2);
+}
+
 #[tokio::test]
 async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
     use httpmock::prelude::*;
-    let server = MockServer::start();
+    let server = challenge_server();
     let replay = server.mock(|when, then| {
         when.method(GET)
             .path("/")
@@ -5933,7 +5609,7 @@ async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
             .body("");
     });
 
-    let value = run_web_fetch(anubis_state(true), fetch_args_for(server.url("/")))
+    let value = run_web_fetch(challenge_state(true), fetch_args_for(server.url("/")))
         .await
         .expect("a header-only metarefresh fetch succeeds");
 
@@ -6059,4 +5735,534 @@ async fn web_fetch_auto_classifies_a_js_shell_by_document_text_not_framing() {
             .any(|warning| warning["code"] == "browser_unavailable"),
         "the JS shell must be classified from document blocks, not framing: {warnings:?}"
     );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_solves_a_wall_before_escalating_to_the_browser() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = challenge_server();
+    let (replay, wall, pass) = anubis_wall(
+        &server,
+        "<html><head><title>Solved</title></head><body><h1>Solved document</h1></body></html>",
+    );
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        challenge_config(true),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Err(eggsearch::fetch::browser::BrowserFetchError::LaunchFailed(
+                "a solvable wall must not reach the browser".to_string(),
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args).await.expect("fetch succeeds");
+
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Solved document"),
+        "the solver must return the document: {value:?}"
+    );
+    assert_eq!(value["manual_interaction_required"], false);
+    assert_eq!(challenge_warning_count(&value), 0);
+    assert_eq!(value["browser_escalated"], false);
+    assert_eq!(wall.hits(), 1, "the wall is requested once");
+    assert_eq!(pass.hits(), 1, "the published challenge is answered once");
+    assert_eq!(replay.hits(), 1, "the solved request is replayed once");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "the browser must not be launched for a solvable wall"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_returns_an_unresolved_wall_marked_not_as_a_document() {
+    let server = challenge_server();
+    let (_replay, wall, pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::NonInteractiveVerification,
+                Some(eggsearch::fetch::challenge::ChallengeKind::Anubis),
+                false,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("an unresolved wall is returned, not errored");
+
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let challenge = warnings
+        .iter()
+        .find(|warning| warning["code"] == "fetch_challenge_page")
+        .expect("the wall is named");
+    assert!(
+        challenge["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("anubis"),
+        "the warning names the family: {challenge:?}"
+    );
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(pass.hits(), 0, "a disabled solver answers nothing");
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_marks_a_verification_interstitial_that_never_resolves() {
+    let server = challenge_server();
+    let (_replay, _wall, _pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::NonInteractiveVerification,
+                None,
+                false,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("an unresolved verification is returned marked");
+
+    assert_eq!(value["manual_interaction_required"], true);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let challenge = warnings
+        .iter()
+        .find(|warning| warning["code"] == "fetch_challenge_page")
+        .expect("the verification is reported");
+    assert!(
+        challenge["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("verification"),
+        "the warning names the interstitial: {challenge:?}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_counts_a_wall_the_browser_completed() {
+    let server = challenge_server();
+    let (_replay, _wall, _pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state.clone(), args)
+        .await
+        .expect("a completed wall returns the document");
+
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["manual_interaction_required"], false);
+    assert_eq!(
+        browser_completions(),
+        before + 1,
+        "exactly one completion is recorded"
+    );
+
+    let status = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("provider status builds");
+    assert_eq!(
+        status["challenge_solver"]["providers"]["fetch"]["browser_completions"],
+        serde_json::json!(before + 1)
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_never_completes_an_interactive_challenge() {
+    let server = challenge_server();
+    let (_replay, _wall, _pass) = anubis_wall(&server, "<html><body>unused</body></html>");
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            Err(
+                eggsearch::fetch::browser::BrowserFetchError::InteractiveChallenge(
+                    eggsearch::fetch::browser::ManualInteractionRequired {
+                        origin: "http://origin.test".to_string(),
+                        reason:
+                            eggsearch::fetch::browser::ManualInteractionReason::InteractiveChallenge,
+                        browser_profile_supported: false,
+                        message: "Interactive challenge detected; manual interaction required"
+                            .to_string(),
+                    },
+                ),
+            )
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/"));
+    args.render = Some("auto".to_string());
+    let error = run_web_fetch(state, args)
+        .await
+        .expect_err("an interactive challenge stays manual");
+    assert!(
+        format!("{error}").contains("manual_interaction_required"),
+        "got: {error}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_returns_the_marked_wall_when_the_deadline_leaves_no_render_time() {
+    use httpmock::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = challenge_server();
+    let wall = server.mock(|when, then| {
+        when.method(GET).path("/wall");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .delay(Duration::from_millis(1200))
+            .body(
+                r#"<html><head><script id="anubis_challenge">{"rules":{"difficulty":6}}</script></head><body><div id="app"></div></body></html>"#,
+            );
+    });
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        challenge_config(false),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                "unused",
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    args.timeout_ms = Some(2600);
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("the marked wall is returned inside the deadline");
+
+    assert_eq!(wall.hits(), 1);
+    assert_eq!(value["browser_escalated"], false);
+    assert_eq!(value["manual_interaction_required"], true);
+    assert_eq!(challenge_warning_count(&value), 1);
+    let warnings = value["structured_warnings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning["code"] == "browser_unavailable"),
+        "the caller is told why rendering did not happen: {warnings:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "an insufficient deadline must not launch the browser"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn gated_status_config() -> AppConfig {
+    let mut cfg = challenge_config(false);
+    cfg.fetch.retry_max_attempts = 1;
+    cfg
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn gated_status_server(status: u16) -> httpmock::MockServer {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/wall");
+        then.status(status)
+            .header("content-type", "text/html; charset=utf-8")
+            .body("<html><head><title>Search</title></head><body><p>wall</p></body></html>");
+    });
+    server
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_escalates_a_gated_429_to_the_browser() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(429);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        {
+            let mut cfg = gated_status_config();
+            cfg.fetch.origin_circuit_failure_threshold = 1;
+            cfg
+        },
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state.clone(), args)
+        .await
+        .expect("the browser serves the gated status");
+
+    assert_eq!(value["transport"], "browser");
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["status"], 200);
+    assert!(
+        value["text"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("rendered"),
+        "the rendered document is returned: {value:?}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "exactly one escalation per call"
+    );
+    assert_eq!(
+        browser_completions(),
+        before + 1,
+        "a wall the browser completed is counted"
+    );
+    let controller = state.origin_controller.as_ref().expect("origin controller");
+    let key = eggsearch::fetch::origin::OriginKey::from_url(
+        &url::Url::parse(&server.url("/wall")).expect("url"),
+    )
+    .expect("origin key");
+    assert!(
+        controller.circuit_is_open(&key).await.is_none(),
+        "an origin the browser served must not charge the HTTP circuit breaker"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_escalates_a_gated_500_to_the_browser() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(500);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        gated_status_config(),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                false,
+            ))
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let value = run_web_fetch(state, args)
+        .await
+        .expect("the browser serves the empty-bodied refusal");
+
+    assert_eq!(value["transport"], "browser");
+    assert_eq!(value["browser_escalated"], true);
+    assert_eq!(value["status"], 200);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        browser_completions(),
+        before,
+        "a render that cleared no wall is not a completion"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_does_not_escalate_a_refusal_status() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for status in [402, 403, 404] {
+        let server = gated_status_server(status);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let state = state_with_mock_browser(
+            gated_status_config(),
+            Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+                seen.fetch_add(1, Ordering::SeqCst);
+                Ok(browser_outcome(
+                    "unused",
+                    eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                    None,
+                    true,
+                ))
+            }),
+        );
+
+        let mut args = fetch_args_for(server.url("/wall"));
+        args.render = Some("auto".to_string());
+        let err = run_web_fetch(state, args)
+            .await
+            .expect_err("a refusal stays an error");
+        assert!(
+            format!("{err}").contains(&status.to_string()),
+            "the refusal keeps its status: {err}"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "{status} must never render"
+        );
+    }
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_http_only_never_escalates_a_gated_status() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(429);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        gated_status_config(),
+        Arc::new(move |_request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            Ok(browser_outcome(
+                "unused",
+                eggsearch::fetch::browser::FetchDisposition::UsefulContent,
+                None,
+                true,
+            ))
+        }),
+    );
+
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("http_only".to_string());
+    let err = run_web_fetch(state, args)
+        .await
+        .expect_err("http_only keeps the status error");
+    assert!(
+        format!("{err}").contains("429"),
+        "the status error is preserved: {err}"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "http_only must never render"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_names_the_unavailable_escalation() {
+    let server = gated_status_server(429);
+    let mut cfg = gated_status_config();
+    cfg.fetch.browser.enabled = false;
+    let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let err = run_web_fetch(state, args)
+        .await
+        .expect_err("no browser keeps the status error");
+    let message = format!("{err}");
+    assert!(
+        message.contains("http_status"),
+        "the error code is unchanged: {message}"
+    );
+    assert!(
+        message.contains("browser escalation unavailable"),
+        "the caller is told the escalation was unavailable: {message}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn web_fetch_auto_keeps_the_error_when_the_render_did_not_improve() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let server = gated_status_server(500);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = state_with_mock_browser(
+        gated_status_config(),
+        Arc::new(move |request: eggsearch::mcp::state::MockBrowserRequest| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            let mut outcome = browser_outcome(
+                &request.url,
+                eggsearch::fetch::browser::FetchDisposition::ServerError,
+                None,
+                false,
+            );
+            outcome.result.response.status = Some(500);
+            Ok(outcome)
+        }),
+    );
+
+    let _guard = COMPLETION_COUNTER.lock().await;
+    let before = browser_completions();
+    let mut args = fetch_args_for(server.url("/wall"));
+    args.render = Some("auto".to_string());
+    let err = run_web_fetch(state, args)
+        .await
+        .expect_err("a genuine outage is not converted into content");
+    let message = format!("{err}");
+    assert!(
+        message.contains("browser render ended on HTTP 500"),
+        "the attempted escalation is named: {message}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(browser_completions(), before);
 }

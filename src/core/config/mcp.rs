@@ -23,7 +23,7 @@ impl McpSchemaProfile {
     }
 }
 
-/// Which subset of the ten canonical tools `tools/list` advertises.
+/// Which subset of the nine canonical tools `tools/list` advertises.
 ///
 /// A preset filters advertisement only: every tool stays registered and
 /// callable. Unknown values fail configuration parsing.

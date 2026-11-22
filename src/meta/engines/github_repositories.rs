@@ -200,18 +200,12 @@ pub async fn search(
 
 #[cfg(test)]
 mod tests {
+    use super::super::api::param;
     use super::*;
     use std::time::Duration;
 
     fn req(query: &str, max_results: usize) -> EngineSearchRequest {
         EngineSearchRequest::simple(query, max_results, Duration::from_secs(5))
-    }
-
-    fn param<'a>(params: &'a [(String, String)], key: &str) -> Option<&'a str> {
-        params
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
     }
 
     const FIXTURE: &str = r#"{

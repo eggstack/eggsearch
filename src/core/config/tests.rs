@@ -1265,23 +1265,39 @@ fn challenge_defaults_agree_across_sites() {
 }
 
 #[test]
-fn challenge_defaults_are_disabled_and_bounded() {
+fn challenge_defaults_are_enabled_and_bounded() {
     let challenge = ChallengeSection::default();
-    assert!(!challenge.enabled);
-    assert_eq!(challenge.max_difficulty, 5);
-    assert_eq!(challenge.max_attempts, 2_000_000);
-    assert_eq!(challenge.timeout_ms, 2000);
+    assert!(challenge.enabled);
+    assert_eq!(challenge.max_difficulty, 6);
+    assert_eq!(challenge.max_attempts, 100_000_000);
+    assert_eq!(challenge.timeout_ms, 10_000);
     assert_eq!(challenge.cookie_ttl_seconds, 240);
 }
 
 #[test]
-fn config_without_challenge_table_keeps_today_behaviour() {
+fn config_without_challenge_table_enables_the_solver() {
     let parsed: AppConfig = toml::from_str("").expect("empty config parses");
-    assert!(!parsed.search.challenge.enabled);
-    assert_eq!(parsed.search.challenge.max_attempts, 2_000_000);
-    assert_eq!(parsed.search.challenge.timeout_ms, 2000);
+    assert!(parsed.search.challenge.enabled);
+    assert_eq!(parsed.search.challenge.max_difficulty, 6);
+    assert_eq!(parsed.search.challenge.max_attempts, 100_000_000);
+    assert_eq!(parsed.search.challenge.timeout_ms, 10_000);
     assert_eq!(parsed.search.challenge.cookie_ttl_seconds, 240);
     parsed.validate().expect("defaults validate");
+}
+
+#[test]
+fn challenge_can_still_be_disabled_explicitly() {
+    let mut value: toml::Value =
+        toml::from_str(&toml::to_string(&AppConfig::default()).expect("serialize"))
+            .expect("toml value");
+    let challenge = value
+        .get_mut("search")
+        .and_then(|search| search.get_mut("challenge"))
+        .and_then(toml::Value::as_table_mut)
+        .expect("challenge table present");
+    challenge.insert("enabled".to_string(), toml::Value::Boolean(false));
+    let parsed: AppConfig = value.try_into().expect("explicit disable parses");
+    assert!(!parsed.search.challenge.enabled);
 }
 
 #[test]

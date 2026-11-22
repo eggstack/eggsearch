@@ -44,19 +44,21 @@ pub(crate) const MAX_TREE_WALK_DEPTH: usize = 256;
 pub use accept::{select_accept_policy, AcceptPolicy, HTML_ACCEPT_POLICY, MARKDOWN_ACCEPT_POLICY};
 #[cfg(feature = "browser")]
 pub use browser::{
-    browser_capability_report, browser_fetch, browser_fetch_with_policy,
+    browser_capability_report, browser_fetch, browser_fetch_outcome, browser_fetch_with_policy,
     browser_result_to_response, classify_response, discover_browser, is_request_allowed,
-    is_request_allowed_with_dns, parse_browser_major_version, BrowserAvailability, BrowserConfig,
-    BrowserDiscovery, BrowserFamily, BrowserFetchResult, BrowserLaunchError, BrowserLifecycle,
-    BrowserProfileMetadata, BrowserSource, FetchDisposition, FetchTransportKind,
-    ManualInteractionReason, ManualInteractionRequired, PolicyViolation, ProfileError, ProfileLock,
-    ProfileManager, ProfileResult, RenderPolicy, TransportResponse, TransportTiming,
+    is_request_allowed_with_dns, parse_browser_major_version, rendered_result_serves,
+    BrowserAvailability, BrowserConfig, BrowserDiscovery, BrowserFamily, BrowserFetchOutcome,
+    BrowserFetchResult, BrowserLaunchError, BrowserLifecycle, BrowserProfileMetadata,
+    BrowserSource, CaptureError, FetchDisposition, FetchTransportKind, ManualInteractionReason,
+    ManualInteractionRequired, PolicyViolation, ProfileError, ProfileLock, ProfileManager,
+    ProfileResult, RenderPolicy, ScreenshotCapture, TransportResponse, TransportTiming,
     DEFAULT_GLOBAL_CONCURRENCY, DEFAULT_MAX_DOM_BYTES, DEFAULT_MAX_REQUESTS,
     DEFAULT_NAVIGATION_TIMEOUT_MS, DEFAULT_PER_ORIGIN_CONCURRENCY, DEFAULT_POST_LOAD_WAIT_MS,
     DEFAULT_PROFILE_PROCESS_TIMEOUT_MS, DEFAULT_STARTUP_TIMEOUT_MS, DEFAULT_VERIFICATION_WAIT_MS,
     MAX_GLOBAL_CONCURRENCY, MAX_MAX_DOM_BYTES, MAX_MAX_REQUESTS, MAX_NAVIGATION_TIMEOUT_MS,
     MAX_PER_ORIGIN_CONCURRENCY, MAX_POST_LOAD_WAIT_MS, MAX_PROFILE_PROCESS_TIMEOUT_MS,
-    MAX_STARTUP_TIMEOUT_MS, MAX_VERIFICATION_WAIT_MS, PROFILE_SCHEMA_VERSION,
+    MAX_SCREENSHOT_BYTES, MAX_SCREENSHOT_HEIGHT, MAX_SCREENSHOT_WIDTH, MAX_STARTUP_TIMEOUT_MS,
+    MAX_VERIFICATION_WAIT_MS, PROFILE_SCHEMA_VERSION,
 };
 pub use cache::{
     build_raw_cache_key, build_raw_response_hash, CacheFreshness, CacheScope, CacheStatus,

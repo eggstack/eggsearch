@@ -20,7 +20,7 @@
 //!   entity sub-namespace to prevent cross-entity collisions and enable
 //!   future algorithm migration.
 //! - IDs are prefixed with a human-readable tag (`src_`, `fetch_`,
-//!   `suggested_`, `batch_`, `loc_`, `doc_`, `chunk_`) so callers can
+//!   `suggested_`, `batch_`, `loc_`, `doc_`, `chunk_`, `kdelta_`) so callers can
 //!   distinguish entity types at a glance.
 //! - The existing random UUID-based `id` on `SourceCard` is preserved
 //!   for backward compatibility; the new `stable_id` field carries the
@@ -835,6 +835,22 @@ pub fn compute_doc_id(key: &DocKey<'_>) -> String {
 /// Convenience: compute a document ID from individual fields.
 pub fn doc_id(url: Option<&str>, title: Option<&str>, kind: Option<&str>) -> String {
     compute_doc_id(&DocKey { url, title, kind })
+}
+
+/// `kdelta_<16hex(canonical url + basis + precision + normalized date)>`.
+pub fn knowledge_delta_id(
+    url: &str,
+    basis: &str,
+    precision: &str,
+    normalized_date: &str,
+) -> String {
+    let mut hasher = FnvHasher::new();
+    write_entity_prefix(&mut hasher, "kdelta");
+    write_str(&mut hasher, &canonicalize_url(url));
+    write_str(&mut hasher, basis);
+    write_str(&mut hasher, precision);
+    write_str(&mut hasher, normalized_date);
+    format!("kdelta_{:016x}", hasher.finish())
 }
 
 /// Canonical key for a document chunk's deterministic identity.

@@ -135,6 +135,18 @@ and cached health only.
 - Starts from `cfg.fetch_limits()`, overrides only `timeout_ms` when
   the flag is present, and builds `FetchClient::new()` with the
   configured user agent and sanitize flag.
+- Renders according to `[fetch.browser].policy` with no per-call flag. A
+  disabled browser is `http_only` whatever the policy spelling says;
+  `http_only` makes no browser attempt; `browser` renders directly and
+  reports the unavailable message when no executable was discovered; `auto`
+  (the default) keeps the HTTP attempt as the hot path.
+- Under `auto`, an HTTP attempt that returns a browser-gated status
+  (`429`, `500..=599`) escalates once through `browser_fetch_with_policy`,
+  bounded by the call deadline and the 2 s floor, and applies the shared
+  `rendered_result_serves` return rule. `200..400` or a completed wall
+  replaces the error; anything else keeps it with the attempted escalation
+  named in the message. The CLI never gains profile-scoped or screenshot
+  behaviour.
 - `ExtractMode` is `MetadataOnly` when `--metadata-only`, else
   `Markdown` when `--markdown`, else `Text`. `include_links` is the
   flag OR `include_links_default`.

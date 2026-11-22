@@ -37,7 +37,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `browser` | Headless Chrome/Chromium rendering via `chromiumoxide` | Browser rendering tests |
 | `egress` | Optional listener-free HTTP/SOCKS proxy-chain route beneath eggfetch (provider upstreams only, source-build opt-in) | Egress routing tests |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
-
+| `live-mcp-smoke` | Real MCP-protocol smoke against built-in keyless defaults; retains default `pdf`/`browser`, does not enable `mock` | Manual only |
 **Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
 
 ## Test Locations
@@ -45,7 +45,8 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | Location | Feature Gate | Purpose |
 |----------|-------------|---------|
 | `src/*/mod.rs` | Varies | Unit tests |
-| `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
+| `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs`, `knowledge_delta_brief.rs`, `knowledge_delta_discovery.rs` | `mock` (mostly) | Behavioral MCP/workflow contracts (partitioned, no mega-suite) |
+| `tests/knowledge_delta_index.rs` | None | Local evidence index precision, partition isolation, and refusal |
 | `tests/egress_routing.rs` | None (proxy composition under `egress`) | Egress config validation (incl. IPv6), SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, TLS/SNI, compression/body limits, auth isolation, malformed-proxy and redirect regressions |
 | `tests/egress_qualify_contract.rs` | None | Egress qualification CI contract: exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage (`packaging/check-egress-qualify-contract.sh` enforces the same in `make packaging-check`) |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
@@ -60,6 +61,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/retrieval_quality.rs` | `mock` (live observation and recorder ignored) | Synthetic retrieval relevance corpus (`tests/fixtures/retrieval_quality/cases.json`), candidate-snapshot replay through production selection (`candidate_snapshots.json`, tier-2 `recorded_snapshots.json`, tier-3 into `target/snapshots/`), seeded negative controls, derived-intent rollout gate (`make eval-retrieval-quality`) |
 | `tests/tool_surface_live.rs` | None (comparison `#[ignore]`d) | Layer 3 report contract + opt-in manual multi-model comparison (`EGGSEARCH_EVAL_MODEL`, `-- --ignored`) |
 | `tests/mcp_tool_contract.rs`, `mcp_schema_slimming.rs`, `mcp_2026_protocol.rs`, `mcp_projection.rs` | None | Tool consolidation contracts: registry parity, schema budgets, structured errors, response projection |
+| `tests/tool_inventory_parity.rs` | 4 | One-inventory parity across contract registry, workflow gate, presets, SDK discovery, and documented tables; compatibility alias boundary |
 | `tests/adversarial_corpus.rs` | None | Malformed input validation |
 | `tests/docs_*.rs` | None | Documentation contract tests |
 | `tests/schema_identity_registry.rs` | None | Schema + deterministic ID fixtures |
@@ -67,7 +69,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/security_applicability_corpus.rs` | None | Security applicability pipeline regression |
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
-| `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
+| `tests/mcp_http.rs` | `all-features`; live test via `live-mcp-smoke` | Loopback Streamable HTTP lifecycle, bounds, identity, shutdown, plus ignored real-provider MCP smoke exercising default PDF/browser features without `mock` |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
 This table is representative, not exhaustive — 83 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
@@ -147,7 +149,7 @@ own. Move these in the same change as the code:
 | New/renamed test suite | `docs/test-inventory.md`, `architecture/testing.md`, the test table above |
 | New provider or engine | `KNOWN_PROVIDER_IDS`, `docs/provider-setup.md` (native-vs-local enforcement), `tests/provider_capability_contract.rs` |
 | New or changed HTML scraper parser | captured fixtures under `tests/fixtures/engines/<provider>/` (results, empty, blocked), conformance coverage, and `architecture/engines.md` § Scraper Fidelity |
-| New or changed MCP tool | `src/mcp/server.rs`, `docs/tool-matrix.md`, `docs/codegg-integration.md`; the count stays at 10 unless the matrix and `tests/docs_tool_names.rs` move too |
+| New or changed MCP tool | `src/mcp/server.rs`, `docs/tool-matrix.md`, `docs/codegg-integration.md`; the canonical inventory is ten tools under ADR-0020. Update `tests/docs_tool_names.rs` and host guidance with any future inventory change; `web_fetch` and `batch_fetch` remain callable but unadvertised compatibility aliases. |
 | Release target, installer, or version fact | `packaging/release-targets.txt` + `release-inputs.txt` + release workflow + installers + updater + `docs/release.md` + `docs/installation.md` + `README.md` |
 | Milestone status | `plans/registry.md`, the owning `plans/subsystems/` roadmap, a `plans/closure/` record, and the `architecture/` section that states it — see the `eggsearch-planning` skill |
 

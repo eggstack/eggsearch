@@ -281,7 +281,7 @@ fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
         && cfg.search.challenge.cookie_ttl_seconds > 0
     {
         warnings.push(
-            "[egress] is routed and [search.challenge] reuses pass cookies; a challenge token bound to the client's egress address is re-challenged or rejected when the exit address changes — set [search.challenge].cookie_ttl_seconds = 0 if the route does not keep one exit address per process".to_string(),
+            "[egress] is routed and [search.challenge] reuses pass cookies (search upstreams and the fetch path); a challenge token bound to the client's egress address is re-challenged or rejected when the exit address changes — set [search.challenge].cookie_ttl_seconds = 0 if the route does not keep one exit address per process".to_string(),
         );
     }
 
@@ -368,6 +368,12 @@ mod tests {
         assert!(collect_warnings(&cfg)
             .iter()
             .any(|warning| warning.contains("cookie_ttl_seconds = 0")));
+        assert!(
+            collect_warnings(&cfg)
+                .iter()
+                .any(|warning| warning.contains("the fetch path")),
+            "the warning must cover the fetch-side pass-cookie cache"
+        );
 
         cfg.search.challenge.cookie_ttl_seconds = 0;
         assert_eq!(egress_warnings(&cfg), 0, "zero TTL disables reuse");

@@ -6,7 +6,7 @@ This document defines how eggsearch's long-term direction is translated into
 actionable work without allowing short-lived implementation details to
 destabilize the canonical specification, terminology, or master roadmap. It is
 adapted from the CodeGG planning convention to eggsearch's single-crate,
-ten-tool, bounded-fetch reality.
+fixed MCP surface and bounded-fetch reality.
 
 The keywords MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, and MAY are normative.
 

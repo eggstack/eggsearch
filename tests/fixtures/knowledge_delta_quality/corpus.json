@@ -1,0 +1,1929 @@
+{
+  "_meta": {
+    "purpose": "Frozen offline corpus for the M007 knowledge-delta discovery quality qualification.",
+    "frozenAt": "2026-11-20",
+    "generatedFrom": [
+      "https://endoflife.date/api/python.json",
+      "https://endoflife.date/api/nodejs.json",
+      "https://endoflife.date/api/postgresql.json",
+      "https://endoflife.date/api/kubernetes.json",
+      "https://endoflife.date/api/go.json",
+      "https://endoflife.date/api/rust.json",
+      "https://endoflife.date/api/ruby.json",
+      "https://endoflife.date/api/django.json"
+    ],
+    "anchorKind": "secondary_catalog",
+    "anchorNote": "Publication dates are taken from the endoflife.date release catalog, a clearly labelled secondary source. Each event keeps its catalog product URL; no official page text is copied.",
+    "requirement": {
+      "datedCases": 80,
+      "withheldName": 20,
+      "negativeControls": 20,
+      "ambiguousOrConflicting": 15
+    },
+    "counts": {
+      "direct": 14,
+      "withheld": 27,
+      "negative_control": 14,
+      "ambiguous_month": 14,
+      "negative_past": 13,
+      "conflict": 6
+    },
+    "caseCount": 88,
+    "eventCount": 82,
+    "providerProfile": [
+      "hn_algolia"
+    ],
+    "timestampCapableProviders": [
+      "hn_algolia"
+    ],
+    "note": "Classes: direct emits from the live pool; withheld reaches the gold only through an indexed source-backed edge, and its topic names neither the product nor a term in the gold record; negative_control and negative_past must not emit; ambiguous_month is indeterminate; conflict must not duplicate.",
+    "fixtureCardUrlNote": "Card URLs in the harness are frozen identifiers modelled on each product's official release documentation host. They are not claimed to be fetchable pages. They exist so a frozen card keeps a stable canonical URL and kdelta_ identity, and so the pool spans several hosts instead of tripping the two-per-domain diversity cap. Real payload text is never copied into the fixture.",
+    "liveStudySeparate": "This corpus measures conditional ranking and date accounting only: the gold source is already in the candidate pool or the seeded index. Discovery of a source that no provider returns is measured only by the separate prospective live study."
+  },
+  "events": [
+    {
+      "id": "evo_python_3_15_release",
+      "product": "python",
+      "version": "3.15",
+      "date": "2026-10-09",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_15_patch",
+      "product": "python",
+      "version": "3.15.2",
+      "date": "2026-10-25",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_14_release",
+      "product": "python",
+      "version": "3.14",
+      "date": "2025-10-07",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_14_patch",
+      "product": "python",
+      "version": "3.14.10",
+      "date": "2026-10-25",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_13_release",
+      "product": "python",
+      "version": "3.13",
+      "date": "2024-10-07",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_13_patch",
+      "product": "python",
+      "version": "3.13.18",
+      "date": "2026-10-25",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_12_release",
+      "product": "python",
+      "version": "3.12",
+      "date": "2023-10-02",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_python_3_12_patch",
+      "product": "python",
+      "version": "3.12.16",
+      "date": "2026-10-25",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/python",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_26_release",
+      "product": "nodejs",
+      "version": "26",
+      "date": "2026-05-05",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_26_patch",
+      "product": "nodejs",
+      "version": "26.13.1",
+      "date": "2026-11-11",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_25_release",
+      "product": "nodejs",
+      "version": "25",
+      "date": "2025-10-15",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_25_patch",
+      "product": "nodejs",
+      "version": "25.9.0",
+      "date": "2026-04-01",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_24_release",
+      "product": "nodejs",
+      "version": "24",
+      "date": "2025-05-06",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_24_patch",
+      "product": "nodejs",
+      "version": "24.22.3",
+      "date": "2026-11-11",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_23_release",
+      "product": "nodejs",
+      "version": "23",
+      "date": "2024-10-16",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_23_patch",
+      "product": "nodejs",
+      "version": "23.11.1",
+      "date": "2025-05-14",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_22_release",
+      "product": "nodejs",
+      "version": "22",
+      "date": "2024-04-24",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_22_patch",
+      "product": "nodejs",
+      "version": "22.23.5",
+      "date": "2026-11-11",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_21_release",
+      "product": "nodejs",
+      "version": "21",
+      "date": "2023-10-17",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_nodejs_21_patch",
+      "product": "nodejs",
+      "version": "21.7.3",
+      "date": "2024-04-10",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/nodejs",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_19_release",
+      "product": "postgresql",
+      "version": "19",
+      "date": "2026-11-19",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_19_patch",
+      "product": "postgresql",
+      "version": "19.0",
+      "date": "2026-11-16",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_18_release",
+      "product": "postgresql",
+      "version": "18",
+      "date": "2025-09-25",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_18_patch",
+      "product": "postgresql",
+      "version": "18.7",
+      "date": "2026-11-09",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_17_release",
+      "product": "postgresql",
+      "version": "17",
+      "date": "2024-09-26",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_17_patch",
+      "product": "postgresql",
+      "version": "17.12",
+      "date": "2026-11-09",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_16_release",
+      "product": "postgresql",
+      "version": "16",
+      "date": "2023-09-14",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_postgresql_16_patch",
+      "product": "postgresql",
+      "version": "16.16",
+      "date": "2026-11-09",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/postgresql",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_37_release",
+      "product": "kubernetes",
+      "version": "1.37",
+      "date": "2026-08-26",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_37_patch",
+      "product": "kubernetes",
+      "version": "1.37.2",
+      "date": "2026-10-27",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_36_release",
+      "product": "kubernetes",
+      "version": "1.36",
+      "date": "2026-04-22",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_36_patch",
+      "product": "kubernetes",
+      "version": "1.36.6",
+      "date": "2026-10-27",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_35_release",
+      "product": "kubernetes",
+      "version": "1.35",
+      "date": "2025-12-17",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_35_patch",
+      "product": "kubernetes",
+      "version": "1.35.10",
+      "date": "2026-10-27",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_34_release",
+      "product": "kubernetes",
+      "version": "1.34",
+      "date": "2025-08-27",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_34_patch",
+      "product": "kubernetes",
+      "version": "1.34.13",
+      "date": "2026-10-27",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_33_release",
+      "product": "kubernetes",
+      "version": "1.33",
+      "date": "2025-04-23",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_33_patch",
+      "product": "kubernetes",
+      "version": "1.33.13",
+      "date": "2026-06-11",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_32_release",
+      "product": "kubernetes",
+      "version": "1.32",
+      "date": "2024-12-11",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_kubernetes_1_32_patch",
+      "product": "kubernetes",
+      "version": "1.32.13",
+      "date": "2026-02-26",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/kubernetes",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_27_release",
+      "product": "go",
+      "version": "1.27",
+      "date": "2026-08-19",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_27_patch",
+      "product": "go",
+      "version": "1.27.4",
+      "date": "2026-11-10",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_26_release",
+      "product": "go",
+      "version": "1.26",
+      "date": "2026-02-10",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_26_patch",
+      "product": "go",
+      "version": "1.26.11",
+      "date": "2026-11-10",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_25_release",
+      "product": "go",
+      "version": "1.25",
+      "date": "2025-08-12",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_25_patch",
+      "product": "go",
+      "version": "1.25.14",
+      "date": "2026-08-19",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_24_release",
+      "product": "go",
+      "version": "1.24",
+      "date": "2025-02-11",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_24_patch",
+      "product": "go",
+      "version": "1.24.13",
+      "date": "2026-02-04",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_23_release",
+      "product": "go",
+      "version": "1.23",
+      "date": "2024-08-13",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_23_patch",
+      "product": "go",
+      "version": "1.23.12",
+      "date": "2025-08-06",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_22_release",
+      "product": "go",
+      "version": "1.22",
+      "date": "2024-02-06",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_go_1_22_patch",
+      "product": "go",
+      "version": "1.22.12",
+      "date": "2025-02-04",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/go",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_100_release",
+      "product": "rust",
+      "version": "1.100",
+      "date": "2026-11-12",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_100_patch",
+      "product": "rust",
+      "version": "1.100.0",
+      "date": "2026-11-12",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_99_release",
+      "product": "rust",
+      "version": "1.99",
+      "date": "2026-10-01",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_99_patch",
+      "product": "rust",
+      "version": "1.99.1",
+      "date": "2026-10-15",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_98_release",
+      "product": "rust",
+      "version": "1.98",
+      "date": "2026-08-20",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_98_patch",
+      "product": "rust",
+      "version": "1.98.1",
+      "date": "2026-09-03",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_97_release",
+      "product": "rust",
+      "version": "1.97",
+      "date": "2026-07-09",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_97_patch",
+      "product": "rust",
+      "version": "1.97.1",
+      "date": "2026-07-16",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_96_release",
+      "product": "rust",
+      "version": "1.96",
+      "date": "2026-05-28",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_96_patch",
+      "product": "rust",
+      "version": "1.96.1",
+      "date": "2026-06-30",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_95_release",
+      "product": "rust",
+      "version": "1.95",
+      "date": "2026-04-16",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_rust_1_95_patch",
+      "product": "rust",
+      "version": "1.95.0",
+      "date": "2026-04-16",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/rust",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_ruby_4_0_release",
+      "product": "ruby",
+      "version": "4.0",
+      "date": "2025-12-25",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/ruby",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_ruby_4_0_patch",
+      "product": "ruby",
+      "version": "4.0.10",
+      "date": "2026-11-18",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/ruby",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_ruby_3_4_release",
+      "product": "ruby",
+      "version": "3.4",
+      "date": "2024-12-24",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/ruby",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_ruby_3_4_patch",
+      "product": "ruby",
+      "version": "3.4.13",
+      "date": "2026-11-19",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/ruby",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_ruby_3_3_release",
+      "product": "ruby",
+      "version": "3.3",
+      "date": "2023-12-25",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/ruby",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_ruby_3_3_patch",
+      "product": "ruby",
+      "version": "3.3.14",
+      "date": "2026-11-19",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/ruby",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_6_1_release",
+      "product": "django",
+      "version": "6.1",
+      "date": "2026-08-05",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_6_1_patch",
+      "product": "django",
+      "version": "6.1.3",
+      "date": "2026-11-03",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_6_0_release",
+      "product": "django",
+      "version": "6.0",
+      "date": "2025-12-03",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_6_0_patch",
+      "product": "django",
+      "version": "6.0.10",
+      "date": "2026-11-03",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_5_2_release",
+      "product": "django",
+      "version": "5.2",
+      "date": "2025-04-02",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_5_2_patch",
+      "product": "django",
+      "version": "5.2.19",
+      "date": "2026-11-03",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_5_1_release",
+      "product": "django",
+      "version": "5.1",
+      "date": "2024-08-07",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_5_1_patch",
+      "product": "django",
+      "version": "5.1.15",
+      "date": "2025-12-02",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_5_0_release",
+      "product": "django",
+      "version": "5.0",
+      "date": "2023-12-04",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_5_0_patch",
+      "product": "django",
+      "version": "5.0.14",
+      "date": "2025-04-02",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_4_2_release",
+      "product": "django",
+      "version": "4.2",
+      "date": "2023-04-03",
+      "kind": "release",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    },
+    {
+      "id": "evo_django_4_2_patch",
+      "product": "django",
+      "version": "4.2.30",
+      "date": "2026-04-07",
+      "kind": "patch",
+      "anchorUrl": "https://endoflife.date/django",
+      "anchorKind": "secondary_catalog"
+    }
+  ],
+  "cases": [
+    {
+      "id": "kdq_001_direct",
+      "class": "direct",
+      "product": "python",
+      "topic": "Python 3.15 release notes",
+      "cutoff": {
+        "date": "2026-07-11",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_15_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_002_withheld",
+      "class": "withheld",
+      "product": "python",
+      "topic": "CPython interpreter free-threading and deprecation schedule",
+      "cutoff": {
+        "date": "2026-07-27",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_15_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_003_negative_control",
+      "class": "negative_control",
+      "product": "python",
+      "topic": "Python 3.14 release notes",
+      "cutoff": {
+        "date": "2025-10-07",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_14_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_004_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "python",
+      "topic": "Python 3.14 release notes",
+      "cutoff": {
+        "date": "2026-10",
+        "precision": "month"
+      },
+      "goldEventId": "evo_python_3_14_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_005_withheld",
+      "class": "withheld",
+      "product": "python",
+      "topic": "CPython interpreter free-threading and deprecation schedule",
+      "cutoff": {
+        "date": "2024-07-09",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_13_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_006_negative_past",
+      "class": "negative_past",
+      "product": "python",
+      "topic": "Python 3.13 release notes",
+      "cutoff": {
+        "date": "2027-02-22",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_13_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_007_direct",
+      "class": "direct",
+      "product": "python",
+      "topic": "Python 3.12 release notes",
+      "cutoff": {
+        "date": "2023-07-04",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_12_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_008_withheld",
+      "class": "withheld",
+      "product": "python",
+      "topic": "CPython interpreter free-threading and deprecation schedule",
+      "cutoff": {
+        "date": "2026-07-27",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_12_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_009_negative_control",
+      "class": "negative_control",
+      "product": "nodejs",
+      "topic": "Node.js 26 release",
+      "cutoff": {
+        "date": "2026-05-05",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_26_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_010_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "nodejs",
+      "topic": "Node.js 26.13 release",
+      "cutoff": {
+        "date": "2026-11",
+        "precision": "month"
+      },
+      "goldEventId": "evo_nodejs_26_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_011_withheld",
+      "class": "withheld",
+      "product": "nodejs",
+      "topic": "JavaScript runtime LTS schedule and module loader changes",
+      "cutoff": {
+        "date": "2025-07-17",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_25_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_012_negative_past",
+      "class": "negative_past",
+      "product": "nodejs",
+      "topic": "Node.js 25.9 release",
+      "cutoff": {
+        "date": "2026-07-30",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_25_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_013_direct",
+      "class": "direct",
+      "product": "nodejs",
+      "topic": "Node.js 24 release",
+      "cutoff": {
+        "date": "2025-02-05",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_24_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_014_withheld",
+      "class": "withheld",
+      "product": "nodejs",
+      "topic": "JavaScript runtime LTS schedule and module loader changes",
+      "cutoff": {
+        "date": "2026-08-13",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_24_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_015_negative_control",
+      "class": "negative_control",
+      "product": "nodejs",
+      "topic": "Node.js 23 release",
+      "cutoff": {
+        "date": "2024-10-16",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_23_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_016_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "nodejs",
+      "topic": "Node.js 23.11 release",
+      "cutoff": {
+        "date": "2025-05",
+        "precision": "month"
+      },
+      "goldEventId": "evo_nodejs_23_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_017_withheld",
+      "class": "withheld",
+      "product": "nodejs",
+      "topic": "JavaScript runtime LTS schedule and module loader changes",
+      "cutoff": {
+        "date": "2024-01-25",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_22_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_018_negative_past",
+      "class": "negative_past",
+      "product": "nodejs",
+      "topic": "Node.js 22.23 release",
+      "cutoff": {
+        "date": "2027-03-11",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_22_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_019_direct",
+      "class": "direct",
+      "product": "nodejs",
+      "topic": "Node.js 21 release",
+      "cutoff": {
+        "date": "2023-07-19",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_21_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_020_withheld",
+      "class": "withheld",
+      "product": "nodejs",
+      "topic": "JavaScript runtime LTS schedule and module loader changes",
+      "cutoff": {
+        "date": "2024-01-11",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_21_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_021_negative_control",
+      "class": "negative_control",
+      "product": "postgresql",
+      "topic": "PostgreSQL 19 release notes",
+      "cutoff": {
+        "date": "2026-11-19",
+        "precision": "day"
+      },
+      "goldEventId": "evo_postgresql_19_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_022_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "postgresql",
+      "topic": "PostgreSQL 19.0 release notes",
+      "cutoff": {
+        "date": "2026-11",
+        "precision": "month"
+      },
+      "goldEventId": "evo_postgresql_19_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_023_withheld",
+      "class": "withheld",
+      "product": "postgresql",
+      "topic": "relational database major version upgrade and logical replication",
+      "cutoff": {
+        "date": "2025-06-27",
+        "precision": "day"
+      },
+      "goldEventId": "evo_postgresql_18_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_024_negative_past",
+      "class": "negative_past",
+      "product": "postgresql",
+      "topic": "PostgreSQL 18.7 release notes",
+      "cutoff": {
+        "date": "2027-03-09",
+        "precision": "day"
+      },
+      "goldEventId": "evo_postgresql_18_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_025_direct",
+      "class": "direct",
+      "product": "postgresql",
+      "topic": "PostgreSQL 17 release notes",
+      "cutoff": {
+        "date": "2024-06-28",
+        "precision": "day"
+      },
+      "goldEventId": "evo_postgresql_17_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_026_withheld",
+      "class": "withheld",
+      "product": "postgresql",
+      "topic": "relational database major version upgrade and logical replication",
+      "cutoff": {
+        "date": "2026-08-11",
+        "precision": "day"
+      },
+      "goldEventId": "evo_postgresql_17_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_027_negative_control",
+      "class": "negative_control",
+      "product": "postgresql",
+      "topic": "PostgreSQL 16 release notes",
+      "cutoff": {
+        "date": "2023-09-14",
+        "precision": "day"
+      },
+      "goldEventId": "evo_postgresql_16_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_028_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "postgresql",
+      "topic": "PostgreSQL 16.16 release notes",
+      "cutoff": {
+        "date": "2026-11",
+        "precision": "month"
+      },
+      "goldEventId": "evo_postgresql_16_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_029_withheld",
+      "class": "withheld",
+      "product": "kubernetes",
+      "topic": "container orchestration control plane deprecation",
+      "cutoff": {
+        "date": "2026-05-28",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_37_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_030_negative_past",
+      "class": "negative_past",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.37 release",
+      "cutoff": {
+        "date": "2027-02-24",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_37_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_031_direct",
+      "class": "direct",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.36 release",
+      "cutoff": {
+        "date": "2026-01-22",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_36_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_032_withheld",
+      "class": "withheld",
+      "product": "kubernetes",
+      "topic": "container orchestration control plane deprecation",
+      "cutoff": {
+        "date": "2026-07-29",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_36_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_033_negative_control",
+      "class": "negative_control",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.35 release",
+      "cutoff": {
+        "date": "2025-12-17",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_35_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_034_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.35 release",
+      "cutoff": {
+        "date": "2026-10",
+        "precision": "month"
+      },
+      "goldEventId": "evo_kubernetes_1_35_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_035_withheld",
+      "class": "withheld",
+      "product": "kubernetes",
+      "topic": "container orchestration control plane deprecation",
+      "cutoff": {
+        "date": "2025-05-29",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_34_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_036_negative_past",
+      "class": "negative_past",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.34 release",
+      "cutoff": {
+        "date": "2027-02-24",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_34_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_037_direct",
+      "class": "direct",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.33 release",
+      "cutoff": {
+        "date": "2025-01-23",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_33_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_038_withheld",
+      "class": "withheld",
+      "product": "kubernetes",
+      "topic": "container orchestration control plane deprecation",
+      "cutoff": {
+        "date": "2026-03-13",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_33_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_039_negative_control",
+      "class": "negative_control",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.32 release",
+      "cutoff": {
+        "date": "2024-12-11",
+        "precision": "day"
+      },
+      "goldEventId": "evo_kubernetes_1_32_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_040_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "kubernetes",
+      "topic": "Kubernetes 1.32 release",
+      "cutoff": {
+        "date": "2026-02",
+        "precision": "month"
+      },
+      "goldEventId": "evo_kubernetes_1_32_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_041_withheld",
+      "class": "withheld",
+      "product": "go",
+      "topic": "compiled systems language compiler toolchain generics and garbage collector changes",
+      "cutoff": {
+        "date": "2026-05-21",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_27_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_042_negative_past",
+      "class": "negative_past",
+      "product": "go",
+      "topic": "Go 1.27 release notes",
+      "cutoff": {
+        "date": "2027-03-10",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_27_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_043_direct",
+      "class": "direct",
+      "product": "go",
+      "topic": "Go 1.26 release notes",
+      "cutoff": {
+        "date": "2025-11-12",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_26_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_044_withheld",
+      "class": "withheld",
+      "product": "go",
+      "topic": "compiled systems language compiler toolchain generics and garbage collector changes",
+      "cutoff": {
+        "date": "2026-08-12",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_26_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_045_negative_control",
+      "class": "negative_control",
+      "product": "go",
+      "topic": "Go 1.25 release notes",
+      "cutoff": {
+        "date": "2025-08-12",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_25_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_046_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "go",
+      "topic": "Go 1.25 release notes",
+      "cutoff": {
+        "date": "2026-08",
+        "precision": "month"
+      },
+      "goldEventId": "evo_go_1_25_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_047_withheld",
+      "class": "withheld",
+      "product": "go",
+      "topic": "compiled systems language compiler toolchain generics and garbage collector changes",
+      "cutoff": {
+        "date": "2024-11-13",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_24_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_048_negative_past",
+      "class": "negative_past",
+      "product": "go",
+      "topic": "Go 1.24 release notes",
+      "cutoff": {
+        "date": "2026-06-04",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_24_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_049_direct",
+      "class": "direct",
+      "product": "go",
+      "topic": "Go 1.23 release notes",
+      "cutoff": {
+        "date": "2024-05-15",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_23_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_050_withheld",
+      "class": "withheld",
+      "product": "go",
+      "topic": "compiled systems language compiler toolchain generics and garbage collector changes",
+      "cutoff": {
+        "date": "2025-05-08",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_23_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_051_negative_control",
+      "class": "negative_control",
+      "product": "go",
+      "topic": "Go 1.22 release notes",
+      "cutoff": {
+        "date": "2024-02-06",
+        "precision": "day"
+      },
+      "goldEventId": "evo_go_1_22_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_052_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "go",
+      "topic": "Go 1.22 release notes",
+      "cutoff": {
+        "date": "2025-02",
+        "precision": "month"
+      },
+      "goldEventId": "evo_go_1_22_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_053_withheld",
+      "class": "withheld",
+      "product": "rust",
+      "topic": "systems programming language edition and borrow checker changes",
+      "cutoff": {
+        "date": "2026-08-14",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_100_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_054_negative_past",
+      "class": "negative_past",
+      "product": "rust",
+      "topic": "Rust 1.100 release",
+      "cutoff": {
+        "date": "2027-03-12",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_100_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_055_direct",
+      "class": "direct",
+      "product": "rust",
+      "topic": "Rust 1.99 release",
+      "cutoff": {
+        "date": "2026-07-03",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_99_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_056_withheld",
+      "class": "withheld",
+      "product": "rust",
+      "topic": "systems programming language edition and borrow checker changes",
+      "cutoff": {
+        "date": "2026-07-17",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_99_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_057_negative_control",
+      "class": "negative_control",
+      "product": "rust",
+      "topic": "Rust 1.98 release",
+      "cutoff": {
+        "date": "2026-08-20",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_98_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_058_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "rust",
+      "topic": "Rust 1.98 release",
+      "cutoff": {
+        "date": "2026-09",
+        "precision": "month"
+      },
+      "goldEventId": "evo_rust_1_98_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_059_withheld",
+      "class": "withheld",
+      "product": "rust",
+      "topic": "systems programming language edition and borrow checker changes",
+      "cutoff": {
+        "date": "2026-04-10",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_97_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_060_negative_past",
+      "class": "negative_past",
+      "product": "rust",
+      "topic": "Rust 1.97 release",
+      "cutoff": {
+        "date": "2026-11-13",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_97_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_061_direct",
+      "class": "direct",
+      "product": "rust",
+      "topic": "Rust 1.96 release",
+      "cutoff": {
+        "date": "2026-02-27",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_96_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_062_withheld",
+      "class": "withheld",
+      "product": "rust",
+      "topic": "systems programming language edition and borrow checker changes",
+      "cutoff": {
+        "date": "2026-04-01",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_96_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_063_negative_control",
+      "class": "negative_control",
+      "product": "rust",
+      "topic": "Rust 1.95 release",
+      "cutoff": {
+        "date": "2026-04-16",
+        "precision": "day"
+      },
+      "goldEventId": "evo_rust_1_95_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_064_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "rust",
+      "topic": "Rust 1.95 release",
+      "cutoff": {
+        "date": "2026-04",
+        "precision": "month"
+      },
+      "goldEventId": "evo_rust_1_95_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_065_withheld",
+      "class": "withheld",
+      "product": "ruby",
+      "topic": "dynamic scripting language garbage collector and JIT changes",
+      "cutoff": {
+        "date": "2025-09-26",
+        "precision": "day"
+      },
+      "goldEventId": "evo_ruby_4_0_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_066_negative_past",
+      "class": "negative_past",
+      "product": "ruby",
+      "topic": "Ruby 4.0 release",
+      "cutoff": {
+        "date": "2027-03-18",
+        "precision": "day"
+      },
+      "goldEventId": "evo_ruby_4_0_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_067_direct",
+      "class": "direct",
+      "product": "ruby",
+      "topic": "Ruby 3.4 release",
+      "cutoff": {
+        "date": "2024-09-25",
+        "precision": "day"
+      },
+      "goldEventId": "evo_ruby_3_4_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_068_withheld",
+      "class": "withheld",
+      "product": "ruby",
+      "topic": "dynamic scripting language garbage collector and JIT changes",
+      "cutoff": {
+        "date": "2026-08-21",
+        "precision": "day"
+      },
+      "goldEventId": "evo_ruby_3_4_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_069_negative_control",
+      "class": "negative_control",
+      "product": "ruby",
+      "topic": "Ruby 3.3 release",
+      "cutoff": {
+        "date": "2023-12-25",
+        "precision": "day"
+      },
+      "goldEventId": "evo_ruby_3_3_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_070_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "ruby",
+      "topic": "Ruby 3.3 release",
+      "cutoff": {
+        "date": "2026-11",
+        "precision": "month"
+      },
+      "goldEventId": "evo_ruby_3_3_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_071_withheld",
+      "class": "withheld",
+      "product": "django",
+      "topic": "web framework async view and migration support",
+      "cutoff": {
+        "date": "2026-05-07",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_6_1_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_072_negative_past",
+      "class": "negative_past",
+      "product": "django",
+      "topic": "Django 6.1 release notes",
+      "cutoff": {
+        "date": "2027-03-03",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_6_1_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_073_direct",
+      "class": "direct",
+      "product": "django",
+      "topic": "Django 6.0 release notes",
+      "cutoff": {
+        "date": "2025-09-04",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_6_0_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_074_withheld",
+      "class": "withheld",
+      "product": "django",
+      "topic": "web framework async view and migration support",
+      "cutoff": {
+        "date": "2026-08-05",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_6_0_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_075_negative_control",
+      "class": "negative_control",
+      "product": "django",
+      "topic": "Django 5.2 release notes",
+      "cutoff": {
+        "date": "2025-04-02",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_5_2_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_076_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "django",
+      "topic": "Django 5.2 release notes",
+      "cutoff": {
+        "date": "2026-11",
+        "precision": "month"
+      },
+      "goldEventId": "evo_django_5_2_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_077_withheld",
+      "class": "withheld",
+      "product": "django",
+      "topic": "web framework async view and migration support",
+      "cutoff": {
+        "date": "2024-05-09",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_5_1_release",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_078_negative_past",
+      "class": "negative_past",
+      "product": "django",
+      "topic": "Django 5.1 release notes",
+      "cutoff": {
+        "date": "2026-04-01",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_5_1_patch",
+      "expect": "not_emit",
+      "note": "publication precedes the cutoff"
+    },
+    {
+      "id": "kdq_079_direct",
+      "class": "direct",
+      "product": "django",
+      "topic": "Django 5.0 release notes",
+      "cutoff": {
+        "date": "2023-09-05",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_5_0_release",
+      "expect": "emit",
+      "note": "dated gold card is present in the live candidate pool"
+    },
+    {
+      "id": "kdq_080_withheld",
+      "class": "withheld",
+      "product": "django",
+      "topic": "web framework async view and migration support",
+      "cutoff": {
+        "date": "2025-01-02",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_5_0_patch",
+      "expect": "emit_via_expansion",
+      "note": "gold card is indexed only and shares no term with the topic; a source-backed edge is the only route to it"
+    },
+    {
+      "id": "kdq_081_negative_control",
+      "class": "negative_control",
+      "product": "django",
+      "topic": "Django 4.2 release notes",
+      "cutoff": {
+        "date": "2023-04-03",
+        "precision": "day"
+      },
+      "goldEventId": "evo_django_4_2_release",
+      "expect": "not_emit",
+      "note": "publication is on the cutoff day and must not be reported after it"
+    },
+    {
+      "id": "kdq_082_ambiguous_month",
+      "class": "ambiguous_month",
+      "product": "django",
+      "topic": "Django 4.2 release notes",
+      "cutoff": {
+        "date": "2026-04",
+        "precision": "month"
+      },
+      "goldEventId": "evo_django_4_2_patch",
+      "expect": "not_emit",
+      "note": "month-precision cutoff in the same month is indeterminate, not after"
+    },
+    {
+      "id": "kdq_083_conflict",
+      "class": "conflict",
+      "product": "python",
+      "topic": "Python 3.15 release notes",
+      "cutoff": {
+        "date": "2026-08-26",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_15_patch",
+      "expect": "dedupe_once",
+      "note": "the same canonical source is declared twice with two dates; at most one delta"
+    },
+    {
+      "id": "kdq_084_conflict",
+      "class": "conflict",
+      "product": "python",
+      "topic": "Python 3.14 release notes",
+      "cutoff": {
+        "date": "2026-08-26",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_14_patch",
+      "expect": "dedupe_once",
+      "note": "the same canonical source is declared twice with two dates; at most one delta"
+    },
+    {
+      "id": "kdq_085_conflict",
+      "class": "conflict",
+      "product": "python",
+      "topic": "Python 3.13 release notes",
+      "cutoff": {
+        "date": "2026-08-26",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_13_patch",
+      "expect": "dedupe_once",
+      "note": "the same canonical source is declared twice with two dates; at most one delta"
+    },
+    {
+      "id": "kdq_086_conflict",
+      "class": "conflict",
+      "product": "python",
+      "topic": "Python 3.12 release notes",
+      "cutoff": {
+        "date": "2026-08-26",
+        "precision": "day"
+      },
+      "goldEventId": "evo_python_3_12_patch",
+      "expect": "dedupe_once",
+      "note": "the same canonical source is declared twice with two dates; at most one delta"
+    },
+    {
+      "id": "kdq_087_conflict",
+      "class": "conflict",
+      "product": "nodejs",
+      "topic": "Node.js 26.13 release",
+      "cutoff": {
+        "date": "2026-09-12",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_26_patch",
+      "expect": "dedupe_once",
+      "note": "the same canonical source is declared twice with two dates; at most one delta"
+    },
+    {
+      "id": "kdq_088_conflict",
+      "class": "conflict",
+      "product": "nodejs",
+      "topic": "Node.js 25.9 release",
+      "cutoff": {
+        "date": "2026-01-31",
+        "precision": "day"
+      },
+      "goldEventId": "evo_nodejs_25_patch",
+      "expect": "dedupe_once",
+      "note": "the same canonical source is declared twice with two dates; at most one delta"
+    }
+  ]
+}

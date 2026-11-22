@@ -58,6 +58,7 @@ fn make_vuln(
         ghsa_ids: Vec::new(),
         osv_ids: Vec::new(),
         rustsec_ids: Vec::new(),
+        summary: None,
         ecosystem: Some("crates_io".to_string()),
         package: Some("test-pkg".to_string()),
         affected_ranges: affected.into_iter().map(String::from).collect(),

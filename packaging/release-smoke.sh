@@ -44,16 +44,15 @@ import time
 
 binary, expected_version = sys.argv[1:]
 expected_tools = {
-    "web_search",
-    "web_fetch",
-    "batch_fetch",
-    "provider_status",
-    "repo_search",
-    "repo_fetch",
-    "repo_map",
-    "security_search",
-    "research_search",
     "build_evidence_bundle",
+    "fetch",
+    "knowledge_brief",
+    "provider_status",
+    "repo_map",
+    "repo_search",
+    "research_search",
+    "security_search",
+    "web_search",
 }
 
 process = subprocess.Popen(

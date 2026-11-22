@@ -71,6 +71,19 @@ pub fn warnings(challenge: Option<ChallengeKind>) -> Vec<crate::core::warning::A
         .unwrap_or_default()
 }
 
+/// Whether a status is one a browser-gated origin serves an automated client.
+///
+/// `429` is the status the wall itself is served with and the `5xx` range is
+/// the empty-bodied refusal a non-browser identity receives, so neither
+/// carries a marker a page classifier could find. Both are the class a browser
+/// may serve instead, and search escalation and fetch escalation share this
+/// one definition; a refusal, an authentication demand, or a not-found status
+/// is never a reason to render.
+#[must_use]
+pub const fn is_browser_gated_status(status: u16) -> bool {
+    matches!(status, 429 | 500..=599)
+}
+
 fn is_anubis(body: &str) -> bool {
     const MARKERS: [&str; 4] = [
         "anubis_challenge",
@@ -173,6 +186,19 @@ mod tests {
             detect(Some("Loading"), "<html><body>Loading...</body></html>"),
             None
         );
+    }
+
+    #[test]
+    fn browser_gated_statuses_are_the_two_the_origins_serve_to_clients() {
+        for gated in [429, 500, 502, 503, 599] {
+            assert!(is_browser_gated_status(gated), "{gated} must be gated");
+        }
+        for refused in [200, 201, 202, 301, 401, 402, 403, 404, 418, 600] {
+            assert!(
+                !is_browser_gated_status(refused),
+                "{refused} must never be a reason to render"
+            );
+        }
     }
 
     #[test]

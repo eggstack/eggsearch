@@ -3,6 +3,10 @@
 //!
 //! Behavior-oriented suite partitioned from the historical `integration.rs` mega-suite.
 
+mod support;
+
+use support::*;
+
 use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
@@ -44,51 +48,6 @@ fn state_with_mode_off() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.search.mode = Mode::Off;
     Arc::new(ServerState::build(cfg).expect("off state"))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_arc_engines(
-    cfg: AppConfig,
-    engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(engines, timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines_sanitize(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let adapter =
-        MetadataSearchAdapter::from_engines_with_sanitize(mock_engines(engines), timeout, sanitize);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn test_cfg() -> AppConfig {
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 2_000;
-    cfg.search.max_query_chars = 256;
-    cfg.search.default_max_results = 10;
-    cfg.search.max_results_cap = 50;
-    // Register mock provider ids so resolve_providers() accepts them.
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.search.providers.insert("mock_b".to_string(), true);
-    cfg
 }
 
 /// Build a `WebSearchArgs` that uses the given mock provider ids
@@ -144,6 +103,10 @@ async fn batch_fetch_returns_results_with_same_length_as_input() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
 
@@ -231,6 +194,10 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -262,6 +229,10 @@ async fn batch_fetch_result_stable_ids_are_deterministic() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -306,6 +277,10 @@ async fn batch_fetch_with_single_empty_url_returns_validation_error() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -346,22 +321,8 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
-            offset: None,
-            limit: None,
             url: server.url("/shared-cache"),
-            max_chars: None,
-            timeout_ms: None,
-            extract_mode: None,
-            include_links: None,
-            pdf: None,
-            cache_policy: None,
-            render: None,
-            browser_profile: None,
-            max_cache_age_seconds: None,
-            focus: None,
-            focus_max_chunks: None,
-            focus_max_chars: None,
-            response_detail: None,
+            ..Default::default()
         },
     )
     .await
@@ -383,6 +344,10 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -446,6 +411,10 @@ async fn batch_fetch_respects_per_origin_concurrency() {
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
+                pdf: None,
+                render: None,
+                browser_profile: None,
+                include_screenshot: None,
             }
         })
         .collect();
@@ -766,160 +735,71 @@ fn build_evidence_bundle_with_fetches_populates_limits() {
     );
 }
 
-fn repo_fetch_state() -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.fetch.allow_localhost = true;
-    cfg.fetch.allow_private_network = true;
-    cfg.fetch.sanitize_output = false;
-    Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
+#[cfg(feature = "mock")]
+#[test]
+fn evidence_bundle_identity_is_stable_under_bounded_input_schema() {
+    use eggsearch::mcp::tools::{run_build_evidence_bundle, EvidenceBundleArgs};
+
+    let request = serde_json::json!({
+        "goal": "identity snapshot",
+        "sources": [{
+            "id": "src_captured",
+            "url": "https://docs.example.test/guide",
+            "title": "Guide",
+            "snippet": "Captured search card",
+            "providers": ["duckduckgo"],
+            "trust": "external_untrusted",
+            "metadata": {
+                "source_kind": "official_docs",
+                "domain": "docs.example.test"
+            }
+        }],
+        "fetches": [{
+            "source_id": "src_captured",
+            "url": "https://raw.example.test/owner/repo/main/src/lib.rs",
+            "locator": {
+                "kind": "remote",
+                "owner": "owner",
+                "repo": "repo",
+                "ref_name": "main",
+                "path": "src/lib.rs"
+            },
+            "fetched": true,
+            "content_type": "text/plain",
+            "line_start": 10,
+            "line_end": 20,
+            "text": "fn captured() {}",
+            "trust": "external_untrusted",
+            "warnings": []
+        }]
+    });
+    let args: EvidenceBundleArgs =
+        serde_json::from_value(request).expect("captured request parses");
+    let value = run_build_evidence_bundle(args).expect("bundle builds");
+    assert_eq!(value["bundle_id"], "bundle_27becfbe6b86541c");
+    assert_eq!(
+        value["sources"][0]["source_id"], "src_673bbf9ba38b7620",
+        "source identity is content-derived and must not move"
+    );
+    assert_eq!(value["sources"][0]["source_kind"], "official_docs");
+    assert_eq!(
+        value["sources"][0]["metadata"]["source_kind"], "official_docs",
+        "nested metadata must still reach the builder"
+    );
+    assert_eq!(
+        value["fetched_items"][0]["fetch_id"], "fetch_6609ffa1b98e12f7",
+        "fetch identity is content-derived and must not move"
+    );
+    assert_eq!(value["fetched_items"][0]["locator"]["path"], "src/lib.rs");
+    assert_eq!(value["fetched_items"][0]["line_start"], 10);
+    assert_eq!(value["fetched_items"][0]["line_end"], 20);
+    assert_eq!(value["trust_summary"]["external_untrusted_count"], 1);
 }
 
 fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     Arc::new(ServerState::build(cfg).expect("state with fetch disabled"))
-}
-
-fn git_cmd() -> std::process::Command {
-    let mut cmd = std::process::Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-    cmd
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 30_000;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_sanitize(
-    temp_dir: &std::path::Path,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines_with_sanitize(
-        mock_engines(engines),
-        Duration::from_secs(5),
-        sanitize,
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    cfg.fetch.sanitize_output = sanitize;
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let state = ServerState::build(cfg).expect("state");
-    let mut state = state;
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
-    let output = cmd
-        .output()
-        .unwrap_or_else(|error| panic!("{operation} could not start: {error}"));
-    assert!(
-        output.status.success(),
-        "{operation} failed with status {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
-}
-
-#[cfg(feature = "mock")]
-fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
-    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
-
-    git_cmd().arg("init").arg(root).output().ok();
-
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("remote")
-        .arg("add")
-        .arg("origin")
-        .arg(remote_url)
-        .output()
-        .ok();
-
-    // Create initial commit so dirty state detection works
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("add")
-        .arg(".")
-        .output()
-        .ok();
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("-c")
-        .arg("user.name=ci")
-        .arg("-c")
-        .arg("user.email=ci@test.com")
-        .arg("commit")
-        .arg("-m")
-        .arg("init")
-        .arg("--allow-empty")
-        .output()
-        .ok();
 }
 
 #[tokio::test]
@@ -962,8 +842,32 @@ async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            pdf: None,
+            render: None,
+            browser_profile: None,
+            include_screenshot: None,
         })
         .collect();
+
+    let probe = run_batch_fetch(
+        state.clone(),
+        eggsearch::mcp::tools::BatchFetchArgs {
+            offset: None,
+            limit: None,
+            items: items.clone(),
+            max_items: None,
+            max_chars_per_item: None,
+            max_total_chars: Some(50_000),
+            continue_on_error: Some(true),
+            timeout_ms: None,
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("budget probe");
+    let first_payload_chars = probe["results"][0]["payload_chars"]
+        .as_u64()
+        .expect("measured payload") as usize;
 
     let result = run_batch_fetch(
         state.clone(),
@@ -973,7 +877,7 @@ async fn batch_fetch_results_follow_input_order_when_budget_skips_items() {
             items,
             max_items: None,
             max_chars_per_item: None,
-            max_total_chars: Some(1),
+            max_total_chars: Some(first_payload_chars),
             continue_on_error: Some(true),
             timeout_ms: None,
             response_detail: None,

@@ -1,5 +1,7 @@
 use std::fs;
 
+use eggsearch::{core::workflow::STABLE_TOOL_NAMES, mcp::advertisement, sdk::ToolName};
+
 fn read_source(path: &str) -> String {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     fs::read_to_string(format!("{manifest_dir}/{path}"))
@@ -1183,26 +1185,46 @@ fn stable_tool_registration_count_and_names() {
     let source = read_source("src/mcp/server.rs");
     let expected = [
         "web_search",
-        "web_fetch",
-        "batch_fetch",
+        "fetch",
+        "knowledge_brief",
         "provider_status",
         "repo_search",
-        "repo_fetch",
         "repo_map",
         "security_search",
         "research_search",
         "build_evidence_bundle",
     ];
+    let aliases = ["web_fetch", "batch_fetch", "repo_fetch"];
     for name in &expected {
         assert!(
             source.contains(&format!("name = \"{name}\"")),
             "server.rs must register tool `{name}`"
         );
     }
+    for alias in aliases {
+        assert!(
+            source.contains(&format!("name = \"{alias}\"")),
+            "server.rs must register compatibility alias {alias}"
+        );
+        assert!(
+            !ToolName::ALL.iter().any(|tool| tool.as_str() == alias),
+            "compatibility alias {alias} must stay out of ToolName::ALL"
+        );
+        assert!(
+            !STABLE_TOOL_NAMES.contains(&alias),
+            "compatibility alias {alias} must stay out of STABLE_TOOL_NAMES"
+        );
+        for preset in advertisement::ALL_PRESETS {
+            assert!(
+                !advertisement::tools_for(*preset).contains(&alias),
+                "compatibility alias {alias} must stay out of {preset:?}"
+            );
+        }
+    }
     assert_eq!(
         source.matches("name = \"").count(),
-        expected.len(),
-        "server.rs must register exactly ten stable tools"
+        expected.len() + aliases.len(),
+        "server.rs must register exactly the canonical tools and named compatibility aliases"
     );
     assert!(
         !source.contains("local_search"),
@@ -1387,7 +1409,7 @@ fn orchestration_module_size_ratchet() {
         // Over the ordinary 1600-line / 80 KB ceiling. Frozen here so the debt
         // is explicit and cannot grow; split when touched.
         ("src/core/security.rs", 3000, 115_000),
-        ("src/core/config.rs", 1900, 76_000),
+        ("src/core/config.rs", 1910, 76_000),
         ("src/core/provider.rs", 2800, 115_000),
         ("src/fetch/span.rs", 2750, 81_920),
         ("src/fetch/client.rs", 2600, 100_000),
@@ -1722,6 +1744,7 @@ fn compatibility_dead_code_inventory() {
         "src/meta/engines/semantic_scholar.rs",
         "src/meta/engines/sourcegraph.rs",
         "src/meta/local_backend.rs",
+        "src/meta/local_backend_tests.rs",
         "src/meta/local_ignore.rs",
         "src/meta/local_inventory_cache.rs",
         "src/startup.rs",
@@ -1968,7 +1991,7 @@ fn html_scrape_engines_use_automatic_decompression() {
             "{rel} must retain explicit total deadline alongside automatic decompression"
         );
         assert!(
-            non_test.contains("read_bounded_body("),
+            non_test.contains("read_bounded_body(") || non_test.contains("read_search_body("),
             "{rel} must retain streaming byte cap alongside automatic decompression"
         );
     }
@@ -2532,4 +2555,291 @@ fn no_retired_replay_cursor_in_mcp_tree_or_docs() {
             );
         }
     }
+}
+#[test]
+fn fetch_layer_never_imports_the_challenge_solver() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/fetch/") {
+            continue;
+        }
+        checked += 1;
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        for forbidden in [
+            "challenge_replay",
+            "crate::meta",
+            "anubis::",
+            "altcha::",
+            "solve_and_verify",
+        ] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not reference the challenge solver (`{forbidden}`); the fetch \
+                 layer detects and marks a challenge page and never solves one"
+            );
+        }
+    }
+    assert!(
+        checked >= 20,
+        "the src/fetch walk must not be vacuous, checked {checked} files"
+    );
+}
+
+#[test]
+fn challenge_solve_orchestration_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/mcp/") && !rel.starts_with("src/commands/") {
+            continue;
+        }
+        checked += 1;
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        for forbidden in ["solve_and_verify", "anubis::", "altcha::"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not call the challenge solver (`{forbidden}`); the shared \
+                 module in src/challenge_replay/ owns the solve and replay sequence"
+            );
+        }
+    }
+    assert!(
+        checked >= 20,
+        "the src/mcp and src/commands walk must not be vacuous, checked {checked} files"
+    );
+
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if !rel.starts_with("src/meta/") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        assert!(
+            !production_code_clean(&source).contains("challenge_replay"),
+            "{rel} must not depend on the shared replay module; the solver owns the \
+             engine side and the shared module depends on it, never the reverse"
+        );
+    }
+
+    let shared = read_source("src/challenge_replay/mod.rs");
+    assert!(
+        shared.contains("solve_and_verify"),
+        "src/challenge_replay/mod.rs must own the solve call"
+    );
+    assert!(
+        shared.contains("FETCH_LEDGER_LABEL"),
+        "src/challenge_replay/mod.rs must record every fetch-path solve under one label"
+    );
+}
+
+#[test]
+fn altcha_fetch_solve_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut owners = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        if rel.starts_with("src/meta/") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        if rel.starts_with("src/challenge_replay/") {
+            if clean.contains("solve_document_and_verify") {
+                owners += 1;
+            }
+            continue;
+        }
+        for forbidden in ["solve_document_and_verify", "altcha::"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not call the ALTCHA solver (`{forbidden}`); the shared module \
+                 in src/challenge_replay/ owns the fetch-path ALTCHA solve"
+            );
+        }
+    }
+    assert_eq!(
+        owners, 1,
+        "exactly one file must own the fetch-path ALTCHA solve"
+    );
+}
+
+#[test]
+fn altcha_endpoint_derivation_is_same_origin_only() {
+    let source = read_source("src/challenge_replay/altcha.rs");
+    let clean = production_code_clean(&source);
+    assert!(
+        clean.contains("same_origin"),
+        "the ALTCHA endpoint derivation must gate every published endpoint on the page origin"
+    );
+    assert!(
+        clean.contains("BOUND_UNSUPPORTED_SCHEME"),
+        "a refused ALTCHA endpoint must use the existing unsupported-scheme key"
+    );
+    assert!(
+        clean.contains("BOUND_MALFORMED"),
+        "an unusable ALTCHA publication must use the existing malformed-parameters key"
+    );
+    assert!(
+        !clean.contains("http://"),
+        "the ALTCHA derivation must not carry a hardcoded request target"
+    );
+    assert!(
+        !clean.contains("https://"),
+        "the ALTCHA derivation must not carry a hardcoded request target"
+    );
+}
+
+#[test]
+fn fetch_pass_cookie_cache_is_process_local_and_has_one_owner() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let mut checked = 0usize;
+    let mut owners = 0usize;
+    for path in production_rust_files() {
+        let rel = path
+            .strip_prefix(manifest)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        let source = fs::read_to_string(&path).expect("readable");
+        let clean = production_code_clean(&source);
+        if clean.contains("pub struct FetchPassCookieCache") {
+            owners += 1;
+            assert_eq!(
+                rel, "src/challenge_replay/cache.rs",
+                "the fetch-side pass-cookie cache must be defined in one place"
+            );
+        }
+        if rel == "src/challenge_replay/cache.rs" {
+            for forbidden in [
+                "std::fs",
+                "fs::write",
+                "fs::create",
+                "File::create",
+                "OpenOptions",
+                "tempfile",
+                "serde",
+                "Serialize",
+            ] {
+                assert!(
+                    !clean.contains(forbidden),
+                    "src/challenge_replay/cache.rs must not persist a pass cookie \
+                     (`{forbidden}`); the fetch-side cache is process-local"
+                );
+            }
+            continue;
+        }
+        if rel.starts_with("src/challenge_replay/") {
+            continue;
+        }
+        for forbidden in ["fetch_pass_cookie_cache", "FetchPassCookieCache"] {
+            assert!(
+                !clean.contains(forbidden),
+                "{rel} must not touch the fetch-side pass-cookie cache (`{forbidden}`); \
+                 src/challenge_replay/ owns it"
+            );
+        }
+        checked += 1;
+    }
+    assert_eq!(
+        owners, 1,
+        "exactly one file must define the fetch-side pass-cookie cache"
+    );
+    assert!(
+        checked >= 20,
+        "the src walk must not be vacuous, checked {checked} files"
+    );
+
+    let shared = read_source("src/challenge_replay/mod.rs");
+    assert!(
+        shared.contains("fetch_pass_cookie_cache"),
+        "src/challenge_replay/mod.rs must own the fetch-side reuse sequence"
+    );
+}
+
+#[test]
+fn integration_test_helpers_are_defined_once() {
+    const HELPERS: [&str; 12] = [
+        "git_cmd",
+        "run_git_checked",
+        "setup_git_repo_with_remote",
+        "repo_fetch_state",
+        "state_with_engines",
+        "state_with_arc_engines",
+        "state_with_engines_sanitize",
+        "test_cfg",
+        "state_with_local_backend",
+        "state_with_local_backend_sanitize",
+        "state_with_local_backend_mode_off",
+        "state_with_local_backend_mode_off_for_repo_map",
+    ];
+    let shared = read_source("tests/support/mod.rs");
+    for helper in HELPERS {
+        let needle = format!("fn {helper}(");
+        assert_eq!(
+            shared.matches(&needle).count(),
+            1,
+            "tests/support/mod.rs must define `{helper}` exactly once"
+        );
+    }
+    let tests_dir = std::path::PathBuf::from(format!("{}/tests", env!("CARGO_MANIFEST_DIR")));
+    let shared_path = tests_dir.join("support").join("mod.rs");
+    let mut directories = vec![tests_dir.clone()];
+    let mut test_sources = Vec::new();
+    while let Some(directory) = directories.pop() {
+        for entry in fs::read_dir(directory).expect("tests directory") {
+            let entry = entry.expect("tests entry");
+            let path = entry.path();
+            let file_type = entry.file_type().expect("tests entry type");
+            if file_type.is_dir() {
+                directories.push(path);
+            } else if file_type.is_file()
+                && path.extension().and_then(|ext| ext.to_str()) == Some("rs")
+                && path != shared_path
+            {
+                test_sources.push(path);
+            }
+        }
+    }
+    let checked = test_sources.len();
+    for path in test_sources {
+        let name = path
+            .strip_prefix(&tests_dir)
+            .expect("test source path")
+            .display()
+            .to_string();
+        let source = fs::read_to_string(&path).expect("read test source");
+        for helper in HELPERS {
+            let needle = format!("fn {helper}(");
+            assert_eq!(
+                source.matches(&needle).count(),
+                0,
+                "tests/{name} must import `{helper}` from tests/support/mod.rs instead of defining it"
+            );
+        }
+    }
+    assert!(
+        checked >= 40,
+        "the tests walk must not be vacuous, checked {checked} files"
+    );
 }

@@ -3,6 +3,10 @@
 //!
 //! Behavior-oriented suite partitioned from the historical `integration.rs` mega-suite.
 
+mod support;
+
+use support::*;
+
 use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
@@ -44,51 +48,6 @@ fn state_with_mode_off() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.search.mode = Mode::Off;
     Arc::new(ServerState::build(cfg).expect("off state"))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_arc_engines(
-    cfg: AppConfig,
-    engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(engines, timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines_sanitize(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let adapter =
-        MetadataSearchAdapter::from_engines_with_sanitize(mock_engines(engines), timeout, sanitize);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn test_cfg() -> AppConfig {
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 2_000;
-    cfg.search.max_query_chars = 256;
-    cfg.search.default_max_results = 10;
-    cfg.search.max_results_cap = 50;
-    // Register mock provider ids so resolve_providers() accepts them.
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.search.providers.insert("mock_b".to_string(), true);
-    cfg
 }
 
 /// Build a `WebSearchArgs` that uses the given mock provider ids
@@ -623,24 +582,26 @@ mod security_context_safety {
             state,
             RepoFetchArgs {
                 host: Some("github".into()),
-                owner: "test-owner".into(),
-                repo: "test-repo".into(),
-                ref_name: Some("main".into()),
-                commit_sha: None,
-                path: "src/lib.rs".into(),
-                line_start: None,
-                line_end: None,
-                context_before: None,
-                context_after: None,
-                max_chars: None,
+                target: eggsearch::core::repo_fetch::RepoTarget {
+                    owner: "test-owner".into(),
+                    repo: "test-repo".into(),
+                    ref_name: Some("main".into()),
+                    commit_sha: None,
+                    path: "src/lib.rs".into(),
+                    line_start: None,
+                    line_end: None,
+                    context_before: None,
+                    context_after: None,
+                    max_chars: None,
+                    symbol: Some("foo".into()),
+                    symbol_kind: Some("funciton".into()),
+                    match_text: None,
+                    expand_to_block: None,
+                    max_block_lines: None,
+                    prefer_local: None,
+                },
                 timeout_ms: None,
                 test_fetch_url: None,
-                symbol: Some("foo".into()),
-                symbol_kind: Some("funciton".into()),
-                match_text: None,
-                expand_to_block: None,
-                max_block_lines: None,
-                prefer_local: None,
                 response_detail: None,
             },
         )
@@ -693,6 +654,10 @@ mod security_context_safety {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 }],
                 max_items: None,
                 max_chars_per_item: None,
@@ -758,6 +723,10 @@ mod security_context_safety {
                     focus: None,
                     focus_max_chunks: None,
                     focus_max_chars: None,
+                    pdf: None,
+                    render: None,
+                    browser_profile: None,
+                    include_screenshot: None,
                 }],
                 max_items: None,
                 max_chars_per_item: None,
@@ -873,158 +842,217 @@ mod security_context_safety {
     }
 }
 
-fn repo_fetch_state() -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.fetch.allow_localhost = true;
-    cfg.fetch.allow_private_network = true;
-    cfg.fetch.sanitize_output = false;
-    Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
-}
-
 fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     Arc::new(ServerState::build(cfg).expect("state with fetch disabled"))
 }
 
-fn git_cmd() -> std::process::Command {
-    let mut cmd = std::process::Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-    cmd
+#[cfg(feature = "mock")]
+struct MockOsvAdvisoryEngine;
+
+#[cfg(feature = "mock")]
+impl eggsearch::meta::engines::SearchEngine for MockOsvAdvisoryEngine {
+    fn name(&self) -> &'static str {
+        "osv"
+    }
+
+    fn search<'a>(
+        &'a self,
+        _request: &'a eggsearch::meta::engines::EngineSearchRequest,
+    ) -> eggsearch::meta::engines::BoxFuture<
+        'a,
+        Result<
+            Vec<eggsearch::meta::engines::models::SearchResult>,
+            eggsearch::meta::engines::error::EngineError,
+        >,
+    > {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn advisory_capabilities(&self) -> eggsearch::meta::engines::AdvisoryCapabilities {
+        eggsearch::meta::engines::AdvisoryCapabilities {
+            lookup_by_id: true,
+            query_by_package: true,
+        }
+    }
+
+    fn lookup_advisory<'a>(
+        &'a self,
+        _vuln_id: &'a str,
+        _timeout: Duration,
+    ) -> eggsearch::meta::engines::BoxFuture<
+        'a,
+        Result<
+            Option<eggsearch::core::security::VulnerabilityMetadata>,
+            eggsearch::meta::engines::error::EngineError,
+        >,
+    > {
+        Box::pin(async {
+            Ok(Some(eggsearch::core::security::VulnerabilityMetadata {
+                cve_ids: vec!["CVE-2024-3094".to_string()],
+                summary: Some("XZ Utils backdoor advisory".to_string()),
+                severity: Some(eggsearch::core::security::SeverityLevel::Critical),
+                cvss_score: Some(10.0),
+                source: eggsearch::core::security::VulnerabilitySource::Osv,
+                ..Default::default()
+            }))
+        })
+    }
 }
 
 #[cfg(feature = "mock")]
-fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
+fn state_with_test_osv(osv_enabled: bool) -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 30_000;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
+    cfg.search.providers.insert("osv".to_string(), osv_enabled);
+    let mut engines = mock_engines(vec![
+        MockEngine::success("duckduckgo", Vec::new()),
+        MockEngine::success("brave", Vec::new()),
+        MockEngine::success("yahoo", Vec::new()),
+    ]);
+    if osv_enabled {
+        engines.push(Arc::new(MockOsvAdvisoryEngine));
+    }
+    state_with_arc_engines(cfg, engines, Duration::from_secs(5))
 }
 
 #[cfg(feature = "mock")]
-fn state_with_local_backend_sanitize(
-    temp_dir: &std::path::Path,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines_with_sanitize(
-        mock_engines(engines),
-        Duration::from_secs(5),
-        sanitize,
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    cfg.fetch.sanitize_output = sanitize;
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
+#[tokio::test]
+async fn identifier_default_routing_selects_osv_and_returns_advisory_summary() {
+    let value = run_security_search(
+        state_with_test_osv(true),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    let selected = value["routing_decision"]["selected_providers"]
+        .as_array()
+        .expect("selected providers");
+    assert!(selected.iter().any(|provider| provider == "osv"));
+    let vulnerabilities = value["vulnerabilities"]
+        .as_array()
+        .expect("vulnerabilities");
+    assert!(vulnerabilities.iter().any(|vulnerability| {
+        vulnerability["severity"].is_string()
+            && vulnerability["summary"] == "XZ Utils backdoor advisory"
+    }));
+    let warnings = value["warnings"].as_array().expect("warnings");
+    assert!(!warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("native_advisory_search_unavailable")
+    }));
+    assert!(!warnings.iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("severity_unavailable")
+    }));
 }
 
 #[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
+#[tokio::test]
+async fn explicit_generic_provider_selection_does_not_add_osv() {
+    let value = run_security_search(
+        state_with_test_osv(true),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            providers: vec!["duckduckgo".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    let selected = value["routing_decision"]["selected_providers"]
+        .as_array()
+        .expect("selected providers");
+    assert_eq!(selected, &[serde_json::json!("duckduckgo")]);
+    assert!(value["vulnerabilities"].as_array().unwrap().is_empty());
 }
 
 #[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let state = ServerState::build(cfg).expect("state");
-    let mut state = state;
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
+#[tokio::test]
+async fn disabled_osv_has_no_native_results_and_warning_names_provider() {
+    let value = run_security_search(
+        state_with_test_osv(false),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
+
+    assert!(value["vulnerabilities"].as_array().unwrap().is_empty());
+    let warning = value["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|warning| warning["message"].as_str())
+        .find(|message| message.contains("native_advisory_search_unavailable"))
+        .expect("native advisory warning");
+    assert!(warning.contains("osv"));
+    assert!(warning.contains("disabled"));
+    assert!(!warning.contains("enable the"));
 }
 
 #[cfg(feature = "mock")]
-fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
-    let output = cmd
-        .output()
-        .unwrap_or_else(|error| panic!("{operation} could not start: {error}"));
-    assert!(
-        output.status.success(),
-        "{operation} failed with status {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
+#[tokio::test]
+async fn advisory_summary_survives_compact_and_standard_projections() {
+    for detail in [
+        eggsearch::mcp::projection::ResponseDetail::Compact,
+        eggsearch::mcp::projection::ResponseDetail::Standard,
+    ] {
+        let value = run_security_search(
+            state_with_test_osv(true),
+            SecuritySearchArgs {
+                query: Some("CVE-2024-3094".to_string()),
+                cve_id: Some("CVE-2024-3094".to_string()),
+                response_detail: Some(detail),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("security_search succeeds");
+        assert_eq!(
+            value["vulnerabilities"][0]["summary"],
+            "XZ Utils backdoor advisory"
+        );
+    }
 }
 
 #[cfg(feature = "mock")]
-fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
-    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
+#[tokio::test]
+async fn generic_only_search_without_severity_keeps_severity_warning() {
+    let value = run_security_search(
+        state_with_engines(
+            test_cfg(),
+            vec![MockEngine::success("mock_a", Vec::new())],
+            Duration::from_secs(5),
+        ),
+        SecuritySearchArgs {
+            query: Some("CVE-2024-3094".to_string()),
+            cve_id: Some("CVE-2024-3094".to_string()),
+            providers: vec!["mock_a".to_string()],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("security_search succeeds");
 
-    git_cmd().arg("init").arg(root).output().ok();
-
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("remote")
-        .arg("add")
-        .arg("origin")
-        .arg(remote_url)
-        .output()
-        .ok();
-
-    // Create initial commit so dirty state detection works
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("add")
-        .arg(".")
-        .output()
-        .ok();
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("-c")
-        .arg("user.name=ci")
-        .arg("-c")
-        .arg("user.email=ci@test.com")
-        .arg("commit")
-        .arg("-m")
-        .arg("init")
-        .arg("--allow-empty")
-        .output()
-        .ok();
+    assert!(value["warnings"].as_array().unwrap().iter().any(|warning| {
+        warning["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("severity_unavailable")
+    }));
 }

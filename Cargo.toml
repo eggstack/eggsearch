@@ -13,9 +13,11 @@ keywords = ["mcp", "search", "metasearch", "cli", "ai-agent"]
 categories = ["command-line-utilities", "web-programming"]
 include = [
     "src/**/*.rs",
+    "src/meta/knowledge_delta/catalog.json",
     "benches/**/*.rs",
     "docs/**/*.md",
     "architecture/**/*.md",
+    "packaging/release-targets.txt",
     "packaging/systemd/*",
     "packaging/launchd/*",
     "packaging/windows/*",
@@ -42,6 +44,7 @@ default = ["pdf", "browser"]
 mock = []
 pdf = ["dep:lopdf", "dep:flate2"]
 browser = ["dep:chromiumoxide"]
+live-mcp-smoke = []
 live-smoke = ["mock"]
 egress = ["dep:eggress-outbound", "dep:eggress-uri", "dep:eggress-core"]
 
@@ -70,6 +73,7 @@ scraper = "0.20"
 ego-tree = "0.6.2"
 urlencoding = "2"
 regex = "1"
+rusqlite = { version = "0.41.0", features = ["bundled"] }
 toml = "0.8"
 quick-xml = { version = "0.41", default-features = false }
 dirs = "5"

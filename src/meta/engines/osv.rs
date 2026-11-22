@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};
+use super::truncate_body;
 use crate::core::security::{
     SeverityLevel, VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
 };
@@ -79,6 +80,7 @@ fn parse_osv_query(query: &str) -> OsvQuery {
 const ENGINE: &str = "osv";
 const DEFAULT_BASE_URL: &str = "https://api.osv.dev/v1";
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+const SUMMARY_MAX_CHARS: usize = 500;
 #[allow(dead_code)]
 const SNIPPET_MAX_CHARS: usize = 500;
 
@@ -660,6 +662,7 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         }
     }
 
+    let summary = vuln.summary.as_deref().and_then(sanitize_summary);
     let references: Vec<VulnerabilityReference> = vuln
         .references
         .iter()
@@ -674,6 +677,7 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
         ghsa_ids,
         osv_ids: vec![vuln.id.clone()],
         rustsec_ids: Vec::new(),
+        summary,
         ecosystem,
         package: package_name,
         affected_ranges,
@@ -693,9 +697,13 @@ fn convert_vuln_metadata(vuln: &OsvVulnerability) -> VulnerabilityMetadata {
     }
 }
 
-#[allow(dead_code)]
-fn truncate_body(body: &str, max_chars: usize) -> String {
-    crate::core::sanitize::truncate_at_word(body, max_chars)
+fn sanitize_summary(summary: &str) -> Option<String> {
+    let (stripped, _) = crate::core::sanitize::strip_control_chars(summary);
+    let stripped = stripped.trim();
+    if stripped.is_empty() {
+        return None;
+    }
+    Some(crate::core::sanitize::bound_text(stripped, SUMMARY_MAX_CHARS).0)
 }
 
 #[cfg(test)]
@@ -772,6 +780,7 @@ mod tests {
 
         match &out[0].metadata {
             ResultMetadata::Advisory(m) => {
+                assert_eq!(m.summary.as_deref(), Some("Test vulnerability"));
                 assert_eq!(m.cve_ids, vec!["CVE-2024-0001"]);
                 assert_eq!(m.osv_ids, vec!["GHSA-test-1234-abcd"]);
                 assert_eq!(m.package.as_deref(), Some("test-package"));
@@ -786,6 +795,15 @@ mod tests {
             }
             other => panic!("expected Advisory metadata, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_summary_sanitization_is_bounded_to_500_chars() {
+        let input = format!("safe\u{0001}{}", "x".repeat(520));
+        let summary = sanitize_summary(&input).expect("summary");
+        assert!(!summary.contains('\u{0001}'));
+        assert_eq!(summary.chars().count(), 500);
+        assert!(summary.ends_with('…'));
     }
 
     #[test]
@@ -881,21 +899,6 @@ mod tests {
         }];
         let out = convert(vulns, 10);
         assert!(out.is_empty());
-    }
-
-    #[test]
-    fn test_truncate_body_short() {
-        assert_eq!(truncate_body("hello", 100), "hello");
-    }
-
-    #[test]
-    fn test_truncate_body_at_word_boundary() {
-        assert_eq!(truncate_body("hello world foo bar", 11), "hello");
-    }
-
-    #[test]
-    fn test_truncate_body_zero_max() {
-        assert_eq!(truncate_body("anything", 0), "");
     }
 
     #[test]

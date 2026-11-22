@@ -53,7 +53,30 @@ impl std::fmt::Debug for HostLocalScope {
 }
 
 const HOST_LOCAL_SCOPE_TOKEN_ENV: &str = "CODEGG_EGGSEARCH_HOST_SCOPE_TOKEN";
+#[cfg(test)]
+pub(crate) static HOST_LOCAL_SCOPE_TEST_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
 const HOST_LOCAL_BACKEND_CACHE_CAPACITY: usize = 8;
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[allow(missing_docs)]
+#[derive(Clone, Debug)]
+pub struct MockBrowserRequest {
+    pub url: String,
+    pub capture: bool,
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[allow(missing_docs)]
+pub type BrowserFetchOverride = Arc<
+    dyn Fn(
+            MockBrowserRequest,
+        ) -> Result<
+            crate::fetch::browser::BrowserFetchOutcome,
+            crate::fetch::browser::BrowserFetchError,
+        > + Send
+        + Sync,
+>;
 
 /// Request-local view over a local backend and its root-specific inventory
 /// cache. Standalone requests reuse the startup-configured view; authenticated
@@ -192,6 +215,9 @@ pub struct ServerState {
     /// avoid re-probing the filesystem on every `provider_status` call.
     #[cfg(feature = "browser")]
     pub browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState,
+    #[cfg(all(feature = "mock", feature = "browser"))]
+    #[allow(missing_docs)]
+    pub browser_fetch_override: Option<BrowserFetchOverride>,
 }
 
 impl std::fmt::Debug for ServerState {
@@ -272,21 +298,6 @@ impl ServerState {
             ttl: Duration::from_secs(config.search.cache_ttl_seconds),
             max_entries: config.search.cache_max_entries,
         };
-
-        let adapter = MetadataSearchAdapter::new_with_egress(
-            enabled,
-            global_timeout,
-            user_agent,
-            searxng_base_url,
-            config.search.sanitize_output,
-            config.search.default_providers.clone(),
-            &config.search.api,
-            config.search.multiquery_concurrency,
-            config.search.multiquery_provider_concurrency,
-            &config.egress,
-            &config.search.challenge,
-            search_cache,
-        )?;
 
         let misconfigured = config.misconfigured_default_providers();
         for id in &misconfigured {
@@ -384,35 +395,45 @@ impl ServerState {
         #[cfg(feature = "browser")]
         let browser_discovery_state = discover_browser(config.fetch.browser.executable.as_deref());
         #[cfg(feature = "browser")]
+        let browser_config =
+            crate::fetch::browser::BrowserConfig::from_settings(&config.fetch.browser);
+        #[cfg(feature = "browser")]
         let browser_lifecycle = if config.fetch.browser.enabled {
             let discovery = browser_discovery_state.discovery().cloned();
-            let render_policy: crate::fetch::browser::RenderPolicy = serde_json::from_value(
-                serde_json::Value::String(config.fetch.browser.policy.clone()),
-            )
-            .unwrap_or_default();
-            let browser_config = crate::fetch::browser::BrowserConfig {
-                enabled: config.fetch.browser.enabled,
-                policy: render_policy,
-                executable: config.fetch.browser.executable.clone(),
-                startup_timeout_ms: config.fetch.browser.startup_timeout_ms,
-                navigation_timeout_ms: config.fetch.browser.navigation_timeout_ms,
-                post_load_wait_ms: config.fetch.browser.post_load_wait_ms,
-                verification_wait_ms: config.fetch.browser.verification_wait_ms,
-                max_requests: config.fetch.browser.max_requests,
-                max_dom_bytes: config.fetch.browser.max_dom_bytes,
-                global_concurrency: config.fetch.browser.global_concurrency,
-                per_origin_concurrency: config.fetch.browser.per_origin_concurrency,
-                block_media: config.fetch.browser.block_media,
-                persistent_profiles: config.fetch.browser.persistent_profiles.clone(),
-            };
             Some(Arc::new(
-                BrowserLifecycle::new(discovery, browser_config).with_idle_timeout(
+                BrowserLifecycle::new(discovery, browser_config.clone()).with_idle_timeout(
                     std::time::Duration::from_millis(config.fetch.browser.idle_timeout_ms),
                 ),
             ))
         } else {
             None
         };
+        #[cfg(feature = "browser")]
+        let serp_renderer: Option<Arc<dyn crate::meta::engines::render::SerpRenderer>> =
+            browser_lifecycle.as_ref().map(|lifecycle| {
+                Arc::new(crate::serp_render::browser::BrowserSerpRenderer::new(
+                    Arc::clone(lifecycle),
+                    browser_config.clone(),
+                )) as Arc<dyn crate::meta::engines::render::SerpRenderer>
+            });
+        #[cfg(not(feature = "browser"))]
+        let serp_renderer: Option<Arc<dyn crate::meta::engines::render::SerpRenderer>> = None;
+
+        let adapter = MetadataSearchAdapter::new_with_egress(
+            enabled,
+            global_timeout,
+            user_agent,
+            searxng_base_url,
+            config.search.sanitize_output,
+            config.search.default_providers.clone(),
+            &config.search.api,
+            config.search.multiquery_concurrency,
+            config.search.multiquery_provider_concurrency,
+            &config.egress,
+            &config.search.challenge,
+            search_cache,
+            serp_renderer,
+        )?;
         #[cfg(feature = "browser")]
         let browser_global_semaphore = if config.fetch.browser.enabled {
             Some(Arc::new(tokio::sync::Semaphore::new(
@@ -457,6 +478,8 @@ impl ServerState {
             browser_global_semaphore,
             #[cfg(feature = "browser")]
             browser_discovery_state,
+            #[cfg(all(feature = "mock", feature = "browser"))]
+            browser_fetch_override: None,
         })
     }
 
@@ -526,6 +549,8 @@ impl ServerState {
             browser_global_semaphore: None,
             #[cfg(feature = "browser")]
             browser_discovery_state: crate::fetch::browser::types::BrowserDiscoveryState::NotFound,
+            #[cfg(all(feature = "mock", feature = "browser"))]
+            browser_fetch_override: None,
         }
     }
 
@@ -671,12 +696,24 @@ mod tests {
 
     #[test]
     fn host_scopes_authenticate_and_cache_distinct_roots() {
+        let _lock = HOST_LOCAL_SCOPE_TEST_LOCK.blocking_lock();
+        struct TokenRestore(Option<std::ffi::OsString>);
+        impl Drop for TokenRestore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, value),
+                    None => std::env::remove_var(HOST_LOCAL_SCOPE_TOKEN_ENV),
+                }
+            }
+        }
+
+        let previous_token = std::env::var_os(HOST_LOCAL_SCOPE_TOKEN_ENV);
+        let _restore = TokenRestore(previous_token);
         let first = tempfile::tempdir().expect("first root");
         let second = tempfile::tempdir().expect("second root");
         let first_canonical = first.path().canonicalize().expect("canonical first root");
         let second_canonical = second.path().canonicalize().expect("canonical second root");
         let token = format!("test-{}", std::process::id());
-        let previous_token = std::env::var_os(HOST_LOCAL_SCOPE_TOKEN_ENV);
         std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, &token);
         let mut config = AppConfig::default();
         config.local.enabled = true;
@@ -729,9 +766,6 @@ mod tests {
                 .is_err(),
             "missing process token must reject host metadata"
         );
-        if let Some(previous_token) = previous_token {
-            std::env::set_var(HOST_LOCAL_SCOPE_TOKEN_ENV, previous_token);
-        }
     }
 
     #[test]

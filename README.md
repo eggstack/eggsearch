@@ -116,15 +116,17 @@ $ curl -s http://127.0.0.1:11320/healthz
 | Tool | Purpose |
 |------|---------|
 | `web_search` | Live metasearch over configured providers |
-| `web_fetch` | Bounded extraction of one HTTP(S) URL |
-| `batch_fetch` | Bounded batch fetch over URLs or repo locators |
+| `fetch` | Bounded fetch of selected web URLs or repository locators |
 | `provider_status` | Diagnostic provider config, health, and recipes |
 | `repo_search` | Structured repository evidence discovery |
-| `repo_fetch` | Repository file fetch by locator, line range, or symbol |
 | `repo_map` | Bounded repository structure discovery |
 | `security_search` | Vulnerability and advisory search |
 | `research_search` | Multi-source evidence discovery |
+| `knowledge_brief` | Cutoff-aware candidate developments; not a claim that a model lacks a fact |
 | `build_evidence_bundle` | Deterministic, non-summarizing evidence packaging |
+
+`web_fetch`, `batch_fetch`, and `repo_fetch` remain callable compatibility aliases
+with unchanged request and response shapes; they are not advertised in `tools/list`.
 
 Start with the tool that matches the task: `web_search` for research, `repo_search`
 for codebases, `security_search` for advisories, `research_search` for comparisons.

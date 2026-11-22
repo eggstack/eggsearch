@@ -1,9 +1,9 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M014 conditionally closed; M001–M028 otherwise closed)
+Status: active (M001–M046 closed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
-References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006.
+References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
 
 Prior closed evidence: `plans/subsystems/deterministic-retrieval-quality-roadmap.md` (M001–M006 closed, including the M004 methodology limitation and the M006 comparative report `docs/retrieval-quality-comparison.md`); `plans/subsystems/standalone-mcp-local-inference-roadmap.md` (M001–M008 closed, compact remains opt-in with a mixed quality disposition); `plans/subsystems/tool-surface-consolidation-roadmap.md` (M001–M007 closed); `plans/subsystems/search-capability-roadmap.md`.
 
@@ -15,7 +15,7 @@ Eggsearch owns scraper fidelity, candidate generation/routing policy, fusion and
 
 ### Work classification
 
-- **Invariant:** keyless HTML metasearch first-class and no-key functional (ADR-0006); inference-free deterministic retrieval; ten MCP tools; stable IDs; sanitization and trust framing; explicit absence-versus-failure ledger; Mode-Off zero-remote-dispatch; bounded I/O and deadlines.
+- **Invariant:** keyless HTML metasearch first-class and no-key functional (ADR-0006); inference-free deterministic retrieval; the nine-tool canonical inventory established by ADR-0016 and M029, with only the two legacy fetch aliases callable but unadvertised; stable IDs; sanitization and trust framing; explicit absence-versus-failure ledger; Mode-Off zero-remote-dispatch; bounded I/O and deadlines.
 - **Capability:** truthful empty-versus-broken provider state; lower token cost per useful evidence; intent-appropriate provider routing; smaller advertised tool surfaces.
 - **Infrastructure:** search-result cache and coalescing; captured scraper fixtures; a candidate-snapshot ranking harness; deterministic intent derivation.
 - **Polish:** diagnostics, telemetry, and documentation that do not establish a capability boundary.
@@ -49,6 +49,37 @@ Measured or code-evidenced gaps:
 - Anubis v1.28's WASM methods (`sha256`, `argon2id`, `hashx`) are outside ADR-0010's evaluated set
   and are refused as `unsupported scheme`; `sha256` is the same primitive and per-candidate cost as
   `fast`.
+- The bounded solve reaches only the MCP web family. `repo_fetch`'s remote path contains no
+  challenge handling at all, and the CLI `eggsearch fetch` command calls `FetchClient` directly,
+  so its payload carries neither `structured_warnings` nor `manual_interaction_required` and an
+  Anubis wall reaches the operator as ordinary content.
+- `architecture/fetch.md` records that `batch_fetch` does not solve. That note predates the batch
+  rework that routed batch web items through the shared web-fetch handler; the code path suggests
+  batch now inherits the solve, but no test proves it either way.
+- The fetch path detects ALTCHA but never solves it. The ALTCHA solver is coupled to fixed
+  same-origin challenge and verify endpoints, so a general page's embedded challenge has no
+  reviewed path to a solve.
+- A fetch-side pass cookie is never reused. Every challenged fetch pays a full solve, and the
+  upstream-published lifetime that M014 made safe to parse is not applied on the fetch path.
+- The unified `fetch` envelope charges a repo item its whole serialized response. A
+  10,574-character README serializes to 59,555 characters and is omitted at the default 50,000
+  budget, while `repo_fetch` returns it; the omitted item still reports `ok: true`, counts as
+  fetched, and carries no warning. A 66,928-character response for an eight-line slice of
+  `std/src/lib.rs` (the full-file document is included) behaves the same at the default budget.
+- Local `repo_search` uses the source-role bonus as an admission floor, so a query matching
+  nothing returned five workspace README cards and `local_search_completed_no_matches` cannot
+  fire while any README or implementation file exists. `include_local` defaults true even when the
+  request names a remote repository, so a scoped query can return unrelated workspace files.
+- `security_search` selects only `default_providers` for identifier queries, so an enabled OSV
+  provider is never queried for a CVE; the response warns to enable a provider that is already
+  enabled, a native result still emits `severity_unavailable`, and native vulnerabilities carry no
+  summary, forcing a second fetch.
+- The unified `fetch` envelope bounds the readable measure, not the emitted payload: a
+  three-item windowed repo batch reported 12,223 characters but serialized 186,812 bytes, and an
+  eight-line `std` window carried a 64,158-byte whole-file `document`.
+- Local `repo_search` reads only `max_results * 2` path-ranked candidates (ten at defaults), so a
+  content-only or symbol query for a symbol outside that window returns no matches although the
+  file exists; `git grep` over the same tree takes 0.05 s.
 
 ## 3. Invariants and non-goals
 
@@ -56,7 +87,7 @@ Measured or code-evidenced gaps:
 - Pass-cookie identity is opaque. The solver replays the cookie pair(s) the pass-challenge response published and never selects a cookie by a hardcoded name; a deployment's prefix and dynamic suffix are data, not protocol constants.
 - A challenge extension is refused unless an accepted ADR names it. ADR-0012 proposes `css-load` only; `headless`/BotStopper and every interactive, visual, or code-executing extension stay prohibited.
 - No Eggsearch-side inference: no embeddings, vector index, LLM reranker, generated answer, or hosted classification in any execution path. Existing opt-in semantic **providers** are unchanged upstream sources.
-- No new MCP tools, no removal or rename of existing tools, no schema-breaking change. Advertisement profiles may hide tools; hidden tools still execute.
+- No general MCP tool growth, removal, or rename and no unrelated schema-breaking change. The sole planned exception is M029 under ADR-0016: replace the advertised `web_fetch` and `batch_fetch` entries with one advertised `fetch`, while retaining both old names as callable, unadvertised compatibility aliases. Advertisement profiles may still hide tools; hidden tools still execute.
 - Preserve stable FNV-1a IDs, RRF tie ordering unless an accepted measured change says otherwise, sanitization tiers, trust markers, per-provider attempt ledger, capability-skip semantics, deadlines, and Mode-Off remote denial.
 - Do not change shipped default features, binary SKUs, or Python wheel behavior. A default behavior change requires its own measured acceptance inside the owning milestone.
 - No recursive crawling, automatic link following, billing, or credential requirements in routine CI.
@@ -97,6 +128,22 @@ M016 ──> M025 metarefresh presentation corrective
 M026 unsupported-extension refusal  (independent)
 M026 + ADR-0012 ──> M027 css-load extension
 ADR-0013 ──> M028 wasm sha256 method
+ADR-0016 ──> M029 unified fetch discovery and legacy aliases
+ADR-0017 ──> M031 fetch-path challenge solve parity ──> M032 ALTCHA on the general fetch path
+M031 ──> M033 fetch-side pass-cookie reuse ──> M034 fetch-side stale pass-cookie recovery
+ADR-0018 ──> M034 fetch-side stale pass-cookie recovery
+ADR-0019 ──> M035 browser challenge completion
+ADR-0019 §4 ──> M044 challenge solving on by default (corrective to M035)
+ADR-0006 + ADR-0019 §5 ──> M045 browser-fidelity provider access (closed)
+                          └──> M046 fetch browser-escalation parity (closed; corrective to M045)
+M029 unified fetch ──> M036 unified fetch repo-item budget and outcome
+M006 repo workflow ──> M037 local repo-search relevance and scope
+M006 routing ──> M038 security-search native advisory routing
+M036 ──> M039 fetch emitted-payload budget (corrective)
+M037 ──> M040 local content-aware candidate generation (corrective)
+M037 + M040 ──> M043 local repo-search empty-result determinism (corrective; registered by the 2026-11-20 hosted qualification)
+ADR-0019 ──> puzzle-class and identity milestones not yet registered
+M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
 ```
 
@@ -117,7 +164,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M011 — Anubis solver and operator difficulty ceiling | capability | `plans/archive/implementation/agentic-retrieval-integrity/011-anubis-solver-and-difficulty-ceiling.md` | hard M010 | Raising `max_difficulty` is the supported way to pay for a harder challenge; the default ceiling leaves Startpage `blocked` with a named reason |
 | M012 — Startpage payload extraction | capability | `plans/archive/implementation/agentic-retrieval-integrity/012-startpage-payload-extraction.md` | hard M011 (capture and live proof) | A solved Startpage SERP yields parsed rows; unsolved stays `blocked`, drift stays `parse_error` |
 | M013 — challenge solver conformance corrections | invariant (corrective) | `plans/archive/implementation/agentic-retrieval-integrity/013-challenge-solver-conformance-corrections.md` | none (ADR-0010 accepted) | A prefixed deployment and a `slow` deployment both solve; a spent, over-budget, or unprojectable challenge fails closed with a named reason before any hashing |
-| M014 — pass-cookie lifetime and egress binding | capability | `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md` | none | A cookie is reused for the lifetime the upstream actually published, clamped by configuration, so repeat searches re-solve far less often |
+| M014 — pass-cookie lifetime and egress binding | capability | `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md` | none | A cookie is never reused beyond a usable published lifetime or the configured ceiling; expired or malformed lifetimes disable reuse, while providers publishing no lifetime retain the existing ceiling fallback; no solve-count reduction is claimed |
 | M015 — challenge solvability observability | capability | `plans/archive/implementation/agentic-retrieval-integrity/015-challenge-solvability-observability.md` | none | An operator can see solve attempts, outcomes by bound, and cookie cache hits without reading logs, and no secret material appears |
 | M016 — Anubis `metarefresh` solver | capability | `plans/archive/implementation/agentic-retrieval-integrity/016-anubis-metarefresh-solver.md` | ADR-0010 | A deployment offering only the no-JavaScript method is reachable with zero hashing, and the echoed payload contains only published values |
 | M017 — routing shipped-set evidence and keyword predicate | invariant (corrective to M006) | `plans/archive/implementation/agentic-retrieval-integrity/017-routing-shipped-set-evidence-and-keyword-predicate.md` | hard M004, M005, M006 | The shipped default provider set is measured, so `intent_mode` is decided by evidence; and no routing entry can be one that rejects a keyword query |
@@ -132,6 +179,24 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M026 — unsupported extension refusal | invariant (corrective) | `plans/archive/implementation/agentic-retrieval-integrity/026-anubis-extension-fail-closed.md` | none | A non-empty `extensions` list fails closed before submission with an attributable reason; no extension is authorized |
 | M027 — `css-load` extension | capability | `plans/archive/implementation/agentic-retrieval-integrity/027-anubis-css-load-extension.md` | hard ADR-0012 acceptance; hard M026 | A `css-load` challenge is satisfied with one bounded same-origin GET; unknown and `headless` stay refused |
 | M028 — WASM `sha256` method | capability | `plans/archive/implementation/agentic-retrieval-integrity/028-anubis-wasm-sha256-method.md` | hard ADR-0013 acceptance; M026 | A `sha256` challenge solves under the fast-equivalent ceiling; `argon2id`/`hashx` stay refused |
+| M029 — unified fetch tool and legacy aliases | capability | `plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md` | interface ADR-0016 accepted | One canonical nine-tool inventory advertises `fetch` for one or many web/repo items; `web_fetch` and `batch_fetch` remain callable with legacy behavior but are absent from discovery and `next_actions`; full and compact schemas are smaller than baseline |
+| M030 — M014 expiry-safety acceptance reconciliation | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` | operational: user-selected path 1 | M014's expiry-safety criterion is evidenced; its original solve-count-reduction clause is superseded, not met, and no reduction is claimed |
+| M031 — fetch-path challenge solve parity | capability | `plans/implementation/agentic-retrieval-integrity/031-fetch-path-challenge-solve-parity.md` | hard ADR-0017 (accepted) | Every fetch surface that can observe a published challenge attempts one bounded solve and one replay through a single shared implementation; `repo_fetch` and the CLI gain the classification the MCP web family already has; the `batch_fetch` residual is proven by test and its stale note corrected |
+| M032 — ALTCHA on the general fetch path | capability | `plans/implementation/agentic-retrieval-integrity/032-altcha-on-the-general-fetch-path.md` | hard ADR-0017 (accepted); hard M031 | A general fetch that meets a published ALTCHA PBKDF2 challenge solves it under the same ceilings and replays once; a challenge or verify endpoint that cannot be derived same-origin fails closed as `unsupported scheme` |
+| M033 — fetch-side pass-cookie reuse | capability | `plans/implementation/agentic-retrieval-integrity/033-fetch-side-pass-cookie-reuse.md` | hard ADR-0017 (accepted); hard M031; interface M014 | A fetch-side pass cookie is reused for the issuing origin only, within its published lifetime and the operator ceiling, never past expiry, and is evicted when the upstream rejects it |
+| M034 — fetch-side stale pass-cookie recovery | capability | `plans/implementation/agentic-retrieval-integrity/034-fetch-side-stale-pass-cookie-recovery.md` | hard ADR-0017 (accepted); hard ADR-0018 (accepted); hard M031; hard M033 | A fetch that meets a refused cached pass cookie evicts it and recovers in the same call, so the caller never has to await a second fetch to get a document; one solve and one replay of a solved pair set per call still hold |
+| M035 — browser challenge completion | capability | `plans/implementation/agentic-retrieval-integrity/035-browser-challenge-completion.md` | hard ADR-0019 (accepted); hard M031, M034 | Under `policy = auto` a solvable wall reaches the solver instead of Chrome, a script-driven wall completes in the browser and returns the document, and an unresolved wall is returned marked rather than as a bare wall |
+| M036 — unified fetch repo-item budget and outcome | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/036-unified-fetch-repo-item-budget-and-outcome.md` | hard M029 (closed); interface adaptive M002 (closed) | A repo item is charged the same readable-text measure as a web item, truncates before it is omitted, and an omitted item is `ok: false`; no item reports success with no content |
+| M037 — local repo-search relevance and scope | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md` | none; interface M006 (closed) | A local result requires a query, path/file, or symbol match; a no-match query returns an explicit empty state; a remote-scoped request includes local results only when `include_local: true` is explicit |
+| M038 — security-search native advisory routing | capability (corrective) | `plans/implementation/agentic-retrieval-integrity/038-security-search-native-advisory-routing.md` | none; interface M006 (closed) | An enabled native advisory provider is selected for identifier queries by default, the availability and severity warnings match reality, and a native vulnerability carries a bounded summary |
+| M039 — fetch emitted-payload budget | invariant (corrective to M036) | `plans/implementation/agentic-retrieval-integrity/039-fetch-emitted-payload-budget.md` | hard M036 (closed) | `max_total_chars` bounds the emitted payload; optional `document`/`lines` degrade before the requested text is clipped, and `payload_chars` reports the true emitted size |
+| M040 — local content-aware candidate generation | capability (corrective to M037) | `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md` | hard M037 (closed) | A content or symbol query finds matches beyond the path-ranked window inside a scan bound; truncation and no-match describe the scan honestly |
+| M041 — linked worktree identity resolution and prefer-local honesty | capability (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/041-linked-worktree-identity-resolution.md` | hard M037 (closed); hard M040 (closed) | A checkout in a linked git worktree resolves its remote identity through the common directory, so `prefer_local` returns the local copy instead of silently falling back to a remote fetch; a skipped local copy is stated |
+| M042 — fetch item shape diagnostics | invariant (corrective to M029) | `plans/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md` | hard M029 (closed) | A `fetch` item with a missing or unknown `type` tag returns an actionable error naming the accepted shapes; no fetch error names a private Rust type |
+| M046 — fetch browser-escalation parity | correctness (corrective to M045) | `plans/implementation/agentic-retrieval-integrity/046-fetch-browser-escalation-parity.md` | hard M045 (closed); interface ADR-0019 (accepted) | Closed at `20c0672ad835796a22b6f4e830757a97753ca49f`: `fetch`, `batch_fetch`, the `fetch` alias, and the CLI escalate once to the browser for the same `429`/`5xx` class that `web_search` already escalates, under a return rule that keeps a genuine outage as `http_status`; refusals, `http_only`, and the CLI surface (no new flag) are unchanged. Closure: `plans/closure/agentic-retrieval-integrity/046-status.md`. |
+| M045 — browser-fidelity provider access | correctness | `plans/implementation/agentic-retrieval-integrity/045-browser-fidelity-provider-access.md` | hard ADR-0006, ADR-0019 (accepted); interface M044 (closed) | Closed at `364014c6fd9c29e6dd082915bd334ccf9bc148dd`: a challenge served with a non-success status is classified as `blocked` with the status in the reason, and `brave` and `yahoo` fall back once to a bounded render of the shipped browser and parse the rendered DOM, so both return five results on this egress (4.8–5.7 s and 3.8–4.2 s). The browser presents its own Chrome identity instead of `HeadlessChrome/…`, and valued flags now reach Chromium as key/value pairs. No tool, argument, schema property, configuration key, or provider id changed. Closure: `plans/closure/agentic-retrieval-integrity/045-status.md`. |
+| M044 — challenge solving on by default | invariant (corrective to M035, ADR-0019 §4) | `plans/implementation/agentic-retrieval-integrity/044-challenge-solving-on-by-default.md` | hard ADR-0019 (accepted); interface M035 (closed) | Closed at `7b28436ce913bbed52bd7fdc3ba5cf14f9c85f70`: `[search.challenge].enabled` defaults to true at `max_difficulty 6`, `max_attempts 100000000`, `timeout_ms 10000`, so a challenged `mojeek` or `startpage` request returns results without operator configuration (1.6 s / 2.6 s first, then sub-second reuse); `enabled = false` restores the previous behaviour. Closure: `plans/closure/agentic-retrieval-integrity/044-status.md`. |
+| M043 — local repo-search empty-result determinism | invariant (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md` | hard M037 (closed); hard M040 (closed); interface M041 (closed) | A local `repo_search` whose bounded content pass did not run or was clipped is distinguishable from a true no-match, and the content-only positive fixture is deterministic under saturated parallel load |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -158,7 +223,7 @@ with a self-describing cursor that needs no negotiation.
 
 Upstream HTML drift is continuous; the fidelity contract reduces the blast radius but does not remove maintenance. Captured fixtures go stale by design and need a refresh path. Markdown negotiation depends on origin cooperation and may reduce table fidelity for some pages. Search caching risks serving stale results to a freshness-sensitive caller if the TTL is unbounded. Intent routing can regress exact queries if precedence is wrong. Advertisement presets can strand a model that needs a hidden tool if `next_actions` are not filtered. The Tasks extension may not be available through the current rmcp version.
 
-Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation, and any default-feature change. Also deferred: Anubis `argon2id` and `hashx` (each needs a separate ADR and cost evidence), the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays).
+Deferred without a plan: answer synthesis, embeddings, semantic local code search, recursive crawling, OCR, proxy rotation. ADR-0019 authorizes a default-on solver and a wider member set; M044 now implements the default-on solver, while the wider member set still has no milestone. Also deferred: the `make-challenge` refresh endpoint (a page re-fetch is sufficient), a rule-hash-keyed cookie cache (eviction already bounds the waste), and cross-origin or later-hop fetch cookies (the one-replay rule stays). Under ADR-0017's proposed decision two further items are recorded as deferred rather than undecided. ADR-0019 now authorizes Anubis `argon2id` and `hashx`, ALTCHA's wider digest set, browser challenge completion, and browser-like identity; M045 implements browser challenge completion and browser-like identity, while both Anubis WASM methods still report `unsupported scheme`. Upstream v1.28.2 (2026-10-23) ships them disabled by default while stating intent to enable them later, and no live deployment was observed publishing either, so demand is unproven; per-member cost evidence is still owed. Moving the solver into `src/core` is deferred until a consumer appears outside the MCP tool and CLI surfaces, because `core` is the pure, HTTP-free foundation and the solver needs transport. The 2026-11-19 review also recorded a capability-concentration risk without registering a milestone: `web_search`, `repo_search`, `security_search`, and `research_search` share the same keyless HTML engines, so a simultaneous block, rate-limit, or parse shift yields zero results on all of them. Failure reporting stays honest; a native fallback beyond the enabled advisory providers is deferred.
 
 ## 9. Closure and status
 
@@ -171,10 +236,77 @@ exposed M011's mandatory-`redir` defect.
   `intent_mode` therefore ships `apply`. Evidence: `plans/closure/agentic-retrieval-integrity/006-status.md`.
 - M007–M012 are `closed`: implementation, docs, evidence, closure records, this status, and the
   registry rows all landed in a single closure commit.
-- M014 is `conditionally closed`: the reuse window is the upstream-published `Max-Age`/`Expires` clamped by
-  `cookie_ttl_seconds`, a rejected cookie is evicted, and `doctor` warns when a routed egress meets
-  reuse. A live 21-minute run re-solved after the published expiry instead of replaying a dead
-  token. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`.
+- M014 is `closed` under the M030 path-1 decision: reuse is bounded by a usable upstream-published
+  `Max-Age`/`Expires` and `cookie_ttl_seconds`; malformed/expired cookies disable reuse, rejected
+  cookies are evicted, and `doctor` warns when routed egress meets reuse. The Startpage post-expiry
+  run demonstrates safe expiry handling; it is not evidence of fewer solves. The planned solve-count
+  comparison was not run and no reduction is claimed. Mojeek published no lifetime and keeps its
+  existing ceiling fallback. Evidence: `plans/closure/agentic-retrieval-integrity/014-status.md`
+  and `plans/closure/agentic-retrieval-integrity/030-status.md`.
+- M029 is `closed` on implementation candidate `3416da6231702dcabc22b2c8e32e94dd88cb20e4`: the nine-tool schema, legacy MCP aliases, mixed web/workspace HTTP execution, schema reduction, pinned Rust 1.89 `make check`, `make docs-check`, and installed-wheel tests pass. The exact-SHA evidence, plan, roadmap, and registry status updates landed in the closure commit. Evidence: `plans/closure/agentic-retrieval-integrity/029-status.md`.
+- M031 is `closed` on implementation candidate `7f7219beca61bce2247e7cf9bbaad8ef141467b6`: the bounded Anubis solve moved into the shared `src/challenge_replay/` module, the remote `repo_fetch` path and the CLI `eggsearch fetch` command now attempt a bounded solve and one replay, the recorded `batch_fetch` residual is proven by a behavioral test and its stale documentation corrected, and two static guards keep the fetch layer free of the solver and keep one shared implementation. Pinned Rust 1.89 `make check` passed with 85 suites and 6,374 tests, `make docs-check` passed, and the packaging and planning contracts passed. Fetch-path solves now record under the ledger label `fetch`. Evidence: `plans/closure/agentic-retrieval-integrity/031-status.md`.
+- M032 is `closed` on implementation candidate `421d4b2bbb81f22d3e74be1f7f3ff22a5d63c54e`: the shared `src/challenge_replay/` module gained an ALTCHA branch beside the Anubis one, so a general fetch that meets a published ALTCHA PBKDF2 wall attempts one bounded solve and one replay on the MCP web family, the remote `repo_fetch` path, and the CLI. The new `src/challenge_replay/altcha.rs` derives the challenge document and the verification endpoint from the page's own widget publication, same-origin only, and refuses a cross-origin, scheme-changing, credentialed, query-bearing, over-long, or off-shape endpoint before any request is issued. One ALTCHA solve implementation serves the engine side and the fetch side; a published PBKDF2 `cost` above the solver's ceiling is refused as malformed rather than started, because the cost is the work factor of one counter iteration. Two static guards keep the ownership and the same-origin gate, and a property test proves a derived endpoint is never cross-origin. Pinned Rust 1.89 `make check` passed with 85 suites and 6,399 tests, `make docs-check` passed, and the packaging and planning contracts passed. Evidence: `plans/closure/agentic-retrieval-integrity/032-status.md`.
+- M033 is `closed` on implementation candidate `5a98682bda4a68ec55dc9e28409fd8269d1f284d`: the shared `src/challenge_replay/` module gained a process-local, origin-keyed pass-cookie cache, so a second challenged fetch to the same origin replays the stored pair set and performs no solve, on the MCP web family, the remote `repo_fetch` path, and the CLI. The reuse window is M014's unchanged rule — the upstream-published lifetime clamped by `cookie_ttl_seconds` — and the cache is bounded to 32 origins and 64 KiB, is never written to disk, and evicts a pair set the upstream rejects. A fetch that crossed an origin stores nothing and reuses nothing, because the issuing origin cannot be established without following the redirect. A new static guard keeps the cache single-owner and disk-free, and the `doctor` egress warning now names the fetch path without adding a warning. Pinned Rust 1.89 `make check` passed with 85 suites and 6,420 tests, `make docs-check` passed, and the packaging and planning contracts passed. Evidence: `plans/closure/agentic-retrieval-integrity/033-status.md`.
+- M030 is `closed`: the user selected path 1, re-scoping only M014's solve-count-reduction clause to expiry safety. Existing deterministic tests and the recorded Startpage expiry-boundary observation satisfy the replacement criterion; Mojeek's no-lifetime fallback is unchanged. Solve-count reduction remains unproven. The closure record, plan, roadmap, and registry carry this disposition together. Evidence: `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md` and `plans/closure/agentic-retrieval-integrity/030-status.md`.
+- M035 is `closed` on implementation candidate `55180790c6dc5dbb2ce0d94c186ef88cd7584f48`: under
+  `policy = auto` the solver runs before the browser, so a solvable wall no longer reaches Chrome;
+  a script-driven wall is completed by polling live `classify_response` instead of four title
+  substrings; a wall that does not resolve is returned with `manual_interaction_required: true`
+  and a `fetch_challenge_page` warning rather than as a bare document; and
+  `provider_status.challenge_solver.providers.<label>` gains a `browser_completions` count. Pinned
+  Rust 1.89 `make check` passed with 85 suites and 6,430 tests, `make docs-check` passed, and the
+  packaging and planning contracts passed. The polling loop inside a real render is not in the
+  default gate. Evidence: `plans/closure/agentic-retrieval-integrity/035-status.md`.
+- M036 is `closed` on implementation candidate `76c1156a2c5418d4b9dab4493eddd9232bdd7b8a`
+  (pre-commit fingerprint `103dbdf2…` over parent `6146341`): the
+  unified `fetch` envelope charges a repo item by readable text plus bounded metadata instead of its
+  serialized JSON, clips text before it omits an item, marks an omitted item `ok: false` with
+  `response: null`, a budget error, and one structured warning, and names the missing field for an
+  incomplete locator. Live probes: the 10,574-character rustfmt README returns at the default
+  50,000 budget (10,863 measured characters) where it was omitted before, and an eight-line
+  `std/src/lib.rs` slice returns 712 measured characters. Pinned Rust 1.89 `make check` passed
+  with 85 suites and 6,445 tests, and `make docs-check` passed. Evidence:
+  `plans/closure/agentic-retrieval-integrity/036-status.md`.
+- M037 is `closed` on the same implementation candidate: the source-role bonus ranks candidates but no longer
+  admits them, so a file needs a query, path/file, content, or symbol match; a no-match query in a
+  non-empty workspace returns zero local cards with `local_search_completed_no_matches`; a
+  remote-scoped request includes local results only with explicit `include_local: true`; and
+  `local_search_truncated` means the result was actually truncated. Live probes: the nonsense query
+  returns zero cards with the no-match warning (five README cards before), the scoped `VecDeque`
+  request returns nine remote results and zero local cards, and content-only recall remains bounded
+  by path/role candidate generation, recorded as residual risk. Pinned Rust 1.89 `make check`
+  passed with 85 suites and 6,445 tests. Evidence:
+  `plans/closure/agentic-retrieval-integrity/037-status.md`.
+- M038 is `closed` on the same implementation candidate: an identifier-bearing `security_search` request with no
+  explicit `providers` adds every provider the configuration already enables and that advertises
+  native advisory lookup, so an enabled OSV answers a CVE query by default; explicit lists stay
+  authoritative; `native_advisory_search_unavailable` and `severity_unavailable` describe what
+  actually happened; and a native vulnerability carries an optional sanitized summary bounded to
+  500 characters. Live probes: the default CVE query selected `osv` and returned one `critical`
+  advisory (CVSS 10.0) with a summary and neither misleading warning; an explicit
+  `providers: ["duckduckgo"]` stayed authoritative; a configuration with OSV disabled reported the
+  provider as disabled. The additive field grows the pinned advertisement by 37 bytes (69,932 total,
+  fingerprint `517d279f73742d36`; compact unchanged). Pinned Rust 1.89 `make check` passed with 85
+  suites and 6,445 tests. Evidence:
+  `plans/closure/agentic-retrieval-integrity/038-status.md`.
+- M039 and M040 are `closed` on implementation candidate
+  `10ed7ed08ac47d80e39ca676ea157ecf0728518c`. M039 bounds the emitted fetch payload: the
+  three-item probe fell from 186,812 bytes to 37,313 measured characters while the requested
+  text stayed intact, and structural drops are marked and warned. M040 adds the bounded local
+  second pass: `has_relevance` went from 0 to 4 cards, a symbol hint found `src/process.rs:12`
+  without a path hint, and a true miss reports no-match without truncation. Pinned Rust 1.89
+  `make check` passed with 85 suites and 6,453 tests. Evidence:
+  `plans/closure/agentic-retrieval-integrity/039-status.md` and
+  `plans/closure/agentic-retrieval-integrity/040-status.md`.
+- M041 and M042 are `closed` on implementation candidate
+  `380a55cd7ea7c0b37dc6eff53851926e96e894d0`. M041 resolves a linked git worktree's remote
+  identity through the shared `commondir` configuration, so `repo_fetch` with `prefer_local`
+  returned the local copy instead of a silent remote fetch, and a skipped local copy is now
+  stated; the normal clone is unchanged. M042 makes a malformed `fetch` item name the accepted
+  web and repo shapes instead of a serde untagged-enum detail that named a private Rust type.
+  Pinned Rust 1.89 `make check` and `make docs-check` passed. Evidence:
+  `plans/closure/agentic-retrieval-integrity/041-status.md` and
+  `plans/closure/agentic-retrieval-integrity/042-status.md`.
 - M015 is `closed`: `provider_status` always reports a bounded `challenge_solver` block with a fixed
   ten-key refusal vocabulary, cookie hits/misses, and the last attempt's candidates and wall time.
   Evidence: `plans/closure/agentic-retrieval-integrity/015-status.md`.
@@ -247,7 +379,7 @@ These shapes are decided for this workstream. Changing one requires a new milest
 1. **Scrapers are first-class.** ADR-0006 governs. Reliability work targets parser fidelity, fixtures, and classification; it never replaces a keyless engine with an API or labels it legacy.
 2. **Measurement before policy.** Candidate snapshots are tiered: a committed structured-synthetic set as the CI gate, a small committed recorded-real set with provenance, and a larger live-recorded set generated into `target/snapshots/` for release qualification. Only the first two are tracked. A harness that cannot detect a seeded regression is rejected.
 3. **Defaults follow the happy path.** Markdown negotiation is default-on with a bounded single fallback, not an opt-in flag. Intent derivation runs without a new required argument and becomes behaviour-affecting only after snapshot non-regression.
-4. **Tools may be hidden, never removed.** Advertisement presets are a server configuration knob that filters `tools/list`; hidden tools still execute, `next_actions` are filtered to the active preset, and the ten-tool contract is unchanged.
+4. **Advertisement is the canonical tool surface; hidden tools remain callable.** M008's preset rule still applies to the tools it filters. M029 under ADR-0016 is the narrow exception to its historical ten-tool/no-removal assumption: the canonical inventory replaces the two advertised fetch names with `fetch`, while the old names remain callable aliases but never appear in `tools/list`, canonical metadata, or `next_actions`. No further inventory change is authorized by this exception.
 5. **No objective argument.** Retrieval goal is derived deterministically from the query with fixed precedence and reported reasons; callers are never required to state it.
 6. **Challenges are solved under bounds, not delegated.** ADR-0009 governs, with method coverage and the cost policy extended by ADR-0010 (see decision 7). Only published, evaluated challenge methods are solvable, only when the operator enables it, and only inside the difficulty, attempt, wall-clock, and solve-rate ceilings. The difficulty ceiling is operator configuration, not a hardcoded engine constant, so the cost/availability trade is explicit. Unsolved, unsupported, and budget-exhausted challenges stay `blocked`; interactive CAPTCHA, OCR, solving services, proxy rotation, user-agent spoofing, and retry widening stay prohibited.
 
