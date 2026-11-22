@@ -197,7 +197,7 @@ jobs:
                 cd /tmp
                 "$venv/bin/python" -m pytest -q /source/bindings/python/tests
                 "$venv/bin/python" /source/bindings/python/scripts/smoke_installed_wheel.py
-                "$venv/bin/python" -c "import platform,sys; from importlib.metadata import distribution; import eggsearch; assert platform.machine() in (\"armv7l\", \"armv8l\"); assert sys.version_info[:2] == (3, int(\"$tag\"[3:])); assert len(eggsearch.tool_names()) == 10; print(platform.machine(), sys.version, distribution(\"eggsearch\").version)"
+                "$venv/bin/python" -c "import platform,sys; from importlib.metadata import distribution; import eggsearch; assert platform.machine() in (\"armv7l\", \"armv8l\"); assert sys.version_info[:2] == (3, int(\"$tag\"[3:])); assert len(eggsearch.tool_names()) == 9; print(platform.machine(), sys.version, distribution(\"eggsearch\").version)"
               done
             '
 
@@ -228,7 +228,7 @@ jobs:
           "$RUNNER_TEMP/runtime-venv/bin/python" -m pip install pytest==8.4.2
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/runtime-venv/bin/python" -m pytest -q "$source_dir/bindings/python/tests"
-          "$RUNNER_TEMP/runtime-venv/bin/python" -c "import tomllib; from pathlib import Path; import eggsearch; from importlib.metadata import distribution; expected=tomllib.loads(Path('$GITHUB_WORKSPACE/bindings/python/pyproject.toml').read_text())['project']['version']; assert len(eggsearch.tool_names()) == 10; assert distribution('eggsearch').version == expected"
+          "$RUNNER_TEMP/runtime-venv/bin/python" -c "import tomllib; from pathlib import Path; import eggsearch; from importlib.metadata import distribution; expected=tomllib.loads(Path('$GITHUB_WORKSPACE/bindings/python/pyproject.toml').read_text())['project']['version']; assert len(eggsearch.tool_names()) == 9; assert distribution('eggsearch').version == expected"
           sha256sum "$GITHUB_WORKSPACE"/dist/* "$GITHUB_WORKSPACE"/extracted-wheel/* | tee "$GITHUB_WORKSPACE/dist/SHA256SUMS"
           cat "$GITHUB_WORKSPACE/dist/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

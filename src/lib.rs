@@ -20,7 +20,7 @@
 //!   every fetch surface.
 //! - [`core`]:    source card model, config, error, query types.
 //! - [`meta`]:    metasearch adapter with vendored search engines.
-//! - [`mcp`]:     MCP server (rmcp) exposing ten canonical tools:
+//! - [`mcp`]:     MCP server (rmcp) exposing nine canonical tools:
 //!   `web_search`, `fetch`, `provider_status`, `repo_search`, `repo_fetch`,
 //!   `repo_map`, `security_search`, `research_search`, and
 //!   `build_evidence_bundle`. `web_fetch` and `batch_fetch` remain callable aliases.

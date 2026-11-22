@@ -82,7 +82,7 @@ fn tool_names_in_docs() {
     assert_eq!(
         tools.len(),
         9,
-        "server.rs must expose exactly ten canonical tools, got: {tools:?}"
+        "server.rs must expose exactly nine canonical tools, got: {tools:?}"
     );
     let text = read_all_docs();
     let mut missing = Vec::new();

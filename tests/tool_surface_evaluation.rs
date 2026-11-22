@@ -452,7 +452,7 @@ fn tool_surface_byte_budgets() {
     assert_eq!(
         tools.len(),
         KNOWN_TOOLS.len(),
-        "must advertise exactly ten canonical tools"
+        "must advertise exactly nine canonical tools"
     );
     let mut total_bytes = 0usize;
     let mut core_bytes = 0usize;
