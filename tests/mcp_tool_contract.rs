@@ -719,25 +719,25 @@ fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
     );
     assert_eq!(
         server.tool_fingerprint(),
-        "82fb78440ab2053a",
+        "c98316a5061399d6",
         "the full+full advertisement fingerprint is pinned"
     );
     let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
     assert_eq!(
         bytes.len(),
-        31_521,
+        31_509,
         "the full+full advertised tools/list bytes are pinned"
     );
     let compact = preset_server(
         eggsearch::core::config::McpToolPreset::Full,
         eggsearch::core::config::McpSchemaProfile::Compact,
     );
-    assert_eq!(compact.tool_fingerprint(), "a487e5c521541c84");
+    assert_eq!(compact.tool_fingerprint(), "bcc94e8b6857744f");
     assert_eq!(
         serde_json::to_string(&compact.tool_definitions())
             .unwrap()
             .len(),
-        18_686
+        19_282
     );
 }
 

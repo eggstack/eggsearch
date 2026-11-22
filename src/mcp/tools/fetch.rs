@@ -16,7 +16,19 @@ fn is_none_or_false(value: &Option<bool>) -> bool {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum FetchItem {
     Web(FetchWebItem),
-    Repo(FetchRepoItem),
+    Repo {
+        #[serde(flatten)]
+        args: super::repo_fetch::RepoFetchArgs,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Optional focus query over the bounded repository result.")]
+        focus: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Maximum focused chunks to return.")]
+        focus_max_chunks: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Maximum focused characters to return.")]
+        focus_max_chars: Option<usize>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -68,67 +80,6 @@ pub(crate) struct FetchWebItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Maximum characters from this document offset.")]
     limit: Option<usize>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
-pub(crate) struct FetchRepoItem {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Code host: github, gitlab, codeberg, gitea, forgejo, or workspace.")]
-    host: Option<String>,
-    #[schemars(description = "Repository owner or workspace root name.")]
-    owner: String,
-    #[schemars(description = "Repository name.")]
-    repo: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Branch, tag, or commit ref.")]
-    ref_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Full commit SHA for stable permalink construction.")]
-    commit_sha: Option<String>,
-    #[schemars(description = "File path relative to the repository or workspace root.")]
-    path: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "First line to return, 1-indexed and inclusive.")]
-    line_start: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Last line to return, 1-indexed and inclusive.")]
-    line_end: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Extra context lines before the selected range.")]
-    context_before: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Extra context lines after the selected range.")]
-    context_after: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Maximum characters to return for this item.")]
-    max_chars: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Optional focus query over the bounded repository result.")]
-    focus: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Maximum focused chunks to return.")]
-    focus_max_chunks: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Maximum focused characters to return.")]
-    focus_max_chars: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Symbol name to select.")]
-    symbol: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Symbol kind filter applied with symbol.")]
-    symbol_kind: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Select the span containing this text.")]
-    match_text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Expand the selected line or span to its enclosing block.")]
-    expand_to_block: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Maximum lines returned when expanding to a block.")]
-    max_block_lines: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Prefer the local workspace copy when one exists.")]
-    prefer_local: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -265,28 +216,18 @@ impl FetchItem {
                     window,
                 )
             }
-            Self::Repo(item) => (
+            Self::Repo {
+                args,
+                focus,
+                focus_max_chunks,
+                focus_max_chars,
+            } => (
                 BatchFetchItem::Repo {
-                    host: item.host,
-                    owner: item.owner,
-                    repo: item.repo,
-                    ref_name: item.ref_name,
-                    commit_sha: item.commit_sha,
-                    path: item.path,
-                    line_start: item.line_start,
-                    line_end: item.line_end,
-                    context_before: item.context_before,
-                    context_after: item.context_after,
-                    max_chars: item.max_chars,
-                    focus: item.focus,
-                    focus_max_chunks: item.focus_max_chunks,
-                    focus_max_chars: item.focus_max_chars,
-                    symbol: item.symbol,
-                    symbol_kind: item.symbol_kind,
-                    match_text: item.match_text,
-                    expand_to_block: item.expand_to_block,
-                    max_block_lines: item.max_block_lines,
-                    prefer_local: item.prefer_local,
+                    host: args.host,
+                    target: args.target,
+                    focus,
+                    focus_max_chunks,
+                    focus_max_chars,
                 },
                 None,
             ),
@@ -402,7 +343,7 @@ mod tests {
                 assert_eq!(item.offset, Some(12));
                 assert_eq!(item.limit, Some(34));
             }
-            FetchItem::Repo(_) => panic!("single item must remain a web target"),
+            FetchItem::Repo { .. } => panic!("single item must remain a web target"),
         }
 
         let (_, scalar_windows) = scalar_for_windows.into_batch_parts();

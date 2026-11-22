@@ -10,8 +10,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "browser")]
 use eggsearch::fetch::browser::{
-    browser_fetch_with_policy, browser_result_to_response, discover_browser,
-    rendered_result_serves, BrowserConfig, BrowserFetchError, BrowserLifecycle, RenderPolicy,
+    browser_fetch_with_policy, browser_result_to_response, discover_browser, escalate,
+    gated_status, BrowserConfig, BrowserFetchError, BrowserFetchOutcome, BrowserLifecycle,
+    EscalationOutcome, EscalationRequest, RenderPolicy,
 };
 
 /// CLI display cap for links. Distinct from [`crate::fetch::extract::MAX_LINKS`]
@@ -239,23 +240,76 @@ async fn fetch_response(
         Err(error) => {
             #[cfg(feature = "browser")]
             if matches!(render_policy, RenderPolicy::Auto) {
-                if let Some(status) = gated_status(&error) {
-                    return escalate_gated_status(
-                        browser_lifecycle.as_ref(),
-                        &browser_settings,
-                        &render_policy,
-                        url,
-                        status,
-                        budgets,
-                        extract_mode,
-                        include_links,
-                        cfg.fetch.sanitize_output,
-                        deadline,
+                if let Some(status) = gated_status(&error, &render_policy) {
+                    let lifecycle = browser_lifecycle.as_ref();
+                    let outcome = escalate(
+                        EscalationRequest {
+                            url,
+                            status,
+                            policy: &render_policy,
+                            browser_available: lifecycle
+                                .is_some_and(|lifecycle| lifecycle.is_available()),
+                            unavailable_reason: if lifecycle.is_some() {
+                                Some("no Chrome/Chromium executable was found")
+                            } else {
+                                None
+                            },
+                            profile_name: None,
+                            budgets,
+                            extract_mode,
+                            include_links,
+                            sanitize_output: cfg.fetch.sanitize_output,
+                            deadline,
+                        },
+                        || async {
+                            let Some(lifecycle) = lifecycle else {
+                                return Err(BrowserFetchError::LaunchFailed(
+                                    "no browser is available".to_string(),
+                                ));
+                            };
+                            browser_fetch_with_policy(
+                                lifecycle,
+                                url,
+                                &browser_settings,
+                                cfg.fetch.sanitize_output,
+                                &render_policy,
+                            )
+                            .await
+                            .map(|result| BrowserFetchOutcome {
+                                result,
+                                screenshot: None,
+                            })
+                        },
                     )
-                    .await
-                    .map_err(|annotated| {
-                        anyhow!("fetch failed: {}: {}", annotated.error_code(), annotated)
-                    });
+                    .await;
+                    return match outcome {
+                        EscalationOutcome::Served {
+                            response,
+                            challenge_completed,
+                        } => {
+                            if challenge_completed {
+                                eggsearch::challenge_replay::record_browser_completion();
+                            }
+                            Ok(*response)
+                        }
+                        EscalationOutcome::Failed { error, .. } => {
+                            Err(anyhow!("fetch failed: {}: {}", error.error_code(), error))
+                        }
+                        EscalationOutcome::ManualInteraction {
+                            origin,
+                            message,
+                            next_action,
+                        } => {
+                            let next_action = next_action.unwrap_or_else(|| {
+                                format!("eggsearch browser-login {origin} --profile <name>")
+                            });
+                            let error = eggsearch::fetch::FetchError::HttpStatus(
+                                status,
+                                format!("browser requires manual interaction for {origin}: {message}; run `{next_action}`"),
+                            );
+                            Err(anyhow!("fetch failed: {}: {}", error.error_code(), error))
+                        }
+                    };
                 }
             }
             Err(anyhow!("fetch failed: {}: {}", error.error_code(), error))
@@ -274,119 +328,6 @@ fn cli_render_policy(settings: &BrowserConfig) -> RenderPolicy {
     } else {
         RenderPolicy::HttpOnly
     }
-}
-
-/// The gated status an HTTP error carries, when a browser may serve it.
-#[cfg(feature = "browser")]
-fn gated_status(error: &eggsearch::fetch::FetchError) -> Option<u16> {
-    match error {
-        eggsearch::fetch::FetchError::HttpStatus(status, _)
-            if eggsearch::fetch::challenge::is_browser_gated_status(*status) =>
-        {
-            Some(*status)
-        }
-        _ => None,
-    }
-}
-
-/// Render one gated status and apply the shared return rule.
-///
-/// The CLI has no permits, profiles, or screenshots to preserve, so it calls
-/// the browser transport directly; classification and the return rule are the
-/// same functions the MCP path uses.
-#[cfg(feature = "browser")]
-#[allow(clippy::too_many_arguments)]
-async fn escalate_gated_status(
-    lifecycle: Option<&Arc<BrowserLifecycle>>,
-    settings: &BrowserConfig,
-    policy: &RenderPolicy,
-    url: &str,
-    status: u16,
-    budgets: eggsearch::fetch::budget::FetchBudgets,
-    extract_mode: ExtractMode,
-    include_links: bool,
-    sanitize_output: bool,
-    deadline: std::time::Instant,
-) -> std::result::Result<WebFetchResponse, eggsearch::fetch::FetchError> {
-    let Some(lifecycle) = lifecycle else {
-        return Err(gated_error(
-            status,
-            "browser escalation unavailable: no browser is available",
-        ));
-    };
-    if !lifecycle.is_available() {
-        return Err(gated_error(
-            status,
-            "browser escalation unavailable: no Chrome/Chromium executable was found",
-        ));
-    }
-    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-    if remaining.as_millis() < 2000 {
-        return Err(gated_error(
-            status,
-            "browser escalation unavailable: less than 2000ms of the call budget remained",
-        ));
-    }
-
-    let rendered = match tokio::time::timeout(
-        remaining,
-        browser_fetch_with_policy(lifecycle, url, settings, sanitize_output, policy),
-    )
-    .await
-    {
-        Ok(Ok(rendered)) => rendered,
-        Ok(Err(BrowserFetchError::InteractiveChallenge(required))) => {
-            return Err(gated_error(
-                status,
-                format!(
-                    "browser requires manual interaction for {}: {}; run \
-                     `eggsearch browser-login {} --profile <name>`",
-                    required.origin, required.message, required.origin
-                ),
-            ));
-        }
-        Ok(Err(error)) => {
-            return Err(gated_error(
-                status,
-                format!("browser escalation failed: {error}"),
-            ));
-        }
-        Err(_) => {
-            return Err(gated_error(
-                status,
-                "browser escalation exceeded the call budget",
-            ));
-        }
-    };
-
-    if !rendered_result_serves(rendered.response.status, rendered.challenge_completed) {
-        return Err(gated_error(
-            status,
-            format!(
-                "browser render ended on {} without clearing the challenge",
-                rendered.response.status.map_or_else(
-                    || "no observed status".to_string(),
-                    |rendered| format!("HTTP {rendered}")
-                )
-            ),
-        ));
-    }
-    if rendered.challenge_completed {
-        eggsearch::challenge_replay::record_browser_completion();
-    }
-    Ok(browser_result_to_response(
-        rendered,
-        url,
-        budgets,
-        extract_mode,
-        include_links,
-        sanitize_output,
-    ))
-}
-
-#[cfg(feature = "browser")]
-fn gated_error(status: u16, note: impl Into<String>) -> eggsearch::fetch::FetchError {
-    eggsearch::fetch::FetchError::HttpStatus(status, note.into())
 }
 
 fn json_payload(response: &WebFetchResponse) -> serde_json::Value {

@@ -44,6 +44,7 @@ default = ["pdf", "browser"]
 mock = []
 pdf = ["dep:lopdf", "dep:flate2"]
 browser = ["dep:chromiumoxide"]
+live-mcp-smoke = []
 live-smoke = ["mock"]
 egress = ["dep:eggress-outbound", "dep:eggress-uri", "dep:eggress-core"]
 

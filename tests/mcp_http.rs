@@ -1010,3 +1010,370 @@ async fn fetch_aliases_remain_callable_but_unadvertised_over_mcp_http() {
 
     server.stop().await;
 }
+
+#[cfg(feature = "live-mcp-smoke")]
+async fn live_mcp_call(
+    server: &TestServer,
+    session_id: &str,
+    request_id: u64,
+    tool_name: &str,
+    arguments: Value,
+) -> Value {
+    sse_payload(
+        legacy_request(
+            server,
+            session_id,
+            json!({
+                "jsonrpc":"2.0",
+                "id":request_id,
+                "method":"tools/call",
+                "params":{"name":tool_name,"arguments":arguments}
+            }),
+        )
+        .await,
+    )
+    .await
+}
+
+#[cfg(feature = "live-mcp-smoke")]
+fn live_mcp_payload<'a>(tool_name: &str, response: &'a Value) -> &'a Value {
+    assert!(
+        response.get("error").is_none(),
+        "{tool_name} returned a JSON-RPC error: {response}"
+    );
+    assert_eq!(
+        response["result"]["isError"],
+        json!(false),
+        "{tool_name} returned a tool error: {response}"
+    );
+    let payload = &response["result"]["structuredContent"];
+    assert!(
+        payload.is_object(),
+        "{tool_name} returned no structured content: {response}"
+    );
+    payload
+}
+
+#[cfg(feature = "live-mcp-smoke")]
+#[tokio::test]
+#[ignore = "requires live public internet and Chrome/Chromium; uses default keyless providers only"]
+async fn live_canonical_tools_and_aliases_work_over_mcp_http() {
+    let mut config = AppConfig::default();
+    assert!(
+        !cfg!(feature = "mock"),
+        "live MCP smoke must not compile mock providers"
+    );
+    assert!(
+        cfg!(feature = "pdf"),
+        "PDF must be enabled for this smoke test"
+    );
+    assert!(
+        cfg!(feature = "browser"),
+        "browser must be enabled for this smoke test"
+    );
+    assert!(config.fetch.pdf_enabled, "PDF must be enabled by default");
+    assert!(
+        config.fetch.browser.enabled,
+        "browser must be enabled by default"
+    );
+    assert_eq!(
+        config.search.default_providers,
+        vec![
+            "duckduckgo".to_string(),
+            "brave".to_string(),
+            "yahoo".to_string()
+        ]
+    );
+    assert!(
+        config.search.api.is_empty(),
+        "live keyless smoke must not need API provider configuration"
+    );
+    config.search.mode = eggsearch::core::config::Mode::Live;
+    config.search.timeout_ms = 20_000;
+    let server = TestServer::start_with_config(config).await;
+    let (session_id, _) = initialize_legacy(&server).await;
+    let initialized = legacy_request(
+        &server,
+        &session_id,
+        json!({"jsonrpc":"2.0","method":"notifications/initialized","params":{}}),
+    )
+    .await;
+    assert_eq!(initialized.status().as_u16(), 202);
+
+    let listed = sse_payload(
+        legacy_request(
+            &server,
+            &session_id,
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}),
+        )
+        .await,
+    )
+    .await;
+    let names = listed["result"]["tools"]
+        .as_array()
+        .expect("tools/list array")
+        .iter()
+        .map(|tool| tool["name"].as_str().expect("tool name"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "build_evidence_bundle",
+            "fetch",
+            "knowledge_brief",
+            "provider_status",
+            "repo_map",
+            "repo_search",
+            "research_search",
+            "security_search",
+            "web_search",
+        ]
+    );
+
+    let web_search = live_mcp_call(
+        &server,
+        &session_id,
+        3,
+        "web_search",
+        json!({"query":"Rust programming language official documentation","max_results":5}),
+    )
+    .await;
+    let web_payload = live_mcp_payload("web_search", &web_search);
+    let sources = web_payload["results"]
+        .as_array()
+        .expect("web_search source cards");
+    assert!(
+        !sources.is_empty(),
+        "live web_search returned no source cards: {web_payload}"
+    );
+    let providers_used = sources
+        .iter()
+        .flat_map(|source| source["providers"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        providers_used
+            .iter()
+            .any(|provider| ["duckduckgo", "brave", "yahoo"].contains(provider)),
+        "live web_search returned no source from a built-in keyless default provider: {web_payload}"
+    );
+    let source_for_bundle = sources[0].clone();
+    assert!(
+        source_for_bundle["url"].as_str().is_some(),
+        "live source has no URL: {source_for_bundle}"
+    );
+
+    let fetch = live_mcp_call(
+        &server,
+        &session_id,
+        4,
+        "fetch",
+        json!({"items":{"type":"web","url":"https://httpbin.org/html","max_chars":2000}}),
+    )
+    .await;
+    let fetch_payload = live_mcp_payload("fetch", &fetch);
+    let fetch_results = fetch_payload["results"].as_array().expect("fetch results");
+    assert_eq!(fetch_results.len(), 1, "{fetch_payload}");
+    assert_eq!(fetch_results[0]["ok"], true, "{fetch_payload}");
+    assert!(
+        fetch_results[0]["response"]["text"]
+            .as_str()
+            .is_some_and(|text| !text.trim().is_empty()),
+        "fetch returned no document text: {fetch_payload}"
+    );
+
+    let provider_status = live_mcp_call(
+        &server,
+        &session_id,
+        5,
+        "provider_status",
+        json!({"probe":true}),
+    )
+    .await;
+    let provider_payload = live_mcp_payload("provider_status", &provider_status);
+    let outcomes = provider_payload["probe"]["outcomes"]
+        .as_array()
+        .expect("provider probe outcomes");
+    assert!(
+        !outcomes.is_empty(),
+        "provider_status made no live probe attempts"
+    );
+    assert!(
+        outcomes.iter().any(|outcome| outcome["attempted"] == true),
+        "provider_status did not probe any routable default provider: {provider_payload}"
+    );
+
+    let repo_search = live_mcp_call(
+        &server,
+        &session_id,
+        6,
+        "repo_search",
+        json!({"query":"axum","goal":"dependency","ecosystem":"crates.io","package":"axum","version":"0.7.0","max_results":5}),
+    )
+    .await;
+    let repo_search_payload = live_mcp_payload("repo_search", &repo_search);
+    let repo_search_has_evidence = repo_search_payload["results"]
+        .as_array()
+        .is_some_and(|results| !results.is_empty())
+        || repo_search_payload["groups"]
+            .as_array()
+            .is_some_and(|groups| !groups.is_empty())
+        || repo_search_payload["package_resolution"].is_object();
+    assert!(
+        repo_search_has_evidence,
+        "live repo_search produced no evidence or resolution: {repo_search_payload}"
+    );
+
+    let knowledge_brief = live_mcp_call(
+        &server,
+        &session_id,
+        7,
+        "knowledge_brief",
+        json!({"topic":"Rust 1.89 release","model_id":"unknown-live-smoke-model","max_items":3}),
+    )
+    .await;
+    let brief_payload = live_mcp_payload("knowledge_brief", &knowledge_brief);
+    assert!(
+        brief_payload["coverage"]["selected_providers"]
+            .as_array()
+            .is_some_and(|providers| !providers.is_empty()),
+        "knowledge_brief did not select live providers: {brief_payload}"
+    );
+
+    let repo_map = live_mcp_call(
+        &server,
+        &session_id,
+        8,
+        "repo_map",
+        json!({"owner":"tokio-rs","repo":"axum","max_depth":1,"max_entries":40}),
+    )
+    .await;
+    let repo_map_payload = live_mcp_payload("repo_map", &repo_map);
+    assert!(
+        repo_map_payload["root_entries"].is_array()
+            || repo_map_payload["entries"].is_array()
+            || repo_map_payload["mode"] == "fallback_search",
+        "live repo_map returned neither structure nor fallback evidence: {repo_map_payload}"
+    );
+
+    let security_search = live_mcp_call(
+        &server,
+        &session_id,
+        9,
+        "security_search",
+        json!({"query":"CVE-2024-3094","cve_id":"CVE-2024-3094"}),
+    )
+    .await;
+    let security_payload = live_mcp_payload("security_search", &security_search);
+    assert!(
+        security_payload["resolved_identifiers"]["cve_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|id| id == "CVE-2024-3094")),
+        "live security_search did not resolve its CVE: {security_payload}"
+    );
+
+    let research_search = live_mcp_call(
+        &server,
+        &session_id,
+        10,
+        "research_search",
+        json!({"query":"Rust async runtime architecture Tokio","research_domain":"software_architecture","depth":"quick","max_results":5}),
+    )
+    .await;
+    let research_payload = live_mcp_payload("research_search", &research_search);
+    assert!(
+        research_payload["groups"]
+            .as_array()
+            .is_some_and(|groups| !groups.is_empty()),
+        "live research_search returned no evidence groups: {research_payload}"
+    );
+
+    let evidence_bundle = live_mcp_call(
+        &server,
+        &session_id,
+        11,
+        "build_evidence_bundle",
+        json!({"goal":"Live MCP tool smoke","sources":[source_for_bundle]}),
+    )
+    .await;
+    let bundle_payload = live_mcp_payload("build_evidence_bundle", &evidence_bundle);
+    assert!(
+        bundle_payload["bundle_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("bundle_")),
+        "bundle did not preserve a deterministic identity: {bundle_payload}"
+    );
+
+    let web_fetch = live_mcp_call(
+        &server,
+        &session_id,
+        12,
+        "web_fetch",
+        json!({"url":"https://scrapifydatalabs.com/playground/js-rendered","max_chars":2000,"render":"browser","cache_policy":"bypass"}),
+    )
+    .await;
+    let web_fetch_payload = live_mcp_payload("web_fetch", &web_fetch);
+    assert_eq!(
+        web_fetch_payload["transport"], "browser",
+        "explicit browser fetch must report browser transport: {web_fetch_payload}"
+    );
+    assert!(
+        web_fetch_payload["text"]
+            .as_str()
+            .is_some_and(|text| !text.trim().is_empty()),
+        "live browser web_fetch returned no expected page text: {web_fetch_payload}"
+    );
+
+    let batch_fetch = live_mcp_call(
+        &server,
+        &session_id,
+        13,
+        "batch_fetch",
+        json!({"items":[{"type":"web","url":"https://httpbin.org/html"}]}),
+    )
+    .await;
+    let batch_payload = live_mcp_payload("batch_fetch", &batch_fetch);
+    assert_eq!(batch_payload["results"].as_array().map(Vec::len), Some(1));
+    assert_eq!(batch_payload["results"][0]["ok"], true, "{batch_payload}");
+
+    let repo_fetch = live_mcp_call(
+        &server,
+        &session_id,
+        14,
+        "repo_fetch",
+        json!({"host":"github","owner":"tokio-rs","repo":"axum","ref_name":"main","path":"Cargo.toml"}),
+    )
+    .await;
+    let repo_fetch_payload = live_mcp_payload("repo_fetch", &repo_fetch);
+    assert_eq!(repo_fetch_payload["fetched"], true, "{repo_fetch_payload}");
+    assert!(
+        repo_fetch_payload["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("[package]") || text.contains("[workspace]")),
+        "live repo_fetch returned unexpected content: {repo_fetch_payload}"
+    );
+
+    let pdf_fetch = live_mcp_call(
+        &server,
+        &session_id,
+        15,
+        "fetch",
+        json!({"items":{"type":"web","url":"https://www.rfc-editor.org/rfc/rfc9110.pdf","max_chars":4000,"pdf":{"pages":"1"},"cache_policy":"bypass"}}),
+    )
+    .await;
+    let pdf_payload = live_mcp_payload("fetch (PDF)", &pdf_fetch);
+    let pdf_result = &pdf_payload["results"][0];
+    assert_eq!(pdf_result["ok"], true, "{pdf_payload}");
+    let pdf_response = &pdf_result["response"];
+    assert_eq!(pdf_response["document"]["kind"], "pdf", "{pdf_payload}");
+    let pdf_text = pdf_response["text"].as_str().unwrap_or("");
+    let normalized_pdf_text = pdf_text.to_ascii_lowercase();
+    assert!(
+        normalized_pdf_text.contains("http") && normalized_pdf_text.contains("semantics"),
+        "live PDF extraction returned no RFC 9110 title text: {pdf_payload}"
+    );
+
+    println!("live default provider IDs returned: {providers_used:?}");
+    println!("live MCP HTTP smoke passed: nine advertised tools, three callable aliases, default keyless providers, PDF extraction, and browser rendering; no mock feature");
+    server.stop().await;
+}

@@ -798,7 +798,8 @@ One shared probe service (`src/meta/probe.rs`) backs all diagnostics:
 
 - `eggsearch doctor --probe`: prints `[OK]`/`[FAIL]`/`[SKIP]` per provider plus started/succeeded/failed/skipped summary
 - MCP `provider_status` with `{"probe": true}`: returns a typed `probe` section with the same outcomes
-- `make live-smoke` / `cargo test --features live-smoke --test corpus_runner -- --ignored`: explicit live verification
+- `make live-smoke` / `cargo test --features live-smoke --test corpus_runner -- --ignored`: existing opt-in live checks
+- `make live-mcp-smoke`: end-to-end MCP check against built-in keyless default providers, with Cargo-default PDF/browser support enabled and no mock engine feature
 
 Probe policy: narrowest `test`/1-result request, 5s per-provider deadline, 20s aggregate deadline, max 4 concurrent probes, 256-char bounded sanitized messages. Failures update advisory health state but never override explicit provider selection. Missing credentials/config yield skipped outcomes with stable `skip_code` (never a misleading network failure). Credentials and raw upstream bodies are never echoed. Routine `make check` stays network-free; live probes run only when explicitly requested.
 

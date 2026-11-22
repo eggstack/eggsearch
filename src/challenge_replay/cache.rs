@@ -271,16 +271,19 @@ mod tests {
     #[test]
     fn an_expired_entry_is_dropped_on_read() {
         let cache = cache();
-        cache.put(
-            "http://host.test:80",
-            "chllg=abc",
-            Duration::from_millis(10),
-        );
+        cache.put("http://host.test:80", "chllg=abc", Duration::from_secs(60));
         assert_eq!(
             cache.get("http://host.test:80").as_deref(),
             Some("chllg=abc")
         );
-        std::thread::sleep(Duration::from_millis(20));
+        {
+            let mut state = cache.state.lock().unwrap_or_else(|e| e.into_inner());
+            state
+                .entries
+                .get_mut("http://host.test:80")
+                .expect("stored entry")
+                .expires_at = Instant::now();
+        }
         assert_eq!(cache.get("http://host.test:80"), None);
         assert_eq!(cache.len(), 0);
         assert_eq!(cache.bytes(), 0);

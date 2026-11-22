@@ -652,10 +652,9 @@ Rules that follow from the matrix:
   claim no native capabilities at all; every constraint on those paths is local approximation.
 - Freshness is natively enforced by exactly five providers: `brave_api`, `exa`, `tavily`,
   `hn_algolia` (via `numericFilters=created_at_i…`), and `kagi` (via `filters.after` /
-  `filters.before`). `nvd` also declares `supports_freshness: true` in
-  `src/core/provider.rs` (asserted in `src/meta/engines/nvd.rs`), but it is an advisory
-  service whose engine maps only `keywordSearch` onto the upstream request, so the declared
-  flag is not yet backed by a wired date parameter. `serpapi`
+  `filters.before`). `nvd` does not declare it: it is an advisory service whose engine maps
+  only `keywordSearch` onto the upstream request, and `tests/provider_capability_contract.rs`
+  asserts the flag stays false. `serpapi`
   deliberately does not claim it: the current engine page documents
   `tbs` only generically and without value syntax, so sending it would be a guess. `wikipedia`,
   `arxiv`, `pubmed`, and `github_repositories` also do not claim it — none of them has a

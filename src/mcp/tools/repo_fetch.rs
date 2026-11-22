@@ -20,40 +20,17 @@ pub(crate) fn workspace_relative_path_arg(args: &RepoFetchArgs) -> Result<String
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoFetchArgs {
     /// Code host. Optional; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Code host: github, gitlab, codeberg, gitea, forgejo, or workspace.")]
     pub host: Option<String>,
-    /// Repository owner (or namespace for GitLab nested groups).
-    pub owner: String,
-    /// Repository name.
-    pub repo: String,
-    /// Branch, tag, or commit ref. Defaults to "main" when omitted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ref_name: Option<String>,
-    /// Full commit SHA for stable permalink construction.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub commit_sha: Option<String>,
-    /// File path relative to repository root.
-    pub path: String,
-    /// First line to return (1-indexed).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_start: Option<u32>,
-    /// Last line to return (1-indexed, inclusive).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_end: Option<u32>,
-    /// Extra lines of context before line_start. Defaults to 0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_before: Option<u32>,
-    /// Extra lines of context after line_end. Defaults to 0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_after: Option<u32>,
-    /// Maximum characters to return. Defaults to server config.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_chars: Option<usize>,
+    #[serde(flatten)]
+    pub target: crate::core::repo_fetch::RepoTarget,
     /// Timeout in milliseconds. Defaults to server config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub timeout_ms: Option<u64>,
     /// Override URL for the actual fetch (internal/test-only). When
     /// set, this URL is fetched instead of the internally-constructed
@@ -61,31 +38,24 @@ pub struct RepoFetchArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(skip)]
     pub test_fetch_url: Option<String>,
-    /// Symbol name to search for in the file. When provided, the
-    /// fetcher scans for a matching definition and expands to the
-    /// enclosing block.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub symbol: Option<String>,
-    /// Kind of symbol to search for (function, struct, enum, etc.).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub symbol_kind: Option<String>,
-    /// Text to search for in the file. When provided, finds the
-    /// first match and expands around it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub match_text: Option<String>,
-    /// When true, expand the resolved range to the enclosing block.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expand_to_block: Option<bool>,
-    /// Maximum lines when expanding to a block.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_block_lines: Option<usize>,
-    /// When true and a matching local checkout exists, read the file
-    /// from the local workspace instead of fetching remotely.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefer_local: Option<bool>,
     /// Response detail: brief, compact, standard, or diagnostic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(skip)]
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
+}
+
+impl std::ops::Deref for RepoFetchArgs {
+    type Target = crate::core::repo_fetch::RepoTarget;
+
+    fn deref(&self) -> &Self::Target {
+        &self.target
+    }
+}
+
+impl std::ops::DerefMut for RepoFetchArgs {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.target
+    }
 }
 
 /// Run the `repo_fetch` tool.
@@ -180,24 +150,24 @@ pub async fn run_repo_fetch_with_host_scope(
                     let max_chars = state.config.mcp.brief_max_chars;
                     let ws_args = RepoFetchArgs {
                         host: Some("workspace".to_string()),
-                        owner: rid.root_name.clone(),
-                        repo: args.path.clone(),
-                        ref_name: None,
-                        commit_sha: None,
-                        path: args.path.clone(),
-                        line_start: args.line_start,
-                        line_end: args.line_end,
-                        context_before: args.context_before,
-                        context_after: args.context_after,
-                        max_chars: args.max_chars,
+                        target: crate::core::repo_fetch::RepoTarget {
+                            owner: rid.root_name.clone(),
+                            repo: args.path.clone(),
+                            path: args.path.clone(),
+                            line_start: args.line_start,
+                            line_end: args.line_end,
+                            context_before: args.context_before,
+                            context_after: args.context_after,
+                            max_chars: args.max_chars,
+                            symbol: args.symbol.clone(),
+                            symbol_kind: args.symbol_kind.clone(),
+                            match_text: args.match_text.clone(),
+                            expand_to_block: args.expand_to_block,
+                            max_block_lines: args.max_block_lines,
+                            ..Default::default()
+                        },
                         timeout_ms: args.timeout_ms,
                         test_fetch_url: None,
-                        symbol: args.symbol.clone(),
-                        symbol_kind: args.symbol_kind.clone(),
-                        match_text: args.match_text.clone(),
-                        expand_to_block: args.expand_to_block,
-                        max_block_lines: args.max_block_lines,
-                        prefer_local: None,
                         response_detail: None,
                     };
                     let value = run_workspace_fetch(state, ws_args, local_view).await?;
@@ -235,26 +205,10 @@ pub async fn run_repo_fetch_with_host_scope(
     let ref_name = args.ref_name.clone().unwrap_or_else(|| "main".to_string());
     let parsed_symbol_kind = parse_symbol_kind_arg(args.symbol_kind.as_deref())?;
 
-    let req = RepoFetchRequest {
-        host: Some(effective_host),
-        owner: args.owner.clone(),
-        repo: args.repo.clone(),
-        ref_name: Some(ref_name.clone()),
-        commit_sha: args.commit_sha.clone(),
-        path: args.path.clone(),
-        line_start: args.line_start,
-        line_end: args.line_end,
-        context_before: args.context_before,
-        context_after: args.context_after,
-        max_chars: args.max_chars,
-        timeout_ms: args.timeout_ms,
-        symbol: args.symbol.clone(),
-        symbol_kind: parsed_symbol_kind,
-        match_text: args.match_text.clone(),
-        expand_to_block: args.expand_to_block,
-        max_block_lines: args.max_block_lines,
-        prefer_local: args.prefer_local,
-    };
+    let mut req = RepoFetchRequest::from(args.target.clone());
+    req.host = Some(effective_host);
+    req.timeout_ms = args.timeout_ms;
+    req.target.ref_name = Some(ref_name.clone());
 
     req.validate(state.config.fetch.max_chars_cap)
         .map_err(ToolError::Validation)?;
@@ -487,7 +441,7 @@ pub async fn run_repo_fetch_with_host_scope(
                 &all_lines,
                 language.as_deref(),
                 req.symbol.as_deref(),
-                req.symbol_kind,
+                parsed_symbol_kind,
                 req.match_text.as_deref(),
                 req.line_start,
                 req.line_end,
@@ -777,26 +731,16 @@ async fn run_workspace_fetch(
     // Share budget/span validation with the remote repo_fetch path
     // so the workspace host enforces identical constraints (line ranges,
     // context bounds, max_chars cap, max_block_lines, timeout_ms).
-    let ws_req = RepoFetchRequest {
-        host: None,
-        owner: root_name.clone(),
-        repo: relative_path.clone(),
-        ref_name: None,
-        commit_sha: None,
-        path: relative_path.clone(),
-        line_start: args.line_start,
-        line_end: args.line_end,
-        context_before: args.context_before,
-        context_after: args.context_after,
-        max_chars: args.max_chars,
-        timeout_ms: args.timeout_ms,
-        symbol: args.symbol.clone(),
-        symbol_kind: parsed_symbol_kind,
-        match_text: args.match_text.clone(),
-        expand_to_block: args.expand_to_block,
-        max_block_lines: args.max_block_lines,
-        prefer_local: None,
-    };
+    let mut ws_target = args.target.clone();
+    ws_target.owner = root_name.clone();
+    ws_target.repo = relative_path.clone();
+    ws_target.ref_name = None;
+    ws_target.commit_sha = None;
+    ws_target.path = relative_path.clone();
+    ws_target.prefer_local = None;
+    let mut ws_req = RepoFetchRequest::from(ws_target);
+    ws_req.host = None;
+    ws_req.timeout_ms = args.timeout_ms;
     ws_req
         .validate(state.config.fetch.max_chars_cap)
         .map_err(ToolError::Validation)?;

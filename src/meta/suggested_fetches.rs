@@ -41,8 +41,7 @@ fn build_structured_fetch(card: &crate::core::source_card::SourceCard) -> Option
     let repo = ce.repo.as_deref()?;
     let ref_name = ce.ref_name.as_deref()?;
     let path = ce.path.as_deref()?;
-    Some(RepoFetchRequest {
-        host: Some(host),
+    let mut request = RepoFetchRequest::from(crate::core::repo_fetch::RepoTarget {
         owner: owner.to_string(),
         repo: repo.to_string(),
         ref_name: Some(ref_name.to_string()),
@@ -52,20 +51,18 @@ fn build_structured_fetch(card: &crate::core::source_card::SourceCard) -> Option
         line_end: ce.match_line_end,
         context_before: ce.context_line_start.map(|_| 3),
         context_after: ce.context_line_end.map(|_| 3),
-        max_chars: None,
-        timeout_ms: None,
         symbol: ce.matched_symbol.clone(),
-        symbol_kind: ce.symbol_kind,
-        match_text: None,
+        symbol_kind: ce.symbol_kind.map(|kind| kind.as_str().to_string()),
         expand_to_block: Some(matches!(
             ce.source_role,
             Some(crate::core::code_evidence::SourceRole::Implementation)
                 | Some(crate::core::code_evidence::SourceRole::Test)
                 | Some(crate::core::code_evidence::SourceRole::Example)
         )),
-        max_block_lines: None,
-        prefer_local: None,
-    })
+        ..Default::default()
+    });
+    request.host = Some(host);
+    Some(request)
 }
 
 /// Determine expected content kind from source kind.

@@ -37,7 +37,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `browser` | Headless Chrome/Chromium rendering via `chromiumoxide` | Browser rendering tests |
 | `egress` | Optional listener-free HTTP/SOCKS proxy-chain route beneath eggfetch (provider upstreams only, source-build opt-in) | Egress routing tests |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
-
+| `live-mcp-smoke` | Real MCP-protocol smoke against built-in keyless defaults; retains default `pdf`/`browser`, does not enable `mock` | Manual only |
 **Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
 
 ## Test Locations
@@ -69,7 +69,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/security_applicability_corpus.rs` | None | Security applicability pipeline regression |
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
-| `tests/mcp_http.rs` | `all-features` | Loopback Streamable HTTP lifecycle, bounds, identity, and shutdown |
+| `tests/mcp_http.rs` | `all-features`; live test via `live-mcp-smoke` | Loopback Streamable HTTP lifecycle, bounds, identity, shutdown, plus ignored real-provider MCP smoke exercising default PDF/browser features without `mock` |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
 This table is representative, not exhaustive — 83 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.

@@ -14,6 +14,7 @@ use crate::core::query::Freshness;
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::SourceCard;
+use crate::core::validation::{require_char_limit, require_positive};
 use crate::meta::response::ProviderFailure;
 
 /// Severity level from advisory databases.
@@ -1550,18 +1551,13 @@ impl SecuritySearchRequest {
                     .to_string(),
             );
         }
-        if self.query.chars().count() > max_query_chars {
-            return Err(format!("query must be <= {max_query_chars} characters"));
-        }
-        if let Some(0) = self.max_results {
-            return Err("max_results must be > 0".to_string());
-        }
-        if let Some(0) = self.max_per_group {
-            return Err("max_per_group must be > 0".to_string());
-        }
-        if let Some(0) = self.timeout_ms {
-            return Err("timeout_ms must be > 0".to_string());
-        }
+        require_char_limit("query", &self.query, max_query_chars)?;
+        require_positive("max_results", self.max_results)?;
+        require_positive("max_per_group", self.max_per_group)?;
+        require_positive(
+            "timeout_ms",
+            self.timeout_ms.map(|value| if value == 0 { 0 } else { 1 }),
+        )?;
         Ok(())
     }
 
@@ -1969,7 +1965,22 @@ mod tests {
             query: "   ".to_string(),
             ..Default::default()
         };
-        assert!(req.validate(512).is_err());
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "query must not be empty unless at least one strong identifier is provided (cve_id, ghsa_id, osv_id, rustsec_id, or package+ecosystem)"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_oversized_query() {
+        let req = SecuritySearchRequest {
+            query: "a".repeat(1000),
+            ..Default::default()
+        };
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "query must be <= 512 characters"
+        );
     }
 
     #[test]

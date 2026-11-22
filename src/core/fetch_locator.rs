@@ -198,27 +198,10 @@ pub fn structured_repo_fetch_to_batch_item(
     let host = req.host.map(code_host_to_string);
     BatchFetchItem::Repo {
         host,
-        owner: req.owner.clone(),
-        repo: req.repo.clone(),
-        ref_name: req.ref_name.clone(),
-        commit_sha: req.commit_sha.clone(),
-        path: req.path.clone(),
-        line_start: req.line_start,
-        line_end: req.line_end,
-        context_before: req.context_before,
-        context_after: req.context_after,
-        max_chars: req.max_chars,
+        target: req.target.clone(),
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
-        symbol: req.symbol.clone(),
-        symbol_kind: req
-            .symbol_kind
-            .map(|kind| format!("{kind:?}").to_ascii_lowercase()),
-        match_text: req.match_text.clone(),
-        expand_to_block: req.expand_to_block,
-        max_block_lines: req.max_block_lines,
-        prefer_local: req.prefer_local,
     }
 }
 

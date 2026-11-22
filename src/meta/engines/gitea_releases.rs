@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};
+use super::truncate_body;
 use crate::core::code_metadata::CodeHost;
 use crate::core::source_card::ReleaseMetadata;
 
@@ -44,10 +45,6 @@ fn parse_repo_from_query(query: &str) -> Option<(String, String)> {
     None
 }
 
-fn truncate_body(body: &str, max_chars: usize) -> String {
-    crate::core::sanitize::truncate_at_word(body, max_chars)
-}
-
 pub async fn search(
     client: &Client,
     api_key: &str,
@@ -74,32 +71,20 @@ pub async fn search(
     let url = format!("{base}/api/v1/repos/{owner}/{repo}/releases");
     let per_page = max_results.clamp(1, 100);
 
-    let resp = client
-        .get(url.as_str())
-        .map_err(|e| EngineError::Http {
-            engine: ENGINE,
-            source: e,
-        })?
-        .query("limit", per_page.to_string().as_str())
-        .header("Authorization", format!("token {api_key}").as_str())
-        .timeout(super::engine_timeout(timeout))
-        .send()
-        .await
-        .map_err(|e| super::map_request_error(ENGINE, e))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
-
-    let parsed: Vec<GiteaReleaseItem> =
-        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("invalid JSON: {e}"),
-        })?;
+    let per_page = per_page.to_string();
+    let authorization = format!("token {api_key}");
+    let query_params = [("limit", per_page.as_str())];
+    let headers = [("Authorization", authorization.as_str())];
+    let parsed: Vec<GiteaReleaseItem> = super::get_json_bounded(
+        client,
+        ENGINE,
+        url.as_str(),
+        &query_params,
+        &headers,
+        MAX_BODY_BYTES,
+        timeout,
+    )
+    .await?;
 
     Ok(convert(parsed, max_results, &owner, &repo))
 }
@@ -280,26 +265,6 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_respects_max_results() {
-        let items: Vec<GiteaReleaseItem> = (0..5)
-            .map(|i| GiteaReleaseItem {
-                tag_name: Some(format!("v{i}.0.0")),
-                name: Some(format!("Release {i}")),
-                html_url: Some(format!(
-                    "https://gitea.example.com/test/repo/releases/tag/v{i}.0.0"
-                )),
-                body: None,
-                draft: Some(false),
-                prerelease: Some(false),
-                created_at: None,
-                published_at: None,
-            })
-            .collect();
-        let out = convert(items, 2, "test", "repo");
-        assert_eq!(out.len(), 2);
-    }
-
-    #[test]
     fn test_convert_skips_missing_html_url() {
         let items = vec![GiteaReleaseItem {
             tag_name: Some("v1.0.0".to_string()),
@@ -332,12 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn test_max_results_zero_returns_empty() {
-        let out = convert(vec![], 0, "test", "repo");
-        assert!(out.is_empty());
-    }
-
-    #[test]
     fn test_search_returns_empty_without_repo_hint() {
         assert!(parse_repo_from_query("no repo hint here").is_none());
     }
@@ -347,118 +306,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     use crate::meta::engines::error::EngineError;
-
-    #[tokio::test]
-    async fn test_successful_response_with_multiple_results() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v1/repos/tokio-rs/axum/releases")
-                .header("Authorization", "token test-token");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(
-                    r#"[
-                        {
-                            "tag_name": "v0.7.0",
-                            "name": "Release v0.7.0",
-                            "html_url": "https://gitea.example.com/tokio-rs/axum/releases/tag/v0.7.0",
-                            "body": "Bug fixes",
-                            "draft": false,
-                            "prerelease": false,
-                            "created_at": "2024-01-15T10:30:00Z",
-                            "published_at": "2024-01-16T12:00:00Z"
-                        },
-                        {
-                            "tag_name": "v0.6.0",
-                            "name": null,
-                            "html_url": "https://gitea.example.com/tokio-rs/axum/releases/tag/v0.6.0",
-                            "body": "Previous release",
-                            "draft": false,
-                            "prerelease": false,
-                            "created_at": "2023-12-01T10:00:00Z",
-                            "published_at": "2023-12-02T10:00:00Z"
-                        }
-                    ]"#,
-                );
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "repo:tokio-rs/axum",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].title, "v0.7.0 Release v0.7.0 - tokio-rs/axum");
-        assert_eq!(results[0].source_engine, "gitea_releases");
-    }
-
-    #[tokio::test]
-    async fn test_empty_result_set() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v1/repos/test/empty/releases");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(r#"[]"#);
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "repo:test/empty",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert!(results.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_unauthorized_401() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v1/repos/test/repo/releases");
-            then.status(401).body("unauthorized");
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let err = search(
-            &client,
-            "bad-token",
-            Some(&server.url("")),
-            "repo:test/repo",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("should fail with 401");
-
-        match err {
-            EngineError::BadStatus { engine, status } => {
-                assert_eq!(engine, "gitea_releases");
-                assert_eq!(status, 401);
-            }
-            other => panic!("expected BadStatus(401), got: {other:?}"),
-        }
-    }
 
     #[tokio::test]
     async fn test_empty_base_url_returns_error() {

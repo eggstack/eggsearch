@@ -252,28 +252,149 @@ fn repo_batch_degradation_ladder_drops_structure_before_text() {
 fn workspace_fetch_path_is_trimmed_before_use() {
     let args = RepoFetchArgs {
         host: Some("workspace".to_string()),
-        owner: "root".to_string(),
-        repo: " legacy.rs ".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: " file.rs ".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: crate::core::repo_fetch::RepoTarget {
+            owner: "root".to_string(),
+            repo: " legacy.rs ".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: " file.rs ".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: None,
         response_detail: None,
     };
 
     assert_eq!(workspace_relative_path_arg(&args).unwrap(), "file.rs");
+}
+
+#[test]
+fn repo_target_envelopes_preserve_the_flat_field_set() {
+    use crate::core::batch_fetch::BatchFetchItem;
+    use crate::core::code_metadata::CodeHost;
+    use crate::core::repo_fetch::{RepoFetchRequest, RepoTarget};
+    use crate::mcp::tools::fetch::FetchItem;
+    use crate::mcp::tools::repo_fetch::RepoFetchArgs;
+    use serde::de::DeserializeOwned;
+    use serde::Serialize;
+
+    fn assert_lossless<T>(value: serde_json::Value, target_keys: &[String], extras: &[&str])
+    where
+        T: DeserializeOwned + Serialize,
+    {
+        let mut expected = target_keys.to_vec();
+        expected.extend(extras.iter().map(|key| (*key).to_string()));
+        expected.sort();
+        let mut actual = value
+            .as_object()
+            .expect("envelope object")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        actual.sort();
+        assert_eq!(actual, expected);
+        let parsed: T = serde_json::from_value(value.clone()).expect("envelope deserializes");
+        assert_eq!(serde_json::to_value(parsed).unwrap(), value);
+    }
+
+    let target = RepoTarget {
+        owner: "tokio-rs".to_string(),
+        repo: "axum".to_string(),
+        ref_name: Some("main".to_string()),
+        commit_sha: Some("0123456789abcdef".to_string()),
+        path: "src/lib.rs".to_string(),
+        line_start: Some(2),
+        line_end: Some(20),
+        context_before: Some(1),
+        context_after: Some(2),
+        max_chars: Some(2400),
+        symbol: Some("Router".to_string()),
+        symbol_kind: Some("struct".to_string()),
+        match_text: Some("pub struct Router".to_string()),
+        expand_to_block: Some(true),
+        max_block_lines: Some(80),
+        prefer_local: Some(false),
+    };
+    let target_keys = serde_json::to_value(&target)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    let args = RepoFetchArgs {
+        host: Some("gh".to_string()),
+        target: target.clone(),
+        timeout_ms: Some(5000),
+        test_fetch_url: Some("https://example.test/src/lib.rs".to_string()),
+        response_detail: Some(crate::mcp::projection::ResponseDetail::Diagnostic),
+    };
+    assert_lossless::<RepoFetchArgs>(
+        serde_json::to_value(&args).unwrap(),
+        &target_keys,
+        &["host", "timeout_ms", "test_fetch_url", "response_detail"],
+    );
+
+    let batch = BatchFetchItem::Repo {
+        host: Some("gh".to_string()),
+        target: target.clone(),
+        focus: Some("Router".to_string()),
+        focus_max_chunks: Some(3),
+        focus_max_chars: Some(1200),
+    };
+    assert_lossless::<BatchFetchItem>(
+        serde_json::to_value(&batch).unwrap(),
+        &target_keys,
+        &[
+            "type",
+            "host",
+            "focus",
+            "focus_max_chunks",
+            "focus_max_chars",
+        ],
+    );
+
+    let request = RepoFetchRequest {
+        host: Some(CodeHost::Github),
+        target: target.clone(),
+        timeout_ms: Some(7000),
+    };
+    assert_lossless::<RepoFetchRequest>(
+        serde_json::to_value(&request).unwrap(),
+        &target_keys,
+        &["host", "timeout_ms"],
+    );
+
+    let fetch_item = FetchItem::Repo {
+        args,
+        focus: Some("Router".to_string()),
+        focus_max_chunks: Some(3),
+        focus_max_chars: Some(1200),
+    };
+    assert_lossless::<FetchItem>(
+        serde_json::to_value(&fetch_item).unwrap(),
+        &target_keys,
+        &[
+            "type",
+            "host",
+            "timeout_ms",
+            "test_fetch_url",
+            "response_detail",
+            "focus",
+            "focus_max_chunks",
+            "focus_max_chars",
+        ],
+    );
 }
 
 #[cfg(feature = "mock")]
@@ -851,25 +972,27 @@ async fn batch_workspace_fetch_honors_host_local_scope_without_widening() {
     let args_for_root = |root: String| BatchFetchArgs {
         items: vec![crate::core::batch_fetch::BatchFetchItem::Repo {
             host: Some("workspace".to_string()),
-            owner: root,
-            repo: "lib.rs".to_string(),
-            ref_name: None,
-            commit_sha: None,
-            path: "lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: root,
+                repo: "lib.rs".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         }],
         max_items: None,
         max_chars_per_item: None,

@@ -156,28 +156,16 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
         }
         BatchFetchItem::Repo {
             host,
-            owner,
-            repo,
-            ref_name,
-            commit_sha,
-            path,
-            line_start,
-            line_end,
-            context_before,
-            context_after,
-            max_chars,
+            target,
             focus,
             focus_max_chunks,
             focus_max_chars,
-            symbol,
-            symbol_kind,
-            match_text,
-            expand_to_block,
-            max_block_lines,
-            prefer_local,
         } => {
             let stable_id = batch_fetch_id(&label, i);
-            let effective_max = max_chars.unwrap_or(item_max_chars).min(item_max_chars);
+            let effective_max = target
+                .max_chars
+                .unwrap_or(item_max_chars)
+                .min(item_max_chars);
             let repo_focus_query = focus.clone();
             let repo_focus_chunks = *focus_max_chunks;
             let repo_focus_chars = *focus_max_chars;
@@ -185,24 +173,9 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
             let repo_label = label.clone();
             let repo_args = RepoFetchArgs {
                 host: host.clone(),
-                owner: owner.clone(),
-                repo: repo.clone(),
-                ref_name: ref_name.clone(),
-                commit_sha: commit_sha.clone(),
-                path: path.clone(),
-                line_start: *line_start,
-                line_end: *line_end,
-                context_before: *context_before,
-                context_after: *context_after,
-                max_chars: Some(effective_max),
+                target: target.clone(),
                 timeout_ms,
                 test_fetch_url: None,
-                symbol: symbol.clone(),
-                symbol_kind: symbol_kind.clone(),
-                match_text: match_text.clone(),
-                expand_to_block: *expand_to_block,
-                max_block_lines: *max_block_lines,
-                prefer_local: *prefer_local,
                 response_detail: None,
             };
             Box::pin(async move {

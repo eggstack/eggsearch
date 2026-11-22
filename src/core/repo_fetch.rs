@@ -9,11 +9,13 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::code_evidence::{SourceRole, SymbolKind};
+use crate::core::code_evidence::SourceRole;
 use crate::core::code_metadata::CodeHost;
 use crate::core::document::FetchDocument;
 use crate::core::sanitize::TrustMarkers;
 use crate::fetch::span::SelectedSpan;
+
+pub use crate::core::repo_target::RepoTarget;
 
 /// Lightweight code-span evidence extracted from a `repo_fetch` response.
 ///
@@ -118,81 +120,25 @@ pub struct RepoLocator {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
 }
-
-/// Request type for the `repo_fetch` tool.
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+/// Request type for the repo_fetch tool.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct RepoFetchRequest {
-    /// Code host. Optional when owner/repo are unambiguous;
-    /// validated against known hosts.
+    /// Code host. Optional when owner/repo are unambiguous; validated against known hosts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<CodeHost>,
-    /// Repository owner (or namespace for GitLab nested groups).
-    pub owner: String,
-    /// Repository name.
-    pub repo: String,
-    /// Branch, tag, or commit ref. Defaults to `"main"` when omitted.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ref_name: Option<String>,
-    /// Full commit SHA. When provided, used for permalink
-    /// construction and preferred over `ref_name` for raw URL
-    /// stability. The locator still carries `ref_name` for
-    /// operator context.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub commit_sha: Option<String>,
-    /// File path relative to repository root. Must not start with `/`.
-    pub path: String,
-    /// First line to return (1-indexed). When omitted, starts from
-    /// line 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_start: Option<u32>,
-    /// Last line to return (1-indexed, inclusive). When omitted, the
-    /// file is returned from `line_start` to the end (or top of file
-    /// when `line_start` is also omitted).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub line_end: Option<u32>,
-    /// Extra lines of context before `line_start`. Applied after
-    /// the requested range is validated and clamped. Defaults to 0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_before: Option<u32>,
-    /// Extra lines of context after `line_end`. Applied after the
-    /// requested range is validated and clamped. Defaults to 0.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_after: Option<u32>,
-    /// Maximum characters to return. Defaults to the server's
-    /// `max_chars_default` config. Cannot exceed
-    /// `max_chars_cap`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_chars: Option<usize>,
+    /// Common repository target fields.
+    #[serde(flatten)]
+    pub target: RepoTarget,
     /// Per-request timeout override in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Symbol name to search for in the file. When provided, the
-    /// fetcher scans the file for a matching definition or declaration
-    /// and expands to the enclosing block.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub symbol: Option<String>,
-    /// Kind of symbol to search for. When omitted, all definition
-    /// patterns are tried.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub symbol_kind: Option<SymbolKind>,
-    /// Text to search for in the file. When provided, the fetcher
-    /// finds the first match and expands around it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub match_text: Option<String>,
-    /// When true, expand the resolved range (from symbol, match_text,
-    /// or explicit line range) to the enclosing block boundary.
-    /// Defaults to false.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expand_to_block: Option<bool>,
-    /// Maximum lines to include when expanding to a block. Caps the
-    /// expanded span to prevent oversized returns. Defaults to 200.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_block_lines: Option<usize>,
-    /// When true and a matching local checkout exists, read the file
-    /// from the local workspace instead of fetching remotely. Defaults
-    /// to false for backward compatibility.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prefer_local: Option<bool>,
+}
+impl std::ops::Deref for RepoFetchRequest {
+    type Target = RepoTarget;
+
+    fn deref(&self) -> &Self::Target {
+        &self.target
+    }
 }
 
 /// A single line in the fetched result.
@@ -674,23 +620,25 @@ mod tests {
     fn valid_github_request() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         req.validate(50000).unwrap();
     }
@@ -699,23 +647,25 @@ mod tests {
     fn empty_owner_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("owner"));
@@ -725,23 +675,25 @@ mod tests {
     fn empty_repo_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("repo"));
@@ -751,23 +703,25 @@ mod tests {
     fn empty_path_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("path"));
@@ -777,23 +731,25 @@ mod tests {
     fn absolute_path_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "/src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "/src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("relative"));
@@ -803,23 +759,25 @@ mod tests {
     fn path_traversal_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "../etc/passwd".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "../etc/passwd".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -829,23 +787,25 @@ mod tests {
     fn inverted_line_range_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: Some(50),
-            line_end: Some(10),
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: Some(50),
+                line_end: Some(10),
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("line_start"));
@@ -855,23 +815,25 @@ mod tests {
     fn zero_line_start_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: Some(0),
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: Some(0),
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -881,23 +843,25 @@ mod tests {
     fn zero_line_end_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: Some(0),
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: Some(0),
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains(">= 1"));
@@ -907,23 +871,25 @@ mod tests {
     fn excessive_context_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: Some(501),
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: Some(501),
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("context_before"));
@@ -933,23 +899,25 @@ mod tests {
     fn max_chars_above_cap_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: Some(60000),
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: Some(60000),
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("exceeds server cap"));
@@ -959,23 +927,25 @@ mod tests {
     fn zero_max_chars_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: Some(0),
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: Some(0),
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("> 0"));
@@ -985,23 +955,25 @@ mod tests {
     fn zero_timeout_ms_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: Some(0),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("timeout_ms"));
@@ -1011,23 +983,25 @@ mod tests {
     fn embedded_path_traversal_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/../etc/passwd".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/../etc/passwd".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -1037,23 +1011,25 @@ mod tests {
     fn deep_path_traversal_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "foo/../../etc/passwd".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "foo/../../etc/passwd".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -1063,23 +1039,25 @@ mod tests {
     fn trailing_dotdot_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Github),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs/..".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs/..".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("traversal"));
@@ -1089,23 +1067,25 @@ mod tests {
     fn unsupported_host_rejected() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Unknown),
-            owner: "owner".to_string(),
-            repo: "repo".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "owner".to_string(),
+                repo: "repo".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let err = req.validate(50000).unwrap_err();
         assert!(err.contains("not supported"));
@@ -1115,23 +1095,25 @@ mod tests {
     fn codeberg_host_accepted() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Codeberg),
-            owner: "owner".to_string(),
-            repo: "repo".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "owner".to_string(),
+                repo: "repo".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         req.validate(50000).unwrap();
     }
@@ -1140,23 +1122,25 @@ mod tests {
     fn gitea_host_accepted() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Gitea),
-            owner: "owner".to_string(),
-            repo: "repo".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "owner".to_string(),
+                repo: "repo".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         req.validate(50000).unwrap();
     }
@@ -1165,23 +1149,25 @@ mod tests {
     fn forgejo_host_accepted() {
         let req = RepoFetchRequest {
             host: Some(CodeHost::Forgejo),
-            owner: "owner".to_string(),
-            repo: "repo".to_string(),
-            ref_name: Some("main".to_string()),
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "owner".to_string(),
+                repo: "repo".to_string(),
+                ref_name: Some("main".to_string()),
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         req.validate(50000).unwrap();
     }

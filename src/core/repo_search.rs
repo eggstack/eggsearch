@@ -8,6 +8,7 @@ use crate::core::repo_query::RepoQueryHints;
 use crate::core::result::SearchWarning;
 use crate::core::sanitize::TrustMarkers;
 use crate::core::source_card::{SourceCard, SourceKind};
+use crate::core::validation::{require_char_limit, require_positive};
 use crate::meta::response::ProviderFailure;
 use serde::{Deserialize, Serialize};
 
@@ -386,18 +387,13 @@ impl RepoSearchRequest {
         } else {
             max_query_chars
         };
-        if self.query.chars().count() > effective_max {
-            return Err(format!("query must be <= {effective_max} characters"));
-        }
-        if let Some(0) = self.max_results {
-            return Err("max_results must be > 0".to_string());
-        }
-        if let Some(0) = self.max_per_group {
-            return Err("max_per_group must be > 0".to_string());
-        }
-        if let Some(0) = self.timeout_ms {
-            return Err("timeout_ms must be > 0".to_string());
-        }
+        require_char_limit("query", &self.query, effective_max)?;
+        require_positive("max_results", self.max_results)?;
+        require_positive("max_per_group", self.max_per_group)?;
+        require_positive(
+            "timeout_ms",
+            self.timeout_ms.map(|value| if value == 0 { 0 } else { 1 }),
+        )?;
         // Validate package coordinate: ecosystem requires package name and vice versa.
         if self.ecosystem.is_some() != self.package.is_some() {
             return Err("both 'ecosystem' and 'package' must be provided together".to_string());
@@ -765,8 +761,10 @@ mod tests {
             query: String::new(),
             ..Default::default()
         };
-        let err = req.validate(512).unwrap_err();
-        assert!(err.contains("repository locator"));
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "repo_search requires a non-empty query or a repository locator such as owner+repo or repo:owner/name"
+        );
     }
 
     #[test]
@@ -850,7 +848,10 @@ mod tests {
             query: "a".repeat(1000),
             ..Default::default()
         };
-        assert!(req.validate(512).is_err());
+        assert_eq!(
+            req.validate(512).unwrap_err(),
+            "query must be <= 512 characters"
+        );
     }
 
     #[test]

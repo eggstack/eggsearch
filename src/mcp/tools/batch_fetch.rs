@@ -6,7 +6,7 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct BatchFetchArgs {
     /// Non-empty list of URL or repository targets.
     pub items: Vec<crate::core::batch_fetch::BatchFetchItem>,
@@ -410,85 +410,49 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     return Err(ToolError::Validation(format!("item {i}: {e}")));
                 }
             }
-            BatchFetchItem::Repo {
-                owner,
-                repo,
-                path,
-                host,
-                ref_name,
-                commit_sha,
-                line_start,
-                line_end,
-                context_before,
-                context_after,
-                max_chars,
-                symbol,
-                symbol_kind,
-                match_text,
-                expand_to_block,
-                max_block_lines,
-                prefer_local,
-                ..
-            } => {
+            BatchFetchItem::Repo { target, host, .. } => {
                 let locator = crate::core::fetch_locator::batch_repo_item_to_locator(
                     host.as_deref(),
-                    owner,
-                    repo,
-                    ref_name.as_deref(),
-                    commit_sha.as_deref(),
-                    path,
+                    &target.owner,
+                    &target.repo,
+                    target.ref_name.as_deref(),
+                    target.commit_sha.as_deref(),
+                    &target.path,
                 )
                 .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
-                let effective_max = max_chars.unwrap_or(per_item_cap).min(per_item_cap);
-                let parsed_symbol_kind =
-                    super::common::parse_symbol_kind_arg(symbol_kind.as_deref())
+                let effective_max = target.max_chars.unwrap_or(per_item_cap).min(per_item_cap);
+                let _parsed_symbol_kind =
+                    super::common::parse_symbol_kind_arg(target.symbol_kind.as_deref())
                         .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
                 let workspace_target =
                     matches!(locator, crate::core::fetch_locator::FetchLocator::Local(_));
                 let request = match &locator {
                     crate::core::fetch_locator::FetchLocator::Local(local) => {
-                        crate::core::repo_fetch::RepoFetchRequest {
-                            host: None,
-                            owner: local.root.clone(),
-                            repo: local.path.clone(),
-                            ref_name: None,
-                            commit_sha: None,
-                            path: local.path.clone(),
-                            line_start: *line_start,
-                            line_end: *line_end,
-                            context_before: *context_before,
-                            context_after: *context_after,
-                            max_chars: Some(effective_max),
-                            timeout_ms: args.timeout_ms,
-                            symbol: symbol.clone(),
-                            symbol_kind: parsed_symbol_kind,
-                            match_text: match_text.clone(),
-                            expand_to_block: *expand_to_block,
-                            max_block_lines: *max_block_lines,
-                            prefer_local: None,
-                        }
+                        let mut request =
+                            crate::core::repo_fetch::RepoFetchRequest::from(target.clone());
+                        request.host = None;
+                        request.target.owner = local.root.clone();
+                        request.target.repo = local.path.clone();
+                        request.target.ref_name = None;
+                        request.target.commit_sha = None;
+                        request.target.path = local.path.clone();
+                        request.target.max_chars = Some(effective_max);
+                        request.timeout_ms = args.timeout_ms;
+                        request.target.prefer_local = None;
+                        request
                     }
                     crate::core::fetch_locator::FetchLocator::Repo(remote) => {
-                        crate::core::repo_fetch::RepoFetchRequest {
-                            host: remote.host,
-                            owner: remote.owner.clone().unwrap_or_default(),
-                            repo: remote.repo.clone().unwrap_or_default(),
-                            ref_name: remote.ref_name.clone(),
-                            commit_sha: remote.commit_sha.clone(),
-                            path: remote.path.clone(),
-                            line_start: *line_start,
-                            line_end: *line_end,
-                            context_before: *context_before,
-                            context_after: *context_after,
-                            max_chars: Some(effective_max),
-                            timeout_ms: args.timeout_ms,
-                            symbol: symbol.clone(),
-                            symbol_kind: parsed_symbol_kind,
-                            match_text: match_text.clone(),
-                            expand_to_block: *expand_to_block,
-                            max_block_lines: *max_block_lines,
-                            prefer_local: *prefer_local,
-                        }
+                        let mut request =
+                            crate::core::repo_fetch::RepoFetchRequest::from(target.clone());
+                        request.host = remote.host;
+                        request.target.owner = remote.owner.clone().unwrap_or_default();
+                        request.target.repo = remote.repo.clone().unwrap_or_default();
+                        request.target.ref_name = remote.ref_name.clone();
+                        request.target.commit_sha = remote.commit_sha.clone();
+                        request.target.path = remote.path.clone();
+                        request.target.max_chars = Some(effective_max);
+                        request.timeout_ms = args.timeout_ms;
+                        request
                     }
                     crate::core::fetch_locator::FetchLocator::WebUrl(_) => {
                         return Err(ToolError::internal(
@@ -540,7 +504,9 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
                 }
 
-                if !workspace_target && prefer_local.unwrap_or(false) && host_local_scope.is_some()
+                if !workspace_target
+                    && target.prefer_local.unwrap_or(false)
+                    && host_local_scope.is_some()
                 {
                     if !view.is_enabled() {
                         return Err(ToolError::Validation(
@@ -553,8 +519,8 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     if crate::meta::local_inventory::match_local_repo(
                         &inventory,
                         parsed_host.as_ref(),
-                        owner,
-                        repo,
+                        &target.owner,
+                        &target.repo,
                     )
                     .is_none()
                     {

@@ -303,6 +303,26 @@ fn fetch_schema_advertises_single_and_nonempty_multi_target_inputs() {
 }
 
 #[test]
+fn fetch_schema_stays_within_the_measured_full_profile_budget() {
+    let definition_bytes = serialized_bytes("fetch");
+    let schema = schema_for("fetch");
+    let input_schema_bytes = serde_json::to_string(&schema).unwrap().len();
+    let defs = schema
+        .get("$defs")
+        .and_then(serde_json::Value::as_object)
+        .map_or(0, serde_json::Map::len);
+    assert!(
+        definition_bytes <= 9_013,
+        "fetch definition is {definition_bytes} bytes"
+    );
+    assert!(
+        input_schema_bytes <= 8_109,
+        "fetch input schema is {input_schema_bytes} bytes"
+    );
+    assert!(defs <= 12, "fetch schema has {defs} definitions");
+}
+
+#[test]
 fn full_and_compact_advertisements_are_smaller_than_the_ten_tool_baseline() {
     let full_bytes = serde_json::to_string(&tool_definitions()).unwrap().len();
     let compact_bytes = serde_json::to_string(&compact_tool_definitions())

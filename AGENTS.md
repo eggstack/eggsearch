@@ -14,7 +14,7 @@ make release-check  # check + docs + release build + publish dry-run
 make bench-check  # compile-check the Criterion perf harness (characterization only, never a threshold); fuzz: make fuzz-smoke
 ```
 
-Feature flags: `mock` (test-only engine harness — **required for integration/corpus tests**; plain `cargo test` misses most of them), `pdf`, `browser`, `egress` (opt-in listener-free HTTP/SOCKS proxy-chain route for provider upstreams only; prebuilt/default binaries exclude it), `live-smoke` (implies `mock`, ignored by default, network). Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
+Feature flags: `pdf` and `browser` are enabled by Cargo defaults; `mock` is the test-only engine harness (**required for integration/corpus tests**, and plain `cargo test` misses most of them); `egress` is opt-in and excluded from prebuilt/default binaries; `live-smoke` implies `mock`; `live-mcp-smoke` is the opt-in real MCP/network smoke that retains default `pdf`/`browser` and does not enable `mock`. Both live smoke targets are ignored by default. Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
 
 ```bash
 cargo test --locked --features mock --test web_search_integration  # single suite

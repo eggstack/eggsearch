@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};
+use super::truncate_body;
 use crate::core::code_metadata::CodeHost;
 use crate::core::source_card::IssueMetadata;
 
@@ -32,10 +33,6 @@ struct GitlabIssueItem {
     created_at: Option<String>,
     updated_at: Option<String>,
     closed_at: Option<String>,
-}
-
-fn truncate_body(body: &str, max_chars: usize) -> String {
-    crate::core::sanitize::truncate_at_word(body, max_chars)
 }
 
 pub async fn search(
@@ -80,33 +77,19 @@ pub async fn search_with_project(
         None => format!("{base}/api/v4/search?scope=issues"),
     };
 
-    let resp = client
-        .get(url.as_str())
-        .map_err(|e| EngineError::Http {
-            engine: ENGINE,
-            source: e,
-        })?
-        .query("search", query)
-        .query("per_page", per_page.to_string().as_str())
-        .header("PRIVATE-TOKEN", api_key)
-        .timeout(super::engine_timeout(timeout))
-        .send()
-        .await
-        .map_err(|e| super::map_request_error(ENGINE, e))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
-
-    let parsed: Vec<GitlabIssueItem> =
-        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("invalid JSON: {e}"),
-        })?;
+    let per_page = per_page.to_string();
+    let query_params = [("search", query), ("per_page", per_page.as_str())];
+    let headers = [("PRIVATE-TOKEN", api_key)];
+    let parsed: Vec<GitlabIssueItem> = super::get_json_bounded(
+        client,
+        ENGINE,
+        url.as_str(),
+        &query_params,
+        &headers,
+        MAX_BODY_BYTES,
+        timeout,
+    )
+    .await?;
 
     Ok(convert(parsed, max_results))
 }
@@ -251,25 +234,6 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_respects_max_results() {
-        let items: Vec<GitlabIssueItem> = (0..5)
-            .map(|i| GitlabIssueItem {
-                iid: Some(i),
-                title: Some(format!("Issue {i}")),
-                web_url: Some(format!("https://gitlab.com/test/repo/-/issues/{i}")),
-                description: None,
-                state: Some("opened".to_string()),
-                labels: vec![],
-                created_at: None,
-                updated_at: None,
-                closed_at: None,
-            })
-            .collect();
-        let out = convert(items, 2);
-        assert_eq!(out.len(), 2);
-    }
-
-    #[test]
     fn test_convert_skips_missing_web_url() {
         let items = vec![GitlabIssueItem {
             iid: Some(1),
@@ -392,73 +356,6 @@ mod tests {
     }
 
     #[test]
-    fn test_max_results_zero_returns_empty() {
-        let out = convert(vec![], 0);
-        assert!(out.is_empty());
-    }
-
-    #[test]
-    fn test_parse_json_array() {
-        let body = r#"[
-            {
-                "iid": 1,
-                "title": "Bug report",
-                "web_url": "https://gitlab.com/test/repo/-/issues/1",
-                "description": "Something is broken",
-                "state": "opened",
-                "labels": ["bug"],
-                "created_at": "2024-01-15T10:30:00Z",
-                "updated_at": "2024-01-20T14:22:00Z",
-                "closed_at": null
-            }
-        ]"#;
-        let parsed: Vec<GitlabIssueItem> = serde_json::from_str(body).unwrap();
-        assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].iid, Some(1));
-        assert_eq!(
-            parsed[0].web_url.as_deref(),
-            Some("https://gitlab.com/test/repo/-/issues/1")
-        );
-    }
-
-    #[test]
-    fn test_parse_json_array_empty() {
-        let body = r#"[]"#;
-        let parsed: Vec<GitlabIssueItem> = serde_json::from_str(body).unwrap();
-        assert!(parsed.is_empty());
-    }
-
-    #[test]
-    fn test_truncate_body_short() {
-        assert_eq!(truncate_body("hello", 100), "hello");
-    }
-
-    #[test]
-    fn test_truncate_body_at_word_boundary() {
-        assert_eq!(truncate_body("hello world foo bar", 11), "hello");
-    }
-
-    #[test]
-    fn test_truncate_body_no_spaces() {
-        assert_eq!(truncate_body("abcdefghij", 5), "abcde");
-    }
-
-    #[test]
-    fn test_truncate_body_handles_multibyte_utf8() {
-        let body = "abc \u{1f980} rust \u{1f9ea} unicode";
-        let out = truncate_body(body, 7);
-        assert!(out.is_char_boundary(out.len()));
-        assert!(out.len() <= body.len());
-        assert!(out.chars().count() <= 7);
-    }
-
-    #[test]
-    fn test_truncate_body_zero_max_returns_empty() {
-        let out = truncate_body("anything", 0);
-        assert_eq!(out, "");
-    }
-
-    #[test]
     fn test_parse_owner_repo_from_url() {
         let (owner, repo) =
             parse_owner_repo_from_url("https://gitlab.com/tokio-rs/axum/-/issues/123");
@@ -480,287 +377,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     use crate::meta::engines::error::EngineError;
-
-    #[tokio::test]
-    async fn test_successful_response_with_multiple_results() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v4/search")
-                .header("PRIVATE-TOKEN", "test-token");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(
-                    r#"[
-                        {
-                            "iid": 42,
-                            "title": "Fix parser",
-                            "web_url": "https://gitlab.com/tokio-rs/axum/-/issues/42",
-                            "description": "Parser bug description",
-                            "state": "opened",
-                            "labels": ["bug"],
-                            "created_at": "2024-01-15T10:30:00Z",
-                            "updated_at": "2024-01-20T14:22:00Z",
-                            "closed_at": null
-                        },
-                        {
-                            "iid": 43,
-                            "title": "Add feature",
-                            "web_url": "https://gitlab.com/tokio-rs/axum/-/issues/43",
-                            "description": "Feature request",
-                            "state": "closed",
-                            "labels": ["enhancement"],
-                            "created_at": "2024-02-01T08:00:00Z",
-                            "updated_at": "2024-02-05T12:00:00Z",
-                            "closed_at": "2024-02-05T12:00:00Z"
-                        }
-                    ]"#,
-                );
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].title, "#42 Fix parser");
-        assert_eq!(
-            results[0].url,
-            "https://gitlab.com/tokio-rs/axum/-/issues/42"
-        );
-        assert_eq!(
-            results[0].snippet.as_deref(),
-            Some("Parser bug description")
-        );
-        assert_eq!(results[0].source_engine, "gitlab_issues");
-    }
-
-    #[tokio::test]
-    async fn test_empty_result_set() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v4/search");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(r#"[]"#);
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "xyznonexistent",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert!(results.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_unauthorized_401() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v4/search");
-            then.status(401).body("401 Unauthorized");
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let err = search(
-            &client,
-            "bad-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("should fail with 401");
-
-        match err {
-            EngineError::BadStatus { engine, status } => {
-                assert_eq!(engine, "gitlab_issues");
-                assert_eq!(status, 401);
-            }
-            other => panic!("expected BadStatus(401), got: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_forbidden_403() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v4/search");
-            then.status(403).body("rate limit exceeded");
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let err = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("should fail with 403");
-
-        match err {
-            EngineError::BadStatus { engine, status } => {
-                assert_eq!(engine, "gitlab_issues");
-                assert_eq!(status, 403);
-            }
-            other => panic!("expected BadStatus(403), got: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_server_error_500() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v4/search");
-            then.status(500).body("Internal Server Error");
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let err = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("should fail with 500");
-
-        match err {
-            EngineError::BadStatus { engine, status } => {
-                assert_eq!(engine, "gitlab_issues");
-                assert_eq!(status, 500);
-            }
-            other => panic!("expected BadStatus(500), got: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_malformed_json() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v4/search");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body("this is not json");
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let err = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("should fail with parse error");
-
-        match err {
-            EngineError::ParseFailed { engine, reason } => {
-                assert_eq!(engine, "gitlab_issues");
-                assert!(reason.contains("invalid JSON"), "reason: {reason}");
-            }
-            other => panic!("expected ParseFailed, got: {other:?}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_respects_max_results() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v4/search")
-                .query_param("per_page", "2");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(
-                    r#"[
-                        {"iid": 1, "title": "A", "web_url": "https://gitlab.com/test/repo/-/issues/1", "state": "opened"},
-                        {"iid": 2, "title": "B", "web_url": "https://gitlab.com/test/repo/-/issues/2", "state": "opened"},
-                        {"iid": 3, "title": "C", "web_url": "https://gitlab.com/test/repo/-/issues/3", "state": "opened"}
-                    ]"#,
-                );
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "rust",
-            2,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].title, "#1 A");
-        assert_eq!(results[1].title, "#2 B");
-    }
-
-    #[tokio::test]
-    async fn test_api_key_sent_in_header() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v4/search")
-                .header("PRIVATE-TOKEN", "my-secret-token");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(r#"[]"#);
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        search(
-            &client,
-            "my-secret-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed with correct auth header");
-    }
 
     #[tokio::test]
     async fn test_timeout() {

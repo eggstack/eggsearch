@@ -2776,3 +2776,70 @@ fn fetch_pass_cookie_cache_is_process_local_and_has_one_owner() {
         "src/challenge_replay/mod.rs must own the fetch-side reuse sequence"
     );
 }
+
+#[test]
+fn integration_test_helpers_are_defined_once() {
+    const HELPERS: [&str; 12] = [
+        "git_cmd",
+        "run_git_checked",
+        "setup_git_repo_with_remote",
+        "repo_fetch_state",
+        "state_with_engines",
+        "state_with_arc_engines",
+        "state_with_engines_sanitize",
+        "test_cfg",
+        "state_with_local_backend",
+        "state_with_local_backend_sanitize",
+        "state_with_local_backend_mode_off",
+        "state_with_local_backend_mode_off_for_repo_map",
+    ];
+    let shared = read_source("tests/support/mod.rs");
+    for helper in HELPERS {
+        let needle = format!("fn {helper}(");
+        assert_eq!(
+            shared.matches(&needle).count(),
+            1,
+            "tests/support/mod.rs must define `{helper}` exactly once"
+        );
+    }
+    let tests_dir = std::path::PathBuf::from(format!("{}/tests", env!("CARGO_MANIFEST_DIR")));
+    let shared_path = tests_dir.join("support").join("mod.rs");
+    let mut directories = vec![tests_dir.clone()];
+    let mut test_sources = Vec::new();
+    while let Some(directory) = directories.pop() {
+        for entry in fs::read_dir(directory).expect("tests directory") {
+            let entry = entry.expect("tests entry");
+            let path = entry.path();
+            let file_type = entry.file_type().expect("tests entry type");
+            if file_type.is_dir() {
+                directories.push(path);
+            } else if file_type.is_file()
+                && path.extension().and_then(|ext| ext.to_str()) == Some("rs")
+                && path != shared_path
+            {
+                test_sources.push(path);
+            }
+        }
+    }
+    let checked = test_sources.len();
+    for path in test_sources {
+        let name = path
+            .strip_prefix(&tests_dir)
+            .expect("test source path")
+            .display()
+            .to_string();
+        let source = fs::read_to_string(&path).expect("read test source");
+        for helper in HELPERS {
+            let needle = format!("fn {helper}(");
+            assert_eq!(
+                source.matches(&needle).count(),
+                0,
+                "tests/{name} must import `{helper}` from tests/support/mod.rs instead of defining it"
+            );
+        }
+    }
+    assert!(
+        checked >= 40,
+        "the tests walk must not be vacuous, checked {checked} files"
+    );
+}

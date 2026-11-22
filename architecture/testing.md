@@ -14,6 +14,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 | Location | Purpose |
 |----------|---------|
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
+| `tests/support/mod.rs` | Shared integration-test harness: git fixture and mock/local state builders, imported with `mod support;` (a module, never a suite target) |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
 | `tests/property_*.rs` (18 suites) | Pure-function `proptest` coverage |
@@ -52,6 +53,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `evidence_contract` | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `extract_fetch_contract` | Excerpt bounds and merge, focus ranking and caps, fetch cache policy and max-age controls, markdown-first negotiation, accept-policy cache isolation, bounded fallback |
 | `batch_fetch_retrieval` | Mixed web/repo/workspace target parity, per-target PDF/render/profile and source-selection controls, host-local-scope authorization, preflight, order/budget, UTF-8 boundaries, failure isolation, suggested-fetch round-trip |
+| `engine_api_conformance` | Table-driven invariants for the nine forge API engines: status mapping, malformed JSON, zero-result no-request, per-page limit, auth header, invalid-URL skipping, and one conversion case per engine |
 | `provider_request_contract` | `EngineSearchRequest` fidelity, date/domain validation, wire compression behavior |
 | `provider_capability_contract` | Native-capability enforcement matrix (native versus local filtering), inventory counts, required-credential posture, default-fan-out exclusion, engine-builder reachability |
 | `provider_workstream_regression` | Provider inventory, capability descriptors, URL dedup with stable IDs |
@@ -106,6 +108,7 @@ Feature flags in `Cargo.toml`:
 | `browser` | Headless rendering via `chromiumoxide` |
 | `egress` | Opt-in listener-free HTTP/SOCKS proxy-chain route for provider upstreams only; excluded from default binaries |
 | `live-smoke` | Live network smoke tests; implies `mock`; manual opt-in only |
+| `live-mcp-smoke` | Real MCP-protocol live smoke; no `mock`; Cargo default `pdf`/`browser` features remain on |
 
 Browser suites are feature-gated separately:
 
@@ -124,11 +127,12 @@ Tests must pass keyless. CI blanks all credential environment variables, so miss
 
 ## Live-smoke opt-in
 
-Network tests are never part of the default gate. `live-smoke` implies `mock` and marks its tests `#[ignore]`d:
+Network tests are never part of the default gate. `live-smoke` implies `mock`; the separate `live-mcp-smoke` does not, retains Cargo defaults (`pdf` and `browser`), and exercises live MCP calls against keyless providers, a public PDF, and browser rendering. These tests are `#[ignore]`d by default:
 
 ```bash
 cargo test --locked --features live-smoke --test corpus_runner -- --ignored
 cargo test --locked --all-features --test tool_surface_live -- --ignored
+make live-mcp-smoke
 ```
 
 `tool_surface_live` additionally supports a manual multi-model comparison entry point gated by `EGGSEARCH_EVAL_MODEL`. It keeps the Layer 3 report contract in CI and holds exactly one ignored comparison test for operator-driven runs. Native forge smoke suites follow the same pattern and require operator-provided credentials plus fixture configuration; they are maintainer-only diagnostics, never release evidence.

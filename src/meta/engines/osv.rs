@@ -7,6 +7,7 @@ use serde::Deserialize;
 
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};
+use super::truncate_body;
 use crate::core::security::{
     SeverityLevel, VulnerabilityMetadata, VulnerabilityReference, VulnerabilitySource,
 };
@@ -705,11 +706,6 @@ fn sanitize_summary(summary: &str) -> Option<String> {
     Some(crate::core::sanitize::bound_text(stripped, SUMMARY_MAX_CHARS).0)
 }
 
-#[allow(dead_code)]
-fn truncate_body(body: &str, max_chars: usize) -> String {
-    crate::core::sanitize::truncate_at_word(body, max_chars)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -903,21 +899,6 @@ mod tests {
         }];
         let out = convert(vulns, 10);
         assert!(out.is_empty());
-    }
-
-    #[test]
-    fn test_truncate_body_short() {
-        assert_eq!(truncate_body("hello", 100), "hello");
-    }
-
-    #[test]
-    fn test_truncate_body_at_word_boundary() {
-        assert_eq!(truncate_body("hello world foo bar", 11), "hello");
-    }
-
-    #[test]
-    fn test_truncate_body_zero_max() {
-        assert_eq!(truncate_body("anything", 0), "");
     }
 
     #[test]

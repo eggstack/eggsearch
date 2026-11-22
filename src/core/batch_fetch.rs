@@ -65,67 +65,25 @@ pub enum BatchFetchItem {
     },
     /// Fetch a repository file by structured locator; controls match `repo_fetch`.
     Repo {
-        /// Code host. Accepted values: `github` (alias `gh`), `gitlab` (alias `gl`),
-        /// `codeberg` (alias `cb`), `gitea`, `forgejo`, or `workspace`.
+        /// Code host. Accepted values: github (alias gh), gitlab (alias gl),
+        /// codeberg (alias cb), gitea, forgejo, or workspace.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         host: Option<String>,
-        /// Repository owner (or workspace root name for workspace locators).
-        owner: String,
-        /// Repository name.
-        repo: String,
-        /// Branch, tag, or commit ref.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        ref_name: Option<String>,
-        /// Full commit SHA for stable permalink construction.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        commit_sha: Option<String>,
-        /// File path relative to repository root (or workspace root for workspace locators).
-        path: String,
-        /// First line to return (1-indexed, inclusive).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        line_start: Option<u32>,
-        /// Last line to return (1-indexed, inclusive).
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        line_end: Option<u32>,
-        /// Extra lines of context before `line_start`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        context_before: Option<u32>,
-        /// Extra lines of context after `line_end`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        context_after: Option<u32>,
-        /// Maximum characters to return.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_chars: Option<usize>,
+        /// Structured repository target fields.
+        #[serde(flatten)]
+        target: crate::core::repo_fetch::RepoTarget,
         /// Optional focus query applied as a deterministic projection
         /// after the underlying repo fetch returns a bounded
-        /// document/span. Same validation as `fetch` focus.
+        /// document/span. Same validation as fetch focus. No extra URL traversal.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<String>,
         /// Maximum focused chunks to return (1-5, default 5).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chunks: Option<usize>,
         /// Maximum focused characters to return. Defaults to the
-        /// effective per-item `max_chars` budget.
+        /// effective per-item max_chars budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
-        /// Symbol name to select; same semantics as `repo_fetch`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        symbol: Option<String>,
-        /// Symbol kind filter applied with `symbol`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        symbol_kind: Option<String>,
-        /// Select the span containing this text; same as `repo_fetch`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        match_text: Option<String>,
-        /// Expand the selected line or span to its enclosing block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        expand_to_block: Option<bool>,
-        /// Maximum lines returned when expanding to a block.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        max_block_lines: Option<usize>,
-        /// Prefer the local workspace copy when one exists.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        prefer_local: Option<bool>,
     },
 }
 
@@ -134,15 +92,9 @@ impl BatchFetchItem {
     pub fn label(&self) -> String {
         match self {
             BatchFetchItem::Web { url, .. } => url.clone(),
-            BatchFetchItem::Repo {
-                owner,
-                repo,
-                path,
-                host,
-                ..
-            } => {
+            BatchFetchItem::Repo { target, host, .. } => {
                 let h = host.as_deref().unwrap_or("github");
-                format!("{h}:{owner}/{repo}/{path}")
+                format!("{h}:{}/{}/{}", target.owner, target.repo, target.path)
             }
         }
     }
@@ -151,7 +103,7 @@ impl BatchFetchItem {
     pub fn max_chars(&self) -> Option<usize> {
         match self {
             BatchFetchItem::Web { max_chars, .. } => *max_chars,
-            BatchFetchItem::Repo { max_chars, .. } => *max_chars,
+            BatchFetchItem::Repo { target, .. } => target.max_chars,
         }
     }
 
@@ -336,25 +288,27 @@ mod tests {
 
         let repo = BatchFetchItem::Repo {
             host: Some("github".to_string()),
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         let v = serde_json::to_value(&repo).unwrap();
         assert_eq!(v["type"], "repo");
@@ -382,25 +336,27 @@ mod tests {
 
         let repo = BatchFetchItem::Repo {
             host: None,
-            owner: "tokio-rs".to_string(),
-            repo: "axum".to_string(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".to_string(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: crate::core::repo_fetch::RepoTarget {
+                owner: "tokio-rs".to_string(),
+                repo: "axum".to_string(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".to_string(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
         };
         assert_eq!(repo.label(), "github:tokio-rs/axum/src/lib.rs");
     }
@@ -445,21 +401,13 @@ mod tests {
         });
         let parsed_repo: BatchFetchItem = serde_json::from_value(legacy_repo.clone()).unwrap();
         match &parsed_repo {
-            BatchFetchItem::Repo {
-                symbol,
-                symbol_kind,
-                match_text,
-                expand_to_block,
-                max_block_lines,
-                prefer_local,
-                ..
-            } => {
-                assert!(symbol.is_none());
-                assert!(symbol_kind.is_none());
-                assert!(match_text.is_none());
-                assert!(expand_to_block.is_none());
-                assert!(max_block_lines.is_none());
-                assert!(prefer_local.is_none());
+            BatchFetchItem::Repo { target, .. } => {
+                assert!(target.symbol.is_none());
+                assert!(target.symbol_kind.is_none());
+                assert!(target.match_text.is_none());
+                assert!(target.expand_to_block.is_none());
+                assert!(target.max_block_lines.is_none());
+                assert!(target.prefer_local.is_none());
             }
             _ => panic!("expected repo item"),
         }

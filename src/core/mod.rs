@@ -46,6 +46,7 @@ pub mod repo_map;
 /// Repo-oriented query hint parser for structured search.
 pub mod repo_query;
 pub mod repo_search;
+pub(crate) mod repo_target;
 pub mod research;
 pub mod result;
 /// Response-level distinctions between evidence absence and retrieval failure.
@@ -54,6 +55,7 @@ pub mod sanitize;
 pub mod security;
 pub mod security_applicability;
 pub mod source_card;
+pub(crate) mod validation;
 /// Structured warning model with stable codes, severity, and deduplication.
 pub mod warning;
 /// Agent workflow recipes and next-action hints for tool sequencing guidance.

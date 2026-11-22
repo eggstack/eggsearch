@@ -85,6 +85,25 @@ pub enum SymbolKind {
     Unknown,
 }
 
+impl SymbolKind {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Method => "method",
+            Self::Struct => "struct",
+            Self::Enum => "enum",
+            Self::Trait => "trait",
+            Self::Class => "class",
+            Self::Interface => "interface",
+            Self::Module => "module",
+            Self::Constant => "constant",
+            Self::TypeAlias => "type_alias",
+            Self::Macro => "macro",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// Confidence level for the evidence linkage.
 #[derive(
     Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, schemars::JsonSchema,

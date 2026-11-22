@@ -17,6 +17,10 @@
 
 #![cfg(feature = "mock")]
 
+mod support;
+
+use support::*;
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,17 +34,6 @@ use eggsearch::mcp::tools::{
 };
 use eggsearch::meta::mock::{mock_engines, MockEngine, MockResult};
 use eggsearch::meta::MetadataSearchAdapter;
-
-fn git_cmd() -> std::process::Command {
-    let mut cmd = std::process::Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-    cmd
-}
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -105,23 +98,6 @@ fn research_args(query: &str) -> ResearchSearchArgs {
         providers: vec!["mock_a".into()],
         ..Default::default()
     }
-}
-
-fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter =
-        MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 30_000;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
 }
 
 // ---------------------------------------------------------------------------
@@ -1446,24 +1422,26 @@ async fn corpus_workspace_fetch_reads_local_file() {
     let root_name = root.file_name().unwrap().to_str().unwrap();
     let args = RepoFetchArgs {
         host: Some("workspace".to_string()),
-        owner: root_name.to_string(),
-        repo: "lib.rs".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: root_name.to_string(),
+            repo: "lib.rs".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: None,
         response_detail: None,
     };
     let v = run_repo_fetch(state, args)
@@ -1509,24 +1487,26 @@ async fn corpus_workspace_fetch_rejects_path_traversal() {
     let root_name = root.file_name().unwrap().to_str().unwrap();
     let args = RepoFetchArgs {
         host: Some("workspace".to_string()),
-        owner: root_name.to_string(),
-        repo: "../../../etc/passwd".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "../../../etc/passwd".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: root_name.to_string(),
+            repo: "../../../etc/passwd".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "../../../etc/passwd".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: None,
         response_detail: None,
     };
     let result = run_repo_fetch(state, args).await;
@@ -1542,24 +1522,26 @@ async fn corpus_workspace_fetch_rejects_unknown_root() {
     let state = state_with_local_backend(root);
     let args = RepoFetchArgs {
         host: Some("workspace".to_string()),
-        owner: "nonexistent_root".to_string(),
-        repo: "lib.rs".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "nonexistent_root".to_string(),
+            repo: "lib.rs".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: None,
         response_detail: None,
     };
     let result = run_repo_fetch(state, args).await;
@@ -1812,24 +1794,26 @@ async fn corpus_prefer_local_redirects_to_workspace() {
     let state = state_with_local_backend(root);
     let args = RepoFetchArgs {
         host: Some("github".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
     let v = run_repo_fetch(state, args)
@@ -1888,24 +1872,26 @@ async fn corpus_prefer_local_rejects_path_traversal() {
     let state = state_with_local_backend(root);
     let args = RepoFetchArgs {
         host: Some("github".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: Some("main".to_string()),
-        commit_sha: None,
-        path: "../../../etc/passwd".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "../../../etc/passwd".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
     let result = run_repo_fetch(state, args).await;
@@ -1946,24 +1932,26 @@ async fn corpus_repo_fetch_github_browser_url_transforms() {
     let raw_url = format!("{base}/raw/main/src/main.rs");
     let args = RepoFetchArgs {
         host: Some("github".into()),
-        owner: "test-owner".into(),
-        repo: "test-repo".into(),
-        ref_name: Some("main".into()),
-        commit_sha: None,
-        path: "src/main.rs".into(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
         timeout_ms: None,
         test_fetch_url: Some(raw_url),
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: None,
         response_detail: None,
     };
     let v = run_repo_fetch(state, args)
@@ -2009,24 +1997,26 @@ async fn corpus_repo_fetch_line_range_bounds_correctly() {
     let raw_url = format!("{base}/raw/main/src/main.rs");
     let args = RepoFetchArgs {
         host: Some("github".into()),
-        owner: "test-owner".into(),
-        repo: "test-repo".into(),
-        ref_name: Some("main".into()),
-        commit_sha: None,
-        path: "src/main.rs".into(),
-        line_start: Some(2),
-        line_end: Some(5),
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            path: "src/main.rs".into(),
+            line_start: Some(2),
+            line_end: Some(5),
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: None,
+        },
         timeout_ms: None,
         test_fetch_url: Some(raw_url),
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: None,
         response_detail: None,
     };
     let v = run_repo_fetch(state, args)
@@ -2774,24 +2764,26 @@ mod live_smoke {
             smoke_state(),
             RepoFetchArgs {
                 host: Some("github".into()),
-                owner: "tokio-rs".into(),
-                repo: "axum".into(),
-                ref_name: Some("main".into()),
-                commit_sha: None,
-                path: "Cargo.toml".into(),
-                line_start: None,
-                line_end: None,
-                context_before: None,
-                context_after: None,
-                max_chars: None,
+                target: eggsearch::core::repo_fetch::RepoTarget {
+                    owner: "tokio-rs".into(),
+                    repo: "axum".into(),
+                    ref_name: Some("main".into()),
+                    commit_sha: None,
+                    path: "Cargo.toml".into(),
+                    line_start: None,
+                    line_end: None,
+                    context_before: None,
+                    context_after: None,
+                    max_chars: None,
+                    symbol: None,
+                    symbol_kind: None,
+                    match_text: None,
+                    expand_to_block: None,
+                    max_block_lines: None,
+                    prefer_local: None,
+                },
                 timeout_ms: None,
                 test_fetch_url: None,
-                symbol: None,
-                symbol_kind: None,
-                match_text: None,
-                expand_to_block: None,
-                max_block_lines: None,
-                prefer_local: None,
                 response_detail: None,
             },
         )

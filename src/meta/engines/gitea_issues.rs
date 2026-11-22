@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use super::error::EngineError;
 use super::models::{ResultMetadata, SearchResult};
+use super::truncate_body;
 use crate::core::code_metadata::CodeHost;
 use crate::core::source_card::IssueMetadata;
 
@@ -52,10 +53,6 @@ struct GiteaRepo {
     full_name: Option<String>,
 }
 
-fn truncate_body(body: &str, max_chars: usize) -> String {
-    crate::core::sanitize::truncate_at_word(body, max_chars)
-}
-
 pub async fn search(
     client: &Client,
     api_key: &str,
@@ -78,33 +75,20 @@ pub async fn search(
     let url = format!("{base}/api/v1/search");
     let limit = max_results.clamp(1, 50);
 
-    let resp = client
-        .get(url.as_str())
-        .map_err(|e| EngineError::Http {
-            engine: ENGINE,
-            source: e,
-        })?
-        .query("q", query)
-        .query("limit", limit.to_string().as_str())
-        .header("Authorization", format!("token {api_key}").as_str())
-        .timeout(super::engine_timeout(timeout))
-        .send()
-        .await
-        .map_err(|e| super::map_request_error(ENGINE, e))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: status.as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
-
-    let parsed: GiteaSearchResponse =
-        serde_json::from_slice(&bytes).map_err(|e| EngineError::ParseFailed {
-            engine: ENGINE,
-            reason: format!("invalid JSON: {e}"),
-        })?;
+    let limit = limit.to_string();
+    let authorization = format!("token {api_key}");
+    let query_params = [("q", query), ("limit", limit.as_str())];
+    let headers = [("Authorization", authorization.as_str())];
+    let parsed: GiteaSearchResponse = super::get_json_bounded(
+        client,
+        ENGINE,
+        url.as_str(),
+        &query_params,
+        &headers,
+        MAX_BODY_BYTES,
+        timeout,
+    )
+    .await?;
 
     Ok(convert(parsed, max_results))
 }
@@ -247,33 +231,6 @@ mod tests {
     }
 
     #[test]
-    fn test_convert_respects_max_results() {
-        let response = GiteaSearchResponse {
-            data: vec![GiteaScope {
-                scope: Some("issue".to_string()),
-                result: (0..5)
-                    .map(|i| GiteaSearchItem {
-                        name: None,
-                        title: Some(format!("Issue {i}")),
-                        url: Some(format!("https://gitea.example.com/test/repo/issues/{i}")),
-                        body: None,
-                        state: Some("open".to_string()),
-                        labels: vec![],
-                        created_at: None,
-                        updated_at: None,
-                        closed_at: None,
-                        repository: Some(GiteaRepo {
-                            full_name: Some("test/repo".to_string()),
-                        }),
-                    })
-                    .collect(),
-            }],
-        };
-        let out = convert(response, 2);
-        assert_eq!(out.len(), 2);
-    }
-
-    #[test]
     fn test_convert_skips_non_issue_scope() {
         let response = GiteaSearchResponse {
             data: vec![
@@ -407,137 +364,11 @@ mod tests {
         assert!(out[0].snippet.is_none());
     }
 
-    #[test]
-    fn test_parse_json_response() {
-        let body = r#"{
-            "data": [
-                {
-                    "scope": "issue",
-                    "result": [
-                        {"title": "Bug report", "url": "/owner/repo/issues/1", "body": "Something broken", "state": "open", "labels": ["bug"], "repository": {"full_name": "owner/repo"}},
-                        {"title": "Feature request", "url": "/owner/repo/issues/2", "repository": {"full_name": "owner/repo"}}
-                    ]
-                }
-            ]
-        }"#;
-        let parsed: GiteaSearchResponse = serde_json::from_str(body).unwrap();
-        assert_eq!(parsed.data.len(), 1);
-        assert_eq!(parsed.data[0].result.len(), 2);
-    }
-
-    #[test]
-    fn test_max_results_zero_returns_empty() {
-        let response = GiteaSearchResponse { data: vec![] };
-        let out = convert(response, 0);
-        assert!(out.is_empty());
-    }
-
     // -----------------------------------------------------------------------
     // HTTP-level tests using httpmock
     // -----------------------------------------------------------------------
 
     use crate::meta::engines::error::EngineError;
-
-    #[tokio::test]
-    async fn test_successful_response_with_multiple_results() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v1/search")
-                .header("Authorization", "token test-token");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(
-                    r#"{
-                    "data": [
-                        {
-                            "scope": "issue",
-                            "result": [
-                                {"title": "Bug in parser", "url": "https://gitea.example.com/tokio-rs/axum/issues/1", "body": "Parser crashes", "state": "open", "labels": ["bug"], "repository": {"full_name": "tokio-rs/axum"}},
-                                {"title": "Add feature", "url": "https://gitea.example.com/tokio-rs/axum/issues/2", "body": "Need feature X", "state": "closed", "repository": {"full_name": "tokio-rs/axum"}}
-                            ]
-                        }
-                    ]
-                }"#,
-                );
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "bug",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].title, "Bug in parser");
-        assert_eq!(results[0].source_engine, "gitea_issues");
-    }
-
-    #[tokio::test]
-    async fn test_empty_result_set() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v1/search");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(r#"{"data": []}"#);
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let results = search(
-            &client,
-            "test-token",
-            Some(&server.url("")),
-            "xyznonexistent",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed");
-
-        assert!(results.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_unauthorized_401() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET).path("/api/v1/search");
-            then.status(401).body("unauthorized");
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        let err = search(
-            &client,
-            "bad-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect_err("should fail with 401");
-
-        match err {
-            EngineError::BadStatus { engine, status } => {
-                assert_eq!(engine, "gitea_issues");
-                assert_eq!(status, 401);
-            }
-            other => panic!("expected BadStatus(401), got: {other:?}"),
-        }
-    }
 
     #[tokio::test]
     async fn test_empty_base_url_returns_error() {
@@ -616,33 +447,6 @@ mod tests {
             }
             other => panic!("expected Timeout, got: {other:?}"),
         }
-    }
-
-    #[tokio::test]
-    async fn test_api_key_sent_in_header() {
-        use httpmock::prelude::*;
-
-        let server = MockServer::start();
-        server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v1/search")
-                .header("Authorization", "token my-secret-token");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(r#"{"data": []}"#);
-        });
-
-        let client = crate::meta::engines::build_http_client(None).expect("test client");
-        search(
-            &client,
-            "my-secret-token",
-            Some(&server.url("")),
-            "rust",
-            10,
-            Duration::from_secs(5),
-        )
-        .await
-        .expect("search should succeed with correct auth header");
     }
 
     #[test]

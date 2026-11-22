@@ -1,6 +1,7 @@
 pub mod capture;
 pub mod classify;
 pub mod discover;
+pub mod escalation;
 pub mod intercept;
 pub mod lifecycle;
 pub mod navigate;
@@ -13,6 +14,7 @@ pub use capture::{
 };
 pub use classify::{classify_response, rendered_result_serves, FetchDisposition};
 pub use discover::{browser_capability_report, discover_browser};
+pub use escalation::{escalate, gated_status, EscalationOutcome, EscalationRequest};
 pub use intercept::{is_request_allowed, is_request_allowed_with_dns, PolicyViolation};
 pub use lifecycle::{BrowserLaunchError, BrowserLifecycle, BrowserLifecycleStatus};
 pub use navigate::{

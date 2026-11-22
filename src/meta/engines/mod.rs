@@ -4,6 +4,9 @@
 
 #![allow(missing_docs)]
 
+mod api;
+pub(crate) use api::{get_json_bounded, truncate_body};
+
 pub mod arxiv;
 pub mod brave;
 pub mod brave_api;
@@ -140,6 +143,39 @@ pub trait SearchEngine: Send + Sync {
     ) -> BoxFuture<'a, Result<Vec<crate::core::security::VulnerabilityMetadata>, EngineError>> {
         Box::pin(async { Ok(Vec::new()) })
     }
+}
+
+/// Defines the forwarding methods of a `SearchEngine` implementation.
+///
+/// ```ignore
+/// impl_engine!(
+///     DuckDuckGoEngine,
+///     "duckduckgo",
+///     |engine, request| duckduckgo::search(
+///         &engine.client,
+///         &request.query,
+///         request.max_results,
+///         request.timeout,
+///     ),
+/// );
+/// ```
+macro_rules! impl_engine {
+    ($engine_type:ty, $name:literal, |$engine:ident, $request:ident| $call:expr $(,)?) => {
+        impl SearchEngine for $engine_type {
+            fn name(&self) -> &'static str {
+                $name
+            }
+
+            fn search<'a>(
+                &'a self,
+                request: &'a EngineSearchRequest,
+            ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
+                let $engine = self;
+                let $request = request;
+                Box::pin($call)
+            }
+        }
+    };
 }
 
 pub struct DuckDuckGoEngine {
@@ -355,349 +391,213 @@ pub struct HnAlgoliaEngine {
     pub client: Arc<Client>,
 }
 
-impl SearchEngine for DuckDuckGoEngine {
-    fn name(&self) -> &'static str {
-        "duckduckgo"
-    }
+impl_engine!(DuckDuckGoEngine, "duckduckgo", |engine, request| {
+    duckduckgo::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(duckduckgo::search(
-            &self.client,
+impl_engine!(BraveEngine, "brave", |engine, request| brave::search(
+    &engine.client,
+    &request.query,
+    request.max_results,
+    request.timeout,
+    engine.renderer.as_ref()
+));
+
+impl_engine!(StartpageEngine, "startpage", |engine, request| {
+    startpage::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+        &engine.challenge,
+    )
+});
+
+impl_engine!(YahooEngine, "yahoo", |engine, request| yahoo::search(
+    &engine.client,
+    &request.query,
+    request.max_results,
+    request.timeout,
+    engine.renderer.as_ref()
+));
+
+impl_engine!(MojeekEngine, "mojeek", |engine, request| mojeek::search(
+    &engine.client,
+    &request.query,
+    request.max_results,
+    request.timeout,
+    &engine.challenge
+));
+
+impl_engine!(SearxngEngine, "searxng", |engine, request| async move {
+    searxng::search(
+        &engine.client,
+        engine.base_url.as_str(),
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+    .await
+});
+
+impl_engine!(BraveApiEngine, "brave_api", |engine, request| async move {
+    brave_api::search(
+        &engine.client,
+        &engine.api_key,
+        engine.base_url.as_deref(),
+        request,
+    )
+    .await
+});
+
+impl_engine!(
+    GithubCodeEngine,
+    "github_code",
+    |engine, request| async move {
+        github_code::search(
+            &engine.client,
+            &engine.api_key,
+            engine.base_url.as_deref(),
             &request.query,
             request.max_results,
             request.timeout,
-        ))
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for BraveEngine {
-    fn name(&self) -> &'static str {
-        "brave"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(brave::search(
-            &self.client,
+impl_engine!(
+    GithubIssuesEngine,
+    "github_issues",
+    |engine, request| async move {
+        github_issues::search(
+            &engine.client,
+            &engine.api_key,
+            engine.base_url.as_deref(),
             &request.query,
             request.max_results,
             request.timeout,
-            self.renderer.as_ref(),
-        ))
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for StartpageEngine {
-    fn name(&self) -> &'static str {
-        "startpage"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(startpage::search(
-            &self.client,
+impl_engine!(
+    GithubReleasesEngine,
+    "github_releases",
+    |engine, request| async move {
+        github_releases::search(
+            &engine.client,
+            &engine.api_key,
+            engine.base_url.as_deref(),
             &request.query,
             request.max_results,
             request.timeout,
-            &self.challenge,
-        ))
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for YahooEngine {
-    fn name(&self) -> &'static str {
-        "yahoo"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(yahoo::search(
-            &self.client,
+impl_engine!(
+    GitlabCodeEngine,
+    "gitlab_code",
+    |engine, request| async move {
+        gitlab_code::search(
+            &engine.client,
+            &engine.api_key,
+            engine.base_url.as_deref(),
             &request.query,
             request.max_results,
             request.timeout,
-            self.renderer.as_ref(),
-        ))
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for MojeekEngine {
-    fn name(&self) -> &'static str {
-        "mojeek"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(mojeek::search(
-            &self.client,
+impl_engine!(
+    GitlabIssuesEngine,
+    "gitlab_issues",
+    |engine, request| async move {
+        gitlab_issues::search(
+            &engine.client,
+            &engine.api_key,
+            engine.base_url.as_deref(),
             &request.query,
             request.max_results,
             request.timeout,
-            &self.challenge,
-        ))
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for SearxngEngine {
-    fn name(&self) -> &'static str {
-        "searxng"
+impl_engine!(
+    GitlabReleasesEngine,
+    "gitlab_releases",
+    |engine, request| async move {
+        gitlab_releases::search(
+            &engine.client,
+            &engine.api_key,
+            engine.base_url.as_deref(),
+            &request.query,
+            request.max_results,
+            request.timeout,
+        )
+        .await
     }
+);
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            searxng::search(
-                &self.client,
-                self.base_url.as_str(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
+impl_engine!(
+    GiteaCodeEngine,
+    "gitea_code",
+    |engine, request| async move {
+        gitea_code::search(
+            &engine.client,
+            &engine.api_key,
+            Some(engine.base_url.as_str()),
+            &request.query,
+            request.max_results,
+            request.timeout,
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for BraveApiEngine {
-    fn name(&self) -> &'static str {
-        "brave_api"
+impl_engine!(
+    GiteaIssuesEngine,
+    "gitea_issues",
+    |engine, request| async move {
+        gitea_issues::search(
+            &engine.client,
+            &engine.api_key,
+            Some(engine.base_url.as_str()),
+            &request.query,
+            request.max_results,
+            request.timeout,
+        )
+        .await
     }
+);
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            brave_api::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                request,
-            )
-            .await
-        })
+impl_engine!(
+    GiteaReleasesEngine,
+    "gitea_releases",
+    |engine, request| async move {
+        gitea_releases::search(
+            &engine.client,
+            &engine.api_key,
+            Some(engine.base_url.as_str()),
+            &request.query,
+            request.max_results,
+            request.timeout,
+        )
+        .await
     }
-}
-
-impl SearchEngine for GithubCodeEngine {
-    fn name(&self) -> &'static str {
-        "github_code"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            github_code::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GithubIssuesEngine {
-    fn name(&self) -> &'static str {
-        "github_issues"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            github_issues::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GithubReleasesEngine {
-    fn name(&self) -> &'static str {
-        "github_releases"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            github_releases::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GitlabCodeEngine {
-    fn name(&self) -> &'static str {
-        "gitlab_code"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            gitlab_code::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GitlabIssuesEngine {
-    fn name(&self) -> &'static str {
-        "gitlab_issues"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            gitlab_issues::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GitlabReleasesEngine {
-    fn name(&self) -> &'static str {
-        "gitlab_releases"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            gitlab_releases::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GiteaCodeEngine {
-    fn name(&self) -> &'static str {
-        "gitea_code"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            gitea_code::search(
-                &self.client,
-                &self.api_key,
-                Some(self.base_url.as_str()),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GiteaIssuesEngine {
-    fn name(&self) -> &'static str {
-        "gitea_issues"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            gitea_issues::search(
-                &self.client,
-                &self.api_key,
-                Some(self.base_url.as_str()),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for GiteaReleasesEngine {
-    fn name(&self) -> &'static str {
-        "gitea_releases"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            gitea_releases::search(
-                &self.client,
-                &self.api_key,
-                Some(self.base_url.as_str()),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
+);
 
 impl SearchEngine for OsvEngine {
     fn name(&self) -> &'static str {
@@ -751,230 +651,126 @@ impl SearchEngine for OsvEngine {
     }
 }
 
-impl SearchEngine for CratesIoRegistryEngine {
-    fn name(&self) -> &'static str {
-        "crates_io"
-    }
+impl_engine!(CratesIoRegistryEngine, "crates_io", |engine, request| {
+    crates_io::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(crates_io::search(
-            &self.client,
+impl_engine!(PypiRegistryEngine, "pypi", |engine, request| pypi::search(
+    &engine.client,
+    &request.query,
+    request.max_results,
+    request.timeout
+));
+
+impl_engine!(NpmRegistryEngine, "npm_registry", |engine, request| {
+    npm_registry::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(GoPkgRegistryEngine, "go_pkg", |engine, request| {
+    go_pkg::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(
+    MavenCentralRegistryEngine,
+    "maven_central",
+    |engine, request| maven_central::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout
+    )
+);
+
+impl_engine!(NugetRegistryEngine, "nuget", |engine, request| {
+    nuget::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(RubygemsRegistryEngine, "rubygems", |engine, request| {
+    rubygems::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(PackagistRegistryEngine, "packagist", |engine, request| {
+    packagist::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(OpenAlexEngine, "openalex", |engine, request| {
+    openalex::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(CrossRefEngine, "crossref", |engine, request| {
+    crossref::search(
+        &engine.client,
+        &request.query,
+        request.max_results,
+        request.timeout,
+    )
+});
+
+impl_engine!(
+    SemanticScholarEngine,
+    "semantic_scholar",
+    |engine, request| async move {
+        semantic_scholar::search(
+            &engine.client,
             &request.query,
             request.max_results,
             request.timeout,
-        ))
+            engine.api_key.as_deref(),
+        )
+        .await
     }
-}
+);
 
-impl SearchEngine for PypiRegistryEngine {
-    fn name(&self) -> &'static str {
-        "pypi"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(pypi::search(
-            &self.client,
+impl_engine!(
+    SourcegraphCodeEngine,
+    "sourcegraph",
+    |engine, request| async move {
+        sourcegraph::search(
+            &engine.client,
+            engine.api_key.as_deref(),
+            engine.base_url.as_deref(),
             &request.query,
             request.max_results,
             request.timeout,
-        ))
+        )
+        .await
     }
-}
-
-impl SearchEngine for NpmRegistryEngine {
-    fn name(&self) -> &'static str {
-        "npm_registry"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(npm_registry::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for GoPkgRegistryEngine {
-    fn name(&self) -> &'static str {
-        "go_pkg"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(go_pkg::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for MavenCentralRegistryEngine {
-    fn name(&self) -> &'static str {
-        "maven_central"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(maven_central::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for NugetRegistryEngine {
-    fn name(&self) -> &'static str {
-        "nuget"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(nuget::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for RubygemsRegistryEngine {
-    fn name(&self) -> &'static str {
-        "rubygems"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(rubygems::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for PackagistRegistryEngine {
-    fn name(&self) -> &'static str {
-        "packagist"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(packagist::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for OpenAlexEngine {
-    fn name(&self) -> &'static str {
-        "openalex"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(openalex::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for CrossRefEngine {
-    fn name(&self) -> &'static str {
-        "crossref"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(crossref::search(
-            &self.client,
-            &request.query,
-            request.max_results,
-            request.timeout,
-        ))
-    }
-}
-
-impl SearchEngine for SemanticScholarEngine {
-    fn name(&self) -> &'static str {
-        "semantic_scholar"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            semantic_scholar::search(
-                &self.client,
-                &request.query,
-                request.max_results,
-                request.timeout,
-                self.api_key.as_deref(),
-            )
-            .await
-        })
-    }
-}
-
-impl SearchEngine for SourcegraphCodeEngine {
-    fn name(&self) -> &'static str {
-        "sourcegraph"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            sourcegraph::search(
-                &self.client,
-                self.api_key.as_deref(),
-                self.base_url.as_deref(),
-                &request.query,
-                request.max_results,
-                request.timeout,
-            )
-            .await
-        })
-    }
-}
+);
 
 impl SearchEngine for FirecrawlDeveloperEngine {
     fn name(&self) -> &'static str {
@@ -1023,165 +819,79 @@ impl SearchEngine for FirecrawlDeveloperEngine {
     }
 }
 
-impl SearchEngine for ExaEngine {
-    fn name(&self) -> &'static str {
-        "exa"
-    }
+impl_engine!(ExaEngine, "exa", |engine, request| async move {
+    exa::search(
+        &engine.client,
+        &engine.api_key,
+        engine.base_url.as_deref(),
+        request,
+    )
+    .await
+});
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            exa::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                request,
-            )
-            .await
-        })
-    }
-}
+impl_engine!(TavilyEngine, "tavily", |engine, request| async move {
+    tavily::search(
+        &engine.client,
+        &engine.api_key,
+        engine.base_url.as_deref(),
+        request,
+    )
+    .await
+});
 
-impl SearchEngine for TavilyEngine {
-    fn name(&self) -> &'static str {
-        "tavily"
-    }
+impl_engine!(SerpapiEngine, "serpapi", |engine, request| async move {
+    serpapi::search(
+        &engine.client,
+        &engine.api_key,
+        engine.base_url.as_deref(),
+        request,
+    )
+    .await
+});
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            tavily::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                request,
-            )
-            .await
-        })
-    }
-}
+impl_engine!(KagiEngine, "kagi", |engine, request| async move {
+    kagi::search(
+        &engine.client,
+        &engine.api_key,
+        engine.base_url.as_deref(),
+        request,
+    )
+    .await
+});
 
-impl SearchEngine for SerpapiEngine {
-    fn name(&self) -> &'static str {
-        "serpapi"
-    }
+impl_engine!(WikipediaEngine, "wikipedia", |engine, request| {
+    wikipedia::search(&engine.client, None, request)
+});
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            serpapi::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                request,
-            )
-            .await
-        })
-    }
-}
+impl_engine!(ArxivEngine, "arxiv", |engine, request| arxiv::search(
+    &engine.client,
+    None,
+    &engine.gate,
+    request
+));
 
-impl SearchEngine for KagiEngine {
-    fn name(&self) -> &'static str {
-        "kagi"
-    }
+impl_engine!(PubmedEngine, "pubmed", |engine, request| pubmed::search(
+    &engine.client,
+    engine.base_url.as_deref(),
+    engine.api_key.as_deref(),
+    engine.email.as_deref(),
+    request
+));
 
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(async move {
-            kagi::search(
-                &self.client,
-                &self.api_key,
-                self.base_url.as_deref(),
-                request,
-            )
-            .await
-        })
-    }
-}
+impl_engine!(HnAlgoliaEngine, "hn_algolia", |engine, request| {
+    hn_algolia::search(&engine.client, None, request)
+});
 
-impl SearchEngine for WikipediaEngine {
-    fn name(&self) -> &'static str {
-        "wikipedia"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(wikipedia::search(&self.client, None, request))
-    }
-}
-
-impl SearchEngine for ArxivEngine {
-    fn name(&self) -> &'static str {
-        "arxiv"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(arxiv::search(&self.client, None, &self.gate, request))
-    }
-}
-
-impl SearchEngine for PubmedEngine {
-    fn name(&self) -> &'static str {
-        "pubmed"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(pubmed::search(
-            &self.client,
-            self.base_url.as_deref(),
-            self.api_key.as_deref(),
-            self.email.as_deref(),
-            request,
-        ))
-    }
-}
-
-impl SearchEngine for HnAlgoliaEngine {
-    fn name(&self) -> &'static str {
-        "hn_algolia"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(hn_algolia::search(&self.client, None, request))
-    }
-}
-
-impl SearchEngine for GithubRepositoriesEngine {
-    fn name(&self) -> &'static str {
-        "github_repositories"
-    }
-
-    fn search<'a>(
-        &'a self,
-        request: &'a EngineSearchRequest,
-    ) -> BoxFuture<'a, Result<Vec<SearchResult>, EngineError>> {
-        Box::pin(github_repositories::search(
-            &self.client,
-            self.base_url.as_deref(),
-            self.api_key.as_deref(),
-            request,
-        ))
-    }
-}
+impl_engine!(
+    GithubRepositoriesEngine,
+    "github_repositories",
+    |engine, request| github_repositories::search(
+        &engine.client,
+        engine.base_url.as_deref(),
+        engine.api_key.as_deref(),
+        request
+    )
+);
 
 pub use cisa_kev::CisaKevEngine;
 pub use github_advisory::GithubAdvisoryEngine;

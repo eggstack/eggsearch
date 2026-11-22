@@ -3,6 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::core::error::{CoreError, CoreResult};
+use crate::core::validation::{require_char_limit, require_non_empty, require_positive};
 
 /// Safe-search mode. Reserved for provider-specific enforcement; the
 /// current HTML providers do not enforce it. When a `web_search`
@@ -441,20 +442,15 @@ impl WebSearchRequest {
 
     /// Validate the request, returning an error if invalid.
     pub fn validate(&self, max_query_chars: usize) -> CoreResult<()> {
-        if self.query.trim().is_empty() {
-            return Err(CoreError::InvalidQuery("query must not be empty".into()));
-        }
-        if self.query.chars().count() > max_query_chars {
-            return Err(CoreError::InvalidQuery(format!(
-                "query must be <= {max_query_chars} characters"
-            )));
-        }
-        if let Some(0) = self.max_results {
-            return Err(CoreError::InvalidQuery("max_results must be > 0".into()));
-        }
-        if let Some(0) = self.timeout_ms {
-            return Err(CoreError::InvalidQuery("timeout_ms must be > 0".into()));
-        }
+        require_non_empty("query", &self.query).map_err(CoreError::InvalidQuery)?;
+        require_char_limit("query", &self.query, max_query_chars)
+            .map_err(CoreError::InvalidQuery)?;
+        require_positive("max_results", self.max_results).map_err(CoreError::InvalidQuery)?;
+        require_positive(
+            "timeout_ms",
+            self.timeout_ms.map(|value| if value == 0 { 0 } else { 1 }),
+        )
+        .map_err(CoreError::InvalidQuery)?;
         if let Some(range) = &self.date_range {
             let start = parse_iso_date(range.start.trim()).map_err(CoreError::InvalidQuery)?;
             let end = parse_iso_date(range.end.trim()).map_err(CoreError::InvalidQuery)?;
@@ -603,13 +599,19 @@ mod tests {
     #[test]
     fn validate_rejects_empty_query() {
         let req = WebSearchRequest::new("   ");
-        assert!(req.validate(512).is_err());
+        assert!(matches!(
+            req.validate(512),
+            Err(CoreError::InvalidQuery(message)) if message == "query must not be empty"
+        ));
     }
 
     #[test]
     fn validate_rejects_oversized_query() {
         let req = WebSearchRequest::new("a".repeat(1000));
-        assert!(req.validate(512).is_err());
+        assert!(matches!(
+            req.validate(512),
+            Err(CoreError::InvalidQuery(message)) if message == "query must be <= 512 characters"
+        ));
     }
 
     #[test]

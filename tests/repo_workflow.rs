@@ -3,6 +3,10 @@
 //!
 //! Behavior-oriented suite partitioned from the historical `integration.rs` mega-suite.
 
+mod support;
+
+use support::*;
+
 use std::sync::Arc;
 
 use eggsearch::core::config::{AppConfig, Mode};
@@ -44,51 +48,6 @@ fn state_with_mode_off() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.search.mode = Mode::Off;
     Arc::new(ServerState::build(cfg).expect("off state"))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(mock_engines(engines), timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_arc_engines(
-    cfg: AppConfig,
-    engines: Vec<Arc<dyn eggsearch::meta::engines::SearchEngine>>,
-    timeout: Duration,
-) -> Arc<ServerState> {
-    let adapter = MetadataSearchAdapter::from_engines(engines, timeout);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn state_with_engines_sanitize(
-    cfg: AppConfig,
-    engines: Vec<MockEngine>,
-    timeout: Duration,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let adapter =
-        MetadataSearchAdapter::from_engines_with_sanitize(mock_engines(engines), timeout, sanitize);
-    Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
-}
-
-#[cfg(feature = "mock")]
-fn test_cfg() -> AppConfig {
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 2_000;
-    cfg.search.max_query_chars = 256;
-    cfg.search.default_max_results = 10;
-    cfg.search.max_results_cap = 50;
-    // Register mock provider ids so resolve_providers() accepts them.
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.search.providers.insert("mock_b".to_string(), true);
-    cfg
 }
 
 /// Build a `WebSearchArgs` that uses the given mock provider ids
@@ -452,24 +411,26 @@ async fn prefer_local_rejects_path_traversal() {
     // Try to use prefer_local with path traversal
     let args = RepoFetchArgs {
         host: Some("github".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: Some("main".to_string()),
-        commit_sha: None,
-        path: "../../../etc/passwd".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: Some("main".to_string()),
+            commit_sha: None,
+            path: "../../../etc/passwd".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
 
@@ -1091,21 +1052,6 @@ async fn repo_search_off_mode_include_local_false_is_denied() {
 }
 
 #[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off_for_repo_map(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let state = ServerState::build(cfg).expect("state");
-    let mut state = state;
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
 #[tokio::test]
 async fn repo_map_with_local_checkout() {
     let dir = tempfile::tempdir().unwrap();
@@ -1227,44 +1173,6 @@ async fn repo_map_with_local_checkout() {
 // =========================================================================
 
 /// Helper: create a temp git repo with a remote URL for local matching tests.
-#[cfg(feature = "mock")]
-fn setup_git_repo_with_remote(root: &std::path::Path, remote_url: &str, _owner: &str, _repo: &str) {
-    fs::write(root.join("main.rs"), "fn main() {}").unwrap();
-
-    git_cmd().arg("init").arg(root).output().ok();
-
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("remote")
-        .arg("add")
-        .arg("origin")
-        .arg(remote_url)
-        .output()
-        .ok();
-
-    // Create initial commit so dirty state detection works
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("add")
-        .arg(".")
-        .output()
-        .ok();
-    git_cmd()
-        .arg("-C")
-        .arg(root)
-        .arg("-c")
-        .arg("user.name=ci")
-        .arg("-c")
-        .arg("user.email=ci@test.com")
-        .arg("commit")
-        .arg("-m")
-        .arg("init")
-        .arg("--allow-empty")
-        .output()
-        .ok();
-}
 
 #[tokio::test]
 async fn repo_map_fallback_mode_warns_no_native_provider() {
@@ -1798,24 +1706,26 @@ async fn repo_fetch_symbol_definition_via_mock() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: Some("Config".into()),
+                symbol_kind: Some("struct".into()),
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: Some("Config".into()),
-            symbol_kind: Some("struct".into()),
-            match_text: None,
-            expand_to_block: Some(true),
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -1849,10 +1759,22 @@ async fn repo_fetch_symbol_definition_via_mock() {
     );
 
     let text = v["text"].as_str().expect("text should be present");
-    assert!(
-        text.contains("pub struct Config"),
-        "text should contain struct definition: {text}"
+    assert_eq!(
+        text,
+        "/// A configuration store.\npub struct Config {\nname: String,\nvalues: HashMap<String, String>,\n}"
     );
+    assert_eq!(
+        v["lines"],
+        serde_json::json!([
+            {"number": 3, "text": "/// A configuration store."},
+            {"number": 4, "text": "pub struct Config {"},
+            {"number": 5, "text": "name: String,"},
+            {"number": 6, "text": "values: HashMap<String, String>,"},
+            {"number": 7, "text": "}"}
+        ])
+    );
+    assert_eq!(v["stable_id"], "fetch_fff990eb67a6ecac");
+    assert_eq!(v["code_span"]["span_id"], "span_f9fbcbe39f0984eb");
 }
 
 #[tokio::test]
@@ -1886,24 +1808,26 @@ async fn repo_fetch_symbol_fn_via_mock() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/main.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/main.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: Some("helper".into()),
+                symbol_kind: Some("function".into()),
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
-            symbol: Some("helper".into()),
-            symbol_kind: Some("function".into()),
-            match_text: None,
-            expand_to_block: Some(true),
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -1960,24 +1884,26 @@ async fn repo_fetch_match_text_via_mock() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/app.py".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/app.py".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: Some("MyApp".into()),
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/app.py")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: Some("MyApp".into()),
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2017,24 +1943,26 @@ async fn repo_fetch_explicit_range_no_expand() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/main.rs".into(),
-            line_start: Some(2),
-            line_end: Some(4),
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/main.rs".into(),
+                line_start: Some(2),
+                line_end: Some(4),
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2076,24 +2004,26 @@ async fn repo_fetch_symbol_not_found_warns() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/main.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/main.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: Some("nonexistent".into()),
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: Some(true),
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/main.rs")),
-            symbol: Some("nonexistent".into()),
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: Some(true),
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2139,24 +2069,26 @@ async fn repo_fetch_remote_pdf_retains_document_outcome() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "example".into(),
-            repo: "docs".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "docs/guide.pdf".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "example".into(),
+                repo: "docs".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "docs/guide.pdf".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/docs/guide.pdf")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2229,24 +2161,26 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
     // Request remote-style repo_fetch with prefer_local = true
     let args = RepoFetchArgs {
         host: Some("github".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: Some("add".to_string()),
+            symbol_kind: Some("function".to_string()),
+            match_text: None,
+            expand_to_block: Some(true),
+            max_block_lines: Some(10),
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: Some("add".to_string()),
-        symbol_kind: Some("function".to_string()),
-        match_text: None,
-        expand_to_block: Some(true),
-        max_block_lines: Some(10),
-        prefer_local: Some(true),
         response_detail: None,
     };
 
@@ -2269,25 +2203,27 @@ async fn repo_fetch_prefer_local_redirects_to_workspace() {
         BatchFetchArgs {
             items: vec![eggsearch::core::batch_fetch::BatchFetchItem::Repo {
                 host: Some("github".to_string()),
-                owner: "test-owner".to_string(),
-                repo: "test-repo".to_string(),
-                ref_name: None,
-                commit_sha: None,
-                path: "lib.rs".to_string(),
-                line_start: None,
-                line_end: None,
-                context_before: None,
-                context_after: None,
-                max_chars: None,
+                target: eggsearch::core::repo_fetch::RepoTarget {
+                    owner: "test-owner".to_string(),
+                    repo: "test-repo".to_string(),
+                    ref_name: None,
+                    commit_sha: None,
+                    path: "lib.rs".to_string(),
+                    line_start: None,
+                    line_end: None,
+                    context_before: None,
+                    context_after: None,
+                    max_chars: None,
+                    symbol: Some("add".to_string()),
+                    symbol_kind: Some("function".to_string()),
+                    match_text: None,
+                    expand_to_block: Some(true),
+                    max_block_lines: Some(10),
+                    prefer_local: Some(true),
+                },
                 focus: None,
                 focus_max_chunks: None,
                 focus_max_chars: None,
-                symbol: Some("add".to_string()),
-                symbol_kind: Some("function".to_string()),
-                match_text: None,
-                expand_to_block: Some(true),
-                max_block_lines: Some(10),
-                prefer_local: Some(true),
             }],
             max_items: None,
             max_chars_per_item: None,
@@ -2371,24 +2307,26 @@ async fn repo_fetch_prefer_local_uses_linked_worktree_without_remote_fetch() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: Some(true),
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: Some(true),
             response_detail: None,
         },
     )
@@ -2420,24 +2358,26 @@ async fn repo_fetch_prefer_local_reports_skip_and_returns_remote_result() {
         repo_fetch_state_with_local_workspace(root.path()),
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "remote-owner".into(),
-            repo: "remote-repository".into(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "remote-owner".into(),
+                repo: "remote-repository".into(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: Some(true),
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: Some(true),
             response_detail: None,
         },
     )
@@ -2475,24 +2415,26 @@ async fn repo_fetch_prefer_local_names_the_skip_reason_when_the_remote_fails() {
         repo_fetch_state_with_local_workspace(root.path()),
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "remote-owner".into(),
-            repo: "remote-repository".into(),
-            ref_name: None,
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "remote-owner".into(),
+                repo: "remote-repository".into(),
+                ref_name: None,
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: Some(true),
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: Some(true),
             response_detail: None,
         },
     )
@@ -2514,24 +2456,26 @@ async fn repo_fetch_validation_error_zero_max_block_lines() {
         state,
         RepoFetchArgs {
             host: None,
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: Some(0),
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: None,
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: Some(0),
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -2590,24 +2534,26 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
     let state = state_with_local_backend(root);
     let args = RepoFetchArgs {
         host: Some("not-a-host".to_string()),
-        owner: "test-owner".to_string(),
-        repo: "test-repo".to_string(),
-        ref_name: None,
-        commit_sha: None,
-        path: "lib.rs".to_string(),
-        line_start: None,
-        line_end: None,
-        context_before: None,
-        context_after: None,
-        max_chars: None,
+        target: eggsearch::core::repo_fetch::RepoTarget {
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            path: "lib.rs".to_string(),
+            line_start: None,
+            line_end: None,
+            context_before: None,
+            context_after: None,
+            max_chars: None,
+            symbol: None,
+            symbol_kind: None,
+            match_text: None,
+            expand_to_block: None,
+            max_block_lines: None,
+            prefer_local: Some(true),
+        },
         timeout_ms: None,
         test_fetch_url: None,
-        symbol: None,
-        symbol_kind: None,
-        match_text: None,
-        expand_to_block: None,
-        max_block_lines: None,
-        prefer_local: Some(true),
         response_detail: None,
     };
 
@@ -2618,26 +2564,6 @@ async fn repo_fetch_prefer_local_invalid_host_errors_without_local_match() {
         err.to_string().contains("unknown host"),
         "error should mention unknown host: {err}"
     );
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_mode_off(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.mode = Mode::Off;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
 }
 
 #[cfg(feature = "mock")]
@@ -4672,14 +4598,6 @@ mod corrective_closure_exact_error {
 // Task 6: Security-context safety and source-quality integration tests
 // =========================================================================
 
-fn repo_fetch_state() -> Arc<ServerState> {
-    let mut cfg = AppConfig::default();
-    cfg.fetch.allow_localhost = true;
-    cfg.fetch.allow_private_network = true;
-    cfg.fetch.sanitize_output = false;
-    Arc::new(ServerState::build(cfg).expect("repo_fetch state"))
-}
-
 #[cfg(feature = "mock")]
 fn repo_fetch_state_with_local_workspace(root: &std::path::Path) -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
@@ -4757,24 +4675,26 @@ async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -4859,24 +4779,26 @@ async fn repo_fetch_remote_solves_a_published_altcha_challenge() {
         state,
         RepoFetchArgs {
             host: Some("github".into()),
-            owner: "test-owner".into(),
-            repo: "test-repo".into(),
-            ref_name: Some("main".into()),
-            commit_sha: None,
-            path: "src/lib.rs".into(),
-            line_start: None,
-            line_end: None,
-            context_before: None,
-            context_after: None,
-            max_chars: None,
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                ref_name: Some("main".into()),
+                commit_sha: None,
+                path: "src/lib.rs".into(),
+                line_start: None,
+                line_end: None,
+                context_before: None,
+                context_after: None,
+                max_chars: None,
+                symbol: None,
+                symbol_kind: None,
+                match_text: None,
+                expand_to_block: None,
+                max_block_lines: None,
+                prefer_local: None,
+            },
             timeout_ms: None,
             test_fetch_url: Some(server.url("/src/lib.rs")),
-            symbol: None,
-            symbol_kind: None,
-            match_text: None,
-            expand_to_block: None,
-            max_block_lines: None,
-            prefer_local: None,
             response_detail: None,
         },
     )
@@ -4907,74 +4829,6 @@ fn fetch_disabled_state() -> Arc<ServerState> {
     let mut cfg = AppConfig::default();
     cfg.fetch.enabled = false;
     Arc::new(ServerState::build(cfg).expect("state with fetch disabled"))
-}
-
-fn git_cmd() -> std::process::Command {
-    let mut cmd = std::process::Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_COUNT", "1")
-        .env("GIT_CONFIG_KEY_0", "safe.directory")
-        .env("GIT_CONFIG_VALUE_0", "*");
-    cmd
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend(temp_dir: &std::path::Path) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines(
-        eggsearch::meta::mock::mock_engines(engines),
-        Duration::from_secs(5),
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.timeout_ms = 30_000;
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn state_with_local_backend_sanitize(
-    temp_dir: &std::path::Path,
-    sanitize: bool,
-) -> Arc<ServerState> {
-    let engines = vec![MockEngine::success("mock_a", vec![])];
-    let adapter = MetadataSearchAdapter::from_engines_with_sanitize(
-        mock_engines(engines),
-        Duration::from_secs(5),
-        sanitize,
-    );
-    let mut cfg = AppConfig::default();
-    cfg.search.providers.insert("mock_a".to_string(), true);
-    cfg.local.enabled = true;
-    cfg.local.roots = vec![temp_dir.to_path_buf()];
-    cfg.fetch.sanitize_output = sanitize;
-    let backend = eggsearch::meta::local_backend::LocalWorkspaceBackend::new(cfg.local.clone())
-        .expect("backend builds");
-    backend.get_or_build_inventory();
-    let mut state = ServerState::with_adapter(cfg, Arc::new(adapter));
-    state.local_backend = Some(Arc::new(backend));
-    Arc::new(state)
-}
-
-#[cfg(feature = "mock")]
-fn run_git_checked(cmd: &mut std::process::Command, operation: &str) {
-    let output = cmd
-        .output()
-        .unwrap_or_else(|error| panic!("{operation} could not start: {error}"));
-    assert!(
-        output.status.success(),
-        "{operation} failed with status {:?}: {}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
 }
 
 /// Plan 003 §5, journey 5: the CodeGG legacy `github` hint maps to the

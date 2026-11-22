@@ -18,6 +18,7 @@ Current subsystems:
 ```text
 agentic-retrieval-integrity-roadmap.md
 binary-distribution-deployment-roadmap.md
+code-duplication-consolidation-roadmap.md
 codegg-legacy-search-parity-corrective-addendum.md
 dependency-evidence-hardening-roadmap.md
 deterministic-retrieval-quality-roadmap.md

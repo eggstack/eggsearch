@@ -590,20 +590,7 @@ fn try_match_generic_brace(
 
 /// Human-readable name for a SymbolKind.
 fn kind_name(kind: SymbolKind) -> &'static str {
-    match kind {
-        SymbolKind::Function => "function",
-        SymbolKind::Method => "method",
-        SymbolKind::Struct => "struct",
-        SymbolKind::Enum => "enum",
-        SymbolKind::Trait => "trait",
-        SymbolKind::Class => "class",
-        SymbolKind::Interface => "interface",
-        SymbolKind::Module => "module",
-        SymbolKind::Constant => "constant",
-        SymbolKind::TypeAlias => "type_alias",
-        SymbolKind::Macro => "macro",
-        SymbolKind::Unknown => "unknown",
-    }
+    kind.as_str()
 }
 
 /// Find the first line containing `match_text`.

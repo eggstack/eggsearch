@@ -320,8 +320,9 @@ extension rules.
 | `browser` | Headless Chrome/Chromium via CDP | `src/fetch/browser/` |
 | `egress` | Listener-free HTTP/SOCKS proxy-chain route for provider upstreams only (source-build opt-in) | `src/fetch/egress.rs`; dynamic fetch stays direct |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Ignored by default |
+| `live-mcp-smoke` | Real MCP-protocol live smoke; no `mock`, default `pdf`/`browser` remain enabled | Ignored by default |
 
-Tests never require network access. Live smoke: `cargo test --features live-smoke --test corpus_runner -- --ignored`.
+Tests never require network access. Mock-backed live smoke: `cargo test --features live-smoke --test corpus_runner -- --ignored`. Real default-feature MCP smoke: `make live-mcp-smoke`.
 
 ---
 

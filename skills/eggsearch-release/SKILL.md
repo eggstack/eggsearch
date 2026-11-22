@@ -143,12 +143,13 @@ stdio-only and stopped services remain untouched.
 
 | Flag | Purpose | Default? |
 |------|---------|----------|
-| (none) | Minimal build | Yes |
-| `pdf` | PDF extraction | No |
-| `browser` | Headless Chrome/Chromium rendering | No |
+| Cargo defaults | PDF extraction (`pdf`) and headless Chrome/Chromium rendering (`browser`) | Yes |
+| `pdf` | PDF extraction | Yes |
+| `browser` | Headless Chrome/Chromium rendering | Yes |
 | `mock` | Test-only mock engine | No |
 | `egress` | Listener-free HTTP/SOCKS proxy-chain route for provider upstreams only (source-build opt-in, never in prebuilt/default binaries) | No |
-| `live-smoke` | Live network tests (opt-in) | No |
+| `live-smoke` | Live network tests (opt-in; implies `mock`) | No |
+| `live-mcp-smoke` | Real MCP-protocol live test (opt-in; no `mock`) | No |
 
 ## Version Rules
 

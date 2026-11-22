@@ -1,9 +1,9 @@
 use super::common::*;
 #[cfg(feature = "browser")]
-use super::web_fetch_escalation::{
-    escalate_gated_status, gated_status, GatedEscalation, GatedEscalationRequest,
-};
+use super::web_fetch_escalation::{escalate_gated_status, GatedEscalation, GatedEscalationRequest};
 use super::web_fetch_window::{windowed_fetch, WindowedFetch};
+#[cfg(feature = "browser")]
+use crate::fetch::browser::gated_status;
 use crate::fetch::FetchClient;
 use crate::mcp::policy::{fetch_allowed, web_fetch_denied_message, Policy};
 use crate::mcp::state::ServerState;
@@ -122,7 +122,7 @@ pub(crate) fn validate_batch_route_options(
     Ok(())
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
     /// The URL to fetch. Must be a valid HTTP(S) URL.
     pub url: String,
