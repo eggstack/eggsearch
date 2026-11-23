@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M046 closed; M047 and M048 active)
+Status: active (M001–M048 closed; M006–M012 dependency-ready; M008/M009 proposed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -74,17 +74,18 @@ Measured or code-evidenced gaps:
   provider is never queried for a CVE; the response warns to enable a provider that is already
   enabled, a native result still emits `severity_unavailable`, and native vulnerabilities carry no
   summary, forcing a second fetch.
-- M039 bounds the pre-projection item payload and degrades repository structure before text
-  clipping, but the structural ladder is repository-only. Web items can retain a large `document`
-  while text is clipped or the item is omitted; compact projection may remove fields only after
-  they have been charged. The M039 closure records this pre-projection over-count as a limitation.
+- M047 closes M039's pre-projection budget gap. Batch budgeting now applies the same selected
+  response projection as output and degrades optional web/repository structure before clipping
+  requested text; payload telemetry counts projected item responses. See the exact-candidate
+  evidence in `plans/closure/agentic-retrieval-integrity/047-status.md`.
 - In the 2026-11-23 three-page web batch, NASA and CDC items succeeded but the Python documentation
   item was omitted as `batch_total_budget_exhausted` with 23,331 characters remaining. All three
-  succeeded as individual fetches; this is a reproduction target, not proof that document structure
-  alone caused the omission.
-- The HTML block renderer trims each inline text node and joins adjacent parts without a separator.
-  A live Python documentation comparison lost spaces around inline markup in both text and Markdown
-  modes; Markdown retained markup but did not restore the spaces.
+  succeeded as individual fetches; this was a reproduction target for M047, not proof that document
+  structure alone caused the omission.
+- M048 closes the inline-whitespace loss. The prior renderer trimmed each inline text node and
+  joined adjacent parts without a separator; exact-output regressions now prove source-present
+  boundaries survive in text and Markdown without inventing spaces absent from source. See
+  `plans/closure/agentic-retrieval-integrity/048-status.md`.
 - Local `repo_search` reads only `max_results * 2` path-ranked candidates (ten at defaults), so a
   content-only or symbol query for a symbol outside that window returns no matches although the
   file exists; `git grep` over the same tree takes 0.05 s.

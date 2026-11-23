@@ -1,6 +1,6 @@
 # M047 — Projection-Aware Batch Fetch Budget and Web Structural Degradation
 
-Status: active
+Status: closed
 Date: 2026-11-23
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (corrective to M039)

@@ -1,6 +1,6 @@
 # M048 — Inline HTML Whitespace Fidelity
 
-Status: active
+Status: closed
 Date: 2026-11-23
 Subsystem: agentic retrieval integrity
 Milestone class: invariant (new rendering-fidelity milestone)
