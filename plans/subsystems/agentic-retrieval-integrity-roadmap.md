@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M046 closed)
+Status: active (M001–M046 closed; M047 and M048 active)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -74,9 +74,17 @@ Measured or code-evidenced gaps:
   provider is never queried for a CVE; the response warns to enable a provider that is already
   enabled, a native result still emits `severity_unavailable`, and native vulnerabilities carry no
   summary, forcing a second fetch.
-- The unified `fetch` envelope bounds the readable measure, not the emitted payload: a
-  three-item windowed repo batch reported 12,223 characters but serialized 186,812 bytes, and an
-  eight-line `std` window carried a 64,158-byte whole-file `document`.
+- M039 bounds the pre-projection item payload and degrades repository structure before text
+  clipping, but the structural ladder is repository-only. Web items can retain a large `document`
+  while text is clipped or the item is omitted; compact projection may remove fields only after
+  they have been charged. The M039 closure records this pre-projection over-count as a limitation.
+- In the 2026-11-23 three-page web batch, NASA and CDC items succeeded but the Python documentation
+  item was omitted as `batch_total_budget_exhausted` with 23,331 characters remaining. All three
+  succeeded as individual fetches; this is a reproduction target, not proof that document structure
+  alone caused the omission.
+- The HTML block renderer trims each inline text node and joins adjacent parts without a separator.
+  A live Python documentation comparison lost spaces around inline markup in both text and Markdown
+  modes; Markdown retained markup but did not restore the spaces.
 - Local `repo_search` reads only `max_results * 2` path-ranked candidates (ten at defaults), so a
   content-only or symbol query for a symbol outside that window returns no matches although the
   file exists; `git grep` over the same tree takes 0.05 s.
@@ -140,6 +148,8 @@ M029 unified fetch ──> M036 unified fetch repo-item budget and outcome
 M006 repo workflow ──> M037 local repo-search relevance and scope
 M006 routing ──> M038 security-search native advisory routing
 M036 ──> M039 fetch emitted-payload budget (corrective)
+M039 ──> M047 projection-aware batch fetch budget and web structural degradation (corrective)
+M048 inline HTML whitespace fidelity (new invariant; independent)
 M037 ──> M040 local content-aware candidate generation (corrective)
 M037 + M040 ──> M043 local repo-search empty-result determinism (corrective; registered by the 2026-11-20 hosted qualification)
 ADR-0019 ──> puzzle-class and identity milestones not yet registered
@@ -190,6 +200,8 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M037 — local repo-search relevance and scope | invariant (corrective) | `plans/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md` | none; interface M006 (closed) | A local result requires a query, path/file, or symbol match; a no-match query returns an explicit empty state; a remote-scoped request includes local results only when `include_local: true` is explicit |
 | M038 — security-search native advisory routing | capability (corrective) | `plans/implementation/agentic-retrieval-integrity/038-security-search-native-advisory-routing.md` | none; interface M006 (closed) | An enabled native advisory provider is selected for identifier queries by default, the availability and severity warnings match reality, and a native vulnerability carries a bounded summary |
 | M039 — fetch emitted-payload budget | invariant (corrective to M036) | `plans/implementation/agentic-retrieval-integrity/039-fetch-emitted-payload-budget.md` | hard M036 (closed) | `max_total_chars` bounds the emitted payload; optional `document`/`lines` degrade before the requested text is clipped, and `payload_chars` reports the true emitted size |
+| M047 — projection-aware batch fetch budget | invariant (corrective to M039) | `plans/implementation/agentic-retrieval-integrity/047-projection-aware-batch-fetch-budget.md` | hard M039 (closed); interface ADR-0016/M029 (closed) | The selected response projection is applied before batch budgeting; web and repo items degrade optional structure before text clipping or omission, and payload telemetry measures the projected item payload |
+| M048 — inline HTML whitespace fidelity | invariant | `plans/implementation/agentic-retrieval-integrity/048-inline-html-whitespace-fidelity.md` | none; existing fetch and sanitization contracts | HTML extraction preserves source whitespace at inline text/link/code boundaries in both text and Markdown rendering, without inventing whitespace absent from the source |
 | M040 — local content-aware candidate generation | capability (corrective to M037) | `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md` | hard M037 (closed) | A content or symbol query finds matches beyond the path-ranked window inside a scan bound; truncation and no-match describe the scan honestly |
 | M041 — linked worktree identity resolution and prefer-local honesty | capability (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/041-linked-worktree-identity-resolution.md` | hard M037 (closed); hard M040 (closed) | A checkout in a linked git worktree resolves its remote identity through the common directory, so `prefer_local` returns the local copy instead of silently falling back to a remote fetch; a skipped local copy is stated |
 | M042 — fetch item shape diagnostics | invariant (corrective to M029) | `plans/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md` | hard M029 (closed) | A `fetch` item with a missing or unknown `type` tag returns an actionable error naming the accepted shapes; no fetch error names a private Rust type |

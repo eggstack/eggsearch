@@ -96,7 +96,7 @@ pub fn project_with_limits(
     detail: ResponseDetail,
     limits: ProjectionLimits,
 ) -> serde_json::Value {
-    match detail {
+    let mut projected = match detail {
         ResponseDetail::Brief => project_brief(tool, value, limits),
         ResponseDetail::Diagnostic => value,
         ResponseDetail::Compact => economy_project(
@@ -127,6 +127,53 @@ pub fn project_with_limits(
             "build_evidence_bundle" => value,
             _ => value,
         },
+    };
+    if matches!(tool, "fetch" | "batch_fetch") {
+        refresh_batch_fetch_payload_counts(&mut projected);
+    }
+    projected
+}
+
+fn refresh_batch_fetch_payload_counts(value: &mut serde_json::Value) {
+    let has_payload_telemetry = value.get("total_payload_chars").is_some()
+        || value
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|results| {
+                results
+                    .iter()
+                    .any(|result| result.get("payload_chars").is_some())
+            });
+    if !has_payload_telemetry {
+        return;
+    }
+    let total_payload_chars = {
+        let Some(results) = value
+            .get_mut("results")
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            return;
+        };
+        let mut total = 0usize;
+        for result in results {
+            let payload_chars = result
+                .get("response")
+                .filter(|response| !response.is_null())
+                .and_then(|response| serde_json::to_string(response).ok())
+                .map(|serialized| serialized.chars().count())
+                .unwrap_or(0);
+            if let Some(object) = result.as_object_mut() {
+                object.insert("payload_chars".to_string(), payload_chars.into());
+            }
+            total = total.saturating_add(payload_chars);
+        }
+        total
+    };
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "total_payload_chars".to_string(),
+            total_payload_chars.into(),
+        );
     }
 }
 
@@ -1095,28 +1142,54 @@ fn project_repo_map(mut value: serde_json::Value, compact: bool) -> serde_json::
 }
 
 fn project_batch_fetch(mut value: serde_json::Value, compact: bool) -> serde_json::Value {
+    let detail = if compact {
+        ResponseDetail::Compact
+    } else {
+        ResponseDetail::Standard
+    };
     if let Some(results) = value.get_mut("results").and_then(|v| v.as_array_mut()) {
         for result in results.iter_mut() {
-            let item_type = result
+            let is_repo = result
                 .get("item_type")
                 .and_then(|v| v.as_str())
-                .unwrap_or("web")
-                .to_string();
+                .is_some_and(|item_type| item_type == "repo");
             if let Some(payload) = result.get_mut("response") {
                 if !payload.is_null() {
                     let taken = payload.take();
-                    let projected = if item_type == "repo" {
-                        project_repo_fetch(taken, compact)
-                    } else {
-                        project_web_fetch(taken, compact)
-                    };
-                    *payload = projected;
+                    *payload = project_batch_fetch_item_response(
+                        taken,
+                        is_repo,
+                        detail,
+                        DEFAULT_BRIEF_MAX_CHARS,
+                    );
                 }
             }
         }
     }
     let mode = if compact { "compact" } else { "standard" };
     stamp_detail(value, mode, serde_json::json!({}))
+}
+
+pub(crate) fn project_batch_fetch_item_response(
+    value: serde_json::Value,
+    is_repo: bool,
+    detail: ResponseDetail,
+    brief_max_chars: usize,
+) -> serde_json::Value {
+    if detail == ResponseDetail::Diagnostic {
+        return value;
+    }
+    let compact = matches!(detail, ResponseDetail::Compact | ResponseDetail::Brief);
+    let mut projected = if is_repo {
+        project_repo_fetch(value, compact)
+    } else {
+        project_web_fetch(value, compact)
+    };
+    if detail == ResponseDetail::Brief {
+        reduce_brief_fields(&mut projected);
+        clip_brief_strings(&mut projected, brief_max_chars);
+    }
+    projected
 }
 
 #[cfg(test)]

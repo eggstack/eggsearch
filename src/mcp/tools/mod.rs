@@ -5,6 +5,7 @@
 //! The stable `crate::mcp::tools::X` paths are preserved via re-exports.
 
 mod batch_fetch;
+mod batch_fetch_budget;
 mod batch_fetch_item;
 pub mod canonical;
 mod common;

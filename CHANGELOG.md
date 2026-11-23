@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Batch fetch budgets now measure each item after its selected response-detail projection, and `payload_chars` / `total_payload_chars` match the returned projected payloads. Web document structure degrades before text clipping or omission, under the existing aggregate cap and envelope-overhead exclusion.
+- HTML extraction preserves source whitespace around inline text, links, and code in text and Markdown output. Repeated whitespace still normalizes, but words are not merged and no spaces are invented when absent from the source.
+
 ### Added
 
 - `web_fetch`, `batch_fetch` web items, the unified `fetch` tool, and CLI `eggsearch fetch` now

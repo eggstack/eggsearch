@@ -443,9 +443,8 @@ fn collect_text_parts<'a>(
         return;
     }
     if let Some(text) = node.value().as_text() {
-        let s = text.trim();
-        if !s.is_empty() {
-            parts.push(s.to_string());
+        if !text.is_empty() {
+            parts.push(text.to_string());
         }
     } else if let Some(elem) = ElementRef::wrap(node) {
         if should_skip(&elem) {
@@ -454,27 +453,53 @@ fn collect_text_parts<'a>(
         let tag = elem.value().name();
         if markdown && tag == "code" {
             // Inline code: wrap in backticks.
-            let inner = collect_raw_text(node).trim().to_string();
-            if !inner.is_empty() {
-                parts.push(format!("`{inner}`"));
-            }
+            let raw_inner = collect_raw_text(node);
+            let inner = raw_inner.trim();
+            let rendered = (!inner.is_empty()).then(|| format!("`{inner}`"));
+            push_inline_part_with_source_boundaries(parts, &raw_inner, rendered);
             return;
         }
         if markdown && tag == "a" {
             // Inline link: produce [text](url) Markdown syntax.
             let href = elem.value().attr("href").unwrap_or("");
-            let link_text = collect_raw_text(node).trim().to_string();
-            if !link_text.is_empty() && !href.is_empty() {
+            let raw_link_text = collect_raw_text(node);
+            let link_text = raw_link_text.trim();
+            let rendered = if link_text.is_empty() || href.is_empty() {
+                None
+            } else {
                 let resolved = resolve_url(href, base_url);
-                parts.push(format!("[{link_text}]({resolved})"));
-            } else if !link_text.is_empty() {
-                parts.push(link_text);
-            }
+                Some(format!("[{link_text}]({resolved})"))
+            };
+            push_inline_part_with_source_boundaries(parts, &raw_link_text, rendered);
             return;
         }
         for child in node.children() {
             collect_text_parts(child, parts, markdown, base_url, depth + 1);
         }
+    }
+}
+
+fn push_inline_part_with_source_boundaries(
+    parts: &mut Vec<String>,
+    source: &str,
+    rendered: Option<String>,
+) {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        if !source.is_empty() {
+            parts.push(source.to_string());
+        }
+        return;
+    }
+
+    let leading_len = source.len() - source.trim_start().len();
+    if leading_len > 0 {
+        parts.push(source[..leading_len].to_string());
+    }
+    parts.push(rendered.unwrap_or_else(|| trimmed.to_string()));
+    let trailing_start = source.trim_end().len();
+    if trailing_start < source.len() {
+        parts.push(source[trailing_start..].to_string());
     }
 }
 
@@ -845,10 +870,7 @@ mod tests {
         let (_, _, rendered, _, _) = render_blocks(html, "https://example.com/", 10000, false);
         assert_eq!(rendered.blocks.len(), 1);
         assert_eq!(rendered.blocks[0].kind, BlockKind::Code);
-        assert!(rendered.blocks[0].text.contains("line1"));
-        assert!(rendered.blocks[0].text.contains("  line2"));
-        assert!(rendered.blocks[0].text.contains("    line3"));
-        assert!(rendered.blocks[0].text.contains('\n'));
+        assert_eq!(rendered.blocks[0].text, "line1\n  line2\n    line3");
     }
 
     #[test]
@@ -928,6 +950,42 @@ mod tests {
         assert!(rendered.blocks[0]
             .text
             .contains("[other site](https://other.com/x)"));
+    }
+
+    #[test]
+    fn inline_whitespace_preserves_source_boundaries_exactly() {
+        let cases = [
+            (
+                "<p>Before   <a href=\"/docs\"><em>linked</em> text</a> \n then <code>sample</code> after.</p>",
+                "Before linked text then sample after.",
+                "Before [linked text](https://example.com/docs) then `sample` after.",
+            ),
+            (
+                "<p>See<a href=\"/docs\"><strong>this</strong></a><code>x</code>,next!</p>",
+                "Seethisx,next!",
+                "See[this](https://example.com/docs)`x`,next!",
+            ),
+            (
+                "<p>Before<a href=\"/docs\"> linked </a>after</p>",
+                "Before linked after",
+                "Before [linked](https://example.com/docs) after",
+            ),
+            (
+                "<p>Before<code> sample </code>after</p>",
+                "Before sample after",
+                "Before `sample` after",
+            ),
+        ];
+
+        for (html, text_expected, markdown_expected) in cases {
+            let (_, _, text_rendered, _, _) =
+                render_blocks(html.as_bytes(), "https://example.com/page", 10000, false);
+            let (_, _, markdown_rendered, _, _) =
+                render_blocks(html.as_bytes(), "https://example.com/page", 10000, true);
+
+            assert_eq!(text_rendered.blocks[0].text, text_expected);
+            assert_eq!(markdown_rendered.blocks[0].text, markdown_expected);
+        }
     }
 
     #[test]

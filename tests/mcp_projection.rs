@@ -741,7 +741,7 @@ fn batch_partial_failure_and_budget_preserved() {
 }
 
 #[test]
-fn batch_payload_budget_fields_survive_compact_and_standard() {
+fn batch_payload_budget_fields_track_projected_responses() {
     let payload = json!({
         "fetched": 1,
         "failed": 0,
@@ -765,19 +765,97 @@ fn batch_payload_budget_fields_survive_compact_and_standard() {
         "structured_warnings": [],
         "telemetry": {"items_requested": 1, "items_completed": 1, "items_failed": 0}
     });
-    for detail in [ResponseDetail::Compact, ResponseDetail::Standard] {
+    let mut counts = Vec::new();
+    for detail in [
+        ResponseDetail::Diagnostic,
+        ResponseDetail::Standard,
+        ResponseDetail::Compact,
+        ResponseDetail::Brief,
+    ] {
         let projected = project("batch_fetch", payload.clone(), detail);
+        let mut expected_total = 0u64;
+        for result in projected["results"].as_array().unwrap() {
+            let response_chars = serde_json::to_string(&result["response"])
+                .unwrap()
+                .chars()
+                .count() as u64;
+            expected_total += response_chars;
+            assert_eq!(
+                result["payload_chars"].as_u64(),
+                Some(response_chars),
+                "{detail:?}"
+            );
+            assert_eq!(result["degraded_fields"][0], "document", "{detail:?}");
+        }
         assert_eq!(
-            projected
-                .get("total_payload_chars")
-                .and_then(|v| v.as_u64()),
-            Some(90),
+            projected["total_payload_chars"].as_u64(),
+            Some(expected_total),
             "{detail:?}"
         );
-        let result = &projected["results"][0];
-        assert_eq!(result["payload_chars"], 90, "{detail:?}");
-        assert_eq!(result["degraded_fields"][0], "document", "{detail:?}");
+        counts.push((detail, expected_total));
     }
+    let compact = counts
+        .iter()
+        .find(|(detail, _)| *detail == ResponseDetail::Compact)
+        .unwrap()
+        .1;
+    let standard = counts
+        .iter()
+        .find(|(detail, _)| *detail == ResponseDetail::Standard)
+        .unwrap()
+        .1;
+    assert!(compact < standard);
+}
+
+#[test]
+fn batch_web_payload_budget_counts_only_projected_fields() {
+    let payload = json!({
+        "fetched": 1,
+        "failed": 0,
+        "truncated": false,
+        "total_chars_returned": 12,
+        "total_payload_chars": 0,
+        "results": [{
+            "index": 0,
+            "item_type": "web",
+            "label": "https://example.com/",
+            "stable_id": "s1",
+            "ok": true,
+            "response": {
+                "text": "requested text",
+                "description": "description",
+                "document": {"kind": "html", "blocks": [{"text": "large duplicated text"}]}
+            },
+            "error": null,
+            "chars_returned": 12,
+            "payload_chars": 0,
+            "degraded_fields": [],
+            "truncated": false
+        }],
+        "warnings": [],
+        "structured_warnings": [],
+        "telemetry": {"items_requested": 1, "items_completed": 1, "items_failed": 0}
+    });
+    let standard = project("batch_fetch", payload.clone(), ResponseDetail::Standard);
+    let compact = project("batch_fetch", payload, ResponseDetail::Compact);
+    for projected in [&standard, &compact] {
+        let result = &projected["results"][0];
+        let response_chars = serde_json::to_string(&result["response"])
+            .unwrap()
+            .chars()
+            .count() as u64;
+        assert_eq!(result["payload_chars"].as_u64(), Some(response_chars));
+        assert_eq!(
+            projected["total_payload_chars"].as_u64(),
+            Some(response_chars)
+        );
+    }
+    assert!(standard["results"][0]["response"].get("document").is_some());
+    assert!(compact["results"][0]["response"].get("document").is_none());
+    assert!(
+        compact["results"][0]["payload_chars"].as_u64().unwrap()
+            < standard["results"][0]["payload_chars"].as_u64().unwrap()
+    );
 }
 
 #[test]

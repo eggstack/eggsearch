@@ -23,26 +23,33 @@ configuration.
 
 ### Unified fetch budget
 
-`fetch` keeps two distinct measures. `chars_returned` is the readable-text
-measure: Unicode scalar values in the returned `text` plus bounded visible
-metadata; a repo item is not charged twice for its structural `document`/`lines`
-copy of the same text. `payload_chars` is the serialized character count of the
-item's response value before `response_detail` projection, and
-`total_payload_chars` sums it across emitted items; both are additive telemetry,
-and projection may remove fields after measurement, so they conservatively
-over-count a compact response.
+`fetch` keeps two distinct measures. `chars_returned` is the M036 readable-text
+measure: Unicode scalar values in `text` plus bounded visible metadata; a repo
+item is not charged twice for structural `document`/`lines` copies. `payload_chars`
+is the serialized character count of the response after the selected
+`response_detail` projection; `total_payload_chars` is the exact sum across
+returned item responses. Both are additive telemetry and the aggregate budget
+uses that same projected payload.
 
-The aggregate `max_total_chars` budget is enforced against that emitted payload.
-Before any text is clipped, a repo item drops optional structure in order:
-`document.blocks`/`document.chunks`, then `document`, then `lines`. Each removed
-field is listed in `degraded_fields` and produces one
-`batch_payload_budget_degraded` warning; a structural drop does not set
-`truncated`, which continues to mean text was clipped. Only when no droppable
-structure remains is `text` clipped, and an item that still cannot fit its
-locator and metadata is a failed item (`ok: false`, `response: null`,
-`chars_returned: 0`) with an attributable `batch_total_budget_exhausted` error
-and warning. A repo item missing `owner`, `repo`, or `path` fails before
-dispatch with an error that names the field and the accepted shape.
+The aggregate `max_total_chars` budget caps the sum of projected item response
+payloads, not the full MCP envelope (item wrappers, aggregate counts, warnings,
+addressing keys, and projection stamps are excluded). Optional returned structure
+is removed before text clipping for both web and repo items: `document.blocks`/
+`document.chunks`, `document`, then `lines`; web items then trim links and remove
+description/title. Budget drops appear in `degraded_fields` and produce one
+`batch_payload_budget_degraded` warning; structural drops do not set `truncated`,
+which continues to mean text was clipped. An item that cannot fit is a failed
+item (`ok: false`, `response: null`, `chars_returned: 0`) with an attributable
+`batch_total_budget_exhausted` error and warning. A repo item missing `owner`,
+`repo`, or `path` fails before dispatch with an error naming the field and
+accepted shape.
+
+### Inline HTML whitespace fidelity
+
+HTML extraction retains source whitespace at inline text, link, and code
+boundaries before normalization in both text and Markdown modes. Repeated
+whitespace collapses, but adjacent words are not merged and no separator is
+invented where the source contains none. Raw code-block whitespace is unchanged.
 
 ### Local search admission and scope
 

@@ -542,6 +542,12 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
             .filter(|ms| *ms < state.config.fetch.timeout_ms),
     )?;
 
+    let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
+        args.response_detail,
+        state.config.mcp.schema_profile,
+    );
+    let brief_max_chars = state.config.mcp.brief_max_chars;
+    let aggregate_budget_during_fetch = detail != crate::mcp::projection::ResponseDetail::Brief;
     let concurrency = state.config.fetch.batch_concurrency;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
 
@@ -609,7 +615,11 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         }
 
         let wave_end = (wave_start + effective_concurrency).min(effective_items.len());
-        let remaining_budget = total_cap.saturating_sub(total_payload_chars);
+        let remaining_budget = if aggregate_budget_during_fetch {
+            total_cap.saturating_sub(total_payload_chars)
+        } else {
+            usize::MAX
+        };
 
         // Divide remaining budget across wave items to prevent concurrent
         // overshoot. Each item gets at most per_wave_item_budget chars.
@@ -617,13 +627,21 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         let per_wave_item_budget = remaining_budget
             .checked_div(wave_len)
             .unwrap_or(remaining_budget);
-        let item_budget_cap = per_item_cap.max(1).min(per_wave_item_budget.max(1));
+        let item_budget_cap = if aggregate_budget_during_fetch {
+            per_item_cap.max(1).min(per_wave_item_budget.max(1))
+        } else {
+            per_item_cap
+        };
         // Maximum number of wave items that can be safely spawned without
         // overshooting the total budget. Every spawn reserves at least one
         // character of `remaining_budget`, so the reservation count and the
         // item count share the same unit: when remaining_budget is smaller
         // than the wave length, the tail is skipped before launching.
-        let launchable = remaining_budget;
+        let launchable = if aggregate_budget_during_fetch {
+            remaining_budget
+        } else {
+            usize::MAX
+        };
 
         let mut join_set = tokio::task::JoinSet::new();
         let mut wave_indices = Vec::new();
@@ -723,9 +741,18 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         for idx in &wave_indices {
             match wave_results.remove(idx) {
                 Some((mut batch_result, image)) => {
-                    let remaining = total_cap.saturating_sub(total_payload_chars);
-                    batch_result =
-                        truncate_batch_result_to_budget(batch_result, remaining, total_cap);
+                    let remaining = if aggregate_budget_during_fetch {
+                        total_cap.saturating_sub(total_payload_chars)
+                    } else {
+                        usize::MAX
+                    };
+                    batch_result = truncate_batch_result_to_budget_for_detail(
+                        batch_result,
+                        remaining,
+                        total_cap,
+                        detail,
+                        brief_max_chars,
+                    );
                     if !batch_result.ok && !continue_on_error {
                         aborted = true;
                     }
@@ -743,7 +770,9 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                             .error
                             .as_deref()
                             .is_some_and(|error| error.starts_with("batch_total_budget_exhausted"));
-                    if !batch_result.degraded_fields.is_empty() || omitted_for_budget {
+                    if aggregate_budget_during_fetch
+                        && (!batch_result.degraded_fields.is_empty() || omitted_for_budget)
+                    {
                         budget_exhausted = true;
                         if budget_warning.is_none() {
                             budget_warning = Some(batch_total_budget_warning(
@@ -758,7 +787,10 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                             ));
                         }
                     }
-                    if total_payload_chars >= total_cap && budget_warning.is_none() {
+                    if aggregate_budget_during_fetch
+                        && total_payload_chars >= total_cap
+                        && budget_warning.is_none()
+                    {
                         budget_warning = Some(batch_total_budget_warning(
                             &batch_result.label,
                             "reached the batch limit",
@@ -807,7 +839,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         progress.dispatch(wave_end, effective_items.len());
 
         // Check budget after wave completes
-        if total_payload_chars >= total_cap {
+        if aggregate_budget_during_fetch && total_payload_chars >= total_cap {
             budget_exhausted = true;
         }
     }
@@ -921,10 +953,6 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     } else {
         value
     };
-    let detail = crate::mcp::projection::ResponseDetail::from_opt_for_profile(
-        args.response_detail,
-        state.config.mcp.schema_profile,
-    );
     progress.phase("project");
     let value = crate::mcp::projection::project_with_budget(
         "batch_fetch",
@@ -932,21 +960,48 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         detail,
         state.config.mcp.brief_max_chars,
     );
+    let value = if detail == crate::mcp::projection::ResponseDetail::Brief {
+        let budgeted = super::batch_fetch_budget::enforce_projected_batch_total_budget(
+            value,
+            total_cap,
+            brief_max_chars,
+        );
+        crate::mcp::projection::project_with_budget(
+            "batch_fetch",
+            budgeted,
+            detail,
+            brief_max_chars,
+        )
+    } else {
+        value
+    };
     Ok(ToolOutcome {
         value,
         images: images.into_iter().flatten().collect(),
     })
 }
 
-/// Apply an item's remaining aggregate payload budget, degrading optional
-/// structural response fields before clipping the requested text. The emitted
-/// payload is measured as its serialized character count; `chars_returned`
-/// keeps the readable-text meaning. An item that cannot fit is omitted as a
-/// failed, truncated result.
+#[cfg(test)]
 pub(crate) fn truncate_batch_result_to_budget(
+    result: crate::core::batch_fetch::BatchFetchResult,
+    remaining: usize,
+    total_cap: usize,
+) -> crate::core::batch_fetch::BatchFetchResult {
+    truncate_batch_result_to_budget_for_detail(
+        result,
+        remaining,
+        total_cap,
+        crate::mcp::projection::ResponseDetail::Diagnostic,
+        crate::mcp::projection::DEFAULT_BRIEF_MAX_CHARS,
+    )
+}
+
+pub(super) fn truncate_batch_result_to_budget_for_detail(
     mut result: crate::core::batch_fetch::BatchFetchResult,
     remaining: usize,
     total_cap: usize,
+    detail: crate::mcp::projection::ResponseDetail,
+    brief_max_chars: usize,
 ) -> crate::core::batch_fetch::BatchFetchResult {
     if !result.ok {
         result.payload_chars = 0;
@@ -956,7 +1011,9 @@ pub(crate) fn truncate_batch_result_to_budget(
     let Some(mut payload) = result.response.take() else {
         return omit_batch_result_for_budget(result, remaining, total_cap);
     };
-    let Some(payload_chars) = batch_payload_chars(&payload) else {
+    let Some(payload_chars) =
+        projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+    else {
         return omit_batch_result_for_budget(result, remaining, total_cap);
     };
     if payload_chars <= remaining {
@@ -964,18 +1021,12 @@ pub(crate) fn truncate_batch_result_to_budget(
     }
 
     if result.item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {
-        if let Some(document) = payload
-            .get_mut("document")
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            for field in ["blocks", "chunks"] {
-                if document.remove(field).is_some() {
-                    result.degraded_fields.push(format!("document.{field}"));
-                }
-            }
-        }
-        if !result.degraded_fields.is_empty() {
-            let Some(payload_chars) = batch_payload_chars(&payload) else {
+        let projected =
+            projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+        if drop_document_parts_if_projected(&mut payload, &projected, &mut result.degraded_fields) {
+            let Some(payload_chars) =
+                projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+            else {
                 return omit_batch_result_for_budget(result, remaining, total_cap);
             };
             if payload_chars <= remaining {
@@ -983,24 +1034,27 @@ pub(crate) fn truncate_batch_result_to_budget(
             }
         }
 
-        if payload
-            .as_object_mut()
-            .is_some_and(|object| object.remove("document").is_some())
-        {
+        let projected =
+            projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+        if drop_projected_root_field(&mut payload, &projected, "document") {
             result.degraded_fields.push("document".to_string());
-            let Some(payload_chars) = batch_payload_chars(&payload) else {
+            let Some(payload_chars) =
+                projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+            else {
                 return omit_batch_result_for_budget(result, remaining, total_cap);
             };
             if payload_chars <= remaining {
                 return finish_batch_result(result, payload, payload_chars);
             }
         }
-        if payload
-            .as_object_mut()
-            .is_some_and(|object| object.remove("lines").is_some())
-        {
+
+        let projected =
+            projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+        if drop_projected_root_field(&mut payload, &projected, "lines") {
             result.degraded_fields.push("lines".to_string());
-            let Some(payload_chars) = batch_payload_chars(&payload) else {
+            let Some(payload_chars) =
+                projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+            else {
                 return omit_batch_result_for_budget(result, remaining, total_cap);
             };
             if payload_chars <= remaining {
@@ -1008,160 +1062,239 @@ pub(crate) fn truncate_batch_result_to_budget(
             }
         }
 
-        let text = payload
-            .get("text")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        if let Some(text) = text.filter(|text| !text.is_empty()) {
-            let chars: Vec<char> = text.chars().collect();
-            if let Some(object) = payload.as_object_mut() {
-                object.insert("truncated".to_string(), serde_json::Value::Bool(true));
-            }
-            let mut low = 0usize;
-            let mut high = chars.len();
-            let mut best = 0usize;
-            while low <= high {
-                let mid = low + (high - low) / 2;
-                if let Some(object) = payload.as_object_mut() {
-                    object.insert(
-                        "text".to_string(),
-                        serde_json::Value::String(chars[..mid].iter().collect()),
-                    );
-                }
-                let Some(measured) = batch_payload_chars(&payload) else {
-                    return omit_batch_result_for_budget(result, remaining, total_cap);
-                };
-                if measured <= remaining {
-                    best = mid;
-                    low = mid + 1;
-                } else if mid == 0 {
-                    break;
-                } else {
-                    high = mid - 1;
-                }
-            }
-            if let Some(object) = payload.as_object_mut() {
-                object.insert(
-                    "text".to_string(),
-                    serde_json::Value::String(chars[..best].iter().collect()),
-                );
-            }
-            result.truncated = true;
-            result.degraded_fields.push("text".to_string());
-            let Some(payload_chars) = batch_payload_chars(&payload) else {
-                return omit_batch_result_for_budget(result, remaining, total_cap);
-            };
-            if payload_chars <= remaining {
-                return finish_batch_result(result, payload, payload_chars);
-            }
+        let Some(payload_chars) = clip_batch_text_to_budget(
+            &mut result,
+            &mut payload,
+            remaining,
+            detail,
+            brief_max_chars,
+        ) else {
+            return omit_batch_result_for_budget(result, remaining, total_cap);
+        };
+        if payload_chars <= remaining {
+            return finish_batch_result(result, payload, payload_chars);
         }
-
         return omit_batch_result_for_budget(result, remaining, total_cap);
     }
 
-    let budget = remaining;
-    let mut text_clipped = false;
-    if let Some(text) = payload
+    let mut projected =
+        projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+    if drop_document_parts_if_projected(&mut payload, &projected, &mut result.degraded_fields) {
+        let Some(payload_chars) =
+            projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+        else {
+            return omit_batch_result_for_budget(result, remaining, total_cap);
+        };
+        if payload_chars <= remaining {
+            return finish_batch_result(result, payload, payload_chars);
+        }
+        projected = projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+    }
+
+    if drop_projected_root_field(&mut payload, &projected, "document") {
+        result.degraded_fields.push("document".to_string());
+        let Some(payload_chars) =
+            projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+        else {
+            return omit_batch_result_for_budget(result, remaining, total_cap);
+        };
+        if payload_chars <= remaining {
+            return finish_batch_result(result, payload, payload_chars);
+        }
+        projected = projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+    }
+
+    if drop_projected_root_field(&mut payload, &projected, "lines") {
+        result.degraded_fields.push("lines".to_string());
+        let Some(payload_chars) =
+            projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+        else {
+            return omit_batch_result_for_budget(result, remaining, total_cap);
+        };
+        if payload_chars <= remaining {
+            return finish_batch_result(result, payload, payload_chars);
+        }
+        projected = projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+    }
+
+    loop {
+        let has_links = projected
+            .get("links")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|links| !links.is_empty());
+        if !has_links {
+            break;
+        }
+        let popped = payload
+            .get_mut("links")
+            .and_then(serde_json::Value::as_array_mut)
+            .and_then(Vec::pop)
+            .is_some();
+        if !popped {
+            break;
+        }
+        if !result.degraded_fields.iter().any(|field| field == "links") {
+            result.degraded_fields.push("links".to_string());
+        }
+        let Some(payload_chars) =
+            projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+        else {
+            return omit_batch_result_for_budget(result, remaining, total_cap);
+        };
+        if payload_chars <= remaining {
+            return finish_batch_result(result, payload, payload_chars);
+        }
+        projected = projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+    }
+
+    for field in ["description", "title"] {
+        if drop_projected_root_field(&mut payload, &projected, field) {
+            result.degraded_fields.push(field.to_string());
+            let Some(payload_chars) =
+                projected_batch_payload_chars(&payload, result.item_type, detail, brief_max_chars)
+            else {
+                return omit_batch_result_for_budget(result, remaining, total_cap);
+            };
+            if payload_chars <= remaining {
+                return finish_batch_result(result, payload, payload_chars);
+            }
+            projected =
+                projected_batch_payload(&payload, result.item_type, detail, brief_max_chars);
+        }
+    }
+
+    let Some(payload_chars) = clip_batch_text_to_budget(
+        &mut result,
+        &mut payload,
+        remaining,
+        detail,
+        brief_max_chars,
+    ) else {
+        return omit_batch_result_for_budget(result, remaining, total_cap);
+    };
+    if payload_chars <= remaining {
+        return finish_batch_result(result, payload, payload_chars);
+    }
+    omit_batch_result_for_budget(result, remaining, total_cap)
+}
+
+fn projected_batch_payload(
+    payload: &serde_json::Value,
+    item_type: crate::core::batch_fetch::BatchFetchItemType,
+    detail: crate::mcp::projection::ResponseDetail,
+    brief_max_chars: usize,
+) -> serde_json::Value {
+    crate::mcp::projection::project_batch_fetch_item_response(
+        payload.clone(),
+        item_type == crate::core::batch_fetch::BatchFetchItemType::Repo,
+        detail,
+        brief_max_chars,
+    )
+}
+
+fn projected_batch_payload_chars(
+    payload: &serde_json::Value,
+    item_type: crate::core::batch_fetch::BatchFetchItemType,
+    detail: crate::mcp::projection::ResponseDetail,
+    brief_max_chars: usize,
+) -> Option<usize> {
+    let projected = projected_batch_payload(payload, item_type, detail, brief_max_chars);
+    batch_payload_chars(&projected)
+}
+
+fn drop_document_parts_if_projected(
+    payload: &mut serde_json::Value,
+    projected: &serde_json::Value,
+    degraded_fields: &mut Vec<String>,
+) -> bool {
+    let Some(projected_document) = projected
+        .get("document")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return false;
+    };
+    let Some(document) = payload
+        .get_mut("document")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return false;
+    };
+    let mut dropped = false;
+    for field in ["blocks", "chunks"] {
+        if projected_document.contains_key(field) && document.remove(field).is_some() {
+            degraded_fields.push(format!("document.{field}"));
+            dropped = true;
+        }
+    }
+    dropped
+}
+
+fn drop_projected_root_field(
+    payload: &mut serde_json::Value,
+    projected: &serde_json::Value,
+    field: &str,
+) -> bool {
+    projected.get(field).is_some()
+        && payload
+            .as_object_mut()
+            .is_some_and(|object| object.remove(field).is_some())
+}
+
+fn clip_batch_text_to_budget(
+    result: &mut crate::core::batch_fetch::BatchFetchResult,
+    payload: &mut serde_json::Value,
+    remaining: usize,
+    detail: crate::mcp::projection::ResponseDetail,
+    brief_max_chars: usize,
+) -> Option<usize> {
+    let Some(text) = payload
         .get("text")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
-    {
-        if text.chars().count() > budget {
-            if let Some(obj) = payload.as_object_mut() {
-                obj.insert(
-                    "text".to_string(),
-                    serde_json::Value::String(text.chars().take(budget).collect()),
-                );
-            }
-            result.degraded_fields.push("text".to_string());
-            text_clipped = true;
-        }
-    }
-
-    let meta_chars = |obj: &serde_json::Map<String, serde_json::Value>| -> usize {
-        obj.get("title")
-            .and_then(|v| v.as_str())
-            .map(|s| s.chars().count())
-            .unwrap_or(0)
-            + obj
-                .get("description")
-                .and_then(|v| v.as_str())
-                .map(|s| s.chars().count())
-                .unwrap_or(0)
-            + obj
-                .get("links")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .map(|l| {
-                            l.get("url")
-                                .and_then(|u| u.as_str())
-                                .map(|s| s.chars().count())
-                                .unwrap_or(0)
-                                + l.get("text")
-                                    .and_then(|t| t.as_str())
-                                    .map(|s| s.chars().count())
-                                    .unwrap_or(0)
-                        })
-                        .sum::<usize>()
-                })
-                .unwrap_or(0)
+        .filter(|text| !text.is_empty())
+    else {
+        return projected_batch_payload_chars(payload, result.item_type, detail, brief_max_chars);
     };
-    let text_chars = |obj: &serde_json::Map<String, serde_json::Value>| -> usize {
-        obj.get("text")
-            .and_then(|v| v.as_str())
-            .map(|s| s.chars().count())
-            .unwrap_or(0)
-    };
-
-    if let Some(obj) = payload.as_object_mut() {
-        let mut current = text_chars(obj) + meta_chars(obj);
-        if current > budget {
-            loop {
-                let popped = obj
-                    .get_mut("links")
-                    .and_then(|v| v.as_array_mut())
-                    .and_then(|arr| {
-                        if arr.is_empty() {
-                            None
-                        } else {
-                            arr.pop();
-                            Some(())
-                        }
-                    });
-                if popped.is_none() {
-                    break;
-                }
-                if !result.degraded_fields.iter().any(|field| field == "links") {
-                    result.degraded_fields.push("links".to_string());
-                }
-                current = text_chars(obj) + meta_chars(obj);
-                if current <= budget {
-                    break;
-                }
-            }
+    let chars: Vec<char> = text.chars().collect();
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("truncated".to_string(), serde_json::Value::Bool(true));
+    }
+    let mut low = 0usize;
+    let mut high = chars.len();
+    let mut best = 0usize;
+    while low <= high {
+        let mid = low + (high - low) / 2;
+        if let Some(object) = payload.as_object_mut() {
+            object.insert(
+                "text".to_string(),
+                serde_json::Value::String(chars[..mid].iter().collect()),
+            );
         }
-        if current > budget && obj.remove("description").is_some() {
-            result.degraded_fields.push("description".to_string());
-            current = text_chars(obj) + meta_chars(obj);
-        }
-        if current > budget && obj.remove("title").is_some() {
-            result.degraded_fields.push("title".to_string());
+        let measured =
+            projected_batch_payload_chars(payload, result.item_type, detail, brief_max_chars)?;
+        if measured <= remaining {
+            best = mid;
+            low = mid + 1;
+        } else if mid == 0 {
+            break;
+        } else {
+            high = mid - 1;
         }
     }
-    if text_clipped {
-        result.truncated = true;
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "text".to_string(),
+            serde_json::Value::String(chars[..best].iter().collect()),
+        );
     }
-    let Some(payload_chars) = batch_payload_chars(&payload) else {
-        return omit_batch_result_for_budget(result, remaining, total_cap);
-    };
-    if payload_chars > remaining {
-        return omit_batch_result_for_budget(result, remaining, total_cap);
+    result.truncated = true;
+    if !result.degraded_fields.iter().any(|field| field == "text") {
+        result.degraded_fields.push("text".to_string());
     }
-    finish_batch_result(result, payload, payload_chars)
+    projected_batch_payload_chars(payload, result.item_type, detail, brief_max_chars)
 }
 
-fn batch_payload_chars(response_value: &serde_json::Value) -> Option<usize> {
+pub(super) fn batch_payload_chars(response_value: &serde_json::Value) -> Option<usize> {
     let serialized = serde_json::to_string(response_value);
     let payload_chars = serialized.as_ref().map(|s| s.chars().count()).unwrap_or(0);
     serialized.map(|_| payload_chars).ok()
@@ -1235,7 +1368,7 @@ fn safe_batch_item_label(label: &str) -> String {
     label
 }
 
-fn batch_total_budget_warning(
+pub(super) fn batch_total_budget_warning(
     label: &str,
     outcome: &str,
     remaining: usize,
@@ -1247,7 +1380,7 @@ fn batch_total_budget_warning(
     )
 }
 
-fn batch_payload_budget_warning(
+pub(super) fn batch_payload_budget_warning(
     result: &crate::core::batch_fetch::BatchFetchResult,
     remaining: usize,
     total_cap: usize,

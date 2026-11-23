@@ -53,29 +53,31 @@ unchanged: Unicode scalar values in top-level `text`, plus `title`,
 locator and returned URL fields. Repo `document` and `lines` are structural copies
 of the text and are not counted again in this readable measure.
 
-The aggregate `max_total_chars` budget is enforced against the emitted-payload
-measure. For each item, `payload_chars` is the Unicode scalar count of
-`serde_json::to_string(&response_value)`, where `response_value` is that item's
-`response` JSON value; an unmeasurable response is treated as unfittable and
-omitted. It is measured before
-`response_detail` projection; `total_payload_chars` sums this measure for emitted
-items, while omitted items contribute zero. The budget covers the sum of these
-response values, not the complete serialized envelope: item wrappers, the results
-array, aggregate counts and telemetry, warnings, addressing fields, and projection
-stamps are envelope overhead outside the measure. Compact and standard projections
-can remove response fields after measurement, so `payload_chars` and
-`total_payload_chars` may conservatively over-count the projected response.
+The aggregate `max_total_chars` budget is enforced against each item’s selected
+response-detail projection. `payload_chars` is the Unicode scalar count of
+`serde_json::to_string(&response_value)`, where `response_value` is the item’s
+`response` after the same per-item projection used by the final output. Diagnostic
+keeps the full response; standard, compact, and brief use their respective item
+projections. `total_payload_chars` sums the projected payloads returned, with
+omitted items contributing zero. Counters are refreshed after the final envelope
+projection so brief-mode trimming and omitted results are reflected exactly.
+The budget covers the sum of these response values, not the complete serialized
+envelope: item wrappers, the results array, aggregate counts and telemetry,
+warnings, addressing fields, and projection stamps are overhead outside the
+measure.
 
-When a repo response exceeds the remaining budget, preserve requested text by
-applying this ladder in order, remeasuring the serialized response after each
-step and stopping as soon as it fits: remove `document.blocks` and
-`document.chunks` together; remove `document`; remove `lines`; then clip top-level
-`text`. Never clip text while one of those structural fields remains. Each removed
-field is listed in `degraded_fields`; structural drops made by the budget do not
-set `truncated`, which continues to mean text was clipped. Web responses retain their existing
-title/description/links trimming and text clipping, with the final fit decided by
-`payload_chars`. An item that still cannot fit is omitted under M036's contract:
-`ok: false`, `response: null`, `chars_returned: 0`, a budget error, and a warning.
+When an item exceeds the remaining budget, preserve requested text by applying
+the same structural ladder to fields present in its selected projection:
+remove `document.blocks` and `document.chunks` together; remove `document`;
+remove `lines`; then, for web items, trim `links` from the end, remove
+`description`, and remove `title`; finally clip top-level `text`. Remeasure the
+projected response after each step and stop as soon as it fits. Compact and brief
+projections may remove optional fields before budgeting; those presentation
+choices are not budget drops and are not listed in `degraded_fields`. Never clip
+text while removable returned structure or web metadata remains. Budget-driven
+structural drops do not set `truncated`, which continues to mean text was clipped.
+An item that still cannot fit is omitted under M036's contract: `ok: false`,
+`response: null`, `chars_returned: 0`, a budget error, and a warning.
 
 Each degraded item emits one `batch_payload_budget_degraded` legacy warning naming
 the sanitized item label, comma-separated dropped-field markers, measured
@@ -381,6 +383,10 @@ text/markdown`.
   budget lasts, code blocks snap to a newline when past the halfway point, and
   stale outline entries are pruned. `text` vs `markdown` modes differ only in
   the final projection plus inline `` `code` `` / `[text](url)` collection.
+- Inline collection preserves source whitespace boundaries around inline text,
+  links, and code in both text and Markdown modes. Final normalization collapses
+  repeated whitespace without joining adjacent words or inventing separators;
+  raw code-block whitespace is unchanged.
 
 Non-HTML bodies dispatch on `detect.rs`: notebooks, CSV, XML/RST/AsciiDoc,
 Markdown sources, diffs, line-preserving code, or plain paragraphs. Code/diff

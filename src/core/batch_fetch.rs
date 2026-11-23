@@ -174,7 +174,7 @@ pub struct BatchFetchResult {
     pub error: Option<String>,
     /// Approximate character count of the returned text content.
     pub chars_returned: usize,
-    /// Unicode scalar count of the serialized response value before projection.
+    /// Unicode scalar count of the serialized response value after response-detail projection.
     #[serde(default)]
     pub payload_chars: usize,
     /// Response fields removed to fit the aggregate payload budget.

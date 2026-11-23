@@ -30,6 +30,17 @@ use eggsearch::meta::mock::{mock_engines, MockEngine};
 use eggsearch::meta::MetadataSearchAdapter;
 
 fn localhost_state() -> Arc<ServerState> {
+    let defaults = AppConfig::default();
+    localhost_state_with_brief_limits(
+        defaults.mcp.brief_max_chars,
+        defaults.fetch.batch_concurrency,
+    )
+}
+
+fn localhost_state_with_brief_limits(
+    brief_max_chars: usize,
+    batch_concurrency: usize,
+) -> Arc<ServerState> {
     let engines = vec![MockEngine::success("mock_a", vec![])];
     let adapter =
         MetadataSearchAdapter::from_engines(mock_engines(engines), Duration::from_secs(5));
@@ -37,6 +48,8 @@ fn localhost_state() -> Arc<ServerState> {
     cfg.search.providers.insert("mock_a".to_string(), true);
     cfg.fetch.allow_localhost = true;
     cfg.fetch.allow_private_network = true;
+    cfg.fetch.batch_concurrency = batch_concurrency;
+    cfg.mcp.brief_max_chars = brief_max_chars;
     Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)))
 }
 
@@ -1579,6 +1592,179 @@ fn locator_helpers_preserve_safety() {
         loc,
         eggsearch::core::fetch_locator::FetchLocator::Local(_)
     ));
+}
+
+#[tokio::test]
+async fn batch_web_budget_uses_projected_payload_and_drops_structure_before_text() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let requested_text =
+        "The requested passage stays intact across a response projection. ".repeat(24);
+    let html = format!(
+        r#"<!doctype html><html><head><title>Projection page</title><meta name="description" content="A projected batch fixture"></head><body><main><p>{requested_text}</p></main></body></html>"#
+    );
+    let page = server.mock(|when, then| {
+        when.method(GET).path("/");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(html.clone());
+    });
+
+    let mut diagnostic_args = batch_args(vec![web_item(server.url("/"))]);
+    diagnostic_args.max_chars_per_item = Some(10_000);
+    diagnostic_args.max_total_chars = Some(50_000);
+    diagnostic_args.response_detail = Some(eggsearch::mcp::projection::ResponseDetail::Diagnostic);
+    let diagnostic = run_batch_fetch(localhost_state(), diagnostic_args)
+        .await
+        .expect("diagnostic batch");
+    let original = diagnostic["results"][0]["response"].clone();
+    assert!(original["document"]["blocks"].is_array());
+    assert!(original["document"]["chunks"].is_array());
+
+    let standard = eggsearch::mcp::projection::project(
+        "web_fetch",
+        original.clone(),
+        eggsearch::mcp::projection::ResponseDetail::Standard,
+    );
+    let standard_full_chars = serde_json::to_string(&standard).unwrap().chars().count();
+    let mut standard_after_structure = standard.clone();
+    let standard_document = standard_after_structure["document"]
+        .as_object_mut()
+        .expect("standard document");
+    assert!(standard_document.remove("blocks").is_some());
+    assert!(standard_document.remove("chunks").is_some());
+    let standard_fitted_chars = serde_json::to_string(&standard_after_structure)
+        .unwrap()
+        .chars()
+        .count();
+    let standard_cap = standard_fitted_chars + 128;
+    assert!(standard_full_chars > standard_cap);
+
+    let mut standard_args = batch_args(vec![web_item(server.url("/"))]);
+    standard_args.max_chars_per_item = Some(10_000);
+    standard_args.max_total_chars = Some(standard_cap);
+    standard_args.response_detail = Some(eggsearch::mcp::projection::ResponseDetail::Standard);
+    let standard_batch = run_batch_fetch(localhost_state(), standard_args)
+        .await
+        .expect("standard batch");
+    page.assert_hits(2);
+    let standard_result = &standard_batch["results"][0];
+    assert_eq!(standard_result["ok"], true);
+    assert_eq!(standard_result["response"]["text"], original["text"]);
+    assert!(standard_result["response"]["document"]
+        .get("blocks")
+        .is_none());
+    assert!(standard_result["response"]["document"]
+        .get("chunks")
+        .is_none());
+    assert_eq!(standard_result["truncated"], false);
+    assert_eq!(
+        standard_result["degraded_fields"],
+        serde_json::json!(["document.blocks", "document.chunks"])
+    );
+    let standard_payload_chars = serde_json::to_string(&standard_result["response"])
+        .unwrap()
+        .chars()
+        .count() as u64;
+    assert_eq!(
+        standard_result["payload_chars"].as_u64(),
+        Some(standard_payload_chars)
+    );
+    assert_eq!(
+        standard_batch["total_payload_chars"].as_u64(),
+        Some(standard_payload_chars)
+    );
+    assert!(standard_payload_chars as usize <= standard_cap);
+
+    let compact = eggsearch::mcp::projection::project(
+        "web_fetch",
+        original.clone(),
+        eggsearch::mcp::projection::ResponseDetail::Compact,
+    );
+    let compact_chars = serde_json::to_string(&compact).unwrap().chars().count();
+    let compact_cap = compact_chars + 128;
+    assert!(serde_json::to_string(&original).unwrap().chars().count() > compact_cap);
+
+    let mut compact_args = batch_args(vec![web_item(server.url("/"))]);
+    compact_args.max_chars_per_item = Some(10_000);
+    compact_args.max_total_chars = Some(compact_cap);
+    compact_args.response_detail = Some(eggsearch::mcp::projection::ResponseDetail::Compact);
+    let compact_batch = run_batch_fetch(localhost_state(), compact_args)
+        .await
+        .expect("compact batch");
+    let compact_result = &compact_batch["results"][0];
+    assert_eq!(compact_result["ok"], true);
+    assert_eq!(compact_result["response"]["text"], original["text"]);
+    assert!(compact_result["response"].get("document").is_none());
+    assert!(compact_result["degraded_fields"]
+        .as_array()
+        .is_none_or(|fields| fields.is_empty()));
+    let compact_payload_chars = serde_json::to_string(&compact_result["response"])
+        .unwrap()
+        .chars()
+        .count() as u64;
+    assert_eq!(
+        compact_result["payload_chars"].as_u64(),
+        Some(compact_payload_chars)
+    );
+    assert_eq!(
+        compact_batch["total_payload_chars"].as_u64(),
+        Some(compact_payload_chars)
+    );
+    assert!(compact_payload_chars as usize <= compact_cap);
+}
+
+#[tokio::test]
+async fn brief_batch_budget_waits_for_final_projection() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let text =
+        "A requested passage whose final brief response is intentionally bounded. ".repeat(100);
+    let html = format!(
+        r#"<!doctype html><html><head><title>Brief budget fixture</title></head><body><main><p>{text}</p></main></body></html>"#
+    );
+    let first = server.mock(|when, then| {
+        when.method(GET).path("/first");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(html.clone());
+    });
+    let second = server.mock(|when, then| {
+        when.method(GET).path("/second");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(html.clone());
+    });
+
+    let mut args = batch_args(vec![
+        web_item(server.url("/first")),
+        web_item(server.url("/second")),
+    ]);
+    args.max_chars_per_item = Some(10_000);
+    args.max_total_chars = Some(512);
+    args.response_detail = Some(eggsearch::mcp::projection::ResponseDetail::Brief);
+    let result = run_batch_fetch(localhost_state_with_brief_limits(32_000, 1), args)
+        .await
+        .expect("brief batch");
+
+    first.assert_hits(1);
+    second.assert_hits(1);
+    assert!(
+        result["total_payload_chars"].as_u64().unwrap() <= 512,
+        "{result}"
+    );
+    assert!(
+        !result["results"].as_array().unwrap().is_empty(),
+        "brief projection removed every item: {result}"
+    );
+    assert!(result["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .all(|warning| !warning.contains("was skipped")));
 }
 
 #[tokio::test]
