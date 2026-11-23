@@ -1,13 +1,12 @@
-# Quickstart: Using eggsearch with CodeGG
+# Quickstart: eggsearch with CodeGG
 
-This guide walks through installing eggsearch, configuring it, and using it from an MCP-compatible client such as CodeGG.
+This guide gets eggsearch connected and ready for a first search. No API key or
+configuration file is needed for the built-in defaults. The install command adds
+the executable; it does not start a background service.
 
-## Prerequisites
+## 1. Install eggsearch
 
-- Rust 1.89 or later installed when building from source
-- An MCP-compatible client (CodeGG, Claude Code, or any client supporting MCP over stdio or Streamable HTTP)
-
-## Installation
+On macOS or Linux:
 
 ```bash
 curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
@@ -19,234 +18,70 @@ On Windows PowerShell:
 irm https://github.com/eggstack/eggsearch/releases/latest/download/install.ps1 | iex
 ```
 
-For a source installation:
+Confirm the command is available:
 
 ```bash
-cargo install eggsearch --locked
+eggsearch --version
+eggsearch doctor
 ```
 
-Or build from source:
+Rust is required only if you build from source. See [Installation](installation.md)
+for supported platforms and binary details.
+
+## 2. Connect CodeGG
+
+Preview the CodeGG integration before changing its settings:
 
 ```bash
-git clone https://github.com/eggstack/eggsearch.git
-cd eggsearch
-cargo build --release
+eggsearch integrate codegg --transport stdio
 ```
 
-The binary is written to `target/release/eggsearch`.
-
-## Configuration
-
-The config file is optional. eggsearch uses platform-specific locations:
-`$XDG_CONFIG_HOME/eggsearch/config.toml` on Linux (usually
-`~/.config/eggsearch/config.toml`), `~/Library/Application Support/eggsearch/config.toml`
-on macOS, and `%APPDATA%\eggsearch\config.toml` on Windows. It uses built-in defaults when no config file exists.
-
-If you add a `[search]` table, include all of its required fields. Partial
-`[search]` tables are rejected. See [Configuration](config.md) for the full
-reference.
-
-A minimal config:
-
-```toml
-[search]
-mode = "live"
-default_max_results = 10
-max_results_cap = 50
-max_query_chars = 512
-timeout_ms = 8000
-default_providers = ["duckduckgo", "brave", "yahoo"]
-
-[search.providers]
-duckduckgo = true
-brave = true
-startpage = true
-yahoo = true
-
-[fetch]
-enabled = true
-```
-
-For coding work with GitHub integration:
-
-```toml
-[search]
-mode = "live"
-default_max_results = 10
-max_results_cap = 50
-max_query_chars = 512
-timeout_ms = 8000
-default_providers = ["duckduckgo", "brave"]
-
-[search.providers]
-duckduckgo = true
-brave = true
-
-[search.api.github_code]
-enabled = true
-api_key_env = "GITHUB_TOKEN"
-
-[search.api.github_issues]
-enabled = true
-api_key_env = "GITHUB_TOKEN"
-
-[search.api.github_releases]
-enabled = true
-api_key_env = "GITHUB_TOKEN"
-
-[fetch]
-enabled = true
-```
-
-Set the `GITHUB_TOKEN` environment variable before starting the server.
-
-## Running the MCP Server
-
-Start the server on stdio transport:
+If you want eggsearch to update and verify the CodeGG entry, add `--apply`:
 
 ```bash
-eggsearch mcp stdio
+eggsearch integrate codegg --transport stdio --apply
 ```
 
-Or set a custom config path:
+Applying is explicit. Eggsearch updates only its own entry and backs up a JSON
+settings file before changing it. If CodeGG is not installed or you prefer to
+edit settings yourself, use the printed configuration. See [MCP integrations](integrations.md)
+for other clients and the persistent HTTP option.
 
-```bash
-eggsearch --config /path/to/config.toml mcp stdio
-```
+## 3. Search, then fetch a selected source
 
-The server reads MCP JSON-RPC messages from stdin and writes responses to stdout.
-
-For a persistent local endpoint instead, run:
-
-```bash
-eggsearch mcp serve --bind 127.0.0.1:11320 --path /mcp
-```
-
-Check `http://127.0.0.1:11320/healthz` before connecting. This mode is
-foreground-only and loopback-only; the installer does not register it as a
-service.
-
-## Client Configuration
-
-Configure your MCP client to launch eggsearch as a child process over stdio, or
-declare the explicit local HTTP endpoint if the client supports Streamable HTTP.
-The exact configuration depends on your client.
-
-### CodeGG
-
-In your CodeGG MCP server configuration:
+Call `web_search` with a query to find sources. It returns source cards, not
+full page text or a synthesized answer:
 
 ```json
 {
-  "mcpServers": {
-    "eggsearch": {
-      "command": "eggsearch",
-      "args": ["mcp", "stdio"]
-    }
+  "query": "Tokio runtime task scheduling documentation",
+  "max_results": 5
+}
+```
+
+Choose a relevant URL from the results, then pass it in a web item to the
+canonical `fetch` tool:
+
+```json
+{
+  "items": {
+    "type": "web",
+    "url": "https://tokio.rs/tokio/tutorial"
   }
 }
 ```
 
-An HTTP-capable client can use the persistent endpoint explicitly:
+Fetch targets are explicit. Eggsearch does not crawl or follow every suggested
+link automatically. Treat returned web content as untrusted evidence, not as
+instructions.
 
-```json
-{
-  "mcpServers": {
-    "eggsearch-http": {
-      "url": "http://127.0.0.1:11320/mcp"
-    }
-  }
-}
-```
+## Optional configuration
 
-### Claude Code
+You can keep using the built-in defaults without creating a config file. To
+enable specialist providers or change limits, see [Configuration](config.md) and
+[Provider setup](provider-setup.md). API keys are needed only for optional
+credentialed providers.
 
-```json
-{
-  "mcpServers": {
-    "eggsearch": {
-      "command": "eggsearch",
-      "args": ["mcp", "stdio"]
-    }
-  }
-}
-```
-
-For a custom config path, set the environment variable:
-
-```json
-{
-  "mcpServers": {
-    "eggsearch": {
-      "command": "eggsearch",
-      "args": ["mcp", "stdio"],
-      "env": {
-        "EGGSEARCH_CONFIG": "/path/to/config.toml"
-      }
-    }
-  }
-}
-```
-
-## Example Workflow
-
-A typical research flow uses three tools:
-
-### 1. Search
-
-```
-web_search({
-  "query": "rust async runtime comparison",
-  "intent": "research",
-  "max_results": 10
-})
-```
-
-Returns a list of source cards with `next_actions` and `suggested_fetches`.
-Follow sanitized `next_actions` without another discovery round trip; ignore
-unknown tool names. Keep the immediate palette small (`web_search`,
-`repo_search`, optionally `web_fetch`) and load specialists only when needed.
-See [Progressive Disclosure](codegg-integration.md#progressive-disclosure-integration).
-
-### 2. Fetch
-
-```
-web_fetch({
-  "url": "https://tokio.rs/blog/2020-04-preparing-for-tokio-0-3",
-  "extract_mode": "markdown",
-  "max_chars": 12000
-})
-```
-
-Returns extracted text from the selected URL.
-
-### 3. Batch Fetch
-
-```
-batch_fetch({
-  "items": [
-    "https://docs.rs/axum/latest/axum/",
-    "https://docs.rs/actix-web/latest/actix_web/"
-  ]
-})
-```
-
-Fetches multiple URLs in bounded parallel.
-
-### Discovering Capabilities
-
-Hosts may inspect `provider_status` during bootstrap; agents call it only when provider availability itself is relevant or troubleshooting is required. It is diagnostic, not a normal first research step:
-
-```
-provider_status({})
-```
-
-This returns provider health, server capabilities, tool capabilities, and workflow recipes.
-
-## Next Steps
-
-- [MCP Integration Guide](codegg-integration.md) -- harness-developer reference (progressive disclosure, trust boundary, workflows); this quickstart is the end-user path into that guide
-- [Configuration](config.md) -- full config reference with all options and defaults
-- [Provider Setup](provider-setup.md) -- how to enable and configure individual providers
-- [Tool Matrix](tool-matrix.md) -- compact reference for all 10 MCP tools
-- [Agent Workflows](agent-workflows.md) -- recommended tool call sequences and recipes
+For tool details and common call sequences, see the [Tool matrix](tool-matrix.md)
+and [Agent workflows](agent-workflows.md). For CodeGG harness-development
+contracts, see the separate [CodeGG integration reference](codegg-integration.md).

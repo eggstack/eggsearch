@@ -34,8 +34,9 @@ eggsearch integrate codegg --transport http --apply
 ```
 
 The HTTP form selects the eggsearch search backend and adds CodeGG's normal
-remote `mcp.eggsearch` entry at `http://127.0.0.1:11320/mcp`. CodeGG still
-requires `web_search` and `web_fetch`; its provider diagnostic is best effort.
+remote `mcp.eggsearch` entry at `http://127.0.0.1:11320/mcp`. CodeGG requires
+`web_search` and the canonical `fetch` tool; its provider diagnostic is best
+effort.
 
 ## Native CLI clients
 
@@ -91,8 +92,8 @@ Current references: [Zed MCP](https://zed.dev/docs/ai/mcp),
 ## Verification and executable paths
 
 An applied registration is verified with MCP `initialize` and `tools/list`.
-The minimum required tools are `web_search` and `web_fetch`; missing
-recommended tools are reported as a warning. HTTP verification first checks
+The minimum required tools are `web_search` and `fetch`; missing recommended
+tools are reported as a warning. HTTP verification first checks
 `/healthz` and rejects an unhealthy or non-eggsearch service.
 
 When invoked from a development checkout, stdio apply requires an installed

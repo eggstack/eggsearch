@@ -85,8 +85,9 @@ Features](features.md#bounded-challenge-solving) for limits and restrictions.
 
   Its ALTCHA proof-of-work wall is solved by the default solver settings.
 
-The upstream may require an ALTCHA proof-of-work challenge. Challenge solving is
-off by default, uses configured limits, and can add CPU time. See
+The upstream may require an ALTCHA proof-of-work challenge. The bounded solver
+is enabled by default and can add CPU time. Set `[search.challenge].enabled` to
+`false` to disable it; a challenged request then reports `blocked`. See
 [Capabilities and Optional Features](features.md#bounded-challenge-solving).
 
 ## Keyless-Optional Developer Index

@@ -21,10 +21,10 @@ address and this release rejects every non-loopback address, including
 `http://127.0.0.1:11320/mcp`.
 
 The HTTP transport uses rmcp 3.2.0's Streamable HTTP implementation and keeps
-the same server identity, ten tools, schemas, validation, and tool behavior as
-stdio. Legacy clients can use the initialize/initialized session flow. Current
-MCP clients can use the stateless discovery/request-metadata flow supported by
-rmcp.
+the same server identity, nine advertised tools, schemas, validation, and
+tool behavior as stdio. Legacy clients can use the initialize/initialized
+session flow. Current clients can use rmcp's stateless discovery and
+request-metadata flow.
 
 The listener applies loopback Host and local Origin validation. MCP POST bodies
 are capped at 1 MiB, request headers are bounded, and requests have a
@@ -39,7 +39,7 @@ fetch, provider, and sanitization limits.
 {
   "service": "eggsearch",
   "status": "ready",
-  "version": "0.3.8",
+  "version": "0.4.4",
   "protocol": "streamable-http"
 }
 ```

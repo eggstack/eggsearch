@@ -14,7 +14,8 @@ For the full operator threat model, including trust boundaries, configuration es
 
 ## Fetch Boundaries
 
-`web_fetch` accepts one explicit HTTP(S) URL and does not crawl. The HTTP
+The canonical `fetch` tool accepts one or more tagged items. Each web item
+contains one explicit HTTP(S) URL, and eggsearch does not crawl. The HTTP
 transport does not execute JavaScript. Current source builds also enable browser
 rendering with an `auto` policy, which can escalate once for JavaScript-heavy
 pages, non-interactive verification, or recognized challenge pages. The browser
@@ -119,7 +120,7 @@ Setting `sanitize_output = false` disables framing and marker scanning, but cont
 
 ## `metadata_only`
 
-`web_fetch` supports `extract_mode = "metadata_only"`.
+A web item in `fetch` supports `extract_mode = "metadata_only"`.
 
 - For HTML, eggsearch still reads a bounded response body so it can extract title and description metadata, but it suppresses body text and the structured document.
 - For plain-text or other non-HTML responses, eggsearch suppresses body text and does not build a structured document.
@@ -129,7 +130,12 @@ Use `metadata_only` when you need page metadata but do not need the body content
 
 ## Focused Fetch and Cache Controls
 
-`web_fetch` and per-item `batch_fetch` accept an optional `focus` query for deterministic query-focused chunk selection. Focus ranking is lexical and local (token overlap, exact-phrase, heading, and code-symbol boosts); it performs no extra URL traversal and calls no model. Focused chunk texts are projections of the already-fetched document (batch repo items without a document use line-window text projection), never generated summaries. Focus never changes stable IDs and never enters cache keys.
+Web and repo items in the canonical `fetch` tool accept an optional `focus`
+query for deterministic query-focused chunk selection. Focus ranking is lexical
+and local (token overlap, exact-phrase, heading, and code-symbol boosts); it
+performs no extra URL traversal and calls no model. Focused chunk texts project
+the already-fetched document; repo items without a document use line-window text.
+Focus never changes stable IDs and never enters cache keys.
 
 `cache_policy` (`default`/`bypass`/`refresh`) and `max_cache_age_seconds` affect cache reuse and revalidation only. They never bypass target validation, redirect checks, origin concurrency/circuit breakers, browser-profile isolation, content limits, or sanitization. `bypass` still stores the fresh response unless the origin forbids caching; `refresh` revalidates with `ETag`/`Last-Modified` when validators exist.
 
@@ -182,7 +188,12 @@ Browser rendering is compiled into default builds and enabled by default (`polic
 
 - **Public-network-only**: Browser transport rejects localhost, private IPv4/IPv6, link-local, and cloud metadata addresses regardless of `allow_localhost`/`allow_private_network` settings.
 - **No browser download**: eggsearch discovers an already-installed Chrome/Chromium. It never downloads, installs, or manages browser updates.
-- **No challenge solving**: Interactive challenges (CAPTCHAs, Turnstile) are detected and reported as structured MCP error codes (`browser_manual_interaction_required`, `browser_profile_requires_attention`). eggsearch never clicks, simulates input, or uses external solving services. This rule is scoped to the browser path; engine-level proof-of-work solving under ADR-0009 is a separate, opt-in, non-interactive mechanism.
+- **No interactive challenge solving in the browser**: CAPTCHAs and Turnstile are
+detected and reported as structured MCP error codes
+(`browser_manual_interaction_required`, `browser_profile_requires_attention`).
+eggsearch never clicks, simulates input, or uses external solving services. This
+rule is scoped to the browser path; engine-level proof-of-work solving under
+ADR-0009 is separate, bounded, enabled by default, and non-interactive.
 - **Profile isolation**: Anonymous browser contexts are ephemeral and incognito. Persistent profile fetches use only the Eggsearch-owned `chrome-data` directory established by `browser-login`; the user's ordinary Chrome profile is never used. Persistent fetches are request-scoped and serialized by the profile lock.
 - **Deterministic executable path**: An explicitly configured invalid browser executable path fails deterministically. It does not silently fall back to auto-discovery.
 - **Request interception**: All observable requests are intercepted and checked against the network policy.

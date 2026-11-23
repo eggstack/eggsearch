@@ -41,7 +41,10 @@ Every tool advertises all four static behavior hints: `readOnlyHint: true`,
 
 ## Legacy call compatibility and web field aliases
 
-`fetch` is the canonical advertised operation. Direct calls using the legacy tool names `web_fetch` and `batch_fetch` remain callable and retain their existing request and response shapes; they are not advertised in `tools/list`, canonical metadata, or `next_actions`. New host integrations should use `fetch`.
+`fetch` is the canonical advertised operation. Direct calls using the legacy
+names `web_fetch`, `batch_fetch`, and `repo_fetch` remain callable with their
+existing request and response shapes, but are not advertised in `tools/list`,
+canonical metadata, or `next_actions`. New integrations should use `fetch`.
 
 The legacy `web_fetch` request continues to accept these field-name aliases:
 
@@ -79,10 +82,6 @@ it cannot see. `provider_status.mcp_advertisement` reports `tool_preset`,
 `schema_profile`, `advertised_count`, `advertised_tools`, and `hidden_tools`.
 There is deliberately no `tools/list._meta` signal.
 
-Pre-M029 ten-tool baseline (full / compact serialized bytes): `full`
-74,422 / 20,196; `research` 66,821 / 17,083; `code` 69,318 / 17,220; `minimal`
-58,874 / 13,516. These are comparison figures, not the current ten-tool advertisement.
-
 ## Progressive disclosure
 
 Keep the immediate palette small and hydrate specialists on demand:
@@ -100,7 +99,12 @@ by content fingerprint plus server version, never by count.
 
 ## MCP result and error contract
 
-Success returns native `structuredContent` with a text JSON fallback; every tool advertises `outputSchema`. Canonical `fetch` always uses an ordered batch-style `results` envelope, even for one item. `tools/list` contains the canonical ten-name surface and is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0 speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy initialize sessions; tool names are stable across eras.
+Success returns native `structuredContent` with a text JSON fallback; every tool
+advertises `outputSchema`. Canonical `fetch` always uses an ordered batch-style
+`results` envelope, even for one item. `tools/list` contains nine canonical tools
+and is name-sorted with an FNV-1a content fingerprint for caching. rmcp 3.2.0
+speaks MCP 2026-07-28 (`server/discover`, stateless metadata) and legacy
+initialize sessions; tool names are stable across eras.
 
 Semantic failures are repairable `isError: true` tool errors with stable `code` (`invalid_semantic_value`, `conflicting_arguments`, `capability_unavailable`, `provider_unavailable`, `policy_denied`, `budget_invalid`, `locator_invalid`, `manual_interaction_required`, `upstream_failed`, `plan_mismatch`, `document_unavailable`) and bounded `repair { field, accepted[], suggested_value }`. Only uninterpretable invocation shapes are JSON-RPC `invalid_params`; server faults are `internal_error`.
 

@@ -87,8 +87,8 @@ returned vulnerability carries severity.
 
 ## PDF Extraction
 
-`web_fetch` extracts PDF text when the binary includes the `pdf` Cargo feature
-and `[fetch].pdf_enabled` is true. Current source builds enable this feature by
+A web item sent to canonical `fetch` extracts PDF text when the binary includes
+the `pdf` Cargo feature and `[fetch].pdf_enabled` is true. Current source builds enable this feature by
 default. Published `v0.4.4` binaries do not include it. The config value defaults
 to the compiled-in feature state.
 
@@ -125,10 +125,10 @@ no browser rendering. See the [Python library guide](python-library.md).
 
 ### Page Selection
 
-The `pages` field on `web_fetch` and each `batch_fetch` web item supports `1`,
-`1,3,5`, `1-5`, and `1,3,7-10` syntax (one-indexed). Batch items validate
-syntax before fetching; page numbers beyond the fetched document fail only that
-item. Non-PDF URLs and `metadata_only` follow the same behavior as `web_fetch`.
+A web item's `pdf.pages` option supports `1`, `1,3,5`, `1-5`, and `1,3,7-10`
+syntax (one-indexed). Multi-item fetches validate syntax before fetching; page
+numbers beyond the fetched document fail only that item. Non-PDF URLs and
+`metadata_only` use the ordinary fetch behavior.
 
 An explicitly named PDF under an enabled `[local]` root is also extracted by
 `fetch` with a repo item whose `host` is `"workspace"`. Detection uses a case-insensitive `.pdf`
@@ -197,7 +197,7 @@ enabled = false
 
 - Solves the methods the engine set actually encounters: Anubis `fast`, `slow` (an alias of `fast`), `preact`, `metarefresh`, and WASM `sha256`, plus ALTCHA `PBKDF2/SHA-256` (Mojeek); `argon2id` and `hashx` stay unsupported
 - Search engines share the solver in `src/meta/challenge/`; fetch-path detect/solve/replay is owned by `src/challenge_replay/`
-- With solving on (the default), `web_fetch`, `batch_fetch`, unified `fetch` web/repo items, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
+- With solving enabled (the default), web items sent to canonical `fetch`, its direct-call `web_fetch` and `batch_fetch` aliases, and CLI `eggsearch fetch` attempt a bounded solve for a published Anubis or ALTCHA challenge
 - A fetch-path ALTCHA solve takes its challenge document and its verification endpoint from the page's own `altcha-widget` publication, same-origin only; a cross-origin, scheme-changing, or malformed publication is refused before any request is issued
 - A fetch-path pass cookie is reused for a later fetch to the same origin, from a process-local cache keyed by origin. The window is the upstream-published lifetime clamped by `cookie_ttl_seconds`; a fetch that crossed an origin stores nothing and reuses nothing
 - A pair set the upstream refuses is evicted, and the same call then solves the challenge it was already holding and replays once with the freshly issued pair set, so a stale pair set costs no second fetch. A transport error or a non-2xx status is not a refusal: the stored pair set is kept and no solve is attempted
@@ -267,14 +267,14 @@ with HTTP 429 and Yahoo answers a headless client with HTTP 500 and no body. Whe
 `[fetch.browser].enabled` is true and a Chrome or Chromium executable was discovered, both engines
 fall back to one bounded render of their result page and parse the rendered DOM; without a browser
 they report the HTTP failure unchanged. The fallback costs a render per search (a few seconds) and
-is bounded by the request deadline. A wall that needs a person — an interactive CAPTCHA — is never
-attempted and is reported instead.
+is bounded by the request deadline. Interactive CAPTCHAs are never attempted
+and are reported instead.
 
 ### Render Policy
 
-The `render` parameter on `web_fetch` controls transport selection. When the
-caller omits it, the configured `[fetch.browser].policy` applies; a per-call
-`render` overrides the configured policy.
+For a web item sent to canonical `fetch`, `render` controls transport selection.
+When the caller omits it, the configured `[fetch.browser].policy` applies; an
+item-level `render` overrides the configured policy.
 
 | Value | Behavior |
 |-------|----------|
@@ -283,8 +283,8 @@ caller omits it, the configured `[fetch.browser].policy` applies; a per-call
 | `browser` | Browser directly, no HTTP prefetch. Fails if no Chrome/Chromium executable is available |
 
 `auto` does not escalate for authentication or rate-limited responses. If browser
-rendering finds an interactive challenge, `web_fetch` returns a manual-interaction
-error; it never clicks or simulates it. A non-interactive script wall is completed by
+rendering finds an interactive challenge, it reports a manual-interaction error;
+eggsearch never clicks or simulates it. A non-interactive script wall is completed by
 letting the page's own script run, and the render polls the live classification for up
 to `verification_wait_ms`. A wall that still has not resolved is returned marked as a
 challenge page rather than as a document.
@@ -312,8 +312,8 @@ when the render ended on a `2xx`/`3xx` page or completed a recognised wall; a
 `5xx` page the browser only re-rendered keeps the original `http_status` error,
 with the attempted escalation named in the message. Under auto a gated status is
 not retried, because a retry meets the same wall. A `401`, `402`, `403`, or
-`404` never renders. The same rule covers `web_fetch`, every `fetch` web item,
-and CLI `eggsearch fetch`.
+`404` never renders. This rule covers web items sent to `fetch`, direct-call
+compatibility aliases, and CLI `eggsearch fetch`.
 
 ### Safety Properties
 
@@ -346,8 +346,8 @@ Fresh raw cache entries can satisfy a new extraction mode, link setting, charact
 
 ### Viewport Screenshots
 
-`web_fetch` and each `batch_fetch` web item accept the opt-in `include_screenshot`
-boolean. When true, eggsearch forces browser rendering and captures the current
+A web item sent to `fetch` accepts the opt-in `include_screenshot` boolean. When
+true, eggsearch forces browser rendering and captures the current
 viewport as PNG after page extraction. The browser must be enabled and an installed
 Chrome/Chromium executable must be available; capability failures are explicit,
 with no HTTP-only fallback. An explicit `render = "http_only"` conflicts with
@@ -357,9 +357,8 @@ configured render policy.
 The screenshot is delivered as native MCP image content, separate from the
 unchanged structured JSON response. It is limited to 1280×720 pixels and 4 MiB.
 Recognized PDF responses are not captured; repository and workspace items do not
-support screenshots. Screenshot requests bypass cache reads and writes. In
-`batch_fetch`, each image is associated with its original zero-based item index
-and label, in input order; any batch containing a screenshot request runs
+support screenshots. Screenshot requests bypass cache reads and writes. In a multi-item `fetch`, each image is associated with its original zero-based
+item index and label, in input order. A request containing a screenshot runs
 synchronously rather than as a deferred task.
 
 ### Configuration Reference
@@ -411,10 +410,11 @@ eggsearch browser-profiles remove my-portal
 
 ### Using a Profile
 
-Once established, use it in `web_fetch`:
+Once established, select it on a web item sent to canonical `fetch`:
 
 ```json
 {
+  "type": "web",
   "url": "https://example.com/dashboard",
   "browser_profile": "my-portal"
 }

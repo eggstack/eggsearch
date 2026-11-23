@@ -10,41 +10,9 @@ location:
 
 If no config file is found, built-in defaults apply.
 
-## Minimal Default
-
-```toml eggsearch-config
-[search]
-mode = "live"
-default_max_results = 10
-max_results_cap = 50
-max_query_chars = 512
-timeout_ms = 8000
-default_providers = ["duckduckgo", "brave", "yahoo"]
-sanitize_output = true
-cache_ttl_seconds = 300
-cache_max_entries = 128
-
-[search.providers]
-duckduckgo = true
-brave = true
-startpage = true
-yahoo = true
-
-[fetch]
-enabled = true
-timeout_ms = 8000
-max_bytes = 2000000
-max_chars_default = 12000
-max_chars_cap = 50000
-redirect_limit = 5
-allow_private_network = false
-allow_localhost = false
-sanitize_output = true
-
-[local]
-enabled = false
-roots = []
-```
+Most users can leave the config file absent and use the built-in defaults. If
+you want a complete starter file, see [Keyless Default](#keyless-default)
+below. The following sections describe optional settings and advanced controls.
 
 ## MCP Tool Schema Profile
 

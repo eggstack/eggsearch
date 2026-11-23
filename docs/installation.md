@@ -64,9 +64,9 @@ The pinned installer requests assets from the exact `vX.Y.Z` release. The
 unpinned form uses `releases/latest/download` for convenience.
 
 For configuring Eggsearch as a local stdio server in LM Studio, see
-[LM Studio integration](lm-studio.md). The compact profile requires an
-executable built with that feature; older published versions use the full
-profile.
+[LM Studio integration](lm-studio.md). Compact schema settings require an
+executable version that supports `[mcp].schema_profile`; use the full profile
+with older executables.
 
 ## Release targets
 
@@ -130,19 +130,8 @@ exact matching GitHub Release asset, with the same target names and checksum
 contract documented above. See [Self-update](update.md) for verification,
 Cargo fallback, permission, and lifecycle behavior.
 
-## Fleet one-liners
+## Client setup
 
-Binary-only installation is the default.
-Add `--service` only when the host should run the persistent loopback endpoint:
-
-```bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash
-curl -fsSL https://github.com/eggstack/eggsearch/releases/latest/download/install.sh | bash -s -- --service
-```
-
-After installation, print or apply a client registration explicitly:
-
-```bash
-eggsearch integrate codegg --apply
-eggsearch integrate codex --apply
-```
+Use [MCP integrations](integrations.md) to preview or apply a client
+registration. Add `--service` during installation only when the host should run
+a persistent loopback endpoint; see [Managed service](service.md).

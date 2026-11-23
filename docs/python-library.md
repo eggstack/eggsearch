@@ -169,37 +169,5 @@ them from Cargo registries. Native wheels avoid those build requirements at
 install and runtime. Upgrade with `python -m pip install --upgrade eggsearch`
 and remove with `python -m pip uninstall eggsearch`.
 
-## Post-publication SBC benchmark
-
-M004's native aarch64 smoke and benchmark passed on a Libre Computer
-AML-S905X-CC. Results and the raw JSON are in
-`plans/closure/python-pypi-distribution/004-status.md` and
-`plans/closure/python-pypi-distribution/004-aarch64.json`. ARMv7 physical
-testing is deferred; keep that wheel experimental. To reproduce the aarch64
-run, install the exact public wheel with
-`--only-binary=:all:`, then run the standard-library harness:
-
-```bash
-python -m pip download --only-binary=:all: --no-deps --dest wheelhouse eggsearch==0.4.4
-python -m pip install --only-binary=:all: --no-deps --report install-report.json eggsearch==0.4.4
-python /path/to/eggsearch/bindings/python/scripts/smoke_installed_wheel.py
-python /path/to/eggsearch/bindings/python/benchmarks/sbc_runtime.py \
-  --version 0.4.4 --source-sha 1135608af5d625cd72db6704adf3bcabd1a58ab1 \
-  --wheel /path/to/wheelhouse/eggsearch-0.4.4-*.whl \
-  --pip-report install-report.json --output sbc-runtime.json
-```
-
-The harness verifies that the wheel matches the public PyPI URL and SHA-256 in
-the pip install report, including the installed native extension. It uses a
-local Mode-Off search fixture and a loopback-only fetch fixture. It records cold
-import, first operation, repeated sequential event loops, search latency at
-1–32 concurrent calls, fetch latency and output near configured character
-bounds, cancellation and close, memory, thread and descriptor counts, wheel
-size, OS, CPU, RAM, libc, storage, and available thermal or throttling
-information. It performs no wheel build and calls no remote providers. Keep
-the JSON output with the exact published wheel hash and hardware inventory for
-the M004 closure record.
-
-See [Tool Matrix](tool-matrix.md), [Agent Workflows](agent-workflows.md), and
-[Python Library Architecture](../architecture/python-library.md) for tool
-semantics, result trust, and implementation ownership.
+For tool details and common call sequences, see the [Tool Matrix](tool-matrix.md)
+and [Agent Workflows](agent-workflows.md).

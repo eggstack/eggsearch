@@ -59,7 +59,8 @@ eggsearch does not enforce host-agent policy. It provides signals (trust markers
 
 ### Fetch Behavior
 
-- `web_fetch` accepts one explicit HTTP(S) URL. It does not crawl.
+- The canonical `fetch` tool accepts one or more explicitly selected tagged items.
+  Each web item contains one explicit HTTP(S) URL. Eggsearch does not crawl.
 - Ordinary HTTP fetch does not execute JavaScript or submit forms. Current source builds also enable browser rendering, which can execute page JavaScript. It is not a malware sandbox. Persistent browser profiles are opt-in and retain cookies and storage.
 - Bounded body bytes (default 2 MB) and extracted text (default 12k characters, cap 50k).
 - HTTP redirects are limited (default 5), and each target is revalidated against blocked address ranges.
