@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`
+Source plan: `plans/archive/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`
 
 Roadmap: `plans/subsystems/knowledge-delta-roadmap.md` M004
 

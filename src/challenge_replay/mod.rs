@@ -1,25 +1,4 @@
-//! Shared challenge solve-and-replay orchestration for every fetch surface.
-//!
-//! ADR-0017 assigns the detect, solve, replay, and classify sequence to one
-//! module outside `src/fetch/**` and `src/meta/**`, so the MCP tool layer and
-//! the CLI share a single implementation. `src/fetch/**` keeps detection and
-//! marking only and never imports the solver.
-//!
-//! The contract is unchanged from the solve this module replaced: at most one
-//! solve and one replay per fetch call, inside the operator's difficulty,
-//! attempt, and wall-clock ceilings; the replayed cookie is sent on the first
-//! hop only; and every other outcome leaves the original response untouched.
-//!
-//! ADR-0018 refines that contract for one case. A stored pair set the upstream
-//! refuses is presented once as a reuse probe; the probe is neither a solve
-//! nor a replay of a solved pair set, because no solve produced it. The
-//! refusal evicts the entry and the same call continues into the ordinary
-//! solve path, so the call's single solve and single replay are spent on the
-//! freshly issued pair set.
-//!
-//! The Anubis and ALTCHA branches share that sequence. The ALTCHA branch
-//! lives in `altcha`, which owns the page-shaped endpoint derivation the
-//! ALTCHA solve needs.
+//! Shared bounded challenge solve-and-replay orchestration for fetch surfaces.
 
 pub mod altcha;
 pub mod cache;
@@ -104,19 +83,9 @@ pub struct SolvedReplay {
     pub lifetime: PublishedLifetime,
 }
 
-/// Solve the challenge published on `response` and replay the request once.
+/// Reuse a valid same-origin pass cookie or solve and replay once.
 ///
-/// A stored pair set for the request's own origin is replayed before any
-/// solve is attempted. A pair set the upstream refuses is evicted, and the
-/// same call continues into the ordinary solve path with the challenge page it
-/// already holds, so a caller never has to await a second fetch for the
-/// document.
-///
-/// Returns the replayed response when the challenge was solved and the replay
-/// is not itself a challenge page. Every other outcome — solving disabled, no
-/// parseable challenge, a refusal at any ceiling, an error, an exhausted
-/// deadline, or a challenged replay — returns `None`, so the caller keeps the
-/// original response exactly as it was.
+/// Returns `None` for any unsuccessful outcome; callers retain the original response.
 pub async fn replay_challenge(
     client: &FetchClient,
     url: &str,

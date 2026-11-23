@@ -10,7 +10,7 @@ the local workspace boundary in `architecture/local-workspace.md`. No new ADR.
 
 References: `plans/000-long-term-specification.md` §2; `plans/003-planning-process.md` §7;
 `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M037, M040, M041;
-original plans `plans/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md`
+original plans `plans/archive/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md`
 and `040-local-content-aware-candidate-generation.md`; closures
 `plans/closure/agentic-retrieval-integrity/037-status.md` and `040-status.md`;
 `architecture/local-workspace.md`; `docs/test-inventory.md`.

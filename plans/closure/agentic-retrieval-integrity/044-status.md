@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/044-challenge-solving-on-by-default.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/044-challenge-solving-on-by-default.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M044
 
@@ -103,7 +103,7 @@ document, a script-rendered shell whose text lives in the embedded i18n dictiona
 results after the browser completes it, reusing the pass cookie on the next search; Yahoo renders a
 complete results page with no visible challenge. The defect is our client's detection and challenge
 handling, not the address. Brave's classification is corrected under
-`plans/implementation/agentic-retrieval-integrity/045-browser-fidelity-provider-access.md`
+`plans/archive/implementation/agentic-retrieval-integrity/045-browser-fidelity-provider-access.md`
 work package 1 (a non-success challenge page is now `blocked`, not `rate_limited`); work package 2
 of that milestone owns browser-rendered SERP access, which is what actually produces results.
 

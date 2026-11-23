@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/knowledge-delta/005-verified-model-cutoff-coverage.md`
+Source plan: `plans/archive/implementation/knowledge-delta/005-verified-model-cutoff-coverage.md`
 
 Roadmap: `plans/subsystems/knowledge-delta-corrective-addendum.md` M005
 
@@ -146,7 +146,7 @@ full `make check` passes on the same tree. `Egress feature qualification` and
 `Release drift guard` succeeded on the candidate in the same push.
 
 The hosted pipeline is green on the final attempt; the two earlier macOS failures are recorded
-rather than omitted. The determinism gap they exposed is registered as M043 in `plans/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md`.
+rather than omitted. The determinism gap they exposed is registered as M043 in `plans/archive/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md`.
 
 ## Recommendation
 

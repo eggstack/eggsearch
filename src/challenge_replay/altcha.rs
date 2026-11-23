@@ -1,13 +1,4 @@
-//! ALTCHA solving for the general fetch path.
-//!
-//! ADR-0017 admits ALTCHA PBKDF2 challenges into the fetch-path permitted
-//! class. `src/challenge_replay/mod.rs` owns the detect → solve → replay →
-//! classify sequence; this module owns the two page-shaped decisions that
-//! sequence needs: which challenge document the page publishes, and which
-//! same-origin endpoint verifies a solution.
-//!
-//! The derivation rule is fixed and bounded. Every refusal happens before a
-//! request is issued and reuses an existing refusal key.
+//! Bounded, same-origin ALTCHA challenge derivation and replay.
 
 use std::time::{Duration, Instant};
 

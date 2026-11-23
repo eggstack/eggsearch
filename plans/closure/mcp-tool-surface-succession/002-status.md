@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/mcp-tool-surface-succession/002-evidence-bundle-input-projection.md`
+Source plan: `plans/archive/implementation/mcp-tool-surface-succession/002-evidence-bundle-input-projection.md`
 
 Roadmap: `plans/subsystems/mcp-tool-surface-succession-roadmap.md` M002
 

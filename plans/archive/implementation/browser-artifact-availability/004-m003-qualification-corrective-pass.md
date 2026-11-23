@@ -4,7 +4,7 @@ Status: closed (corrective criteria and full exact-candidate M003 requalificatio
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M004
 Primary class: infrastructure and corrective evidence
 Baseline: `f76851324f917999152871f49d2302bef87d437d` (branch `feat/auto-20261110-0a674cdc`)
-References: `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/closure/browser-artifact-availability/003-status.md`; `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`; `plans/subsystems/python-pypi-distribution-roadmap.md` M003; `plans/closure/python-pypi-distribution/003-status.md`; `plans/subsystems/eggpack-release-adoption-roadmap.md` M001; `plans/closure/eggpack-release-adoption/001-status.md`.
+References: `plans/archive/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/closure/browser-artifact-availability/003-status.md`; `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`; `plans/subsystems/python-pypi-distribution-roadmap.md` M003; `plans/closure/python-pypi-distribution/003-status.md`; `plans/subsystems/eggpack-release-adoption-roadmap.md` M001; `plans/closure/eggpack-release-adoption/001-status.md`.
 Dependencies: Interface: M003's unchanged ten-tool schemas and qualification contract. Operational: the approved publicly reachable HTTPS origin for synthetic fixture pages, used during requalification. The full M003 acceptance suite is now requalified on exact candidate `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`; evidence is in the M003 closure record.
 
 ## Objective

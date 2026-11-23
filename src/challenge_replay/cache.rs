@@ -1,12 +1,4 @@
-//! Process-local, origin-keyed pass-cookie cache for the fetch path.
-//!
-//! ADR-0017 keeps the fetch-path solve and replay in one shared module. This
-//! module owns the reuse half of that contract: the pair sets a fetch issued,
-//! keyed by the origin that issued them.
-//!
-//! The cache is process-local. A stored pair set lives in memory for the life
-//! of the process and never reaches the filesystem, a response, a diagnostic,
-//! or a log.
+//! In-memory pass-cookie cache, scoped by origin and bounded by size and expiry.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};

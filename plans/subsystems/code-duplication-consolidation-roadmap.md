@@ -162,7 +162,7 @@ the safety net for M004; M005, M006, and M008 are independent; M007 waits for it
 Class: infrastructure. Objective: one integration-test harness and `Default` on the three tool
 argument structs that tests build field by field, so a new argument stops touching dozens of
 sites. Implementation plan:
-`plans/implementation/code-duplication-consolidation/001-test-support-harness-and-default-arguments.md`.
+`plans/archive/implementation/code-duplication-consolidation/001-test-support-harness-and-default-arguments.md`.
 Dependencies: none. Exit: eight suites compile against one helper module, the field-by-field
 literal count drops materially, and no production behaviour or schema changes.
 
@@ -170,7 +170,7 @@ literal count drops materially, and no production behaviour or schema changes.
 
 Class: polish. Objective: express each provider's capability set as `none()` plus the flags it
 actually enables, pinned by a full-matrix test. Implementation plan:
-`plans/implementation/code-duplication-consolidation/002-provider-capability-declaration-compaction.md`.
+`plans/archive/implementation/code-duplication-consolidation/002-provider-capability-declaration-compaction.md`.
 Dependencies: none. Exit: every `KNOWN_PROVIDER_IDS` descriptor is identical to the pinned
 matrix, and the declaration block shrinks by hundreds of lines.
 
@@ -178,7 +178,7 @@ matrix, and the declaration block shrinks by hundreds of lines.
 
 Class: infrastructure. Objective: one table-driven suite covering the invariants the nine forge
 API engines currently re-test by copy, then delete the copies. Implementation plan:
-`plans/implementation/code-duplication-consolidation/003-engine-api-conformance-harness.md`.
+`plans/archive/implementation/code-duplication-consolidation/003-engine-api-conformance-harness.md`.
 Dependencies: none. Exit: the shared invariants are asserted once per engine from one table and
 the duplicated engine tests are gone, with no production change.
 
@@ -186,7 +186,7 @@ the duplicated engine tests are gone, with no production change.
 
 Class: infrastructure. Objective: one bounded JSON GET helper plus shared small helpers for the
 forge engines, so each engine owns only its request parameters and its `convert`. Implementation
-plan: `plans/implementation/code-duplication-consolidation/004-shared-engine-json-transport.md`.
+plan: `plans/archive/implementation/code-duplication-consolidation/004-shared-engine-json-transport.md`.
 Dependencies: hard M003 (the conformance suite is the safety net). Exit: the duplicated
 send/status/parse block is gone, error mapping is unchanged, and M003 stays green.
 
@@ -195,7 +195,7 @@ send/status/parse block is gone, error mapping is unchanged, and M003 stays gree
 Class: infrastructure. Objective: one orchestration for the gated-status escalation used by the
 MCP fetch surfaces and the CLI, with the render supplied as a callback so no layer inversion is
 introduced. Implementation plan:
-`plans/implementation/code-duplication-consolidation/005-shared-fetch-escalation-seam.md`.
+`plans/archive/implementation/code-duplication-consolidation/005-shared-fetch-escalation-seam.md`.
 Dependencies: none; interface ADR-0017 §4. Exit: one implementation of the deadline floor,
 timeout, return rule, and completion accounting; the CLI keeps its surface and the MCP keeps its
 permits, profiles, and screenshots.
@@ -204,7 +204,7 @@ permits, profiles, and screenshots.
 
 Class: polish. Objective: one set of bounds helpers behind the four request validators, keeping
 each validator's error type and messages. Implementation plan:
-`plans/implementation/code-duplication-consolidation/006-core-request-validation-helpers.md`.
+`plans/archive/implementation/code-duplication-consolidation/006-core-request-validation-helpers.md`.
 Dependencies: none. Exit: four validators delegate the shared checks; every existing validator
 test and error string is unchanged.
 
@@ -213,7 +213,7 @@ test and error string is unchanged.
 Class: compatibility + infrastructure. Objective: one `RepoTarget` field set composed into the
 four repository-target shapes, one locator-to-request conversion, and a parity test, under
 ADR-0023. Implementation plan:
-`plans/implementation/code-duplication-consolidation/007-one-repository-target-field-set.md`.
+`plans/archive/implementation/code-duplication-consolidation/007-one-repository-target-field-set.md`.
 Dependencies: hard ADR-0023 acceptance. Exit: one field list, unchanged JSON contract, measured
 schema bytes inside budget, and `repo_fetch` still answers identically as an alias.
 
@@ -221,7 +221,7 @@ schema bytes inside budget, and `repo_fetch` still answers identically as an ali
 
 Class: polish. Objective: replace 39 forwarding `impl SearchEngine` blocks with one macro and
 per-engine call expressions. Implementation plan:
-`plans/implementation/code-duplication-consolidation/008-searchengine-implementation-macro.md`.
+`plans/archive/implementation/code-duplication-consolidation/008-searchengine-implementation-macro.md`.
 Dependencies: soft M004 (same directory, import churn). Exit: the trait scaffolding exists once,
 every engine name and behaviour is unchanged, and the engine suite count is unchanged.
 
@@ -278,11 +278,11 @@ target; it is the absence of a second place to edit for the fields, helpers, and
 
 | Milestone | Class | Status | Implementation plan | Blockers |
 |---|---|---|---|---|
-| M001 | infrastructure | closed | `plans/implementation/code-duplication-consolidation/001-test-support-harness-and-default-arguments.md` | Closed; `plans/closure/code-duplication-consolidation/001-status.md` |
-| M002 | polish | closed | `plans/implementation/code-duplication-consolidation/002-provider-capability-declaration-compaction.md` | Closed; `plans/closure/code-duplication-consolidation/002-status.md` |
-| M003 | infrastructure | closed | `plans/implementation/code-duplication-consolidation/003-engine-api-conformance-harness.md` | Closed; `plans/closure/code-duplication-consolidation/003-status.md` |
-| M004 | infrastructure | closed | `plans/implementation/code-duplication-consolidation/004-shared-engine-json-transport.md` | Closed; `plans/closure/code-duplication-consolidation/004-status.md` |
-| M005 | infrastructure | closed | `plans/implementation/code-duplication-consolidation/005-shared-fetch-escalation-seam.md` | Closed; `plans/closure/code-duplication-consolidation/005-status.md` |
-| M006 | polish | closed | `plans/implementation/code-duplication-consolidation/006-core-request-validation-helpers.md` | Closed; `plans/closure/code-duplication-consolidation/006-status.md` |
-| M007 | compatibility | closed | `plans/implementation/code-duplication-consolidation/007-one-repository-target-field-set.md` | Closed; `plans/closure/code-duplication-consolidation/007-status.md` |
-| M008 | polish | closed | `plans/implementation/code-duplication-consolidation/008-searchengine-implementation-macro.md` | Closed; `plans/closure/code-duplication-consolidation/008-status.md` |
+| M001 | infrastructure | closed | `plans/archive/implementation/code-duplication-consolidation/001-test-support-harness-and-default-arguments.md` | Closed; `plans/closure/code-duplication-consolidation/001-status.md` |
+| M002 | polish | closed | `plans/archive/implementation/code-duplication-consolidation/002-provider-capability-declaration-compaction.md` | Closed; `plans/closure/code-duplication-consolidation/002-status.md` |
+| M003 | infrastructure | closed | `plans/archive/implementation/code-duplication-consolidation/003-engine-api-conformance-harness.md` | Closed; `plans/closure/code-duplication-consolidation/003-status.md` |
+| M004 | infrastructure | closed | `plans/archive/implementation/code-duplication-consolidation/004-shared-engine-json-transport.md` | Closed; `plans/closure/code-duplication-consolidation/004-status.md` |
+| M005 | infrastructure | closed | `plans/archive/implementation/code-duplication-consolidation/005-shared-fetch-escalation-seam.md` | Closed; `plans/closure/code-duplication-consolidation/005-status.md` |
+| M006 | polish | closed | `plans/archive/implementation/code-duplication-consolidation/006-core-request-validation-helpers.md` | Closed; `plans/closure/code-duplication-consolidation/006-status.md` |
+| M007 | compatibility | closed | `plans/archive/implementation/code-duplication-consolidation/007-one-repository-target-field-set.md` | Closed; `plans/closure/code-duplication-consolidation/007-status.md` |
+| M008 | polish | closed | `plans/archive/implementation/code-duplication-consolidation/008-searchengine-implementation-macro.md` | Closed; `plans/closure/code-duplication-consolidation/008-status.md` |

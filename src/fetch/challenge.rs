@@ -71,14 +71,8 @@ pub fn warnings(challenge: Option<ChallengeKind>) -> Vec<crate::core::warning::A
         .unwrap_or_default()
 }
 
-/// Whether a status is one a browser-gated origin serves an automated client.
-///
-/// `429` is the status the wall itself is served with and the `5xx` range is
-/// the empty-bodied refusal a non-browser identity receives, so neither
-/// carries a marker a page classifier could find. Both are the class a browser
-/// may serve instead, and search escalation and fetch escalation share this
-/// one definition; a refusal, an authentication demand, or a not-found status
-/// is never a reason to render.
+/// Whether browser rendering should retry an automated-client status.
+/// Search and fetch share `429`/`5xx`; auth, denial, and not-found do not escalate.
 #[must_use]
 pub const fn is_browser_gated_status(status: u16) -> bool {
     matches!(status, 429 | 500..=599)

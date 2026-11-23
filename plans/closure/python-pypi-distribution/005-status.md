@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/python-pypi-distribution/005-packaged-artifact-asset-completeness.md`
+Source plan: `plans/archive/implementation/python-pypi-distribution/005-packaged-artifact-asset-completeness.md`
 
 Roadmap: `plans/subsystems/python-pypi-distribution-roadmap.md` M005
 

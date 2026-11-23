@@ -7,7 +7,7 @@ Candidate: the working tree on `feat/auto-20261117-044c4885` above baseline
 commit. The canonical gate ran on exactly this tree; its output and the diff fingerprint are in
 `plans/closure/code-duplication-consolidation/gate.md`.
 
-Source plan: `plans/implementation/code-duplication-consolidation/006-core-request-validation-helpers.md`
+Source plan: `plans/archive/implementation/code-duplication-consolidation/006-core-request-validation-helpers.md`
 
 Roadmap: `plans/subsystems/code-duplication-consolidation-roadmap.md` M006
 

@@ -187,22 +187,15 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult,
     };
 
-    // Policy check
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
         return Err(ToolError::Validation(web_fetch_denied_message()));
     }
 
-    // Validate items non-empty
     if args.items.is_empty() {
         return Err(ToolError::Validation("items must not be empty".to_string()));
     }
 
-    // Validate top-level budget arguments. Per-item `max_chars` is
-    // validated below in the pre-validation loop. A zero top-level
-    // budget is rejected here because silently promoting it to 1
-    // (via `.max(1)` later) would contradict the bounded-budget
-    // contract and could return content when the caller requested
-    // zero total output.
+    // Reject zero budgets instead of silently raising them to one.
     if let Some(0) = args.max_items {
         return Err(ToolError::Validation("max_items must be > 0".to_string()));
     }
@@ -228,7 +221,6 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     }
     let addressed = args.offset.is_some() || args.limit.is_some();
 
-    // Resolve effective limits
     let batch_max_items = args
         .max_items
         .unwrap_or(state.config.fetch.batch_max_items)
@@ -242,7 +234,6 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         .min(state.config.fetch.batch_max_total_chars_cap);
     let continue_on_error = args.continue_on_error.unwrap_or(true);
 
-    // Validate item count
     if args.items.len() > state.config.fetch.batch_max_items_cap {
         return Err(ToolError::Validation(format!(
             "items count ({}) exceeds batch_max_items_cap ({})",
@@ -344,7 +335,6 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     };
 
     // Pre-validate all items before launching any fetches.
-    // Locator checks use shared fetch-locator and repo-request validators.
     for (i, item) in effective_items.iter().enumerate() {
         let focus_q = item.focus_query();
         let focus_chunks = item.focus_max_chunks();
@@ -545,20 +535,9 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     let concurrency = state.config.fetch.batch_concurrency;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
 
-    // Execute fetches in ordered bounded waves, preserving input order.
-    //
-    // When continue_on_error=true (default): each wave spawns up to
-    // `concurrency` tasks concurrently via JoinSet. Budget tracking
-    // and abort checks happen between waves.
-    //
-    // When continue_on_error=false: effective_concurrency is set to 1
-    // so items are fetched one at a time, preserving strict
-    // abort-on-first-failure semantics.
+    // Execute ordered waves; `continue_on_error = false` limits each wave to one item.
     let effective_concurrency = if continue_on_error { concurrency } else { 1 };
-    // Results are recorded by item index and emitted in index order. Wave
-    // results arrive in JoinSet completion order and skipped items are
-    // discovered during the spawn loop, so a plain `Vec` of pushes would
-    // interleave them and desynchronize the index-based accounting below.
+    // Store by item index because JoinSet results arrive in completion order.
     let mut results: Vec<Option<BatchFetchResult>> = vec![None; effective_items.len()];
     let mut images: Vec<Option<ImageAttachment>> = std::iter::repeat_with(|| None)
         .take(effective_items.len())
@@ -570,7 +549,6 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     let mut aborted = false;
 
     for wave_start in (0..effective_items.len()).step_by(effective_concurrency) {
-        // Pre-wave checks: skip remaining items if aborted or budget exhausted
         if aborted || budget_exhausted {
             if budget_exhausted && budget_warning.is_none() {
                 if let Some(item) = effective_items.get(wave_start) {
@@ -611,25 +589,17 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
         let wave_end = (wave_start + effective_concurrency).min(effective_items.len());
         let remaining_budget = total_cap.saturating_sub(total_payload_chars);
 
-        // Divide remaining budget across wave items to prevent concurrent
-        // overshoot. Each item gets at most per_wave_item_budget chars.
+        // Divide the remaining output budget across concurrent items.
         let wave_len = wave_end - wave_start;
         let per_wave_item_budget = remaining_budget
             .checked_div(wave_len)
             .unwrap_or(remaining_budget);
         let item_budget_cap = per_item_cap.max(1).min(per_wave_item_budget.max(1));
-        // Maximum number of wave items that can be safely spawned without
-        // overshooting the total budget. Every spawn reserves at least one
-        // character of `remaining_budget`, so the reservation count and the
-        // item count share the same unit: when remaining_budget is smaller
-        // than the wave length, the tail is skipped before launching.
+        // Limit launches to what the remaining output budget can reserve.
         let launchable = remaining_budget;
 
         let mut join_set = tokio::task::JoinSet::new();
         let mut wave_indices = Vec::new();
-        // Number of items already spawned in this wave. Each spawn
-        // reserves at least 1 character of the remaining budget so the
-        // aggregate response cannot exceed max_total_chars.
         let mut spawned_in_wave: usize = 0;
 
         for (i, item) in effective_items
@@ -688,9 +658,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
             join_set.spawn(fetch_future);
         }
 
-        // Collect all wave results keyed by their returned index.
-        // JoinSet::join_next() returns whichever task completes first,
-        // so we must not associate results by iteration order.
+        // JoinSet yields completion order; collect results by item index.
         let mut wave_results: std::collections::BTreeMap<
             usize,
             (BatchFetchResult, Option<ImageAttachment>),
@@ -703,23 +671,17 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     wave_results.insert(local, (batch_result, image));
                 }
                 Ok(Err(tool_err)) => {
-                    // Tool error without an index — cannot know which item.
-                    // This should be rare; make_batch_fetch_future returns
-                    // BatchFetchResult for known failures. Record as a
-                    // special internal error that will be attached to a
-                    // synthesized failure after collection.
+                    // Attach unindexed errors to a synthesized failure after collection.
                     tracing::warn!("batch_fetch tool error without index: {tool_err}");
                 }
                 Err(join_err) => {
-                    // Task panic/cancellation — index is lost. Will be
-                    // synthesized as a failure for missing indices below.
+                    // Panics and cancellations become failures for missing indices below.
                     tracing::warn!("batch_fetch task panicked: {join_err}");
                 }
             }
         }
 
-        // Push results in input order, synthesizing failures for any
-        // indices that are missing (panic, cancellation, or tool error).
+        // Preserve input order and synthesize failures for missing task indices.
         for idx in &wave_indices {
             match wave_results.remove(idx) {
                 Some((mut batch_result, image)) => {
@@ -779,7 +741,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     results[*idx] = Some(batch_result);
                 }
                 None => {
-                    // Index was not returned — task panicked or tool error.
+                    // The task panicked or returned an unindexed error.
                     if !continue_on_error {
                         aborted = true;
                     }
@@ -806,14 +768,12 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
 
         progress.dispatch(wave_end, effective_items.len());
 
-        // Check budget after wave completes
         if total_payload_chars >= total_cap {
             budget_exhausted = true;
         }
     }
 
-    // Every item index is filled by the wave loop above (spawned, skipped, or
-    // synthesized as a failure), so flattening yields input order.
+    // The wave loop fills every index, so flattening preserves input order.
     let results: Vec<BatchFetchResult> = results.into_iter().flatten().collect();
 
     if let Some(warning) = budget_warning {
@@ -832,7 +792,6 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
     let mut cache_misses = 0usize;
     let mut cache_bypassed = 0usize;
     let mut cache_not_cacheable = 0usize;
-    // `results` is in input order, so this pairs each result with its own item.
     for (item_index, (result, item)) in results.iter().zip(effective_items.iter()).enumerate() {
         debug_assert_eq!(
             result.index,

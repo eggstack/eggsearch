@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md
+Source plan: plans/archive/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md
 
 Roadmap: plans/subsystems/agentic-retrieval-integrity-roadmap.md
 
@@ -36,5 +36,5 @@ The canonical inventory replaces advertised web_fetch and batch_fetch with fetch
 
 - The implementation candidate is `3416da6231702dcabc22b2c8e32e94dd88cb20e4`; the closure record and status updates are committed separately as required. No push was made.
 - Pyright could not execute due to the machine's missing libsimdjson.33.dylib. Python compileall, wheel build/install, and installed-wheel pytest passed; type checking remains unverified.
-- M014 remains conditionally closed. Startpage's captured approximately 20-minute Expires lifetime exceeds its default 240-second ceiling; Mojeek's captured response publishes no lifetime. Avoiding a dead-cookie replay is stale-token avoidance, not evidence of a solve-count reduction. M030 is proposed to reconcile the acceptance criterion; see `plans/closure/agentic-retrieval-integrity/014-status.md` and `plans/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md`.
+- M014 remains conditionally closed. Startpage's captured approximately 20-minute Expires lifetime exceeds its default 240-second ceiling; Mojeek's captured response publishes no lifetime. Avoiding a dead-cookie replay is stale-token avoidance, not evidence of a solve-count reduction. M030 is proposed to reconcile the acceptance criterion; see `plans/closure/agentic-retrieval-integrity/014-status.md` and `plans/archive/implementation/agentic-retrieval-integrity/030-m014-solve-count-acceptance-reconciliation.md`.
 - No change was made to the closed tool-surface-consolidation roadmap, repo_fetch, or other non-fetch tool contracts.

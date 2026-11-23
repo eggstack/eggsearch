@@ -4,7 +4,7 @@ Status: closed (corrective criteria and full exact-candidate M003 requalificatio
 Source: `plans/subsystems/browser-artifact-availability-roadmap.md` M005
 Primary class: infrastructure correctness
 Baseline: `8faa0f15a40f336f361d523c9b45b3fe3b0106ad` (branch `feat/auto-20261110-0a674cdc`)
-References: `plans/implementation/browser-artifact-availability/001-render-lifecycle-bounds.md` (archived); `plans/closure/browser-artifact-availability/001-status.md`; `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`; ADR-0014 § Decision 7 and § Verification.
+References: `plans/implementation/browser-artifact-availability/001-render-lifecycle-bounds.md` (archived); `plans/closure/browser-artifact-availability/001-status.md`; `plans/archive/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`; `plans/archive/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`; ADR-0014 § Decision 7 and § Verification.
 Dependencies: Interface: M001's `max_requests` session-cap contract. Operational: M003 exact-candidate requalification after this correction; the full M003 acceptance suite is now complete on `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`, with evidence in the M003 closure record.
 
 ## Objective

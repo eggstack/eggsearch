@@ -147,7 +147,7 @@ M001, M002, and M003 are dependency-ready now and are ordered by risk, not value
 Class: infrastructure. Objective: one maintained source per advertised search argument list
 and per goal vocabulary, with the full and compact profiles advertising the same accepted
 values. Implementation plan:
-`plans/implementation/mcp-tool-surface-succession/001-search-schema-single-sourcing.md`.
+`plans/archive/implementation/mcp-tool-surface-succession/001-search-schema-single-sourcing.md`.
 Exit: a drift in either direction fails a test; no accepted value and no advertised byte
 budget changes.
 
@@ -156,14 +156,14 @@ budget changes.
 Class: infrastructure + polish. Objective: cut the `build_evidence_bundle` input schema to a
 bounded passthrough projection without narrowing the runtime types or changing bundle
 identity. Implementation plan:
-`plans/implementation/mcp-tool-surface-succession/002-evidence-bundle-input-projection.md`.
+`plans/archive/implementation/mcp-tool-surface-succession/002-evidence-bundle-input-projection.md`.
 Exit: measured reduction with unchanged acceptance fixtures and a lowered byte ceiling.
 
 ### M003 — One inventory, every projection
 
 Class: infrastructure. Objective: make the inventory projections agree by test and remove
 duplicated counts from prose. Implementation plan:
-`plans/implementation/mcp-tool-surface-succession/003-tool-inventory-parity.md`.
+`plans/archive/implementation/mcp-tool-surface-succession/003-tool-inventory-parity.md`.
 Exit: injected drift in any projection fails; the two known stale statements are corrected or
 replaced by pointers.
 
@@ -171,7 +171,7 @@ replaced by pointers.
 
 Class: capability + compatibility. Objective: advertise `fetch` as the only repository read
 operation and keep `repo_fetch` as a callable compatibility alias. Implementation plan:
-`plans/implementation/mcp-tool-surface-succession/004-repository-read-consolidation.md`.
+`plans/archive/implementation/mcp-tool-surface-succession/004-repository-read-consolidation.md`.
 Dependencies: hard ADR-0022 acceptance; soft M003.
 Exit: nine advertised tools, `repo_fetch` still callable with its current request and
 response, every projection and document updated in the same candidate.
@@ -216,10 +216,10 @@ recorded decision to keep ten.
 
 | Milestone | Status | Implementation plan | Closure record | Blockers |
 |---|---|---|---|---|
-| M001 | closed | `plans/implementation/mcp-tool-surface-succession/001-search-schema-single-sourcing.md` | `plans/closure/mcp-tool-surface-succession/001-status.md` | None |
-| M002 | closed | `plans/implementation/mcp-tool-surface-succession/002-evidence-bundle-input-projection.md` | `plans/closure/mcp-tool-surface-succession/002-status.md` | None |
-| M003 | closed | `plans/implementation/mcp-tool-surface-succession/003-tool-inventory-parity.md` | `plans/closure/mcp-tool-surface-succession/003-status.md` | None |
-| M004 | closed | `plans/implementation/mcp-tool-surface-succession/004-repository-read-consolidation.md` | `plans/closure/mcp-tool-surface-succession/004-status.md` | ADR-0022 accepted 2026-11-22 |
+| M001 | closed | `plans/archive/implementation/mcp-tool-surface-succession/001-search-schema-single-sourcing.md` | `plans/closure/mcp-tool-surface-succession/001-status.md` | None |
+| M002 | closed | `plans/archive/implementation/mcp-tool-surface-succession/002-evidence-bundle-input-projection.md` | `plans/closure/mcp-tool-surface-succession/002-status.md` | None |
+| M003 | closed | `plans/archive/implementation/mcp-tool-surface-succession/003-tool-inventory-parity.md` | `plans/closure/mcp-tool-surface-succession/003-status.md` | None |
+| M004 | closed | `plans/archive/implementation/mcp-tool-surface-succession/004-repository-read-consolidation.md` | `plans/closure/mcp-tool-surface-succession/004-status.md` | ADR-0022 accepted 2026-11-22 |
 
 ## 13. Post-milestone measurements
 

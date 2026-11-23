@@ -5,7 +5,7 @@ Closure: `plans/closure/adaptive-fetch-routing/003-status.md`
 Source: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M003
 Primary class: capability
 Baseline: `b7f7497` (`feat/auto-20261117-044c4885`)
-References: accepted `plans/adrs/ADR-0015-opt-in-webpage-screenshot-artifacts.md`; accepted ADR-0001 and ADR-0014; `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`; `plans/subsystems/adaptive-fetch-routing-roadmap.md`; `plans/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md`; `plans/closure/adaptive-fetch-routing/002-status.md`; `architecture/fetch.md`; `architecture/mcp.md`; `src/mcp/tools/common.rs`; `src/mcp/server.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch_item.rs`.
+References: accepted `plans/adrs/ADR-0015-opt-in-webpage-screenshot-artifacts.md`; accepted ADR-0001 and ADR-0014; `plans/adrs/ADR-0008-pdf-extraction-fidelity-strategy.md`; `plans/subsystems/adaptive-fetch-routing-roadmap.md`; `plans/archive/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md`; `plans/closure/adaptive-fetch-routing/002-status.md`; `architecture/fetch.md`; `architecture/mcp.md`; `src/mcp/tools/common.rs`; `src/mcp/server.rs`; `src/mcp/tools/web_fetch.rs`; `src/mcp/tools/batch_fetch_item.rs`.
 Dependencies: M002 is closed (`plans/closure/adaptive-fetch-routing/002-status.md`, candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`). Interface: ADR-0014 browser behavior. ADR-0015 is accepted and authorizes the narrow request/result contract and numeric caps. The feasibility preflight was static only; deterministic in-process image serialization is covered by the implementation tests, and live browser fidelity remains unrun as recorded in the closure.
 
 ## Objective

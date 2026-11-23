@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 
