@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "dataset": "FEVER BEIR test",
+  "dataset_sha256": "4f359df04ad5a9a29c2f78009e7229d2a1c8eb0bf42d953853811373dea13305",
+  "dataset_archive_sha256": null,
+  "source_component_sha256": {
+    "beir_fever_queries_parquet_sha256": "b9cf00001ef1aa07a7030118490ce5f8a840e783ad8d972b9afee8ef281d6093",
+    "beir_fever_test_qrels_tsv_sha256": "6599dab4e2189ca5eb5216546021710c06dc8bdd1a0c59cc1fa52129c6e038b3",
+    "beir_fever_revision": "426aea4d30c65c041f093ae072e25fb5a0e64659",
+    "beir_fever_qrels_revision": "64cd0e4ef9b63a88ac8e69d1133a2f649acd4745"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "14370900e193c56273c46409b2736ff7ac795a1a4c96ddf16510c870959d56fe",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "duckduckgo",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "6483e7b6beb1503f4032d3c6c95745c6cf6af2b0a9bc366ab4fe580243ca6174",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "fever:test31743",
+    "fever:test120259",
+    "fever:test194565"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "provider_error": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 0,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 0,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": null,
+  "macro_recall_at_k_over_valid_result_trials": null,
+  "micro_recall_at_k_over_valid_result_trials": null,
+  "rows": [
+    {
+      "query_id": "fever:test31743",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 239,
+      "raw_response_sha256": "423fe71dd5f3519809fed602de723d5d12e2864a49f0f7685930c49646590803"
+    },
+    {
+      "query_id": "fever:test120259",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 215,
+      "raw_response_sha256": "85759e856c15e71e3ff77ce5dec2189fbac16205681970797ce4b1d49f68d545"
+    },
+    {
+      "query_id": "fever:test194565",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 292,
+      "raw_response_sha256": "0254871783fbd41a08318296bf871a0a3ea503007663d124a6b5f3c3fa4a4d99"
+    },
+    {
+      "query_id": "fever:test31743",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 236,
+      "raw_response_sha256": "423fe71dd5f3519809fed602de723d5d12e2864a49f0f7685930c49646590803"
+    },
+    {
+      "query_id": "fever:test120259",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 237,
+      "raw_response_sha256": "85759e856c15e71e3ff77ce5dec2189fbac16205681970797ce4b1d49f68d545"
+    },
+    {
+      "query_id": "fever:test194565",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 225,
+      "raw_response_sha256": "0254871783fbd41a08318296bf871a0a3ea503007663d124a6b5f3c3fa4a4d99"
+    }
+  ],
+  "raw_search_results_included": false
+}

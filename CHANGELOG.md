@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The Python wheel now compiles browser rendering alongside PDF extraction, so a
+  `pip install eggsearch` consumer gets the same capability as the released
+  binary. A system Chrome or Chromium is discovered at runtime and is never
+  bundled. A host without one still installs, imports, searches, and fetches: an
+  explicit browser request returns `browser_unavailable` naming the cause, and
+  an automatic one returns the HTTP result with a `browser_unavailable`
+  warning.
+
 - `web_fetch`, `batch_fetch` web items, the unified `fetch` tool, and CLI `eggsearch fetch` now
   reach a browser-gated origin for the same reason `web_search` already did. A `429` or `5xx` from
   such an origin escalates once to the shipped browser render under `render: "auto"` instead of

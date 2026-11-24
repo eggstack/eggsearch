@@ -547,6 +547,26 @@ Escalation is triggered by wall-shaped `2xx` content or by a browser-gated statu
 (`429` or `5xx`); § Browser challenge completion states the status seam, the
 return rule, and the retry interaction.
 
+### No-Chrome seam audit
+
+| Entry point | Outcome with no discovered browser |
+|---|---|
+| CLI `search` / MCP `web_search` | Search remains available through providers that do not need browser rendering; a missing browser does not disable search. |
+| CLI `fetch` | HTTP-only fetch returns normally. `auto` returns the HTTP document with `browser_unavailable` when a wall warrants rendering; a configured explicit `browser` policy fails with `browser_unavailable` and the discovery reason. |
+| MCP `web_fetch`, `batch_fetch`, unified `fetch` web items | `auto` keeps HTTP content and adds a `browser_unavailable` structured warning only when escalation is warranted. Explicit browser requests return `browser_unavailable`; disabled and uncompiled cases retain `browser_disabled` and `browser_not_compiled_in`. |
+| MCP `provider_status` | `browser_capabilities` retains its existing fields and reports `usable: false` with a discovery reason. |
+| CLI `doctor` | Does not probe Chrome; ordinary diagnostics remain available. |
+| CLI `browser_login` | Creates the requested profile metadata and reports that Chrome was not discovered; it does not require a browser process to start. |
+| CLI `browser_profiles` | List/remove remain local profile-store operations. Inspect reports browser compatibility only when a browser is discovered. |
+| Python `AsyncEggsearch` | Delegates canonical calls through the native execution bridge; fetch render/profile arguments use the same MCP outcome and error codes. |
+
+The CI `browser-absence` job configures a deterministic nonexistent executable, so its
+contract tests do not depend on whether the hosted image happens to contain Chrome. A launch error
+after successful discovery is reported as `browser_unavailable` for explicit rendering, or as the
+original HTTP response plus a reasoned warning for `auto`. The browser launch retains `--no-sandbox`
+for container runtimes; remaining launch diagnostics name the underlying failure and never trigger
+an extra HTTP request.
+
 | File | Responsibility |
 |------|---------------|
 | `mod.rs` | Module declarations + re-exports |

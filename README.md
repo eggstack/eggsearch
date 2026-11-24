@@ -138,7 +138,11 @@ for details.
   targets and checks for blocked address ranges.
 - Current source builds enable PDF extraction and browser rendering by default.
   Published `v0.4.4` binaries predate that change and include neither feature.
-  Browser rendering requires an existing Chrome or Chromium installation.
+  Browser rendering requires an existing Chrome or Chromium installation; when
+  none is found, browser functionality reports itself unavailable and the rest
+  of the product keeps working.
+  The Python wheels are built from the same source and compile both features;
+  the published `eggsearch==0.4.4` wheel is PDF-only.
   The opt-in `egress` proxy route is limited to provider upstreams and is
   excluded from prebuilt binaries.
 

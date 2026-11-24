@@ -79,6 +79,9 @@ pub(crate) fn validate_batch_route_options(
             RenderRequest::Browser => RenderPolicy::Browser,
         };
         if matches!(render_policy, RenderPolicy::HttpOnly) && browser_profile.is_some() {
+            if !state.config.fetch.browser.enabled {
+                return Err(browser_disabled_error());
+            }
             return Err(ToolError::Validation(
                 "browser_profile is not valid with render=http_only".to_string(),
             ));
@@ -89,8 +92,10 @@ pub(crate) fn validate_batch_route_options(
             None if explicit_browser => return Err(browser_disabled_error()),
             Some(lifecycle) if !lifecycle.is_available() && explicit_browser => {
                 return Err(browser_unavailable_error(
-                    "browser rendering is enabled but no Chrome/Chromium executable was found; \
-                     set [fetch.browser].executable or install Chrome/Chromium",
+                    &crate::fetch::browser::browser_discovery_reason(
+                        &state.browser_discovery_state,
+                    )
+                    .unwrap_or_else(|| "browser rendering is unavailable".to_string()),
                 ));
             }
             _ => {}
@@ -441,8 +446,18 @@ async fn run_web_fetch_inner(
     };
     #[cfg(feature = "browser")]
     let mut browser_available = false;
+    #[cfg(feature = "browser")]
+    let browser_unavailable_reason = if state.config.fetch.browser.enabled {
+        crate::fetch::browser::browser_discovery_reason(&state.browser_discovery_state)
+            .unwrap_or_else(|| "browser rendering is unavailable".to_string())
+    } else {
+        "browser rendering is disabled in config".to_string()
+    };
     #[cfg(not(feature = "browser"))]
     let browser_available = false;
+    #[cfg(not(feature = "browser"))]
+    let browser_unavailable_reason =
+        "browser rendering is not compiled into this build".to_string();
 
     #[cfg(not(feature = "browser"))]
     {
@@ -456,6 +471,9 @@ async fn run_web_fetch_inner(
         use crate::fetch::browser::RenderPolicy;
 
         if matches!(render_policy, RenderPolicy::HttpOnly) && args.browser_profile.is_some() {
+            if !state.config.fetch.browser.enabled {
+                return Err(browser_disabled_error());
+            }
             return Err(ToolError::Validation(
                 "browser_profile is not valid with render=http_only".to_string(),
             ));
@@ -472,8 +490,10 @@ async fn run_web_fetch_inner(
             Some(lifecycle) if !lifecycle.is_available() => {
                 if explicit_browser {
                     return Err(browser_unavailable_error(
-                        "browser rendering is enabled but no Chrome/Chromium executable was found; \
-                         set [fetch.browser].executable or install Chrome/Chromium",
+                        &crate::fetch::browser::browser_discovery_reason(
+                            &state.browser_discovery_state,
+                        )
+                        .unwrap_or_else(|| "browser rendering is unavailable".to_string()),
                     ));
                 }
             }
@@ -802,7 +822,7 @@ async fn run_web_fetch_inner(
     let mut retry_after_ms: Option<u64> = None;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
     progress.phase("plan");
-    let mut auto_escalation_unavailable = false;
+    let mut auto_escalation_unavailable: Option<String> = None;
     #[cfg(feature = "browser")]
     let mut gated_escalation_spent = false;
     #[allow(unused_mut)]
@@ -871,6 +891,11 @@ async fn run_web_fetch_inner(
                             used_profile_name.as_deref(),
                             next_action.as_deref(),
                         ));
+                    }
+                    Ok(Err(crate::fetch::browser::BrowserFetchError::LaunchFailed(reason))) => {
+                        return Err(browser_unavailable_error(&format!(
+                            "browser launch failed: {reason}"
+                        )));
                     }
                     Ok(Err(e)) => {
                         return Err(ToolError::internal(format!("browser_fetch_failed: {e}")));
@@ -990,12 +1015,16 @@ async fn run_web_fetch_inner(
                             );
                             if should_escalate {
                                 if !browser_available {
-                                    auto_escalation_unavailable = true;
+                                    auto_escalation_unavailable =
+                                        Some(browser_unavailable_reason.clone());
                                 } else {
                                     let remaining = deadline
                                         .saturating_duration_since(std::time::Instant::now());
                                     if remaining.as_millis() < 2000 {
-                                        auto_escalation_unavailable = true;
+                                        auto_escalation_unavailable = Some(
+                                            "insufficient remaining call budget for browser rendering"
+                                                .to_string(),
+                                        );
                                     } else {
                                         match tokio::time::timeout(
                                         remaining,
@@ -1047,8 +1076,15 @@ async fn run_web_fetch_inner(
                                                 next_action.as_deref(),
                                             ));
                                         }
-                                        Ok(Err(_)) | Err(_) => {
-                                            auto_escalation_unavailable = true;
+                                        Ok(Err(error)) => {
+                                            auto_escalation_unavailable =
+                                                Some(format!("browser escalation failed: {error}"));
+                                        }
+                                        Err(_) => {
+                                            auto_escalation_unavailable = Some(
+                                                "browser escalation exceeded the call budget"
+                                                    .to_string(),
+                                            );
                                         }
                                     }
                                     }
@@ -1064,7 +1100,8 @@ async fn run_web_fetch_inner(
                             )
                             .is_some()
                             {
-                                auto_escalation_unavailable = true;
+                                auto_escalation_unavailable =
+                                    Some(browser_unavailable_reason.clone());
                             }
                         }
 
@@ -1117,7 +1154,9 @@ async fn run_web_fetch_inner(
                                     error,
                                     escalation_unavailable,
                                 } => {
-                                    auto_escalation_unavailable |= escalation_unavailable;
+                                    if escalation_unavailable {
+                                        auto_escalation_unavailable = Some(error.to_string());
+                                    }
                                     failure = error;
                                 }
                                 GatedEscalation::ManualInteraction {
@@ -1368,12 +1407,10 @@ async fn run_web_fetch_inner(
             "link list was truncated; not all links are included".to_string(),
         ));
     }
-    if auto_escalation_unavailable {
+    if let Some(reason) = auto_escalation_unavailable {
         structured.push(crate::core::warning::AgentWarning::new(
             crate::core::warning::WarningCode::BrowserUnavailable,
-            "browser escalation was needed but rendering is unavailable; see \
-             provider_status.browser_capabilities.reason"
-                .to_string(),
+            reason,
         ));
     }
     if limit_clamped {

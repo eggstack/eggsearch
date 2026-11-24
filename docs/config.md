@@ -804,17 +804,20 @@ When enabled, local results use `local_trusted` trust labels and can be surfaced
 
 ## Browser Rendering
 
-The `[fetch.browser]` section configures headless Chrome/Chromium rendering.
-Current source builds enable the `browser` Cargo feature by default; published
-`v0.4.4` binaries do not include it. `enabled` follows the compiled-in feature
-state, and `policy` defaults to `auto`. Rendering requires an installed
-Chrome/Chromium. Eggsearch never downloads or installs a browser.
+The `[fetch.browser]` section configures headless Chrome/Chromium rendering. The
+`browser` feature is compiled into every artifact built from current source,
+including the next CLI release and the next Python wheel; the published `v0.4.4`
+binaries predate it. A system Chrome/Chromium executable is a runtime dependency
+only and is never bundled. Its absence does not break installation,
+search, or an HTTP fetch; browser requests follow the degradation contract below.
+`enabled` defaults to the compiled-in feature state, and `policy` defaults to
+`auto`.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `enabled` | `true` when compiled | Enables browser rendering. The feature is included by default in current source builds, but not in published `v0.4.4` binaries. |
+| `enabled` | `true` when compiled | Enables browser rendering; the `browser` feature is compiled in by default in current source builds. |
 | `policy` | `"auto"` | Render policy used when the caller omits `render`: `http_only`, `auto`, or `browser`. A per-call `render` overrides it. |
-| `executable` | auto-discovered | Path to Chrome/Chromium executable. An explicitly configured invalid path fails instead of falling back to auto-discovery. |
+| `executable` | auto-discovered | Optional path to a Chrome/Chromium executable; an invalid explicit path stops discovery rather than falling back. |
 | `startup_timeout_ms` | `10000` | Browser startup timeout |
 | `navigation_timeout_ms` | `20000` | Page navigation timeout |
 | `post_load_wait_ms` | `1500` | Wait after page load |
@@ -825,6 +828,47 @@ Chrome/Chromium. Eggsearch never downloads or installs a browser.
 | `global_concurrency` | `1` | Global browser concurrency |
 | `per_origin_concurrency` | `1` | Per-origin browser render cap (combined with `origin_browser_concurrency` via `min`) |
 | `block_media` | `true` | Block media autoplay |
+
+### Executable Discovery and Override
+
+A non-empty `[fetch.browser].executable` path is checked first. If the configured
+path is invalid, discovery stops and does not fall back to automatic discovery.
+Use this setting as an escape hatch when Chrome/Chromium is installed outside
+the automatic candidates:
+
+```toml
+[fetch.browser]
+executable = "/usr/bin/google-chrome"
+```
+
+Without an explicit path, discovery checks these candidates in order:
+
+1. Linux absolute candidates: `/usr/bin/google-chrome-stable`,
+   `/usr/bin/google-chrome`, `/usr/bin/chromium`,
+   `/usr/bin/chromium-browser`, `/snap/bin/chromium`.
+2. macOS app-bundle candidates: `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+   `~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, and
+   `/Applications/Chromium.app/Contents/MacOS/Chromium`.
+3. `PATH` lookup, in order: `google-chrome-stable`, `google-chrome`,
+   `chromium`, `chromium-browser`.
+
+### Availability and Degradation
+
+The following table is normative for explicit browser requests and implicit
+(`auto`) requests:
+
+| Condition | Explicit browser request | Implicit (`auto`) request |
+|---|---|---|
+| Feature not compiled | `browser_not_compiled_in` | HTTP outcome, `browser_unavailable` warning if rendering was warranted |
+| `enabled = false` | `browser_disabled` | same |
+| Enabled, no executable found | `browser_unavailable` with an actionable reason | same |
+| Enabled, unsupported version | `browser_unavailable` naming the version | same |
+| Enabled, explicit path invalid | `browser_unavailable` naming the path; no fallback to auto-discovery | same |
+| Enabled and discovered but the launch fails | `browser_unavailable`-class failure naming the launch error, never a silent HTTP fetch | the original HTTP outcome plus the failure reason |
+
+`provider_status.browser_capabilities` always reports `compiled`, `configured`,
+`discovered`, `usable`, `reason`, and the lifecycle counters, in every one of
+those states.
 
 ### Persistent Browser Profiles
 

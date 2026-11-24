@@ -134,7 +134,9 @@ hydrate specialists on demand. See [Tool matrix](docs/tool-matrix.md) and
 
 - Fetched content is `external_untrusted`: data, not instructions. `sanitize_output` defaults to `true`, with injection markers reported as `injection_hits`.
 - Fetch is bounded and explicit: one URL per `web_fetch`, no autonomous crawling, SSRF checks against blocked address ranges.
-- Optional `pdf` and `browser` features add PDF extraction and bounded headless Chrome. The `egress` proxy route is provider-upstream only and is excluded from prebuilt binaries.
+- Wheels built from current source compile `pdf` and `browser`, matching the CLI binaries built from the same source. Browser rendering uses system Chrome/Chromium at runtime; no browser is bundled.
+- Without Chrome/Chromium, installation, import, search, and HTTP fetch remain available. `auto` keeps the HTTP outcome and warns `browser_unavailable` when rendering was warranted; an explicit browser request reports `browser_unavailable`. See [Browser Rendering](docs/features.md#browser-rendering).
+- The `egress` proxy route is provider-upstream only and is excluded from prebuilt binaries.
 
 See [Safety](docs/safety.md) and [Threat model](docs/threat-model.md).
 

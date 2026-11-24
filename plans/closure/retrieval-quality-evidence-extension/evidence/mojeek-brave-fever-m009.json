@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "dataset": "FEVER BEIR test",
+  "dataset_sha256": "4f359df04ad5a9a29c2f78009e7229d2a1c8eb0bf42d953853811373dea13305",
+  "dataset_archive_sha256": null,
+  "source_component_sha256": {
+    "beir_fever_queries_parquet_sha256": "b9cf00001ef1aa07a7030118490ce5f8a840e783ad8d972b9afee8ef281d6093",
+    "beir_fever_test_qrels_tsv_sha256": "6599dab4e2189ca5eb5216546021710c06dc8bdd1a0c59cc1fa52129c6e038b3",
+    "beir_fever_revision": "426aea4d30c65c041f093ae072e25fb5a0e64659",
+    "beir_fever_qrels_revision": "64cd0e4ef9b63a88ac8e69d1133a2f649acd4745"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "d70d086974e73fd1209f98fc2eecb25c9671366a75670b96b8851ad146e2082f",
+  "binary_sha256": "fd90457efcb52aa69acccd306c9af2f4e335dc54259a447df5479bcf66e1daf2",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "brave",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "6483e7b6beb1503f4032d3c6c95745c6cf6af2b0a9bc366ab4fe580243ca6174",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "fever:test31743",
+    "fever:test120259",
+    "fever:test194565"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "protocol": {
+    "id": "m009-paced-v1",
+    "mode": "paced",
+    "min_interval_seconds": 25.0,
+    "max_interval_seconds": 40.0,
+    "consecutive_blocked_stop": 3
+  },
+  "pacing": {
+    "attempts": 6,
+    "min_observed_interval_seconds": 25.603,
+    "violations": []
+  },
+  "aborted": false,
+  "refused_attempts": 0,
+  "http_status_counts": {},
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 6,
+    "matched_relevant_query_document_pairs_across_valid_trials": 6
+  },
+  "hit_at_k_over_valid_result_trials": 1.0,
+  "macro_recall_at_k_over_valid_result_trials": 1.0,
+  "micro_recall_at_k_over_valid_result_trials": 1.0,
+  "rows": [
+    {
+      "query_id": "fever:test31743",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Yvonne_Strahovski",
+          "rank": 2
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 759,
+      "raw_response_sha256": "2f12c7c77522a0328ee4f52839e490270422ecb2583591814f6e45ee10dfb9f4",
+      "started_at_utc": "2026-11-23T21:38:41Z",
+      "planned_interval_seconds": 0.0,
+      "actual_interval_seconds": null
+    },
+    {
+      "query_id": "fever:test120259",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Ed_Decter",
+          "rank": 2
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 859,
+      "raw_response_sha256": "4a79fe88fe30e543544520108564a54bcd59d3edd49743bcc7ba55f5af6aa7e7",
+      "started_at_utc": "2026-11-23T21:39:07Z",
+      "planned_interval_seconds": 25.593,
+      "actual_interval_seconds": 25.603
+    },
+    {
+      "query_id": "fever:test194565",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Kyle_MacLachlan",
+          "rank": 2
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 722,
+      "raw_response_sha256": "3fa8c42790da9bd034df6f784ce4588ae29264d8b5d7565ee6ed20973553e365",
+      "started_at_utc": "2026-11-23T21:39:45Z",
+      "planned_interval_seconds": 37.853,
+      "actual_interval_seconds": 37.861
+    },
+    {
+      "query_id": "fever:test31743",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Yvonne_Strahovski",
+          "rank": 2
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 391,
+      "raw_response_sha256": "2f12c7c77522a0328ee4f52839e490270422ecb2583591814f6e45ee10dfb9f4",
+      "started_at_utc": "2026-11-23T21:40:25Z",
+      "planned_interval_seconds": 39.804,
+      "actual_interval_seconds": 39.813
+    },
+    {
+      "query_id": "fever:test120259",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Ed_Decter",
+          "rank": 2
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 426,
+      "raw_response_sha256": "4a79fe88fe30e543544520108564a54bcd59d3edd49743bcc7ba55f5af6aa7e7",
+      "started_at_utc": "2026-11-23T21:40:59Z",
+      "planned_interval_seconds": 34.706,
+      "actual_interval_seconds": 34.708
+    },
+    {
+      "query_id": "fever:test194565",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Kyle_MacLachlan",
+          "rank": 2
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 374,
+      "raw_response_sha256": "3fa8c42790da9bd034df6f784ce4588ae29264d8b5d7565ee6ed20973553e365",
+      "started_at_utc": "2026-11-23T21:41:38Z",
+      "planned_interval_seconds": 38.697,
+      "actual_interval_seconds": 38.704
+    }
+  ],
+  "raw_search_results_included": false
+}

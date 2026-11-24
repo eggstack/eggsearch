@@ -84,6 +84,13 @@ Features](features.md#bounded-challenge-solving) for limits and restrictions.
   ```
 
   Its ALTCHA proof-of-work wall is solved by the default solver settings.
+- Mojeek can refuse an individual search outright. It answers `HTTP 403` with a short page that reads
+  "Sorry your network appears to be sending automated queries". No challenge is served, so the solver
+  cannot clear it, and the request reports `blocked` with the status in the reason. The refusal tracks
+  the query and any recent automated burst, not the user agent or the network as a whole: other
+  queries from the same host return the solvable wall and results. Mojeek's `robots.txt` declares
+  `Disallow: /search` for every agent, so treat this provider as operator-selected rather than
+  policy-neutral.
 
 The upstream may require an ALTCHA proof-of-work challenge. The bounded solver
 is enabled by default and can add CPU time. Set `[search.challenge].enabled` to

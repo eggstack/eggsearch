@@ -40,6 +40,22 @@ jobs:
           BRAVE_API_KEY: ""
           SEMANTIC_SCHOLAR_API_KEY: ""
           NVD_API_KEY: ""
+  browser-absence:
+    name: browser absent degradation contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable snapshot 2026-09-28
+        with:
+          toolchain: "1.89"
+      - name: Run deterministic missing-browser library tests
+        run: cargo test --locked --features mock --lib browser_absent
+      - name: Run deterministic missing-browser CLI tests
+        run: cargo test --locked --features mock --bin eggsearch browser_absent
+      - name: Run feature-absent CLI error test
+        run: cargo test --locked --no-default-features --bin eggsearch browser_not_compiled_cli_request_has_stable_code
+      - name: Run browser launch-failure contract test
+        run: cargo test --locked --features mock --lib browser_launch_failure_is_named_and_does_not_repeat_http
   windows-portability:
     name: windows portability (x86_64-pc-windows-msvc all-features check)
     runs-on: windows-latest

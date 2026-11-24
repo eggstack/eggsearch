@@ -76,21 +76,7 @@ fn build_payload_without_probe(
             let reason = if !configured {
                 Some("disabled in config".to_string())
             } else {
-                match discovery_state {
-                    crate::fetch::browser::types::BrowserDiscoveryState::ExplicitPathInvalid {
-                        path,
-                    } => Some(format!("explicit path invalid: {path}")),
-                    crate::fetch::browser::types::BrowserDiscoveryState::NotFound => {
-                        Some("no Chrome/Chromium executable found".to_string())
-                    }
-                    crate::fetch::browser::types::BrowserDiscoveryState::NotConfigured => {
-                        Some("no executable configured".to_string())
-                    }
-                    crate::fetch::browser::types::BrowserDiscoveryState::VersionUnsupported {
-                        version,
-                    } => Some(format!("browser version unsupported: {version}")),
-                    crate::fetch::browser::types::BrowserDiscoveryState::Available(_) => None,
-                }
+                crate::fetch::browser::browser_discovery_reason(discovery_state)
             };
             (compiled, configured, discovered, usable, reason)
         }

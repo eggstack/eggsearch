@@ -22,7 +22,35 @@ const MAX_IN_FLIGHT: usize = 32;
 
 create_exception!(_native, EggsearchError, pyo3::exceptions::PyException);
 
+fn client_closed_error() -> SdkError {
+    SdkError {
+        code: "client_closed".into(),
+        message: "Eggsearch client is closed".into(),
+        repair: None,
+        data: None,
+    }
+}
+
+fn ensure_process(py: Python<'_>, client_pid: Option<u32>) -> PyResult<()> {
+    let current_pid = std::process::id();
+    if client_pid.is_some_and(|pid| pid != current_pid)
+        || PROCESS_OWNER.get().is_some_and(|pid| *pid != current_pid)
+    {
+        return Err(sdk_error(
+            py,
+            SdkError {
+                code: "forked_process".into(),
+                message: "Eggsearch Python state cannot be reused after fork; create a fresh process and client".into(),
+                repair: None,
+                data: None,
+            },
+        ));
+    }
+    Ok(())
+}
+
 static RUNTIME_INIT: OnceLock<()> = OnceLock::new();
+static PROCESS_OWNER: OnceLock<u32> = OnceLock::new();
 static IN_FLIGHT: LazyLock<Arc<Semaphore>> =
     LazyLock::new(|| Arc::new(Semaphore::new(MAX_IN_FLIGHT)));
 #[cfg(debug_assertions)]
@@ -61,6 +89,7 @@ impl Drop for GateDropGuard {
 }
 
 fn initialize_runtime() {
+    PROCESS_OWNER.get_or_init(std::process::id);
     RUNTIME_INIT.get_or_init(|| {
         let mut builder = tokio::runtime::Builder::new_multi_thread();
         builder
@@ -78,7 +107,9 @@ struct Lifecycle {
 }
 
 struct ClientState {
-    client: EggsearchClient,
+    client: Mutex<Option<EggsearchClient>>,
+    tool_contracts: Value,
+    process_id: u32,
     lifecycle: Mutex<Lifecycle>,
     cancelled: CancellationToken,
     drained: Notify,
@@ -112,6 +143,24 @@ impl ClientState {
         lifecycle.closed = true;
         drop(lifecycle);
         self.cancelled.cancel();
+    }
+
+    fn client(&self) -> Result<EggsearchClient, SdkError> {
+        self.client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .cloned()
+            .ok_or_else(client_closed_error)
+    }
+
+    fn release_client(&self) {
+        let client = self
+            .client
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        drop(client);
     }
 
     async fn wait_drained(&self) {
@@ -161,8 +210,11 @@ fn build_state(config: AppConfig) -> PyResult<Arc<ClientState>> {
     let client = EggsearchClient::new(config).map_err(|error| {
         PyValueError::new_err(format!("invalid Eggsearch configuration: {error}"))
     })?;
+    let tool_contracts = client.tool_contracts();
     Ok(Arc::new(ClientState {
-        client,
+        client: Mutex::new(Some(client)),
+        tool_contracts,
+        process_id: std::process::id(),
         lifecycle: Mutex::new(Lifecycle::default()),
         cancelled: CancellationToken::new(),
         drained: Notify::new(),
@@ -178,7 +230,8 @@ fn load_config_from_path(path: &PathBuf) -> PyResult<AppConfig> {
 impl PyAsyncEggsearch {
     #[new]
     #[pyo3(signature = (config_path=None))]
-    fn new(config_path: Option<PathBuf>) -> PyResult<Self> {
+    fn new(py: Python<'_>, config_path: Option<PathBuf>) -> PyResult<Self> {
+        ensure_process(py, None)?;
         let config = match config_path {
             Some(path) => load_config_from_path(&path)?,
             None => AppConfig::default(),
@@ -196,7 +249,8 @@ impl PyAsyncEggsearch {
     }
 
     #[staticmethod]
-    fn from_default_config() -> PyResult<Self> {
+    fn from_default_config(py: Python<'_>) -> PyResult<Self> {
+        ensure_process(py, None)?;
         let path = eggsearch::core::config::default_config_path();
         let config = load_config_from_path(&path)?;
         Ok(Self {
@@ -210,6 +264,7 @@ impl PyAsyncEggsearch {
         tool: String,
         arguments: &Bound<'py, PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        ensure_process(py, Some(self.state.process_id))?;
         initialize_runtime();
         let active_call = self
             .state
@@ -227,6 +282,7 @@ impl PyAsyncEggsearch {
                 },
             )
         })?;
+        let client = self.state.client().map_err(|error| sdk_error(py, error))?;
         let state = self.state.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let _active_call = active_call;
@@ -239,7 +295,7 @@ impl PyAsyncEggsearch {
                         repair: None,
                         data: None,
                     }),
-                    result = state.client.execute(tool, arguments) => result,
+                    result = client.execute(tool, arguments) => result,
                 }
             })
             .catch_unwind()
@@ -252,6 +308,9 @@ impl PyAsyncEggsearch {
                     data: None,
                 })
             });
+            drop(client);
+            drop(_permit);
+            drop(_active_call);
             Python::attach(|py| match result {
                 Ok(value) => json_to_python(py, &value).map(Bound::unbind),
                 Err(error) => Err(sdk_error(py, error)),
@@ -260,18 +319,20 @@ impl PyAsyncEggsearch {
     }
 
     fn aclose<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        ensure_process(py, Some(self.state.process_id))?;
         initialize_runtime();
         self.state.close();
         let state = self.state.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             state.wait_drained().await;
+            state.release_client();
             Python::attach(|py| Ok(py.None()))
         })
     }
 
     fn tool_contracts(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let contracts = self.state.client.tool_contracts();
-        json_to_python(py, &contracts).map(Bound::unbind)
+        ensure_process(py, Some(self.state.process_id))?;
+        json_to_python(py, &self.state.tool_contracts).map(Bound::unbind)
     }
 
     #[cfg(debug_assertions)]
@@ -310,6 +371,7 @@ impl PyAsyncEggsearch {
 
     #[cfg(debug_assertions)]
     fn _test_blocking_execute<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        ensure_process(py, Some(self.state.process_id))?;
         initialize_runtime();
         let active_call = self
             .state

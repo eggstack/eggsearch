@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "dataset": "SciFact BEIR test",
+  "dataset_sha256": "40f78fb516f4a69bfc4fc13b5b4f1d7ee784638d937ccf338c6b6436934613d2",
+  "dataset_archive_sha256": "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165",
+  "source_component_sha256": {},
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "14370900e193c56273c46409b2736ff7ac795a1a4c96ddf16510c870959d56fe",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "duckduckgo",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "6483e7b6beb1503f4032d3c6c95745c6cf6af2b0a9bc366ab4fe580243ca6174",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "775",
+    "100",
+    "619"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 4,
+    "known_relevant_query_document_pairs_across_valid_trials": 8,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": 0,
+  "macro_recall_at_k_over_valid_result_trials": 0,
+  "micro_recall_at_k_over_valid_result_trials": 0,
+  "rows": [
+    {
+      "query_id": "775",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1002,
+      "raw_response_sha256": "782cc5e14533a5c5f75122a168533c41913339b17d15c332859950339a756af6"
+    },
+    {
+      "query_id": "100",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 799,
+      "raw_response_sha256": "3cdbb5404b0a887fdeac81a1ef57c26bcc74bbbf87484e5cc3370a387b3e8707"
+    },
+    {
+      "query_id": "619",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 2,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1144,
+      "raw_response_sha256": "b4bcaeed115577b20f112a7d2edc36e5ace8ec9f17b21a00ca58c7b5465234bc"
+    },
+    {
+      "query_id": "775",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1007,
+      "raw_response_sha256": "6538f10a556ed15dc52e490506790f31e85b582a9a6d82f4c552d2a2206c608c"
+    },
+    {
+      "query_id": "100",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 871,
+      "raw_response_sha256": "c0ed3ee3d6c74e6ecd659a88ffbd16795fc0a1830d0c8423e20e13a68b863122"
+    },
+    {
+      "query_id": "619",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 2,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1087,
+      "raw_response_sha256": "97a585038ca04294bfc87c839d76b62863d6b8d8406a6156bcda83fa557d9758"
+    }
+  ],
+  "raw_search_results_included": false
+}

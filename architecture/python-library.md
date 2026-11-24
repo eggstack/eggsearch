@@ -52,12 +52,26 @@ The Python package lives in an independent `bindings/python` Cargo package.
 PyO3 and Python packaging dependencies must not enter the root crate's
 default dependency graph or change its binary artifact inventory. Python
 import is side-effect-free. The binding owns Python types and lifecycle
-adaptation; all execution delegates through `src/sdk.rs`. The PyO3 layer
-initializes one process-scoped Tokio runtime on first operation, caps shared
-in-flight calls at 32, and bounds JSON conversion to 1 MiB, 64 levels, and
-10,000 values. `aclose()` rejects new work, cancels active operations, and
-waits for their Rust futures to drop; Python task cancellation drops its
-corresponding future. The runtime intentionally remains process-scoped.
+adaptation; all execution delegates through `src/sdk.rs`. The binding compiles
+`pdf` and `browser` with default features disabled; `egress` is not compiled. The browser feature uses a system Chrome/Chromium executable
+at runtime and never bundles one. Its availability and degradation contract is
+documented in [architecture/fetch.md](fetch.md).
+
+In the browser-enabled binding graph, `reqwest` appears only through
+`chromiumoxide`; there are no `openssl` or `native-tls` nodes. The tracked
+`bindings/python/Cargo.lock` is a release input and must be kept in sync with
+the binding manifest for locked builds.
+
+Python import is side-effect-free. The PyO3 layer initializes one
+process-scoped Tokio runtime on first operation, caps shared in-flight calls at
+32, and bounds JSON conversion to 1 MiB, 64 levels, and 10,000 values.
+`aclose()` rejects new work, cancels active operations, waits for their Rust
+futures to drop, then releases that client's `EggsearchClient` handle. The
+process-scoped runtime remains alive after client close. The binding records the
+client and runtime process IDs and rejects mismatched state with
+`forked_process` instead of reusing it after fork; Python task cancellation
+drops its corresponding future. The runtime intentionally remains
+process-scoped.
 
 `AsyncEggsearch()` preserves no-arg `AppConfig::default()` semantics.
 `AsyncEggsearch.from_default_config()` and `default_config_path()` use

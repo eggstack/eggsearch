@@ -1,0 +1,106 @@
+{
+  "milestone": "python-pypi-distribution-M006",
+  "record_type": "local browser-enabled Python wheel baseline",
+  "recorded_on": "2026-11-24",
+  "candidate": {
+    "base_commit": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+    "tree_state": "uncommitted shared worktree; no exact-candidate commit SHA",
+    "qualification_status": "local baseline only; M006 is not fully qualified or closed"
+  },
+  "environment": {
+    "platform": "macOS arm64",
+    "python_abi": "cp311-abi3",
+    "rust_toolchain": "1.89.0",
+    "maturin_local": "1.9.5",
+    "maturin_ci_pin": "1.15.0",
+    "note": "Local builds succeeded with a Maturin version warning; CI-pinned Maturin was not used locally."
+  },
+  "artifacts": [
+    {
+      "kind": "release_wheel",
+      "filename": "eggsearch-0.4.4-cp311-abi3-macosx_11_0_arm64.whl",
+      "size_bytes": 13854441,
+      "sha256": "efcfb6525cf3d6880007fd3c245e25da3b8469fe0c16b44d7526ee34e3d3dcf8",
+      "installed": true,
+      "native_payload": [
+        "eggsearch/_native.abi3.so"
+      ],
+      "additional_native_libraries": []
+    },
+    {
+      "kind": "sdist",
+      "filename": "eggsearch-0.4.4.tar.gz",
+      "size_bytes": 1633094,
+      "sha256": "839cbd8643a9f5ea511fa2b6fcefdf2388c1cfeed0e6742d62af3b696fb54718"
+    },
+    {
+      "kind": "offline_sdist_rebuilt_wheel",
+      "filename": "eggsearch-0.4.4-cp311-abi3-macosx_11_0_arm64.whl",
+      "size_bytes": 13860935,
+      "sha256": "cea4ecb37fdc0eaa89974360e1ae68daf849454c89680ef2346172b4067011c5",
+      "installed": true,
+      "build_mode": "offline Cargo build from extracted sdist"
+    }
+  ],
+  "installed_no_chrome": {
+    "capability_report": {
+      "compiled": true,
+      "configured": true,
+      "discovered": false,
+      "usable": false,
+      "reason": "Explicit browser executable path was invalid; deterministic no-browser fixture."
+    },
+    "explicit_render_error": {
+      "error_code": "capability_unavailable",
+      "data_code": "browser_unavailable"
+    },
+    "operations": {
+      "search": "passed",
+      "http_only_fetch": "passed",
+      "offline_repository_search": "passed"
+    }
+  },
+  "python_lifecycle_and_tests": {
+    "close_alias": "close() delegates to idempotent aclose(); close drains/cancels active calls and releases per-client SDK state.",
+    "fork_behavior": "Inherited client/runtime use in a forked child returns structured error code forked_process.",
+    "debug_suite": {
+      "result": "passed",
+      "passed": 32,
+      "skipped": 3
+    },
+    "extracted_sdist_suite": {
+      "result": "passed",
+      "passed": 27,
+      "skipped": 8
+    },
+    "chrome_dependent_coverage": "Real rendering, idle teardown, and session-cap counter checks were skipped because no Chrome executable is available locally."
+  },
+  "validation": {
+    "passed": [
+      "Python dependency-shape guard",
+      "Packaged-assets guard",
+      "Locked binding cargo check",
+      "cargo package --list",
+      "Python syntax compilation",
+      "git diff --check",
+      "make docs-check",
+      "Release wheel build/install/import",
+      "Offline sdist rebuild/install"
+    ],
+    "make_check": {
+      "first_attempt": "Timed out at 300 seconds while all-features tests were still running.",
+      "retry": {
+        "exit_code": 2,
+        "failing_phase": "clippy",
+        "diagnostic": "src/mcp/tools/tests.rs:1556-1557 assigns to config fields through Arc<AppConfig>; rustc E0594 cannot assign to data in an Arc."
+      }
+    }
+  },
+  "unverified": [
+    "Hosted Chrome rendering and no-Chrome lanes",
+    "Six-platform wheel matrix on the exact candidate",
+    "ARMv7 binding compile/cross-build: Rust 1.89 installation lacks armv7-unknown-linux-gnueabihf core; arm-linux-gnueabihf-gcc and Docker are absent locally",
+    "Chrome real render, idle teardown, and session-cap behavior",
+    "Hosted CI on the exact final candidate"
+  ]
+}

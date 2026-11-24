@@ -59,5 +59,8 @@ pub fn compact_fields(name: &str) -> Option<&'static [&'static str]> {
     })
 }
 
+#[cfg(all(test, feature = "mock", feature = "browser"))]
+mod browser_availability_tests;
+
 #[cfg(test)]
 mod tests;

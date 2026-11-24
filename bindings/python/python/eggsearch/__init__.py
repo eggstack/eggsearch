@@ -64,6 +64,9 @@ class AsyncEggsearch:
     async def aclose(self) -> None:
         await self._native.aclose()
 
+    async def close(self) -> None:
+        await self.aclose()
+
     async def execute(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return await self._native.execute(tool, arguments)
 

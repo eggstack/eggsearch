@@ -7,6 +7,7 @@
 #
 # Cargo.toml
 # Cargo.lock
+# bindings/python/Cargo.lock
 # release/eggpack/distribution.toml
 # release/eggpack/pack.toml
 # release/eggpack/build-bindings.toml
@@ -33,6 +34,7 @@
 # packaging/test-install.ps1
 Cargo.toml
 Cargo.lock
+bindings/python/Cargo.lock
 release/eggpack/distribution.toml
 release/eggpack/pack.toml
 release/eggpack/build-bindings.toml

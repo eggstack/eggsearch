@@ -46,9 +46,12 @@ the standard installed config using Rust-owned `default_config_path()` and
 is absent and reporting invalid TOML as a deterministic `ValueError` without
 leaking credentials. `AsyncEggsearch.default_config_path()` exposes the
 resolved standard path without loading credentials or raw config. Context
-management calls `aclose()` on exit. Closing is idempotent, cancels active
-operation futures, waits for them to drop, and rejects later calls with
-`EggsearchError` whose `code` is `client_closed`.
+management calls `aclose()` on exit. `aclose()` is idempotent: it marks that
+client closed, cancels active operation futures, waits for them to drain, then
+releases the client's Rust SDK handle. Later calls fail with `EggsearchError`
+whose `code` is `client_closed`. The shared process-scoped Tokio runtime
+continues after client close. State reused from a different process is rejected
+with `forked_process`; start a fresh process rather than reuse inherited state.
 
 The generic `execute(tool, arguments)` method and these named async methods use
 the canonical tool names and pass accepted arguments to the Rust SDK:
@@ -83,15 +86,18 @@ future promptly via `pyo3-async-runtimes` 0.29 `Cancellable` polling; the
 shared 32-permit and per-client active count are released by RAII guards, and a
 subsequent operation succeeds. `aclose()` cancels the per-client
 `CancellationToken`, makes the `tokio::select!` close branch win over a running
-`EggsearchClient::execute`, drains active calls, and returns `client_closed`
-for close-triggered operations while user cancellation still surfaces as
-`asyncio.CancelledError`. Dropping the SDK future also drops a blocked provider
-engine future, verified by a counted barrier engine in `src/sdk.rs` and a
-debug-only bridge barrier in `bindings/python`. Underlying TCP/TLS teardown
-remains bounded by Tokio and `eggfetch-core` timeouts; cancellation is a prompt
-future drop with permit recovery, not a proven instantaneous socket reset. New
-calls after close fail with `client_closed`, independent clients keep their own
-lifecycle, and the runtime survives sequential `asyncio.run` loops.
+`EggsearchClient::execute`, drains active calls, then releases that client's
+`EggsearchClient`. Close-triggered operations return `client_closed` while user
+cancellation still surfaces as `asyncio.CancelledError`. The process-scoped
+Tokio runtime survives client close. Client state used from a different process
+is rejected with `forked_process` instead of reusing inherited runtime state.
+Dropping the SDK future also drops a blocked provider engine future, verified
+by a counted barrier engine in `src/sdk.rs` and a debug-only bridge barrier in
+`bindings/python`. Underlying TCP/TLS teardown remains bounded by Tokio and
+`eggfetch-core` timeouts; cancellation is a prompt future drop with permit
+recovery, not a proven instantaneous socket reset. New calls after close fail
+with `client_closed`, independent clients keep their own lifecycle, and the
+runtime survives sequential `asyncio.run` loops.
 
 ## Types and errors
 
@@ -154,13 +160,21 @@ python -m pip install --only-binary=:all: eggsearch
 Do not build the source distribution on an SBC. The source distribution is a
 developer fallback for environments outside the published wheel matrix. The
 extension package builds the Rust crate with `default-features = false,
-features = ["pdf"]`: the wheel carries PDF extraction only, and no `browser` or
-`egress` feature is compiled. Python users who need browser rendering need the
-Rust binary or a source build that enables the feature. The native library uses
-the same Eggsearch configuration, provider credential environment variables,
-bounded operations, sanitization, and trust labels as the Rust engine. It does
-not probe credentials during import. Python distributions do not alter Eggpack's
-binary release assets.
+features = ["pdf", "browser"]`: the wheel compiles both PDF extraction and
+browser rendering; `egress` is not compiled. A wheel built from current source
+matches the CLI binaries built from the same source; the published
+`eggsearch==0.4.4` wheel is PDF-only. A system Chrome/Chromium executable is a runtime
+dependency only and is never bundled.
+If it is absent, `provider_status.browser_capabilities.usable` is `false`;
+installation, import, search, and HTTP fetch remain available. An `auto` request
+keeps the HTTP outcome and adds a `browser_unavailable` warning when rendering
+was warranted, while an explicit browser request reports `browser_unavailable`
+with its reason. See the [browser degradation contract]
+(features.md#browser-rendering). The native library uses the same Eggsearch
+configuration, provider credential environment variables, bounded operations,
+sanitation, and trust labels as the Rust engine. It does not probe credentials
+during import. Python distributions do not alter Eggpack's binary release
+assets.
 
 An sdist build requires Rust 1.89, a C toolchain, and the Cargo dependencies in
 `bindings/python/Cargo.lock`. It can build offline when those locked crate

@@ -84,6 +84,37 @@ dropped rather than redacted. No cookie, JWT, challenge id, impression token,
   parser. Every committed file is under 2 KB; the repository hard ceiling for a
   fixture is 100 KB.
 
+## Mojeek network-block capture (2026-11-23 UTC)
+
+The `mojeek` blocked marker was re-confirmed against the *status-bearing* variant of the refusal,
+because that is the one this egress receives:
+
+- `GET https://www.mojeek.com/search?q=…` with the shipped search user agent and
+  `Accept-Language: en-US,en;q=0.9`; no credential; bounded by `curl --max-time 20 --max-filesize
+  2000000`
+- `HTTP/1.1 403 Forbidden`, `Content-Length: 363`, `Content-type: text/html; charset=UTF-8`,
+  `Server: lighttpd/1.4.53`
+- Body: `<title>403 - Forbidden</title>` … `<h2>Sorry your network appears to be sending automated
+  queries so we can't process your search at this time.</h2>`. SHA-256
+  `50666d78ab85d7af911166fa712af887dedcf4a2751df8927992a4d253548691`; the echoed query in the
+  `/about/contact` link was removed before retention.
+
+The body satisfies `PageMarker::Text("your network appears to be sending automated queries")`, which
+is why the four-outcome contract requires the body to be read on a non-success status. `mojeek.rs`
+short-circuited to `BadStatus` there, so the marker never ran; M049 routes it through
+`read_search_body()`. The captured response is retained in
+`plans/closure/retrieval-quality-evidence-extension/evidence/mojeek-network-block-403-capture.json`.
+
+`https://www.mojeek.com/robots.txt` was read the same day (HTTP 200) and declares `User-agent: *` /
+`Disallow: /search`, so the search page is not offered to automated clients at all.
+
+The page is served per query, not per network. From the same public address, the in-app Chromium
+browser received Mojeek's `200` homepage and the `200` ALTCHA wall for `test`, `rust`,
+`official website`, `rust programming language`, a long benign sentence, and a held-out question;
+only the probe string reproduced the `403`, and it did so from three different client identities,
+including a current Chrome identity with matching `sec-ch-ua`/`sec-fetch-*` headers. Controls:
+`plans/closure/retrieval-quality-evidence-extension/evidence/mojeek-403-mechanism-controls.json`.
+
 ## Empty-state and block markers
 
 Markers are declared as constants next to each parser (`SHAPE` in

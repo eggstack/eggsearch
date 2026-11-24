@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "dataset": "Natural Questions BEIR test",
+  "dataset_sha256": "76f3240642b95adaccc4a0e6cb7ef75776ec105e6763585f37ade994663673ed",
+  "dataset_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+  "source_component_sha256": {
+    "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "14370900e193c56273c46409b2736ff7ac795a1a4c96ddf16510c870959d56fe",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "mojeek",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "6483e7b6beb1503f4032d3c6c95745c6cf6af2b0a9bc366ab4fe580243ca6174",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "nq:test2352",
+    "nq:test1742",
+    "nq:test2376"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "provider_error": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 0,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 0,
+    "matched_relevant_query_document_pairs_across_valid_trials": 0
+  },
+  "hit_at_k_over_valid_result_trials": null,
+  "macro_recall_at_k_over_valid_result_trials": null,
+  "micro_recall_at_k_over_valid_result_trials": null,
+  "rows": [
+    {
+      "query_id": "nq:test2352",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "mojeek",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 393,
+      "raw_response_sha256": "31155370ceb0a12c354d759050ebb427aacec6a83ef9cf936fb32f1be57428a1"
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "mojeek",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 402,
+      "raw_response_sha256": "75370cb885af8d2b3aff4b728ddbc7acd3a555ffcac2e3a65732a175f7f0534b"
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "mojeek",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 528,
+      "raw_response_sha256": "4e3ebcb2382d148761403a0f87455c7f78b0cfe20d9137b027725166271b9a23"
+    },
+    {
+      "query_id": "nq:test2352",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "mojeek",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 417,
+      "raw_response_sha256": "31155370ceb0a12c354d759050ebb427aacec6a83ef9cf936fb32f1be57428a1"
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "mojeek",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 395,
+      "raw_response_sha256": "75370cb885af8d2b3aff4b728ddbc7acd3a555ffcac2e3a65732a175f7f0534b"
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "mojeek",
+          "error_class": "http_status"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 419,
+      "raw_response_sha256": "4e3ebcb2382d148761403a0f87455c7f78b0cfe20d9137b027725166271b9a23"
+    }
+  ],
+  "raw_search_results_included": false
+}

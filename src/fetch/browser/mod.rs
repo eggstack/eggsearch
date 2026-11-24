@@ -13,7 +13,7 @@ pub use capture::{
     MAX_SCREENSHOT_WIDTH,
 };
 pub use classify::{classify_response, rendered_result_serves, FetchDisposition};
-pub use discover::{browser_capability_report, discover_browser};
+pub use discover::{browser_capability_report, browser_discovery_reason, discover_browser};
 pub use escalation::{escalate, gated_status, EscalationOutcome, EscalationRequest};
 pub use intercept::{is_request_allowed, is_request_allowed_with_dns, PolicyViolation};
 pub use lifecycle::{BrowserLaunchError, BrowserLifecycle, BrowserLifecycleStatus};

@@ -17,9 +17,18 @@ INCLUDE_CALL = re.compile(r"include_(?:str|bytes)!\s*\(")
 INCLUDE_LITERAL = re.compile(r'include_(?:str|bytes)!\s*\(\s*"([^"]+)"\s*\)')
 
 
-def package_files() -> set[str]:
+def package_files(manifest: pathlib.Path) -> set[str]:
     completed = subprocess.run(
-        ["cargo", "package", "--list", "--allow-dirty", "--locked", "--quiet"],
+        [
+            "cargo",
+            "package",
+            "--list",
+            "--allow-dirty",
+            "--locked",
+            "--quiet",
+            "--manifest-path",
+            str(manifest),
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -35,8 +44,12 @@ def strip_line_comments(source: str) -> str:
 
 
 def main() -> int:
-    packaged = package_files()
+    packaged = package_files(ROOT / "Cargo.toml")
+    binding_packaged = package_files(ROOT / "bindings/python/Cargo.toml")
     problems: list[str] = []
+    binding_lock = ROOT / "bindings/python/Cargo.lock"
+    if not binding_lock.is_file() or "Cargo.lock" not in binding_packaged:
+        problems.append("bindings/python/Cargo.lock is missing from the binding package file set")
     checked = 0
     for source in sorted((ROOT / "src").rglob("*.rs")):
         text = strip_line_comments(source.read_text(encoding="utf-8", errors="replace"))
@@ -66,7 +79,10 @@ def main() -> int:
         print(f"packaged-assets: {problem}", file=sys.stderr)
     if problems:
         return 1
-    print(f"packaged-assets: ok ({checked} compile-time asset(s) across {len(packaged)} packaged files)")
+    print(
+        f"packaged-assets: ok ({checked} compile-time asset(s) across {len(packaged)} root files; "
+        f"binding lock packaged among {len(binding_packaged)} binding files)"
+    )
     return 0
 
 

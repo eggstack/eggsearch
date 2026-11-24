@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "dataset": "Natural Questions BEIR test",
+  "dataset_sha256": "76f3240642b95adaccc4a0e6cb7ef75776ec105e6763585f37ade994663673ed",
+  "dataset_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+  "source_component_sha256": {
+    "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "d70d086974e73fd1209f98fc2eecb25c9671366a75670b96b8851ad146e2082f",
+  "binary_sha256": "5c8c65fe099f7370bcfc04fd85cb6ba717eed7c4d83dfa0fa9ae1d4d27bcc65f",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "yahoo",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "01e08d77178bf091707ece340bc1ac27614bfa92a0f2b9999547c653c0093530",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "nq:test2352",
+    "nq:test1742",
+    "nq:test2376"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "protocol": {
+    "id": "m010-paced-v1",
+    "mode": "paced",
+    "min_interval_seconds": 25.0,
+    "max_interval_seconds": 40.0,
+    "consecutive_blocked_stop": 3
+  },
+  "pacing": {
+    "attempts": 6,
+    "min_observed_interval_seconds": 26.39,
+    "violations": []
+  },
+  "aborted": false,
+  "refused_attempts": 0,
+  "http_status_counts": {},
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 6,
+    "matched_relevant_query_document_pairs_across_valid_trials": 2
+  },
+  "hit_at_k_over_valid_result_trials": 0.3333333333333333,
+  "macro_recall_at_k_over_valid_result_trials": 0.3333333333333333,
+  "micro_recall_at_k_over_valid_result_trials": 0.3333333333333333,
+  "rows": [
+    {
+      "query_id": "nq:test2352",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 7,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 6787,
+      "raw_response_sha256": "e29a50dae9661dc7ffb693d88652873702d6a67b1b7adce3ea3ceb0020e8789e",
+      "started_at_utc": "2026-11-23T22:33:40Z",
+      "planned_interval_seconds": 0.0,
+      "actual_interval_seconds": null
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 7,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "doc61640",
+          "rank": 1
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 6222,
+      "raw_response_sha256": "5c351109b06a7a22341259d3950666e3fe780ee0f91eca3fb532576fa39e28c1",
+      "started_at_utc": "2026-11-23T22:34:10Z",
+      "planned_interval_seconds": 30.694,
+      "actual_interval_seconds": 30.701
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 7,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 6931,
+      "raw_response_sha256": "41b1e4e2a58539a316c8c18c4f212e60251574a78e7e1acf077fd1186dd8f67a",
+      "started_at_utc": "2026-11-23T22:34:40Z",
+      "planned_interval_seconds": 29.263,
+      "actual_interval_seconds": 29.275
+    },
+    {
+      "query_id": "nq:test2352",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 7,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 7622,
+      "raw_response_sha256": "ee0c09514bfee5fcda41bc3ec7ffb1a73390fd227a2e3b5f268358b28e931ea6",
+      "started_at_utc": "2026-11-23T22:35:08Z",
+      "planned_interval_seconds": 28.616,
+      "actual_interval_seconds": 28.621
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 7,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "doc61640",
+          "rank": 1
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 6276,
+      "raw_response_sha256": "d5f1e234659cd08ec3af4eb3d3a84b3d119a69121baef12292f484f4f953c8c0",
+      "started_at_utc": "2026-11-23T22:35:36Z",
+      "planned_interval_seconds": 27.612,
+      "actual_interval_seconds": 27.622
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 7,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 5833,
+      "raw_response_sha256": "0ae923c62ec7c384e9a4328c128875042dfea3bfbe2be5dbefb8631f11910377",
+      "started_at_utc": "2026-11-23T22:36:02Z",
+      "planned_interval_seconds": 26.383,
+      "actual_interval_seconds": 26.39
+    }
+  ],
+  "raw_search_results_included": false
+}

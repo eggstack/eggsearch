@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "dataset": "Natural Questions BEIR test",
+  "dataset_sha256": "76f3240642b95adaccc4a0e6cb7ef75776ec105e6763585f37ade994663673ed",
+  "dataset_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+  "source_component_sha256": {
+    "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "14370900e193c56273c46409b2736ff7ac795a1a4c96ddf16510c870959d56fe",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "duckduckgo",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "6483e7b6beb1503f4032d3c6c95745c6cf6af2b0a9bc366ab4fe580243ca6174",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "nq:test2352",
+    "nq:test1742",
+    "nq:test2376"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "provider_error": 2,
+    "results": 4
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 4,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 4,
+    "matched_relevant_query_document_pairs_across_valid_trials": 1
+  },
+  "hit_at_k_over_valid_result_trials": 0.25,
+  "macro_recall_at_k_over_valid_result_trials": 0.25,
+  "micro_recall_at_k_over_valid_result_trials": 0.25,
+  "rows": [
+    {
+      "query_id": "nq:test2352",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 8,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 781,
+      "raw_response_sha256": "0e9d73b4abddd529ed12df99c3b99eefd7743b2d3cf5fe5d3dee37f318752a95"
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "doc61640",
+          "rank": 1
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 1037,
+      "raw_response_sha256": "375459c899e731cf234d73b20db0b51f2f335293e2f2093bb83538b30f1f5089"
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 769,
+      "raw_response_sha256": "e4e7d482b44852f7c97f54adc8665766d1fd41e806dbb39644b3aa4890923daa"
+    },
+    {
+      "query_id": "nq:test2352",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 8,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 816,
+      "raw_response_sha256": "aa0705e502b70606f4c628a46d1e0cfb439f63c659817931e839849a696fd533"
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 247,
+      "raw_response_sha256": "d73a770fb210b2ab3e7f03e9d617a51893d25c5f80d33f7c926f4d07ae307c1d"
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "duckduckgo",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 270,
+      "raw_response_sha256": "91ac660083aa804838dc620bb06171498dc2549ed7c7c008bfb534340946711d"
+    }
+  ],
+  "raw_search_results_included": false
+}

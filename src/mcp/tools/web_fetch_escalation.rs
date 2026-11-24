@@ -52,13 +52,20 @@ pub(crate) async fn escalate_gated_status(request: GatedEscalationRequest<'_>) -
         deadline,
     } = request;
 
+    let unavailable_reason = if !state.config.fetch.browser.enabled {
+        Some("browser rendering is disabled in config".to_string())
+    } else {
+        crate::fetch::browser::browser_discovery_reason(&state.browser_discovery_state)
+    }
+    .or_else(|| Some("browser rendering is unavailable".to_string()));
+
     match escalate(
         EscalationRequest {
             url,
             status,
             policy: render_policy,
             browser_available,
-            unavailable_reason: None,
+            unavailable_reason: unavailable_reason.as_deref(),
             profile_name: used_profile_name,
             budgets,
             extract_mode,

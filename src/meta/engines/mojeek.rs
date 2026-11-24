@@ -116,14 +116,7 @@ async fn send_search(
         .send()
         .await
         .map_err(|e| super::map_request_error(ENGINE, e))?;
-    if !resp.status().is_success() {
-        return Err(EngineError::BadStatus {
-            engine: ENGINE,
-            status: resp.status().as_u16(),
-        });
-    }
-    let bytes = super::read_bounded_body(resp, ENGINE, MAX_BODY_BYTES).await?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    super::read_search_body(resp, ENGINE, &SHAPE, MAX_BODY_BYTES, &[]).await
 }
 
 async fn solve_cookie(
@@ -1164,5 +1157,106 @@ mod tests {
             None,
             "Max-Age=0 must store nothing"
         );
+    }
+
+    const NETWORK_BLOCK_PAGE: &str = r#"<!DOCTYPE html><html><head><title>403 - Forbidden</title></head><body><h1>403 - Forbidden</h1><h2>Sorry your network appears to be sending automated queries so we can't process your search at this time.</h2><h3>If you are seeing this in error please <a href="/about/contact?refr=403">contact us</a>.</h3></body></html>"#;
+
+    #[tokio::test]
+    async fn network_block_served_with_403_is_blocked_not_a_status_failure() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().remove(ENGINE);
+        let before = ledger_stats();
+
+        let server = MockServer::start();
+        let search_mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(403)
+                .header("content-type", "text/html")
+                .body(NETWORK_BLOCK_PAGE);
+        });
+        let challenge_mock = server.mock(|when, then| {
+            when.method(GET).path("/captcha/challenge");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(SOLVABLE_CHALLENGE);
+        });
+        let verify_mock = server.mock(|when, then| {
+            when.method(POST).path("/captcha/verify");
+            then.status(200).header("set-cookie", "chllg=unexpected");
+        });
+
+        let err = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &ChallengeSection {
+                enabled: true,
+                ..ChallengeSection::default()
+            },
+        )
+        .await
+        .expect_err("a network block must not parse as results");
+
+        match err {
+            EngineError::Blocked {
+                engine: "mojeek",
+                reason,
+            } => {
+                assert!(reason.contains("challenge page detected"), "got: {reason}");
+                assert!(
+                    reason.contains("your network appears to be sending automated queries"),
+                    "got: {reason}"
+                );
+                assert!(reason.contains("HTTP 403"), "got: {reason}");
+            }
+            other => panic!("expected Blocked, got {other:?}"),
+        }
+        assert_eq!(search_mock.hits(), 1);
+        assert_eq!(challenge_mock.hits(), 0);
+        assert_eq!(verify_mock.hits(), 0);
+
+        let after = ledger_stats();
+        assert_eq!(solves_delta(&before, &after), (0, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn non_success_without_a_marker_stays_a_status_failure() {
+        use httpmock::prelude::*;
+
+        let _guard = CHALLENGE_TEST_LOCK.lock().await;
+        pass_cookie_cache().remove(ENGINE);
+
+        let server = MockServer::start();
+        let search_mock = server.mock(|when, then| {
+            when.method(GET).path("/search").query_param("q", "rust");
+            then.status(500);
+        });
+
+        let err = search_at(
+            &test_client(),
+            &server.url(""),
+            "rust",
+            10,
+            Duration::from_secs(5),
+            &ChallengeSection::default(),
+        )
+        .await
+        .expect_err("an unmarked failure must stay a status failure");
+
+        assert!(
+            matches!(
+                err,
+                EngineError::BadStatus {
+                    engine: "mojeek",
+                    status: 500
+                }
+            ),
+            "unexpected error: {err:?}"
+        );
+        assert_eq!(search_mock.hits(), 1);
     }
 }

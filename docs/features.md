@@ -1,6 +1,6 @@
 # Capabilities and Optional Features
 
-eggsearch provides keyless web, fetch, advisory, registry, and scholarly paths by default. Current source builds also enable PDF extraction and browser rendering by default. The published `v0.4.4` binaries predate that change and include neither feature. Other optional capabilities require Cargo features or config changes.
+eggsearch provides keyless web, fetch, advisory, registry, and scholarly paths by default. Current source builds enable PDF extraction and browser rendering by default, and the next release carries both into the CLI binaries and the Python wheels. The published `v0.4.4` binaries predate that change and include neither feature; the published `eggsearch==0.4.4` wheel is PDF-only. A system Chrome/Chromium executable is a runtime dependency for browser rendering only; no browser is bundled. Other optional capabilities require Cargo features or config changes.
 
 ## Knowledge delta
 
@@ -95,9 +95,10 @@ returned vulnerability carries severity.
 ## PDF Extraction
 
 A web item sent to canonical `fetch` extracts PDF text when the binary includes
-the `pdf` Cargo feature and `[fetch].pdf_enabled` is true. Current source builds enable this feature by
-default. Published `v0.4.4` binaries do not include it. The config value defaults
-to the compiled-in feature state.
+the `pdf` Cargo feature and `[fetch].pdf_enabled` is true. Current source builds
+enable this feature by default; the published `v0.4.4` binaries do not include it,
+while the published `eggsearch==0.4.4` wheel does. The config value defaults to
+the compiled-in feature state.
 
 ### Enabling
 
@@ -241,13 +242,14 @@ naming the bound, not an empty result. A solved page that fails to parse is
 
 ## Browser Rendering
 
-Headless Chrome/Chromium rendering supports JavaScript-heavy pages that ordinary HTTP fetching cannot render. Current source builds include the `browser` Cargo feature by default, but published `v0.4.4` binaries do not. Rendering uses a Chrome or Chromium executable already installed on the host.
+Headless Chrome/Chromium rendering supports JavaScript-heavy pages that ordinary HTTP fetching cannot render. The `browser` feature is compiled into every artifact built from current source, including the next CLI release and the next Python wheel; the published `v0.4.4` binaries predate it. A system Chrome/Chromium executable is a runtime dependency only and is never bundled; its absence degrades browser functionality rather than breaking the product.
 
 ### Enabling
 
-In current source builds, `[fetch.browser].enabled` defaults to the compiled-in
-feature state, so no config is required. To enable rendering in a build that
-includes the feature but has disabled it in config:
+In builds from current source, `[fetch.browser].enabled` defaults to `true`
+because the feature is compiled in, so no config is required.
+To enable rendering in a build that includes the feature but has disabled it in
+config:
 
 ```toml
 [fetch.browser]
@@ -273,9 +275,10 @@ downloads, installs, or manages one.
 with HTTP 429 and Yahoo answers a headless client with HTTP 500 and no body. When
 `[fetch.browser].enabled` is true and a Chrome or Chromium executable was discovered, both engines
 fall back to one bounded render of their result page and parse the rendered DOM; without a browser
-they report the HTTP failure unchanged. The fallback costs a render per search (a few seconds) and
-is bounded by the request deadline. Interactive CAPTCHAs are never attempted
-and are reported instead.
+they report the HTTP outcome and, when rendering was warranted, a
+`browser_unavailable` warning with the capability reason. The fallback costs a
+render per search (a few seconds) and is bounded by the request deadline.
+Interactive CAPTCHAs are never attempted and are reported instead.
 
 ### Render Policy
 
@@ -296,21 +299,24 @@ letting the page's own script run, and the render polls the live classification 
 to `verification_wait_ms`. A wall that still has not resolved is returned marked as a
 challenge page rather than as a document.
 
-### Error Outcomes
+### Availability and Degradation
 
-An explicit `render = "browser"` or `browser_profile` request reports a stable
-code rather than silently downgrading to HTTP:
+The table is normative for explicit browser requests and implicit (`auto`)
+requests. A request that does not require rendering continues on its HTTP path.
 
-| Code | Condition |
-|------|-----------|
-| `browser_not_compiled_in` | The binary was built without the `browser` feature |
-| `browser_disabled` | The feature is compiled but `[fetch.browser].enabled = false` |
-| `browser_unavailable` | Enabled, but no Chrome/Chromium executable was discovered |
+| Condition | Explicit browser request | Implicit (`auto`) request |
+|---|---|---|
+| Feature not compiled | `browser_not_compiled_in` | HTTP outcome, `browser_unavailable` warning if rendering was warranted |
+| `enabled = false` | `browser_disabled` | same |
+| Enabled, no executable found | `browser_unavailable` with an actionable reason | same |
+| Enabled, unsupported version | `browser_unavailable` naming the version | same |
+| Enabled, explicit path invalid | `browser_unavailable` naming the path; no fallback to auto-discovery | same |
+| Enabled and discovered but the launch fails | `browser_unavailable`-class failure naming the launch error, never a silent HTTP fetch | the original HTTP outcome plus the failure reason |
 
-When auto escalation is unavailable, the HTTP response is returned with the
-structured warning `browser_unavailable` and `browser_escalated: false`. If the
-browser detects an interactive challenge, the call returns a manual-interaction
-error instead.
+`provider_status.browser_capabilities` always reports `compiled`, `configured`,
+`discovered`, `usable`, `reason`, and the lifecycle counters, in every one of
+those states. If the browser detects an interactive challenge, the call returns
+a manual-interaction error instead.
 
 Auto mode also escalates when the origin answers the HTTP attempt with a
 browser-gated status: `429`, or a `5xx` such as Yahoo's empty `500` to a client

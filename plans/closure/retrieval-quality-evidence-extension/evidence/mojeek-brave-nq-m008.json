@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "dataset": "Natural Questions BEIR test",
+  "dataset_sha256": "76f3240642b95adaccc4a0e6cb7ef75776ec105e6763585f37ade994663673ed",
+  "dataset_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752",
+  "source_component_sha256": {
+    "beir_nq_archive_sha256": "2553bf7bfbab47b1436ca00a34bce57320e18e611fd00999a2a3a1b4714be752"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "2bb24640027801e9c29f2839e1f8e84b8007a66a3ceb4cb7d489e8f4c72767d3",
+  "binary_sha256": "14370900e193c56273c46409b2736ff7ac795a1a4c96ddf16510c870959d56fe",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "brave",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "6483e7b6beb1503f4032d3c6c95745c6cf6af2b0a9bc366ab4fe580243ca6174",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "nq:test2352",
+    "nq:test1742",
+    "nq:test2376"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "provider_error": 4,
+    "results": 2
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 2,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 2,
+    "matched_relevant_query_document_pairs_across_valid_trials": 1
+  },
+  "hit_at_k_over_valid_result_trials": 0.5,
+  "macro_recall_at_k_over_valid_result_trials": 0.5,
+  "micro_recall_at_k_over_valid_result_trials": 0.5,
+  "rows": [
+    {
+      "query_id": "nq:test2352",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 946,
+      "raw_response_sha256": "5813a40f53396740dfa3d8ad4f1036e52495b3db142a4940997a82cead95f291"
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "doc61640",
+          "rank": 4
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 766,
+      "raw_response_sha256": "530acdcfb7ddd0aa4aad9dd891e57cd961c906835a3968b35f7b3e58232ba561"
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 1,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "brave",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 228,
+      "raw_response_sha256": "8da159d52509123a7b903a84aee02d29193758c8d84cc27bc648787390f12de8"
+    },
+    {
+      "query_id": "nq:test2352",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "brave",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 261,
+      "raw_response_sha256": "be926d0198ab68b0495b17200743b65393934e5b056a3fec327129a77ce9fa79"
+    },
+    {
+      "query_id": "nq:test1742",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "brave",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 211,
+      "raw_response_sha256": "0164da9ddf6972a70a638fbbe82c4344e8055484351baacdf3e64e160c7a7a53"
+    },
+    {
+      "query_id": "nq:test2376",
+      "repetition": 2,
+      "outcome": "provider_error",
+      "provider_errors": [
+        {
+          "id": "brave",
+          "error_class": "blocked"
+        }
+      ],
+      "result_count": 0,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 216,
+      "raw_response_sha256": "8da159d52509123a7b903a84aee02d29193758c8d84cc27bc648787390f12de8"
+    }
+  ],
+  "raw_search_results_included": false
+}

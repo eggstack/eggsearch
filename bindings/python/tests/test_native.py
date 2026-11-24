@@ -1,8 +1,14 @@
 import asyncio
+import http.server
 import json
 import math
 import os
+import select
+import signal
+import threading
+import time
 import typing
+from contextlib import contextmanager
 
 import pytest
 
@@ -57,6 +63,63 @@ def _platform_env(monkeypatch, base):
 def _write_config(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _write_browser_config(path, executable=None, max_requests=100, idle_timeout_ms=5000):
+    workspace = path.parent / "workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "README.md").write_text(
+        "offline-browser-marker local retrieval fixture", encoding="utf-8"
+    )
+    executable_line = (
+        f"executable = {json.dumps(str(executable))}\n"
+        if executable is not None
+        else ""
+    )
+    _write_config(
+        path,
+        "[search]\nmode = 'off'\ndefault_max_results = 10\nmax_results_cap = 50\n"
+        "max_query_chars = 512\ntimeout_ms = 8000\ndefault_providers = ['duckduckgo']\n"
+        "sanitize_output = true\n[search.providers]\nduckduckgo = true\n\n"
+        "[fetch]\nenabled = true\ntimeout_ms = 8000\nmax_bytes = 2000000\n"
+        "max_chars_default = 12000\nmax_chars_cap = 50000\nredirect_limit = 5\n"
+        "allow_private_network = false\nallow_localhost = true\nsanitize_output = true\n\n"
+        "[fetch.browser]\nenabled = true\npolicy = 'auto'\n"
+        f"{executable_line}max_requests = {max_requests}\n"
+        f"idle_timeout_ms = {idle_timeout_ms}\n\n"
+        f"[local]\nenabled = true\nroots = [{json.dumps(str(workspace))}]\n",
+    )
+    return path
+
+
+@contextmanager
+def _local_page():
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = (
+                b"<!doctype html><html><head><title>local test</title></head>"
+                b"<body><p>http-only-marker</p><script>"
+                b"document.body.textContent=atob('YnJvd3Nlci1yZW5kZXItbWFya2Vy')"
+                b"</script></body></html>"
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/fixture"
+    finally:
+        server.shutdown()
+        thread.join(timeout=3)
+        server.server_close()
 
 
 def _mojeek_enabled(status):
@@ -424,6 +487,191 @@ def test_public_error_exposes_structured_fields(config_path):
             assert failure.value.data is None or isinstance(failure.value.data, dict)
 
     asyncio.run(run())
+
+
+def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
+    missing_executable = tmp_path / "missing-chrome"
+    config = _write_browser_config(
+        tmp_path / "absent-browser.toml", executable=missing_executable
+    )
+
+    with _local_page() as url:
+        async def run():
+            client = AsyncEggsearch(str(config))
+            try:
+                status = await client.provider_status(probe=False)
+                capabilities = status["browser_capabilities"]
+                assert capabilities["compiled"] is True
+                assert capabilities["configured"] is True
+                assert capabilities["discovered"] is False
+                assert capabilities["usable"] is False
+                assert "invalid" in capabilities["reason"]
+                assert str(missing_executable) in capabilities["reason"]
+                lifecycle = capabilities["lifecycle"]
+                assert {
+                    "resident",
+                    "session_launches",
+                    "renders",
+                    "idle_teardowns",
+                    "session_cap_teardowns",
+                } <= set(lifecycle)
+                print("browser_capabilities=" + json.dumps(capabilities, sort_keys=True))
+
+                with pytest.raises(EggsearchError) as unavailable:
+                    await client.web_fetch(url=url, render="browser")
+                assert unavailable.value.code == "capability_unavailable"
+                assert unavailable.value.data["code"] == "browser_unavailable"
+                assert "executable" in unavailable.value.data["message"]
+
+                fetched = await client.web_fetch(url=url, render="http_only")
+                assert isinstance(fetched, dict)
+                assert "http-only-marker" in json.dumps(fetched)
+
+                searched = await client.repo_search(
+                    query="offline-browser-marker", include_local=True
+                )
+                cards = [
+                    card
+                    for group in searched.get("groups", [])
+                    for card in group.get("results", [])
+                ]
+                assert any(
+                    "offline-browser-marker" in (card.get("snippet") or "")
+                    for card in cards
+                )
+            finally:
+                await client.close()
+
+        asyncio.run(run())
+
+
+@pytest.mark.skipif(
+    os.environ.get("EGGSEARCH_TEST_BROWSER_WITH_CHROME") != "1",
+    reason="real Chrome qualification is enabled only in its CI lane",
+)
+def test_browser_render_with_chrome(tmp_path):
+    config = _write_browser_config(tmp_path / "available-browser.toml")
+
+    with _local_page() as url:
+        async def run():
+            client = AsyncEggsearch(str(config))
+            try:
+                before = await client.provider_status(probe=False)
+                capabilities = before["browser_capabilities"]
+                assert capabilities["compiled"] is True
+                assert capabilities["configured"] is True
+                assert capabilities["discovered"] is True
+                assert capabilities["usable"] is True
+                print("browser_capabilities=" + json.dumps(capabilities, sort_keys=True))
+
+                rendered = await asyncio.wait_for(
+                    client.web_fetch(url=url, render="browser"), timeout=45
+                )
+                assert isinstance(rendered, dict)
+                assert "browser-render-marker" in json.dumps(rendered)
+
+                after = await client.provider_status(probe=False)
+                lifecycle = after["browser_capabilities"]["lifecycle"]
+                assert lifecycle["renders"] == 1
+                assert lifecycle["session_launches"] == 1
+                print("browser_capabilities=" + json.dumps(after["browser_capabilities"], sort_keys=True))
+            finally:
+                await client.close()
+
+        asyncio.run(run())
+
+
+@pytest.mark.skipif(
+    os.environ.get("EGGSEARCH_TEST_BROWSER_WITH_CHROME") != "1",
+    reason="real Chrome qualification is enabled only in its CI lane",
+)
+def test_browser_idle_and_session_cap_counters_are_visible(tmp_path):
+    config_cap = _write_browser_config(
+        tmp_path / "session-cap.toml", max_requests=1
+    )
+    config_idle = _write_browser_config(
+        tmp_path / "idle-teardown.toml", idle_timeout_ms=5000
+    )
+
+    with _local_page() as url:
+        async def run():
+            cap_client = AsyncEggsearch(str(config_cap))
+            try:
+                await asyncio.wait_for(
+                    cap_client.web_fetch(url=url, render="browser"), timeout=45
+                )
+                capped = await cap_client.provider_status(probe=False)
+                counters = capped["browser_capabilities"]["lifecycle"]
+                assert counters["session_cap_teardowns"] == 1
+                assert counters["idle_teardowns"] == 0
+                assert counters["resident"] is False
+            finally:
+                await cap_client.close()
+
+            idle_client = AsyncEggsearch(str(config_idle))
+            try:
+                await asyncio.wait_for(
+                    idle_client.web_fetch(url=url, render="browser"), timeout=45
+                )
+                deadline = time.monotonic() + 12
+                idle = await idle_client.provider_status(probe=False)
+                while (
+                    idle["browser_capabilities"]["lifecycle"]["idle_teardowns"] == 0
+                    and time.monotonic() < deadline
+                ):
+                    await asyncio.sleep(0.2)
+                    idle = await idle_client.provider_status(probe=False)
+                counters = idle["browser_capabilities"]["lifecycle"]
+                assert counters["idle_teardowns"] == 1
+                assert counters["session_cap_teardowns"] == 0
+                assert counters["resident"] is False
+                print("browser_lifecycle_counters=" + json.dumps(counters, sort_keys=True))
+            finally:
+                await idle_client.close()
+
+        asyncio.run(run())
+
+
+def test_forked_child_rejects_inherited_runtime_and_client(config_path):
+    if not hasattr(os, "fork"):
+        pytest.skip("fork is unavailable on this platform")
+
+    async def initialize():
+        client = AsyncEggsearch(str(config_path))
+        await client.provider_status(probe=False)
+        return client
+
+    client = asyncio.run(initialize())
+    read_fd, write_fd = os.pipe()
+    child = os.fork()
+    if child == 0:
+        os.close(read_fd)
+        try:
+            asyncio.run(client.provider_status(probe=False))
+            result = {"code": None}
+        except EggsearchError as error:
+            result = {"code": error.code, "message": error.message}
+        except BaseException as error:
+            result = {"code": "unexpected", "message": str(error)}
+        try:
+            os.write(write_fd, json.dumps(result).encode("utf-8"))
+        finally:
+            os._exit(0)
+
+    os.close(write_fd)
+    try:
+        readable, _, _ = select.select([read_fd], [], [], 10)
+        if not readable:
+            os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+            pytest.fail("forked child did not return a structured error")
+        result = json.loads(os.read(read_fd, 4096))
+        os.waitpid(child, 0)
+        assert result["code"] == "forked_process"
+        assert "after fork" in result["message"]
+    finally:
+        os.close(read_fd)
+        asyncio.run(client.aclose())
 
 
 def test_mode_off_repo_search_returns_local_trusted_results(config_path, tmp_path):

@@ -1,0 +1,78 @@
+{
+  "experiment": "mojeek-403-mechanism-controls",
+  "date_utc": "2026-11-23T20:49-20:58Z",
+  "question": "Is Mojeek's HTTP 403 caused by the egress IP, the user-agent/headers, or the query?",
+  "egress": {
+    "public_ip": "96.236.59.113",
+    "verified_by": [
+      "in-app browser GET https://api.ipify.org/",
+      "curl GET https://api.ipify.org"
+    ],
+    "note": "browser and CLI resolve to the same public address, so the browser test is on the CLI egress"
+  },
+  "controls": [
+    {
+      "client": "in-app browser (Chromium 148 engine)",
+      "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) MiniMaxAgent/3.1.17 Chrome/148.0.7778.280 Electron/42.11.16 Safari/537.36",
+      "request": "GET /",
+      "outcome": "200 Mojeek homepage"
+    },
+    {
+      "client": "in-app browser",
+      "query": "Rust programming language official website",
+      "outcome": "403 block page (repeatable, twice)"
+    },
+    {
+      "client": "in-app browser",
+      "query": "test",
+      "outcome": "200 ALTCHA wall (div.captcha-wrap)"
+    },
+    {
+      "client": "in-app browser",
+      "query": "the quick brown fox jumps over the lazy dog repeatedly today",
+      "outcome": "200 ALTCHA wall"
+    },
+    {
+      "client": "in-app browser",
+      "query": "rust",
+      "outcome": "200 ALTCHA wall"
+    },
+    {
+      "client": "in-app browser",
+      "query": "official website",
+      "outcome": "200 ALTCHA wall"
+    },
+    {
+      "client": "in-app browser",
+      "query": "rust programming language",
+      "outcome": "200 ALTCHA wall"
+    },
+    {
+      "client": "in-app browser",
+      "query": "which river separates the bronx in new york city from manhattan island",
+      "outcome": "200 ALTCHA wall (also after reload and a second identical request)"
+    },
+    {
+      "client": "curl, stale Chrome/124 Windows UA",
+      "query": "Rust programming language official website",
+      "outcome": "403 block page"
+    },
+    {
+      "client": "curl, current Chrome/148 macOS UA + sec-ch-ua + sec-fetch-* (HTTP/1.1)",
+      "query": "Rust programming language official website",
+      "outcome": "403 block page, byte-identical 363-byte page"
+    },
+    {
+      "client": "eggsearch release client (browser-like UA, ALTCHA solver)",
+      "query": "which river separates the bronx in new york city from manhattan island",
+      "outcome": "5 real results, providers_failed empty"
+    },
+    {
+      "client": "eggsearch release client with M049 fix",
+      "query": "Rust programming language official website",
+      "outcome": "error_class blocked, \"challenge page detected (your network appears to be sending automated queries) on HTTP 403\""
+    }
+  ],
+  "conclusion": "The 403 is not a network-wide or user-agent-wide refusal. The same egress serves Mojeek's homepage, serves /search with the solvable ALTCHA wall for ordinary queries, and the shipped client returns real results for a held-out N8 question. The 403 tracks the query: one specific probe string is refused for every client tested, including a real Chromium engine, while changing the UA string and client hints changes nothing. Sustained automated bursts remain the documented escalation path, so the earlier M008 403s are consistent with query-keyed blocking and/or escalation caused by the cohort's own request pressure.",
+  "supersedes": "The earlier note in this plan and in the M008 correction that called the refusal network-scoped and reachable only through the keyed API."
+}

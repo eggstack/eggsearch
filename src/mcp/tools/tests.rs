@@ -1095,6 +1095,8 @@ fn synthetic_browser_state(
     };
 
     let mut config = AppConfig::default();
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
     config.fetch.browser.enabled = true;
     let mut state = Arc::new(ServerState::build(config).expect("state builds"));
     let discovery = BrowserDiscovery {

@@ -51,6 +51,10 @@ DATASETS = {
 KEYLESS_PROVIDERS = {"duckduckgo", "startpage", "yahoo", "brave", "mojeek", "searxng"}
 MAX_PROVIDER_QUERIES = 80
 MAX_RESULTS = 10
+STATUS_PATTERNS = (
+    re.compile(r"returned status (\d{3})"),
+    re.compile(r"on HTTP (\d{3})"),
+)
 DATASET_ARCHIVE_SHA256 = "536e14446a0ba56ed1398ab1055f39fe852686ecad24a6306c80c490fa8e0165"
 
 
@@ -66,6 +70,30 @@ def normalize_title(value):
 def normalize_url(value):
     value = value.strip().casefold().split("#", 1)[0]
     return value.rstrip("/")
+
+
+def attempt_interval(protocol_id, provider, query_id, repetition, minimum, maximum):
+    key = f"{protocol_id}:{provider}:{query_id}:{repetition}".encode()
+    fraction = int.from_bytes(hashlib.sha256(key).digest()[:8], "big") / float(1 << 64)
+    return round(minimum + fraction * (maximum - minimum), 3)
+
+
+def http_status_from_errors(errors):
+    for item in errors:
+        if not isinstance(item, dict):
+            continue
+        message = item.get("message") or ""
+        for pattern in STATUS_PATTERNS:
+            found = pattern.search(message)
+            if found:
+                return int(found.group(1))
+    return None
+
+
+def is_blocked_row(row):
+    if row.get("outcome") != "provider_error":
+        return False
+    return any(error.get("error_class") == "blocked" for error in row.get("provider_errors", []))
 
 
 def load_corpus(dataset_id):
@@ -145,10 +173,16 @@ def run_one(binary, config, provider, case, repetition, max_results, timeout):
             "repetition": repetition,
             "outcome": outcome,
             "provider_errors": [
-                {"id": item.get("id"), "error_class": item.get("error_class")}
+                {
+                    "id": item.get("id"),
+                    "error_class": item.get("error_class"),
+                    "http_status": http_status_from_errors([item]),
+                    "message": (item.get("message") or "")[:200],
+                }
                 for item in errors
                 if isinstance(item, dict)
             ],
+            "http_status": http_status_from_errors(errors),
             "result_count": len(results),
             "matched_relevant_documents": matches,
             "relevant_document_count": len(relevant_ids),
@@ -165,6 +199,7 @@ def run_one(binary, config, provider, case, repetition, max_results, timeout):
             "matched_relevant_documents": [],
             "relevant_document_count": len(case["relevant_documents"]),
             "matched_relevant_document_count": 0,
+            "http_status": None,
             "latency_ms": round(timeout * 1000),
             "raw_response_sha256": None,
         }
@@ -183,6 +218,10 @@ def main():
     parser.add_argument("--max-results", type=int, default=5)
     parser.add_argument("--timeout-seconds", type=int, default=18)
     parser.add_argument("--max-provider-queries", type=int, default=80)
+    parser.add_argument("--protocol-id")
+    parser.add_argument("--min-interval-seconds", type=float, default=25.0)
+    parser.add_argument("--max-interval-seconds", type=float, default=40.0)
+    parser.add_argument("--consecutive-blocked-stop", type=int, default=3)
     args = parser.parse_args()
 
     if not re.fullmatch(r"[0-9a-fA-F]{40}", args.source_sha):
@@ -199,24 +238,75 @@ def main():
         parser.error("query_count x repetitions exceeds the provider-query ceiling")
     if args.max_provider_queries > MAX_PROVIDER_QUERIES:
         parser.error(f"--max-provider-queries cannot exceed {MAX_PROVIDER_QUERIES}")
+    if args.min_interval_seconds < 0 or args.max_interval_seconds < args.min_interval_seconds:
+        parser.error("interval bounds must satisfy 0 <= minimum <= maximum")
+    if args.consecutive_blocked_stop < 1:
+        parser.error("--consecutive-blocked-stop must be positive")
+    if not args.protocol_id and (
+        args.min_interval_seconds != 25.0
+        or args.max_interval_seconds != 40.0
+        or args.consecutive_blocked_stop != 3
+    ):
+        parser.error("pacing and stop-rule options require --protocol-id")
 
     corpus, corpus_sha, dataset_manifest = load_corpus(args.dataset)
     selected = select_cases(corpus["cases"], args.query_count, args.seed)
     binary_sha = digest(args.binary.read_bytes())
+    protocol = None
+    if args.protocol_id:
+        protocol = {
+            "id": args.protocol_id,
+            "mode": "paced",
+            "min_interval_seconds": args.min_interval_seconds,
+            "max_interval_seconds": args.max_interval_seconds,
+            "consecutive_blocked_stop": args.consecutive_blocked_stop,
+        }
     rows = []
-    for repetition in range(1, args.repetitions + 1):
-        for case in selected:
-            rows.append(
-                run_one(
-                    args.binary,
-                    args.config,
-                    args.provider,
-                    case,
-                    repetition,
-                    args.max_results,
-                    args.timeout_seconds,
-                )
+    aborted = False
+    previous_started = None
+    consecutive_blocked = 0
+    attempts = [
+        (repetition, case)
+        for repetition in range(1, args.repetitions + 1)
+        for case in selected
+    ]
+    for repetition, case in attempts:
+        planned_interval = 0.0
+        if protocol and previous_started is not None:
+            planned_interval = attempt_interval(
+                protocol["id"],
+                args.provider,
+                case["id"],
+                repetition,
+                args.min_interval_seconds,
+                args.max_interval_seconds,
             )
+            remaining = previous_started + planned_interval - time.monotonic()
+            if remaining > 0:
+                time.sleep(remaining)
+        started = time.monotonic()
+        started_wall = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        actual_interval = None if previous_started is None else round(started - previous_started, 3)
+        previous_started = started
+        row = run_one(
+            args.binary,
+            args.config,
+            args.provider,
+            case,
+            repetition,
+            args.max_results,
+            args.timeout_seconds,
+        )
+        row["started_at_utc"] = started_wall
+        if protocol:
+            row["planned_interval_seconds"] = planned_interval
+            row["actual_interval_seconds"] = actual_interval
+        rows.append(row)
+        if protocol:
+            consecutive_blocked = consecutive_blocked + 1 if is_blocked_row(row) else 0
+            if consecutive_blocked >= args.consecutive_blocked_stop:
+                aborted = True
+                break
 
     expected_documents = sum(len(case["relevant_documents"]) for case in selected)
     valid_rows = [row for row in rows if row["outcome"] in {"results", "zero_results"}]
@@ -229,6 +319,28 @@ def main():
         if valid_rows
         else None
     )
+    observed_intervals = [
+        row["actual_interval_seconds"]
+        for row in rows
+        if row.get("actual_interval_seconds") is not None
+    ]
+    pacing = {
+        "attempts": len(rows),
+        "min_observed_interval_seconds": min(observed_intervals) if observed_intervals else None,
+        "violations": [
+            row["query_id"]
+            for row in rows
+            if row.get("actual_interval_seconds") is not None
+            and row["actual_interval_seconds"] < args.min_interval_seconds
+        ],
+    }
+    refused_attempts = sum(1 for row in rows if is_blocked_row(row))
+    http_status_counts = {}
+    for row in rows:
+        status = row.get("http_status")
+        if status is not None:
+            http_status_counts[str(status)] = http_status_counts.get(str(status), 0) + 1
+
     report = {
         "schema_version": 1,
         "dataset": corpus["dataset"],
@@ -247,6 +359,11 @@ def main():
         "query_ids": [case["id"] for case in selected],
         "query_count": len(selected),
         "repetitions": args.repetitions,
+        "protocol": protocol,
+        "pacing": pacing,
+        "aborted": aborted,
+        "refused_attempts": refused_attempts,
+        "http_status_counts": http_status_counts,
         "provider_query_attempts": len(rows),
         "max_results": args.max_results,
         "timeout_seconds_per_attempt": args.timeout_seconds,

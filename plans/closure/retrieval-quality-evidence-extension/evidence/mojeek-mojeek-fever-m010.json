@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "dataset": "FEVER BEIR test",
+  "dataset_sha256": "4f359df04ad5a9a29c2f78009e7229d2a1c8eb0bf42d953853811373dea13305",
+  "dataset_archive_sha256": null,
+  "source_component_sha256": {
+    "beir_fever_queries_parquet_sha256": "b9cf00001ef1aa07a7030118490ce5f8a840e783ad8d972b9afee8ef281d6093",
+    "beir_fever_test_qrels_tsv_sha256": "6599dab4e2189ca5eb5216546021710c06dc8bdd1a0c59cc1fa52129c6e038b3",
+    "beir_fever_revision": "426aea4d30c65c041f093ae072e25fb5a0e64659",
+    "beir_fever_qrels_revision": "64cd0e4ef9b63a88ac8e69d1133a2f649acd4745"
+  },
+  "source_sha": "7ec251df2ba715705468f2eb1e5392fa87fc4d32",
+  "runner_sha256": "d70d086974e73fd1209f98fc2eecb25c9671366a75670b96b8851ad146e2082f",
+  "binary_sha256": "5c8c65fe099f7370bcfc04fd85cb6ba717eed7c4d83dfa0fa9ae1d4d27bcc65f",
+  "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "provider": "mojeek",
+  "config_state": "explicit config supplied",
+  "config_fingerprint_sha256": "01e08d77178bf091707ece340bc1ac27614bfa92a0f2b9999547c653c0093530",
+  "cache_state": "uncontrolled; CLI provides no cache-state control",
+  "seed": "m008-mojeek-default-qualification-v1",
+  "query_ids": [
+    "fever:test31743",
+    "fever:test120259",
+    "fever:test194565"
+  ],
+  "query_count": 3,
+  "repetitions": 2,
+  "protocol": {
+    "id": "m010-paced-v1",
+    "mode": "paced",
+    "min_interval_seconds": 25.0,
+    "max_interval_seconds": 40.0,
+    "consecutive_blocked_stop": 3
+  },
+  "pacing": {
+    "attempts": 6,
+    "min_observed_interval_seconds": 26.219,
+    "violations": []
+  },
+  "aborted": false,
+  "refused_attempts": 0,
+  "http_status_counts": {},
+  "provider_query_attempts": 6,
+  "max_results": 10,
+  "timeout_seconds_per_attempt": 18,
+  "outcomes": {
+    "results": 6
+  },
+  "judgment_denominators": {
+    "selected_queries": 3,
+    "repeated_valid_result_query_trials": 6,
+    "known_relevant_query_document_pairs_per_cohort": 3,
+    "known_relevant_query_document_pairs_across_valid_trials": 6,
+    "matched_relevant_query_document_pairs_across_valid_trials": 2
+  },
+  "hit_at_k_over_valid_result_trials": 0.3333333333333333,
+  "macro_recall_at_k_over_valid_result_trials": 0.3333333333333333,
+  "micro_recall_at_k_over_valid_result_trials": 0.3333333333333333,
+  "rows": [
+    {
+      "query_id": "fever:test31743",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1631,
+      "raw_response_sha256": "495cd385411fc11bf9bd6a78af669f99efcfcec5e674bb167396e45e55fd9728",
+      "started_at_utc": "2026-11-23T22:46:43Z",
+      "planned_interval_seconds": 0.0,
+      "actual_interval_seconds": null
+    },
+    {
+      "query_id": "fever:test120259",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1723,
+      "raw_response_sha256": "76a9e59fd79decdb7a8c188ac4ef932b4bbd367d78c2b2d347edc9ba38afe935",
+      "started_at_utc": "2026-11-23T22:47:14Z",
+      "planned_interval_seconds": 31.358,
+      "actual_interval_seconds": 31.363
+    },
+    {
+      "query_id": "fever:test194565",
+      "repetition": 1,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Kyle_MacLachlan",
+          "rank": 1
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 1660,
+      "raw_response_sha256": "5c1d5925a9312a535fc3d4681f8d1c0726f855ac4da8b5205227e6cc0809b67c",
+      "started_at_utc": "2026-11-23T22:47:50Z",
+      "planned_interval_seconds": 36.02,
+      "actual_interval_seconds": 36.024
+    },
+    {
+      "query_id": "fever:test31743",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1596,
+      "raw_response_sha256": "495cd385411fc11bf9bd6a78af669f99efcfcec5e674bb167396e45e55fd9728",
+      "started_at_utc": "2026-11-23T22:48:21Z",
+      "planned_interval_seconds": 31.188,
+      "actual_interval_seconds": 31.192
+    },
+    {
+      "query_id": "fever:test120259",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 0,
+      "latency_ms": 1613,
+      "raw_response_sha256": "76a9e59fd79decdb7a8c188ac4ef932b4bbd367d78c2b2d347edc9ba38afe935",
+      "started_at_utc": "2026-11-23T22:48:47Z",
+      "planned_interval_seconds": 26.215,
+      "actual_interval_seconds": 26.219
+    },
+    {
+      "query_id": "fever:test194565",
+      "repetition": 2,
+      "outcome": "results",
+      "provider_errors": [],
+      "http_status": null,
+      "result_count": 10,
+      "matched_relevant_documents": [
+        {
+          "corpus_id": "Kyle_MacLachlan",
+          "rank": 1
+        }
+      ],
+      "relevant_document_count": 1,
+      "matched_relevant_document_count": 1,
+      "latency_ms": 1625,
+      "raw_response_sha256": "5c1d5925a9312a535fc3d4681f8d1c0726f855ac4da8b5205227e6cc0809b67c",
+      "started_at_utc": "2026-11-23T22:49:20Z",
+      "planned_interval_seconds": 32.217,
+      "actual_interval_seconds": 32.22
+    }
+  ],
+  "raw_search_results_included": false
+}

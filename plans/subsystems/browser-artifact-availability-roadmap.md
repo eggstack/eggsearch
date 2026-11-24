@@ -1,11 +1,12 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: closing (M001–M005 acceptance complete; PR #16 merged as `aea34ee`)
+Status: closing (M001–M005 acceptance complete; PR #16 merged as `aea34ee`); ready (M006 absent-browser degradation)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
-Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
+Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`;
+`plans/adrs/ADR-0024-browser-enabled-wheels-and-absent-browser-degradation.md` (accepted 2026-11-24)
 
-References: `plans/000-long-term-specification.md` §6, §7; `plans/002-long-term-roadmap.md`; accepted ADR-0002, ADR-0006, ADR-0007, ADR-0009, ADR-0010, ADR-0014; `architecture/fetch.md` §8, §9; `architecture/build.md` § Feature flags matrix; `architecture/packaging.md` § Target contract; `architecture/mcp.md` § Policy; `docs/features.md`; `docs/config.md`; `docs/release.md`; `docs/installation.md`.
+References: `plans/000-long-term-specification.md` §6, §7; `plans/002-long-term-roadmap.md`; accepted ADR-0002, ADR-0006, ADR-0007, ADR-0009, ADR-0010, ADR-0014, ADR-0024; `architecture/fetch.md` §8, §9; `architecture/build.md` § Feature flags matrix; `architecture/packaging.md` § Target contract; `architecture/mcp.md` § Policy; `docs/features.md`; `docs/config.md`; `docs/release.md`; `docs/installation.md`.
 
 ## 1. Purpose and ownership boundary
 
@@ -52,7 +53,8 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
 - OCR, rasterization, a second PDF parser, or an image pipeline.
 - A new CDP client, a chromiumoxide fork, or a vendored patch.
 - Per-target feature sets or a browser-enabled variant asset.
-- Browser rendering in the Python wheel.
+- Browser rendering in the Python wheel — superseded 2026-11-24 by ADR-0024: the wheel compiles
+  the feature and relies on the M006 degradation contract instead of a different artifact.
 - Persistent profiles enabled by default, or any profile auto-login.
 - Making rendering the default extraction path, or automatically rendering pages
   that rendered empty over HTTP.
@@ -120,15 +122,18 @@ M001 render lifecycle bounds
 
 PDF roadmap M006 (independent; owns the pdf half)
   └── coordinates with M003 on wheel feature selection
+
+M003 ──> M006 absent-browser degradation contract (correctness; independent of the wheel)
+ADR-0024 + M006 ──> Python M006 browser-enabled wheels (delivery)
 ```
 
 - M002 is not dependency-ready until M001 closes: enabling escalation by default
   while Chrome has no idle teardown would pin roughly 1.2 GB for the lifetime of
   every long-running session, which is the defect this workstream exists to close.
 - M003 is evidence work for the exact candidate; it cannot start before M002 lands.
-- The PDF half has no new plan. M006 of the PDF roadmap is the vehicle, and the
-  browser M003 plan owns the wheel's explicit feature selection so the wheel gains
-  PDF without gaining browser.
+- The PDF half had no new plan. The wheel's feature selection was owned by browser M003 and kept
+  PDF without browser; ADR-0024 supersedes that on 2026-11-24, Python M006 now compiles both, and
+  browser M006 owns the degradation contract that makes a browser-less host safe.
 
 ## 6. Milestones
 
@@ -267,6 +272,26 @@ and continue to receive HTTP extraction.
   reverse-dependency set stays restricted to chromiumoxide. Removing the edge
   remains deferred until an upstream release makes HTTP discovery optional; if one
   appears, it is an optimization under this ADR, not a reopening of it.
-- **Wheel parity.** The wheel will not render. This is a deliberate asymmetry, not
-  an oversight, and must be documented in `docs/python-library.md` and
-  `docs/features.md`.
+- **Wheel parity.** Superseded 2026-11-24 by ADR-0024. The wheel now compiles rendering and the
+  asymmetry moves from capability to environment: a wheel host without Chrome still runs, and the
+  M006 degradation contract governs what it reports.
+
+### M006 — Absent-browser degradation contract (correctness) — ready
+
+**Objective.** Prove and, where needed, complete the promise this workstream already makes: a host
+without Chrome still installs, starts, searches, and fetches, and every browser-unavailable outcome
+names its exact cause.
+
+**Why now.** ADR-0024 compiles the feature into the Python wheel as well, so the absence path stops
+being an edge case and becomes the default on every machine without a browser.
+
+**Scope.** Seam audit across the CLI, MCP tools, `provider_status`, `doctor`, `browser_login`,
+`browser_profiles`, and the Python client; exact-code assertions for `browser_not_compiled_in`,
+`browser_disabled`, and `browser_unavailable`; `auto` warning completeness; the
+discovered-but-launch-fails path (container sandbox, missing shared library); a continuous-integration
+lane with no browser executable; documentation of the degradation table and discovery order.
+
+**Exit.** Every seam degrades without panic, hang, or silent explicit fallback; capability reporting
+is accurate for all five discovery states; the no-Chrome lane is the regression barrier.
+
+**Plan.** `plans/implementation/browser-artifact-availability/006-absent-browser-degradation-contract.md`.

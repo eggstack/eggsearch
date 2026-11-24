@@ -10,9 +10,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "browser")]
 use eggsearch::fetch::browser::{
-    browser_fetch_with_policy, browser_result_to_response, discover_browser, escalate,
-    gated_status, BrowserConfig, BrowserFetchError, BrowserFetchOutcome, BrowserLifecycle,
-    EscalationOutcome, EscalationRequest, RenderPolicy,
+    browser_discovery_reason, browser_fetch_with_policy, browser_result_to_response,
+    discover_browser, escalate, gated_status, BrowserConfig, BrowserFetchError,
+    BrowserFetchOutcome, BrowserLifecycle, EscalationOutcome, EscalationRequest, RenderPolicy,
 };
 
 /// CLI display cap for links. Distinct from [`crate::fetch::extract::MAX_LINKS`]
@@ -130,6 +130,11 @@ async fn fetch_response(
         other => anyhow::bail!("URL must be http or https; got '{other}'"),
     }
 
+    #[cfg(not(feature = "browser"))]
+    if cfg.fetch.browser.policy == "browser" {
+        anyhow::bail!("browser_not_compiled_in: browser rendering is not compiled into this build");
+    }
+
     if let Some(0) = max_chars {
         anyhow::bail!("max_chars must be > 0");
     }
@@ -166,31 +171,27 @@ async fn fetch_response(
     #[cfg(feature = "browser")]
     let render_policy = cli_render_policy(&browser_settings);
     #[cfg(feature = "browser")]
+    let browser_discovery_state = discover_browser(browser_settings.executable.as_deref());
+    #[cfg(feature = "browser")]
+    let browser_unavailable_reason = browser_discovery_reason(&browser_discovery_state)
+        .unwrap_or_else(|| "browser rendering is unavailable".to_string());
+    #[cfg(feature = "browser")]
     let browser_lifecycle = if matches!(render_policy, RenderPolicy::HttpOnly) {
         None
     } else {
-        let discovery = discover_browser(browser_settings.executable.as_deref())
-            .discovery()
-            .cloned();
         Some(Arc::new(BrowserLifecycle::new(
-            discovery,
+            browser_discovery_state.discovery().cloned(),
             browser_settings.clone(),
         )))
     };
 
     #[cfg(feature = "browser")]
     if matches!(render_policy, RenderPolicy::Browser) {
-        let lifecycle = browser_lifecycle.as_ref().ok_or_else(|| {
-            anyhow!(
-                "render policy is 'browser' but browser rendering is unavailable; \
-                 set [fetch.browser].executable or install Chrome/Chromium"
-            )
-        })?;
+        let lifecycle = browser_lifecycle
+            .as_ref()
+            .ok_or_else(|| anyhow!("browser_disabled: browser rendering is disabled in config"))?;
         if !lifecycle.is_available() {
-            anyhow::bail!(
-                "render policy is 'browser' but no Chrome/Chromium executable was found; \
-                 set [fetch.browser].executable or install Chrome/Chromium"
-            );
+            anyhow::bail!("browser_unavailable: {browser_unavailable_reason}");
         }
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.as_millis() < 2000 {
@@ -207,8 +208,13 @@ async fn fetch_response(
             ),
         )
         .await
-        .map_err(|_| anyhow!("browser rendering timed out"))?
-        .map_err(|error| anyhow!("browser_fetch_failed: {error}"))?;
+        .map_err(|_| anyhow!("browser_unavailable: browser rendering timed out"))?
+        .map_err(|error| match error {
+            BrowserFetchError::LaunchFailed(reason) => {
+                anyhow!("browser_unavailable: browser launch failed: {reason}")
+            }
+            other => anyhow!("browser_fetch_failed: {other}"),
+        })?;
         if rendered.challenge_completed {
             eggsearch::challenge_replay::record_browser_completion();
         }
@@ -236,7 +242,77 @@ async fn fetch_response(
     match eggsearch::challenge_replay::fetch_with_challenge_replay(&client, url, &challenge_plan)
         .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            #[allow(unused_mut)]
+            let mut response = response;
+            #[cfg(feature = "browser")]
+            if matches!(render_policy, RenderPolicy::Auto) && response_requires_browser(&response) {
+                if let Some(lifecycle) = browser_lifecycle.as_ref() {
+                    if !lifecycle.is_available() {
+                        response.structured_warnings.push(
+                            eggsearch::core::warning::AgentWarning::new(
+                                eggsearch::core::warning::WarningCode::BrowserUnavailable,
+                                browser_unavailable_reason.clone(),
+                            ),
+                        );
+                    } else {
+                        let remaining =
+                            deadline.saturating_duration_since(std::time::Instant::now());
+                        let unavailable_reason = if remaining.as_millis() < 2000 {
+                            Some(
+                                "insufficient remaining call budget for browser rendering"
+                                    .to_string(),
+                            )
+                        } else {
+                            match tokio::time::timeout(
+                                remaining,
+                                browser_fetch_with_policy(
+                                    lifecycle,
+                                    url,
+                                    &browser_settings,
+                                    cfg.fetch.sanitize_output,
+                                    &render_policy,
+                                ),
+                            )
+                            .await
+                            {
+                                Ok(Ok(rendered)) => {
+                                    if rendered.challenge_completed {
+                                        eggsearch::challenge_replay::record_browser_completion();
+                                    }
+                                    return Ok(browser_result_to_response(
+                                        rendered,
+                                        url,
+                                        budgets,
+                                        extract_mode,
+                                        include_links,
+                                        cfg.fetch.sanitize_output,
+                                    ));
+                                }
+                                Ok(Err(BrowserFetchError::LaunchFailed(reason))) => {
+                                    Some(format!("browser launch failed: {reason}"))
+                                }
+                                Ok(Err(error)) => {
+                                    Some(format!("browser escalation failed: {error}"))
+                                }
+                                Err(_) => {
+                                    Some("browser escalation exceeded the call budget".to_string())
+                                }
+                            }
+                        };
+                        if let Some(reason) = unavailable_reason {
+                            response.structured_warnings.push(
+                                eggsearch::core::warning::AgentWarning::new(
+                                    eggsearch::core::warning::WarningCode::BrowserUnavailable,
+                                    reason,
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            Ok(response)
+        }
         Err(error) => {
             #[cfg(feature = "browser")]
             if matches!(render_policy, RenderPolicy::Auto) {
@@ -249,11 +325,8 @@ async fn fetch_response(
                             policy: &render_policy,
                             browser_available: lifecycle
                                 .is_some_and(|lifecycle| lifecycle.is_available()),
-                            unavailable_reason: if lifecycle.is_some() {
-                                Some("no Chrome/Chromium executable was found")
-                            } else {
-                                None
-                            },
+                            unavailable_reason: lifecycle
+                                .map(|_| browser_unavailable_reason.as_str()),
                             profile_name: None,
                             budgets,
                             extract_mode,
@@ -315,6 +388,27 @@ async fn fetch_response(
             Err(anyhow!("fetch failed: {}: {}", error.error_code(), error))
         }
     }
+}
+
+#[cfg(feature = "browser")]
+fn response_requires_browser(response: &WebFetchResponse) -> bool {
+    let body = response.raw_text.as_deref().unwrap_or("");
+    let text_len = response
+        .raw_text_chars_returned
+        .unwrap_or_else(|| body.chars().count());
+    let disposition = eggsearch::fetch::browser::classify_response(
+        response.status,
+        response.content_type.as_deref(),
+        response.title.as_deref(),
+        text_len,
+        body.as_bytes(),
+    );
+    eggsearch::fetch::challenge::detect(response.title.as_deref(), body).is_some()
+        || matches!(
+            disposition,
+            eggsearch::fetch::browser::FetchDisposition::JavascriptShell
+                | eggsearch::fetch::browser::FetchDisposition::NonInteractiveVerification
+        )
 }
 
 /// The render policy the operator configured for this process.
@@ -399,6 +493,112 @@ mod tests {
             RenderPolicy::HttpOnly,
             "a disabled browser never renders"
         );
+    }
+
+    #[cfg(feature = "browser")]
+    fn browser_absent_config() -> AppConfig {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.browser.enabled = true;
+        cfg.fetch.browser.executable = Some("/synthetic/missing/chrome".to_string());
+        cfg
+    }
+
+    #[cfg(feature = "browser")]
+    #[tokio::test]
+    async fn browser_absent_auto_warns_only_when_rendering_is_warranted() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let _ordinary = server.mock(|when, then| {
+            when.method(GET).path("/ordinary");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body("<html><body>Ordinary page with readable content and no render markers.</body></html>");
+        });
+        let _verification = server.mock(|when, then| {
+            when.method(GET).path("/verification");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body("<html><head><title>Checking your browser</title></head><body>Please wait while we verify.</body></html>");
+        });
+        let cfg = browser_absent_config();
+
+        let ordinary = fetch_response(
+            &cfg,
+            &server.url("/ordinary"),
+            Some(1000),
+            Some(5000),
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect("ordinary HTTP fetch succeeds without Chrome");
+        assert!(!ordinary.structured_warnings.iter().any(
+            |warning| warning.code == eggsearch::core::warning::WarningCode::BrowserUnavailable
+        ));
+
+        let verification = fetch_response(
+            &cfg,
+            &server.url("/verification"),
+            Some(1000),
+            Some(5000),
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect("auto fetch retains HTTP response when Chrome is absent");
+        assert!(verification
+            .structured_warnings
+            .iter()
+            .any(|warning| warning.code
+                == eggsearch::core::warning::WarningCode::BrowserUnavailable
+                && warning.message.contains("/synthetic/missing/chrome")));
+    }
+
+    #[cfg(not(feature = "browser"))]
+    #[tokio::test]
+    async fn browser_not_compiled_cli_request_has_stable_code() {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.browser.policy = "browser".to_string();
+        let error = fetch_response(
+            &cfg,
+            "https://example.test/explicit-browser",
+            None,
+            Some(5000),
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect_err("explicit browser request requires the browser feature");
+        assert!(
+            error.to_string().contains("browser_not_compiled_in"),
+            "{error}"
+        );
+    }
+
+    #[cfg(feature = "browser")]
+    #[tokio::test]
+    async fn browser_absent_explicit_cli_request_names_code_and_reason() {
+        let mut cfg = browser_absent_config();
+        cfg.fetch.browser.policy = "browser".to_string();
+        let error = fetch_response(
+            &cfg,
+            "https://example.test/explicit-browser",
+            None,
+            Some(5000),
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect_err("explicit browser request must reject unavailable Chrome");
+        assert!(error.to_string().contains("browser_unavailable"));
+        assert!(error.to_string().contains("/synthetic/missing/chrome"));
     }
 
     #[tokio::test]

@@ -47,6 +47,24 @@ pub fn discover_browser(configured_path: Option<&str>) -> BrowserDiscoveryState 
     BrowserDiscoveryState::NotFound
 }
 
+pub fn browser_discovery_reason(state: &BrowserDiscoveryState) -> Option<String> {
+    match state {
+        BrowserDiscoveryState::Available(_) => None,
+        BrowserDiscoveryState::NotConfigured => Some(
+            "no browser executable is configured; set [fetch.browser].executable or install Chrome/Chromium".to_string(),
+        ),
+        BrowserDiscoveryState::ExplicitPathInvalid { path } => Some(format!(
+            "configured browser executable is invalid: {path}; set [fetch.browser].executable to a valid executable"
+        )),
+        BrowserDiscoveryState::NotFound => Some(
+            "no Chrome/Chromium executable was found; install Chrome/Chromium or set [fetch.browser].executable".to_string(),
+        ),
+        BrowserDiscoveryState::VersionUnsupported { version } => Some(format!(
+            "browser version is unsupported: {version}; install a supported Chrome/Chromium version"
+        )),
+    }
+}
+
 fn linux_candidates() -> Vec<PathBuf> {
     vec![
         PathBuf::from("/usr/bin/google-chrome-stable"),
@@ -269,5 +287,38 @@ mod tests {
         assert_eq!(report["browser_enabled_in_config"], false);
         assert_eq!(report["executable_discovered"], false);
         assert_eq!(report["usable"], false);
+    }
+
+    #[test]
+    fn discovery_reasons_cover_every_state() {
+        let available = BrowserDiscoveryState::Available(BrowserDiscovery {
+            path: PathBuf::from("/synthetic/chrome"),
+            family: BrowserFamily::Chrome,
+            version: "Chrome 120.0.0.0".to_string(),
+            source: BrowserSource::Configured,
+        });
+        assert_eq!(browser_discovery_reason(&available), None);
+        assert_eq!(
+            browser_discovery_reason(&BrowserDiscoveryState::NotConfigured).as_deref(),
+            Some("no browser executable is configured; set [fetch.browser].executable or install Chrome/Chromium")
+        );
+        assert_eq!(
+            browser_discovery_reason(&BrowserDiscoveryState::ExplicitPathInvalid {
+                path: "/synthetic/missing/chrome".to_string(),
+            })
+            .as_deref(),
+            Some("configured browser executable is invalid: /synthetic/missing/chrome; set [fetch.browser].executable to a valid executable")
+        );
+        assert_eq!(
+            browser_discovery_reason(&BrowserDiscoveryState::NotFound).as_deref(),
+            Some("no Chrome/Chromium executable was found; install Chrome/Chromium or set [fetch.browser].executable")
+        );
+        assert_eq!(
+            browser_discovery_reason(&BrowserDiscoveryState::VersionUnsupported {
+                version: "Chromium 69.0.0.0".to_string(),
+            })
+            .as_deref(),
+            Some("browser version is unsupported: Chromium 69.0.0.0; install a supported Chrome/Chromium version")
+        );
     }
 }

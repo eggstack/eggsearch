@@ -15,6 +15,11 @@ The separate Python distribution `eggsearch==0.4.4` was published to PyPI on
 crates.io publication require a new version, a changelog entry, and full
 re-qualification.
 
+The next Python release built from current source compiles browser rendering
+alongside PDF extraction, matching the CLI binaries built from the same source.
+It relies on a system Chrome or Chromium at runtime and never bundles one; a
+host without one still installs, imports, searches, and fetches.
+
 ## Preparation
 
 1. Ensure intended changes are on `main`.

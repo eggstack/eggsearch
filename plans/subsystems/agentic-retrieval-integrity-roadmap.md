@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M048 closed; M006–M012 dependency-ready; M008/M009 proposed)
+Status: active (M001–M049 closed; M006–M012 dependency-ready; M008/M009 proposed)
 Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -86,6 +86,17 @@ Measured or code-evidenced gaps:
   joined adjacent parts without a separator; exact-output regressions now prove source-present
   boundaries survive in text and Markdown without inventing spaces absent from source. See
   `plans/closure/agentic-retrieval-integrity/048-status.md`.
+- M049 closes the classification gap M045 left in `mojeek`. A bounded keyless capture on this egress
+  returned `HTTP 403` with a 363-byte page reading "Sorry your network appears to be sending
+  automated queries", which matches a blocked marker `mojeek.rs` already declares; `send_search()`
+  returned `BadStatus` before reading the body, so M008 recorded thirteen such refusals as
+  `http_status`. The engine now uses `read_search_body()` and reports `blocked` with the status.
+  The refusal is query-keyed, not network-wide or user-agent-wide: the same egress served the homepage,
+  the solvable wall for ordinary queries, and five real results through the shipped client, while a
+  current Chrome identity with matching client hints changed nothing, so the shipped identity is not
+  the cause and needs no change. Mojeek's `robots.txt` still declares `Disallow: /search`, and proxy
+  rotation and user-agent spoofing stay prohibited. See
+  `plans/implementation/agentic-retrieval-integrity/049-non-success-block-classification.md`.
 - Local `repo_search` reads only `max_results * 2` path-ranked candidates (ten at defaults), so a
   content-only or symbol query for a symbol outside that window returns no matches although the
   file exists; `git grep` over the same tree takes 0.05 s.
@@ -203,6 +214,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M039 — fetch emitted-payload budget | invariant (corrective to M036) | `plans/implementation/agentic-retrieval-integrity/039-fetch-emitted-payload-budget.md` | hard M036 (closed) | `max_total_chars` bounds the emitted payload; optional `document`/`lines` degrade before the requested text is clipped, and `payload_chars` reports the true emitted size |
 | M047 — projection-aware batch fetch budget | invariant (corrective to M039) | `plans/implementation/agentic-retrieval-integrity/047-projection-aware-batch-fetch-budget.md` | hard M039 (closed); interface ADR-0016/M029 (closed) | The selected response projection is applied before batch budgeting; web and repo items degrade optional structure before text clipping or omission, and payload telemetry measures the projected item payload |
 | M048 — inline HTML whitespace fidelity | invariant | `plans/implementation/agentic-retrieval-integrity/048-inline-html-whitespace-fidelity.md` | none; existing fetch and sanitization contracts | HTML extraction preserves source whitespace at inline text/link/code boundaries in both text and Markdown rendering, without inventing whitespace absent from the source |
+| M049 — non-success block classification for Mojeek | correctness (corrective to M045) | `plans/implementation/agentic-retrieval-integrity/049-non-success-block-classification.md` | hard M045 work package 1 (closed); interface `architecture/engines.md` § Scraper Fidelity | A search refusal that arrives with a non-success status and carries a declared blocked marker is classified `Blocked` naming the marker and the status, never a bare `BadStatus`; an unmarked non-success body stays `BadStatus`; the `200` challenge and solve paths are unchanged |
 | M040 — local content-aware candidate generation | capability (corrective to M037) | `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md` | hard M037 (closed) | A content or symbol query finds matches beyond the path-ranked window inside a scan bound; truncation and no-match describe the scan honestly |
 | M041 — linked worktree identity resolution and prefer-local honesty | capability (corrective to M037, M040) | `plans/implementation/agentic-retrieval-integrity/041-linked-worktree-identity-resolution.md` | hard M037 (closed); hard M040 (closed) | A checkout in a linked git worktree resolves its remote identity through the common directory, so `prefer_local` returns the local copy instead of silently falling back to a remote fetch; a skipped local copy is stated |
 | M042 — fetch item shape diagnostics | invariant (corrective to M029) | `plans/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md` | hard M029 (closed) | A `fetch` item with a missing or unknown `type` tag returns an actionable error naming the accepted shapes; no fetch error names a private Rust type |

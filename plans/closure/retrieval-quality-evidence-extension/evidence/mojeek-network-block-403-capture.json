@@ -1,0 +1,55 @@
+{
+  "capture": "mojeek-network-block-403",
+  "captured_at_utc": "2026-11-23T20:14:24Z",
+  "reason": "M008 root-cause capture and M049 classification evidence",
+  "request": {
+    "method": "GET",
+    "url": "https://www.mojeek.com/search?q=<redacted-generic-probe>",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "headers": {
+      "Accept-Language": "en-US,en;q=0.9",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Encoding": "deflate, gzip"
+    },
+    "bounded_by": "curl --max-time 20 --max-filesize 2000000",
+    "credentials": "none"
+  },
+  "response": {
+    "status": 403,
+    "reason": "Forbidden",
+    "headers": {
+      "Content-type": "text/html; charset=UTF-8",
+      "X-XSS-Protection": "1; mode=block",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "origin",
+      "Access-Control-Allow-Origin": "*",
+      "Content-Length": "363",
+      "Date": "Mon, 23 Nov 2026 20:14:24 GMT",
+      "Server": "lighttpd/1.4.53"
+    },
+    "body_bytes": 363,
+    "body_sha256": "50666d78ab85d7af911166fa712af887dedcf4a2751df8927992a4d253548691",
+    "body": "<!DOCTYPE html><html><head><title>403 - Forbidden</title></head><body><h1>403 - Forbidden</h1><h2>Sorry your network appears to be sending automated queries so we can't process your search at this time.</h2><h3>If you are seeing this in error please <a href=\"/about/contact?refr=403\">contact us</a>.</h3></body></html>",
+    "redactions": [
+      "the echoed query in the /about/contact link was removed",
+      "the Content-Security-Policy header is omitted as boilerplate"
+    ]
+  },
+  "classification": {
+    "before": "EngineError::BadStatus { status: 403 }; reported as error_class http_status because send_search() returned before reading the body",
+    "after": "EngineError::Blocked; reason 'challenge page detected (your network appears to be sending automated queries) on HTTP 403'",
+    "marker": "PageMarker::Text(\"your network appears to be sending automated queries\") in mojeek.rs SHAPE.blocked_markers"
+  },
+  "upstream_policy": {
+    "robots_txt": {
+      "url": "https://www.mojeek.com/robots.txt",
+      "status": 200,
+      "body": "# Let's treat everybody the same, bad bots will ignore it anyway.\nUser-agent: *\nDisallow: /search\nDisallow: /url\nDisallow: /focus/dashboard\nDisallow: /eval\nDisallow: /image?\n"
+    },
+    "challenge_wall": "ALTCHA proof-of-work served with HTTP 200 at /search (div.captcha-wrap); added 2026-06-23",
+    "escalation": "continued automated traffic can receive the hard 403 page recorded above",
+    "supported_route": "https://api.mojeek.com/search with api_key (paid, PAYG)"
+  },
+  "analysis_corrected": "The conclusion first written here ('network reputation; only a different egress or the keyed API would return results') is withdrawn. Follow-up controls on the same public address showed the 403 is query-keyed: the homepage returns 200, ordinary queries return the solvable 200 ALTCHA wall, the shipped client returns real results, and changing the user agent and client hints changes nothing. See mojeek-403-mechanism-controls.json.",
+  "conclusion": "The 403 is a hard, per-query automated-query refusal, not parser drift and not a solvable challenge. It is not a network-wide or user-agent-wide block."
+}

@@ -1908,6 +1908,48 @@ fn tokio_feature_policy_stays_explicit() {
 }
 
 #[test]
+fn default_features_ship_pdf_and_browser() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let cargo = fs::read_to_string(format!("{manifest}/Cargo.toml")).expect("Cargo.toml readable");
+    let default_line = cargo
+        .lines()
+        .find(|line| line.trim_start().starts_with("default ="))
+        .expect("Cargo.toml must declare a default feature set");
+    for required in ["pdf", "browser"] {
+        assert!(
+            default_line.contains(&format!("\"{required}\"")),
+            "the default feature set must ship `{required}`: {default_line}"
+        );
+    }
+    assert!(
+        !default_line.contains("\"egress\""),
+        "egress must stay out of the default feature set: {default_line}"
+    );
+
+    let config = fs::read_to_string(format!("{manifest}/src/core/config.rs"))
+        .expect("config source readable");
+    let browser_default = config
+        .split_once("fn default_browser_enabled() -> bool {")
+        .map(|(_, rest)| rest.chars().take(120).collect::<String>())
+        .expect("config must declare default_browser_enabled");
+    assert!(
+        browser_default.contains("cfg!(feature = \"browser\")"),
+        "browser rendering must default on exactly where the feature is compiled"
+    );
+
+    let release = fs::read_to_string(format!("{manifest}/.github/workflows/release-eggpack.yml"))
+        .expect("generated release workflow readable");
+    for line in release.lines() {
+        if line.contains("'build'") {
+            assert!(
+                !line.contains("--no-default-features"),
+                "release builds must ship the default feature set: {line}"
+            );
+        }
+    }
+}
+
+#[test]
 fn timeout_overrides_retain_the_shared_fetch_client() {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let source = fs::read_to_string(format!("{manifest}/src/fetch/client.rs"))
