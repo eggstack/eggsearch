@@ -165,11 +165,7 @@ impl Default for BrowserConfig {
 }
 
 impl BrowserConfig {
-    /// The browser configuration described by the `[fetch.browser]` section.
-    ///
-    /// The render policy is parsed from its operator spelling so the CLI and
-    /// the MCP server read one setting into one value; an unrecognised
-    /// spelling falls back to `http_only`, exactly as the server does.
+    /// Browser settings from `[fetch.browser]`; unknown render policies default to `http_only`.
     #[must_use]
     pub fn from_settings(settings: &crate::core::config::FetchBrowserSection) -> Self {
         let policy: RenderPolicy =

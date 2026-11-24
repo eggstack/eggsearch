@@ -12,11 +12,7 @@ pub enum FetchDisposition {
 }
 
 impl FetchDisposition {
-    /// Whether a rendered page is still a script-driven wall.
-    ///
-    /// The two dispositions a browser render waits on and reports when it cannot
-    /// get past them. A detected challenge family is a wall whatever its
-    /// classification says, so callers check detection as well.
+    /// Whether the browser should wait for a scripted wall to clear.
     #[must_use]
     pub fn is_script_wall(&self) -> bool {
         matches!(
@@ -46,10 +42,7 @@ pub fn classify_response(
         let title_lower = title.unwrap_or("").to_lowercase();
         let body_lower = String::from_utf8_lossy(body_snippet).to_lowercase();
 
-        // A wall marker outranks the document status. Origins serve their
-        // challenge with a non-success status (Brave answers 429 with its
-        // proof-of-work page), so a status-first classification would settle
-        // the render before the page's own script has had a chance to run.
+        // Classify challenge markers before status; some solvable walls arrive as 429.
         if is_interactive_challenge(&title_lower, &body_lower) {
             return FetchDisposition::InteractiveChallenge;
         }
@@ -59,11 +52,7 @@ pub fn classify_response(
         if is_javascript_shell(&title_lower, text_len, &body_lower) {
             return FetchDisposition::JavascriptShell;
         }
-        // After client-side rendering the DOM is authoritative: an
-        // interstitial status whose document now carries a real page is a
-        // served page. The rule is limited to the two statuses an
-        // interstitial is actually served with, so a denial or an outage is
-        // still reported as such.
+        // After rendering, accept substantial content only for 202/429; other failures remain failures.
         if matches!(status, 202 | 429) && text_len >= RENDERED_CONTENT_MIN_CHARS {
             return FetchDisposition::UsefulContent;
         }
@@ -77,12 +66,7 @@ pub fn classify_response(
     }
 }
 
-/// Whether a rendered page replaces the status error that caused the render.
-///
-/// A render is accepted when it ended on a success or redirect status, or when
-/// it completed a recognised wall. A `5xx` page the browser only re-rendered is
-/// still the origin's outage, so the caller keeps its original error rather
-/// than returning an error page as a document.
+/// Accept rendered content only on success/redirect or after a recognized wall completes.
 #[must_use]
 pub fn rendered_result_serves(status: Option<u16>, challenge_completed: bool) -> bool {
     challenge_completed || status.is_some_and(|status| (200..400).contains(&status))
@@ -96,10 +80,7 @@ fn is_interactive_challenge(title_lower: &str, body: &str) -> bool {
         return true;
     }
 
-    // Widget and endpoint markers only. A bare "captcha" substring also
-    // matches a page that merely *offers* a traditional CAPTCHA beside its
-    // scripted challenge (Brave's proof-of-work page does), and treating that
-    // as interactive would refuse a page the origin serves to a browser.
+    // Match explicit widget markers; generic "captcha" text may accompany a solvable wall.
     let indicators = [
         "cf-turnstile",
         "challenge-platform",

@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/039-fetch-emitted-payload-budget.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/039-fetch-emitted-payload-budget.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

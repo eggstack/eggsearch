@@ -182,7 +182,7 @@ live tool-surface verification is recorded in the closure record.
 
 ### M004 — M003 qualification corrective pass (infrastructure/evidence) — closed
 
-Implementation plan: `plans/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`.
+Implementation plan: `plans/archive/implementation/browser-artifact-availability/004-m003-qualification-corrective-pass.md`.
 
 Correct the Python request-type schema coverage and unsupported macOS arm64 runner
 mapping found by M003 qualification. Preserve M003's blocked status and all
@@ -197,7 +197,7 @@ can be considered for closure.
 
 ### M005 — Session-cap initial render accounting (infrastructure correction) — closed
 
-Implementation plan: `plans/implementation/browser-artifact-availability/005-session-cap-initial-render-accounting.md`.
+Implementation plan: `plans/archive/implementation/browser-artifact-availability/005-session-cap-initial-render-accounting.md`.
 
 The M003 realistic-mix cap probe found that the baseline increments
 `requests_this_session` in `begin_render` before a cold browser launch, then the

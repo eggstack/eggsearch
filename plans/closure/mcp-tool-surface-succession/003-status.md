@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/mcp-tool-surface-succession/003-tool-inventory-parity.md`
+Source plan: `plans/archive/implementation/mcp-tool-surface-succession/003-tool-inventory-parity.md`
 
 Roadmap: `plans/subsystems/mcp-tool-surface-succession-roadmap.md` M003
 

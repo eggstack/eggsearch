@@ -12,7 +12,7 @@ accepted ADR-0016 (unified fetch and legacy aliases), and the local workspace bo
 References: `plans/000-long-term-specification.md` §2 and §4; `plans/001-terminology-and-domain-model.md` §3;
 `plans/003-planning-process.md` §7;
 `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M037, M040;
-original plan `plans/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md`;
+original plan `plans/archive/implementation/agentic-retrieval-integrity/037-local-repo-search-relevance-and-scope.md`;
 original closure `plans/closure/agentic-retrieval-integrity/037-status.md`;
 `architecture/local-workspace.md`.
 

@@ -4,7 +4,7 @@ Status: closed
 Recommendation: closed; every M002 acceptance criterion passes on the exact candidate. The candidate is local and unpushed; no hosted CI result is claimed.
 Implementation candidate: `24f045729f8409dadc96b4c2455253d8a9c7b6ec`
 Baseline: `b7f74971c09017ad139084db7ddbfa0508d1871a`
-Plan: `plans/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md`
+Plan: `plans/archive/implementation/adaptive-fetch-routing/002-batch-per-target-capability-parity.md`
 Roadmap: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M002
 Related: ADR-0001, ADR-0008, ADR-0011, ADR-0014; `plans/implementation/pdf-ingestion-fidelity/008-local-workspace-and-batch-ingestion.md`
 

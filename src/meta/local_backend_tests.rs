@@ -307,7 +307,6 @@ fn find_symbol_match_case_insensitive_hint() {
     let file_path = dir.path().join("app.py");
     fs::write(&file_path, "def my_function():\n    pass\n").unwrap();
 
-    // Hint is lowercase "my_function", symbol in code is also "my_function"
     let content = std::fs::read_to_string(&file_path).unwrap();
     let result = find_symbols_in_text(&content, "my_function");
     assert!(result.is_some());
@@ -325,7 +324,6 @@ fn score_file_content_match_finds_file_without_path_match() {
         size: 100,
         language: Some("rust".to_string()),
     };
-    // File name doesn't match "my_function" at all, but content does
     let content = "fn my_function() { let x = 1; }";
     let score = LocalWorkspaceBackend::score_file(
         &file,
@@ -349,7 +347,6 @@ fn score_file_content_token_match_capped() {
         size: 100,
         language: Some("rust".to_string()),
     };
-    // Multiple token matches in content, but capped at +30
     let content = "foo bar baz qux";
     let score = LocalWorkspaceBackend::score_file(
         &file,
@@ -358,8 +355,6 @@ fn score_file_content_token_match_capped() {
         None,
         Some(content),
     );
-    // 50 (no full match since "foo bar baz" not in "foo bar baz qux" as substring)
-    // Actually "foo bar baz" IS in "foo bar baz qux" -> +50, plus tokens capped at +30
     assert!(score >= 50.0, "content scoring should work: {score}");
     assert!(score <= 100.0, "token score should be capped: {score}");
 }
@@ -373,14 +368,12 @@ fn score_file_no_content_matches_nothing() {
         size: 100,
         language: None,
     };
-    // No path match, no content provided
     let score = LocalWorkspaceBackend::score_file(&file, "special", &["special"], None, None);
     assert_eq!(score, 0.0, "no match without content should be 0");
 }
 
 #[test]
 fn symbol_match_outranks_content_only_match() {
-    // File with symbol definition match (engine.rs has "Engine" in path)
     let symbol_file = LocalFileEntry {
         path: PathBuf::from("/test/engine.rs"),
         relative_path: "engine.rs".to_string(),
@@ -397,7 +390,6 @@ fn symbol_match_outranks_content_only_match() {
         Some(symbol_content),
     );
 
-    // File with content-only match (docs.txt has no path match)
     let content_file = LocalFileEntry {
         path: PathBuf::from("/test/docs.txt"),
         relative_path: "docs.txt".to_string(),
@@ -494,7 +486,6 @@ fn to_source_cards_populates_file_classification() {
     ];
     let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false, None);
     assert_eq!(cards.len(), 2);
-    // Find cards by path
     let engine_card = cards
         .iter()
         .find(|c| {
@@ -537,7 +528,6 @@ fn to_source_cards_populates_match_confidence() {
         enclosing_symbol: None,
         is_exact_definition: None,
     }];
-    // No repo identity = no local_repo_match
     let cards = LocalWorkspaceBackend::to_source_cards(&matches, &roots, false, None);
     assert!(cards[0].metadata.local_repo_match.is_none());
 }

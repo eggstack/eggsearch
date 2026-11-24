@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/036-unified-fetch-repo-item-budget-and-outcome.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/036-unified-fetch-repo-item-budget-and-outcome.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

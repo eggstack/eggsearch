@@ -176,17 +176,7 @@ async fn render_once(
         }
     };
 
-    // Every request the page makes — navigation, redirects, and
-    // subresources alike — is paused by CDP Fetch interception and
-    // re-validated against the SSRF policy. Validating only the initial URL
-    // would leave redirect-based escapes open, and Chromium resolving DNS
-    // internally means each hop must be checked as it is requested.
-    //
-    // Note: the resolved addresses are checked but not pinned to the request.
-    // A split-horizon resolver (public answer here, link-local answer for
-    // Chromium) is therefore not covered; the HTTP path pins via
-    // `resolved_addresses`. Unlike the HTTP path, the check runs on the
-    // validation answer only.
+    // Revalidate each browser request; unlike HTTP fetch, Chromium's resolved addresses are checked but not pinned.
     let interceptor = enforce_policy_per_request(&page).await;
 
     let captured: Arc<StdMutex<Option<CapturedMainResponse>>> = Arc::new(StdMutex::new(None));
@@ -218,9 +208,7 @@ async fn enforce_policy_per_request(page: &Page) -> Option<tokio::task::JoinHand
 
     let task_page = page.clone();
     Some(tokio::spawn(async move {
-        // Validated hosts, so a page's many same-host subresources resolve once
-        // instead of once per request. Holds the decision only — the address
-        // set is deliberately not reused across requests.
+        // Cache host validation decisions, not addresses; Chromium resolves each request independently.
         let mut allowed_hosts: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut paused = listener;
         while let Some(event) = paused.next().await {
@@ -558,13 +546,7 @@ async fn page_sample(page: &Page, status: u16, content_type: Option<&str>) -> Pa
     }
 }
 
-/// Click the page's own verification control once per render.
-///
-/// Some scripted walls gate their challenge script behind a button the page
-/// renders ("Verify"). Clicking it is the same act as letting the challenge
-/// script run: no image, OCR, or human judgement is involved, and a wall that
-/// only an interactive CAPTCHA answers never matches this label set. Returns
-/// whether a click was dispatched.
+/// Click a scripted "Verify" control once; interactive CAPTCHA labels are excluded.
 async fn click_verification_control(page: &Page) -> bool {
     const SCRIPT: &str = r#"(() => {
   const label = (el) => ((el.innerText || el.value || el.getAttribute('aria-label') || '') + '').trim();

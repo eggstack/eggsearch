@@ -897,18 +897,12 @@ pub use cisa_kev::CisaKevEngine;
 pub use github_advisory::GithubAdvisoryEngine;
 pub use nvd::NvdEngine;
 pub use rustsec::RustSecEngine;
-// Browser-like UA used as the fallback when no operator-supplied UA is provided.
-// Mimic a real browser as closely as possible to avoid bot-detection rejections
-// from HTML providers — but only when the operator has not configured their own.
+// Browser-like default UA unless the operator configured one.
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/124.0.0.0 Safari/537.36";
 
-/// Read an HTTP response body with a streaming byte cap.
-///
-/// Checks `Content-Length` upfront and streams at most `max_bytes + 1`
-/// bytes, aborting when the cap is crossed. Returns the buffered body
-/// on success or `EngineError::ParseFailed` on overflow.
+/// Stream response bytes under a hard cap, returning a parse error on overflow.
 pub async fn read_bounded_body(
     mut response: eggfetch_core::Response,
     engine: &'static str,
@@ -935,13 +929,7 @@ pub async fn read_bounded_body(
     Ok(body)
 }
 
-/// Append one streamed chunk to `body` under a hard byte cap.
-///
-/// Returns `Ok(())` when the chunk fits within `max_bytes`, or an
-/// `EngineError::ParseFailed` overflow error otherwise. This is the
-/// single implementation of the streaming cap semantics shared by
-/// `read_bounded_body` (and exercised by the `bounded_response_reader`
-/// fuzz target).
+/// Append a streamed chunk unless it would exceed `max_bytes`.
 pub fn push_bounded_chunk(
     body: &mut Vec<u8>,
     chunk: &[u8],
@@ -968,13 +956,8 @@ pub fn is_http_url(url: &str) -> bool {
         .is_some_and(|u| matches!(u.scheme(), "http" | "https"))
 }
 
-/// Build the eggfetch client used by the vendored search engines.
-///
-/// We intentionally do **not** enable a cookie store on this client:
-/// a long-lived MCP server should not persist cookies across requests
-/// or across operator sessions. Cookies were historically needed for
-/// certain HTML providers but are no longer required for any of the
-/// vendored engines.
+/// Build the shared eggfetch client for vendored search engines.
+/// Cookies are not persisted across requests or operator sessions.
 pub fn build_http_client(user_agent: Option<&str>) -> anyhow::Result<Client> {
     build_http_client_with_egress(user_agent, &crate::core::config::EgressSection::default())
 }
@@ -1030,8 +1013,7 @@ pub fn map_request_error(engine: &'static str, error: eggfetch_core::Error) -> E
     }
 }
 
-// Pick the UA the client will actually send: the operator's configured value
-// if present, otherwise the browser-like fallback.
+// Prefer the operator's UA; otherwise use the browser-like fallback.
 fn resolve_user_agent(user_agent: Option<&str>) -> &str {
     user_agent.unwrap_or(DEFAULT_USER_AGENT)
 }
@@ -1065,12 +1047,7 @@ pub(crate) struct ScrapeShape {
     pub(crate) blocked_markers: &'static [PageMarker],
 }
 
-/// Classify one scraper parse result into the three-outcome contract.
-///
-/// Parsed rows are returned unchanged. With no rows, a documented
-/// empty-state marker yields `Ok(vec![])`, a challenge or consent marker
-/// yields [`EngineError::Blocked`], and anything else is a structural
-/// [`EngineError::ParseFailed`] whose reason names the result container.
+/// Return results, explicit empty, blocked, or structural-parse-failure outcomes for a scraper.
 pub(crate) fn finalize_scrape(
     engine: &'static str,
     document: &scraper::Html,

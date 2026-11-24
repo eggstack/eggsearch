@@ -148,14 +148,8 @@ impl BrowserLifecycle {
         }
     }
 
-    /// The identity the launched browser presents.
-    ///
-    /// Headless Chrome announces itself with a `HeadlessChrome/` token that
-    /// origins gate on, while the process is the same Chrome build in every
-    /// other respect. The browser therefore presents that build's own identity
-    /// rather than the mode it runs in: browser-like, never a third party's
-    /// (ADR-0019 §5). An unparseable version leaves the flag off rather than
-    /// claiming a build that was not detected.
+    /// Identity presented to origins instead of the headless token.
+    /// Uses the detected Chrome version; omits the flag if it cannot be parsed.
     fn browser_user_agent(version: &str) -> Option<String> {
         let major = super::profiles::parse_browser_major_version(version)?;
         let platform = if cfg!(target_os = "macos") {
@@ -237,9 +231,7 @@ impl BrowserLifecycle {
 
         bc = bc.chrome_executable(&disc.path);
 
-        // chromiumoxide's builder takes a key and a value and renders the
-        // `--key=value` pair itself, so a flag passed as one `--key=value`
-        // string becomes `----key=value` and is silently ignored by Chrome.
+        // chromiumoxide takes flag keys and values separately; a `--key=value` key becomes `----key=value`.
         if let Some(user_agent) = Self::browser_user_agent(&disc.version) {
             bc = bc.arg(("user-agent", user_agent.as_str()));
         }

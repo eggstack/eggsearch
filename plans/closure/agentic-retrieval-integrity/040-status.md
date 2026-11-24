@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/040-local-content-aware-candidate-generation.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

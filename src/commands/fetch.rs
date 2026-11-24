@@ -15,10 +15,7 @@ use eggsearch::fetch::browser::{
     BrowserFetchOutcome, BrowserLifecycle, EscalationOutcome, EscalationRequest, RenderPolicy,
 };
 
-/// CLI display cap for links. Distinct from [`crate::fetch::extract::MAX_LINKS`]
-/// (the in-memory extractor cap) because the CLI is human-facing and only
-/// needs enough links to be useful for a glance at the page; the extractor
-/// returns more so that programmatic consumers can pick from a richer set.
+/// CLI-visible link cap; the extractor retains more for programmatic consumers.
 const CLI_DISPLAY_MAX_LINKS: usize = 20;
 
 #[allow(clippy::too_many_arguments)]
@@ -411,10 +408,7 @@ fn response_requires_browser(response: &WebFetchResponse) -> bool {
         )
 }
 
-/// The render policy the operator configured for this process.
-///
-/// A disabled browser is `http_only` whatever the policy spelling says, which
-/// is how the MCP server reads the same section.
+/// Resolve the CLI policy; a disabled browser forces `http_only`, matching MCP behavior.
 #[cfg(feature = "browser")]
 fn cli_render_policy(settings: &BrowserConfig) -> RenderPolicy {
     if settings.enabled {
@@ -448,11 +442,7 @@ fn json_payload(response: &WebFetchResponse) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// A mock server whose origin carries no pass cookie from an earlier test.
-    ///
-    /// The fetch-side pass-cookie cache is process-local and keyed by origin,
-    /// and a loopback port can be recycled between tests, so every challenge
-    /// test starts from an origin that holds no pair set.
+    /// Mock origin without a cached pass cookie, avoiding loopback-port reuse between tests.
     fn challenge_server() -> httpmock::MockServer {
         let server = httpmock::MockServer::start();
         if let Some(origin) = eggsearch::challenge_replay::cache::origin_key(&server.url("/")) {

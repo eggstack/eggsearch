@@ -774,12 +774,7 @@ async fn run_web_fetch_inner(
                                     }
                                     Ok(_) => {}
                                     Err(reval_err) => {
-                                        // Revalidation failed. Serve the cached body
-                                        // instead of immediately re-requesting the same
-                                        // origin unconditionally: that doubles the load
-                                        // on an origin that has just signalled it is
-                                        // unhealthy, and the cause was previously
-                                        // discarded entirely.
+                                        // Serve cached content after revalidation fails; retrying would add load to an unhealthy origin.
                                         tracing::warn!(
                                             url = trimmed_url,
                                             error = %reval_err,
@@ -1117,13 +1112,7 @@ async fn run_web_fetch_inner(
                     #[allow(unused_mut)]
                     let mut suppress_retry = false;
 
-                    // A browser-gated origin answers an automated client with a
-                    // status instead of a document, so there is nothing to
-                    // classify and the browser is the only reader left. The
-                    // escalation runs before the failure is recorded: the
-                    // status is the origin refusing this client, not an outage,
-                    // and an origin the browser served must not be charged to
-                    // the HTTP circuit breaker.
+                    // Escalate before circuit-breaker accounting: browser success means the HTTP identity was refused, not the origin.
                     #[cfg(feature = "browser")]
                     if !gated_escalation_spent {
                         if let Some(status) = gated_status(&failure, &render_policy) {
