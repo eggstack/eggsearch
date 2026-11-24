@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/042-fetch-item-shape-diagnostics.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M042
 

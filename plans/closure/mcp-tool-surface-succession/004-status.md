@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/mcp-tool-surface-succession/004-repository-read-consolidation.md`
+Source plan: `plans/archive/implementation/mcp-tool-surface-succession/004-repository-read-consolidation.md`
 
 Roadmap: `plans/subsystems/mcp-tool-surface-succession-roadmap.md` M004
 

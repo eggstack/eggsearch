@@ -2,7 +2,7 @@
 
 Status: closed (M030 path 1; solve-count clause superseded)
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/014-pass-cookie-lifetime-and-egress-binding.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

@@ -4,7 +4,7 @@ Status: closed
 Recommendation: closed; the accepted M003 criteria pass on the exact implementation candidate.
 Implementation candidate: `59ff64ad00940573ee520ecf19d7b5c0abcb1c87`
 Baseline: `b7f74971c09017ad139084db7ddbfa0508d1871a`
-Plan: `plans/implementation/adaptive-fetch-routing/003-opt-in-webpage-screenshot-artifacts.md`
+Plan: `plans/archive/implementation/adaptive-fetch-routing/003-opt-in-webpage-screenshot-artifacts.md`
 Roadmap: `plans/subsystems/adaptive-fetch-routing-roadmap.md` M003
 Accepted decision: `plans/adrs/ADR-0015-opt-in-webpage-screenshot-artifacts.md`
 

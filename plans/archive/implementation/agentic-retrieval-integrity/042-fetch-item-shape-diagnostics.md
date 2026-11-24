@@ -10,7 +10,7 @@ ADR-0016 (unified fetch tool and legacy aliases). No new ADR.
 
 References: `plans/000-long-term-specification.md` §2; `plans/003-planning-process.md` §7;
 `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M029, M036, M039;
-original plan `plans/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md`;
+original plan `plans/archive/implementation/agentic-retrieval-integrity/029-unified-fetch-tool-and-legacy-aliases.md`;
 original closure `plans/closure/agentic-retrieval-integrity/029-status.md`;
 `architecture/mcp.md`; `docs/tool-matrix.md`.
 

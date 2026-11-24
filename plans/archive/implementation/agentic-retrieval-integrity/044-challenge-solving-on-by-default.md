@@ -9,7 +9,7 @@ Decision authority: accepted ADR-0019 §4 ("Solving is on by default, bounded").
 
 References: `plans/000-long-term-specification.md` §2; `plans/003-planning-process.md` §7;
 `plans/adrs/ADR-0019-broadened-challenge-coverage-and-browser-identity.md` §4 and §7;
-`plans/implementation/agentic-retrieval-integrity/035-browser-challenge-completion.md`;
+`plans/archive/implementation/agentic-retrieval-integrity/035-browser-challenge-completion.md`;
 `plans/closure/agentic-retrieval-integrity/035-status.md`; `docs/features.md` § Bounded Challenge
 Solving; `docs/config.md` § Challenge Solving.
 

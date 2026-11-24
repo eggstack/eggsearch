@@ -104,7 +104,7 @@ source-driven topic discovery closed on exact candidate
 M001 for brief delta production and honest diagnostics, registered from a live
 default-configuration review on 2026-11-20 and closed on exact candidate
 `380a55cd7ea7c0b37dc6eff53851926e96e894d0`; its plan is
-`plans/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`
+`plans/archive/implementation/knowledge-delta/004-brief-delta-production-and-honest-diagnostics.md`
 and its closure record is `plans/closure/knowledge-delta/004-status.md`.
 The three further correctives in
 `plans/subsystems/knowledge-delta-corrective-addendum.md` are closed on

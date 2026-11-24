@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/043-local-repo-search-empty-result-determinism.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md` M043
 
@@ -178,7 +178,7 @@ On candidate `5a218a4`:
   green on `57f5fed` and the six runs before it and red from `bc52970`, the first commit
   containing the M005 catalog, whose `catalog.json` was missing from `[package] include`. It
   remains outside M043's gate, but it is a regression owned by
-  `plans/implementation/python-pypi-distribution/005-packaged-artifact-asset-completeness.md`.
+  `plans/archive/implementation/python-pypi-distribution/005-packaged-artifact-asset-completeness.md`.
 
 ## Gates
 

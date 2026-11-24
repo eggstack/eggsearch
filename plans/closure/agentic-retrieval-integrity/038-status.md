@@ -2,7 +2,7 @@
 
 Status: closed
 
-Source plan: `plans/implementation/agentic-retrieval-integrity/038-security-search-native-advisory-routing.md`
+Source plan: `plans/archive/implementation/agentic-retrieval-integrity/038-security-search-native-advisory-routing.md`
 
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 

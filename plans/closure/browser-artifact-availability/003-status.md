@@ -3,7 +3,7 @@
 Status: closed
 Recommendation: closed; all M003 acceptance gates passed on the exact candidate. PR-linked Python run 43897293446 attempt 7 and all displayed PR checks passed. PR #16 merged on 2026-11-16T21:05:25Z as `aea34eeb89749e3196712d9e9b9741f75c58e760`; no release was published.
 Implementation candidate: `fb99a43734bd4f2329bdfa2ba4315b403c2cd985`
-Plan: `plans/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`
+Plan: `plans/archive/implementation/browser-artifact-availability/003-distribution-and-live-qualification.md`
 Roadmap: `plans/subsystems/browser-artifact-availability-roadmap.md` M003
 ADR: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`
 
