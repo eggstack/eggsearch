@@ -177,7 +177,10 @@ jobs:
       - name: Assert Chrome discovery, browser rendering, and teardown counters
         env:
           EGGSEARCH_TEST_BROWSER_WITH_CHROME: "1"
-        run: "$RUNNER_TEMP/.venv/bin/python" -m pytest -q -s "$GITHUB_WORKSPACE/bindings/python/tests/test_native.py" -k "browser_render_with_chrome or browser_idle_and_session_cap_counters_are_visible"
+        run: >-
+          "$RUNNER_TEMP/.venv/bin/python" -m pytest -q -s
+          "$GITHUB_WORKSPACE/bindings/python/tests/test_native.py" -k
+          "browser_render_with_chrome or browser_idle_and_session_cap_counters_are_visible"
         shell: bash
         working-directory: ${{ runner.temp }}
 
