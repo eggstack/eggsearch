@@ -65,7 +65,9 @@ def _write_config(path, text):
     path.write_text(text, encoding="utf-8")
 
 
-def _write_browser_config(path, executable=None, max_requests=100, idle_timeout_ms=5000):
+def _write_browser_config(
+    path, executable=None, max_requests=100, idle_timeout_ms=5000, fetch_timeout_ms=8000
+):
     workspace = path.parent / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     (workspace / "README.md").write_text(
@@ -81,7 +83,7 @@ def _write_browser_config(path, executable=None, max_requests=100, idle_timeout_
         "[search]\nmode = 'off'\ndefault_max_results = 10\nmax_results_cap = 50\n"
         "max_query_chars = 512\ntimeout_ms = 8000\ndefault_providers = ['duckduckgo']\n"
         "sanitize_output = true\n[search.providers]\nduckduckgo = true\n\n"
-        "[fetch]\nenabled = true\ntimeout_ms = 8000\nmax_bytes = 2000000\n"
+        f"[fetch]\nenabled = true\ntimeout_ms = {fetch_timeout_ms}\nmax_bytes = 2000000\n"
         "max_chars_default = 12000\nmax_chars_cap = 50000\nredirect_limit = 5\n"
         "allow_private_network = false\nallow_localhost = true\nsanitize_output = true\n\n"
         "[fetch.browser]\nenabled = true\npolicy = 'auto'\n"
@@ -560,10 +562,6 @@ def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
         asyncio.run(run())
 
 
-@pytest.mark.skipif(
-    os.environ.get("EGGSEARCH_TEST_BROWSER_WITH_CHROME") != "1",
-    reason="real Chrome qualification is enabled only in its CI lane",
-)
 @contextmanager
 def _browser_render_fixture_page():
     yield "https://93.184.216.34/eggsearch-browser-render-fixture"
@@ -590,8 +588,14 @@ def test_browser_capability_with_chrome(tmp_path):
     asyncio.run(run())
 
 
+@pytest.mark.skipif(
+    os.environ.get("EGGSEARCH_TEST_BROWSER_WITH_CHROME") != "1",
+    reason="real Chrome qualification is enabled only in its CI lane",
+)
 def test_browser_render_with_chrome(tmp_path):
-    config = _write_browser_config(tmp_path / "available-browser.toml")
+    config = _write_browser_config(
+        tmp_path / "available-browser.toml", fetch_timeout_ms=30_000
+    )
 
     with _browser_render_fixture_page() as url:
         async def run():
@@ -628,10 +632,12 @@ def test_browser_render_with_chrome(tmp_path):
 )
 def test_browser_idle_and_session_cap_counters_are_visible(tmp_path):
     config_cap = _write_browser_config(
-        tmp_path / "session-cap.toml", max_requests=1
+        tmp_path / "session-cap.toml", max_requests=1, fetch_timeout_ms=30_000
     )
     config_idle = _write_browser_config(
-        tmp_path / "idle-teardown.toml", idle_timeout_ms=5000
+        tmp_path / "idle-teardown.toml",
+        idle_timeout_ms=5000,
+        fetch_timeout_ms=30_000,
     )
 
     with _browser_render_fixture_page() as url:
