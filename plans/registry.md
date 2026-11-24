@@ -31,6 +31,8 @@ Closed or superseded implementation plans are archived under
 | PDF ingestion and extraction fidelity | closing | `plans/subsystems/pdf-ingestion-fidelity-roadmap.md` | M001/M002/M007 are implemented with closure records; M006 qualification remains open; M008 is active by user approval against the existing M001 implementation, with M001 exact-candidate status reconciliation still open; M003–M005 are ready. |
 | Adaptive fetch target routing and artifacts | active (M001 active; M002 and M003 closed) | `plans/subsystems/adaptive-fetch-routing-roadmap.md` | M002 closed on `24f045729f8409dadc96b4c2455253d8a9c7b6ec`; see `plans/closure/adaptive-fetch-routing/002-status.md`. M001's implementation remains committed on that candidate but its closure record is outstanding. M003 closed on candidate `59ff64ad00940573ee520ecf19d7b5c0abcb1c87`; see `plans/closure/adaptive-fetch-routing/003-status.md`. Local PDF behavior remains owned by PDF M008. |
 | Knowledge-delta research | active; M001–M007 closed | `plans/subsystems/knowledge-delta-roadmap.md` | Closure evidence is linked from the roadmap. |
+| Web acquisition expansion | proposed; M001 and M002 ready, M003–M005 proposed | `plans/subsystems/web-acquisition-expansion-roadmap.md` | M001 selector scoping and cache-only, M002 site URL discovery are handoff-ready; M003 needs a derived-state persistence ADR; M004/M005 need their recorded decisions. |
+| Dynamic-fetch proxy routing | proposed; M001 ready, M002 and M003 blocked | `plans/subsystems/dynamic-fetch-proxy-routing-roadmap.md` | ADR-0025 is proposed; M001 must prove pinned CONNECT against a loopback proxy before acceptance. Eggress stays provider-upstream only. |
 
 ## Active and dependency-ready implementation plans
 
@@ -49,6 +51,9 @@ Closed or superseded implementation plans are archived under
 | PDF ingestion | M007 hostile-input and memory bounds | closing | `plans/implementation/pdf-ingestion-fidelity/007-hostile-input-and-memory-bounds.md` | Closure record is present. |
 | PDF ingestion | M008 local workspace and batch ingestion | active | `plans/implementation/pdf-ingestion-fidelity/008-local-workspace-and-batch-ingestion.md` | Hard dependency M001 remains `closing`; work proceeds against its existing implementation by explicit user approval. Soft dependency M005 is not required. |
 | Adaptive fetch routing | M001 target-aware fetch routing | active | `plans/implementation/adaptive-fetch-routing/001-target-aware-fetch-routing.md` | Committed on candidate `24f045729f8409dadc96b4c2455253d8a9c7b6ec`; soft integration dependency: PDF M008 for local-PDF end-to-end coverage. Its closure record remains outstanding. |
+| Web acquisition expansion | M001 selector scoping, attributes, and cache-only policy | ready | `plans/implementation/web-acquisition-expansion/001-selector-scoping-and-cache-only-policy.md` | Additive fields only; scope fingerprint required in the extraction key before merge. |
+| Web acquisition expansion | M002 bounded site URL discovery | ready | `plans/implementation/web-acquisition-expansion/002-bounded-site-url-discovery.md` | Discovery only; a discovered URL is never fetched. Contract text changes with the tool matrix and CodeGG docs. |
+| Dynamic-fetch proxy routing | M001 route feasibility and Eggress compatibility | ready | `plans/implementation/dynamic-fetch-proxy-routing/001-route-feasibility-and-eggress-compatibility.md` | Loopback proof of pinned CONNECT gates ADR-0025 acceptance; no production change in this milestone. |
 
 ## Recent milestone closures
 

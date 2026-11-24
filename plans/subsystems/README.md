@@ -22,6 +22,7 @@ code-duplication-consolidation-roadmap.md
 codegg-legacy-search-parity-corrective-addendum.md
 dependency-evidence-hardening-roadmap.md
 deterministic-retrieval-quality-roadmap.md
+dynamic-fetch-proxy-routing-roadmap.md
 eggpack-release-adoption-roadmap.md
 knowledge-delta-roadmap.md
 knowledge-delta-corrective-addendum.md
@@ -38,6 +39,7 @@ search-capability-roadmap.md
 standalone-mcp-local-inference-roadmap.md
 tool-surface-consolidation-roadmap.md
 transport-consolidation-roadmap.md
+web-acquisition-expansion-roadmap.md
 ```
 
 ## Required roadmap structure
