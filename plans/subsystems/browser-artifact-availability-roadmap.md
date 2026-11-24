@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: active (M001–M005 acceptance complete; M006 absent-browser degradation in progress; PR #16 merged as `aea34ee`)
+Status: closed (M001–M006 acceptance complete; PR #16 merged as `aea34ee`; M006 closure candidate `fedf82c67a6d331fa1fab127b4ad5376cd27a84c`; PR #20 remains open and unmerged)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`;
@@ -64,7 +64,7 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
 
 - Release binaries and Python wheels compile `pdf` and `browser`. Browser defaults to
   `enabled = true` and `policy = "auto"`; Chrome is discovered at runtime, and its absence is
-  a supported state governed by M006.
+  a supported state governed by closed M006; see `plans/closure/browser-artifact-availability/006-status.md`.
 - HTTP is the hot path. `auto` escalates only for JavaScript shells,
   non-interactive verification pages, or detected challenges.
 - The shared lifecycle enforces `max_requests`, tears down after 90 seconds idle,
@@ -277,7 +277,9 @@ and continue to receive HTTP extraction.
   asymmetry moves from capability to environment: a wheel host without Chrome still runs, and the
   M006 degradation contract governs what it reports.
 
-### M006 — Absent-browser degradation contract (correctness) — active
+### M006 — Absent-browser degradation contract (correctness) — closed
+
+Closure: `plans/closure/browser-artifact-availability/006-status.md` (candidate `fedf82c67a6d331fa1fab127b4ad5376cd27a84c`).
 
 **Objective.** Prove and, where needed, complete the promise this workstream already makes: a host
 without Chrome still installs, starts, searches, and fetches, and every browser-unavailable outcome

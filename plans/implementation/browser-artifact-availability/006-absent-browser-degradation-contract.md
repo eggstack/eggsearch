@@ -1,6 +1,7 @@
 # M006 — Absent-Browser Degradation Contract
 
-Status: active
+Status: closed
+Closure record: `plans/closure/browser-artifact-availability/006-status.md` (candidate `fedf82c67a6d331fa1fab127b4ad5376cd27a84c`)
 Date: 2026-11-24
 Baseline: `e012dd7aa9071b1fc14e206e727ac8635f4064e4` on `docs/user-facing-polish-20261123`, after merging `origin/main` `4de20a0f0d748b89147829a51384e385a5bee388`
 Subsystem: browser artifact availability and render bounds
