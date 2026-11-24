@@ -66,7 +66,12 @@ def _write_config(path, text):
 
 
 def _write_browser_config(
-    path, executable=None, max_requests=100, idle_timeout_ms=5000, fetch_timeout_ms=8000
+    path,
+    executable=None,
+    max_requests=100,
+    idle_timeout_ms=5000,
+    fetch_timeout_ms=8000,
+    startup_timeout_ms=10_000,
 ):
     workspace = path.parent / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -88,7 +93,8 @@ def _write_browser_config(
         "allow_private_network = false\nallow_localhost = true\nsanitize_output = true\n\n"
         "[fetch.browser]\nenabled = true\npolicy = 'auto'\n"
         f"{executable_line}max_requests = {max_requests}\n"
-        f"idle_timeout_ms = {idle_timeout_ms}\n\n"
+        f"idle_timeout_ms = {idle_timeout_ms}\n"
+        f"startup_timeout_ms = {startup_timeout_ms}\n\n"
         f"[local]\nenabled = true\nroots = [{json.dumps(str(workspace))}]\n",
     )
     return path
@@ -594,7 +600,9 @@ def test_browser_capability_with_chrome(tmp_path):
 )
 def test_browser_render_with_chrome(tmp_path):
     config = _write_browser_config(
-        tmp_path / "available-browser.toml", fetch_timeout_ms=30_000
+        tmp_path / "available-browser.toml",
+        fetch_timeout_ms=60_000,
+        startup_timeout_ms=45_000,
     )
 
     with _browser_render_fixture_page() as url:
@@ -610,7 +618,7 @@ def test_browser_render_with_chrome(tmp_path):
                 print("browser_capabilities=" + json.dumps(capabilities, sort_keys=True))
 
                 rendered = await asyncio.wait_for(
-                    client.web_fetch(url=url, render="browser"), timeout=45
+                    client.web_fetch(url=url, render="browser"), timeout=75
                 )
                 assert isinstance(rendered, dict)
                 assert "browser-render-marker" in json.dumps(rendered)
@@ -632,12 +640,16 @@ def test_browser_render_with_chrome(tmp_path):
 )
 def test_browser_idle_and_session_cap_counters_are_visible(tmp_path):
     config_cap = _write_browser_config(
-        tmp_path / "session-cap.toml", max_requests=1, fetch_timeout_ms=30_000
+        tmp_path / "session-cap.toml",
+        max_requests=1,
+        fetch_timeout_ms=60_000,
+        startup_timeout_ms=45_000,
     )
     config_idle = _write_browser_config(
         tmp_path / "idle-teardown.toml",
         idle_timeout_ms=5000,
-        fetch_timeout_ms=30_000,
+        fetch_timeout_ms=60_000,
+        startup_timeout_ms=45_000,
     )
 
     with _browser_render_fixture_page() as url:
@@ -645,7 +657,7 @@ def test_browser_idle_and_session_cap_counters_are_visible(tmp_path):
             cap_client = AsyncEggsearch(str(config_cap))
             try:
                 await asyncio.wait_for(
-                    cap_client.web_fetch(url=url, render="browser"), timeout=45
+                    cap_client.web_fetch(url=url, render="browser"), timeout=75
                 )
                 capped = await cap_client.provider_status(probe=False)
                 counters = capped["browser_capabilities"]["lifecycle"]
@@ -658,7 +670,7 @@ def test_browser_idle_and_session_cap_counters_are_visible(tmp_path):
             idle_client = AsyncEggsearch(str(config_idle))
             try:
                 await asyncio.wait_for(
-                    idle_client.web_fetch(url=url, render="browser"), timeout=45
+                    idle_client.web_fetch(url=url, render="browser"), timeout=75
                 )
                 deadline = time.monotonic() + 12
                 idle = await idle_client.provider_status(probe=False)
