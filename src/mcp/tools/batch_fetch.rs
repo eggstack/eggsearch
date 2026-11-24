@@ -384,6 +384,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     render.as_deref(),
                     browser_profile.as_deref(),
                     include_screenshot.unwrap_or(false),
+                    false,
                 )
                 .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
                 #[cfg(not(feature = "pdf"))]

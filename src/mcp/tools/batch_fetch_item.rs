@@ -131,8 +131,14 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                     Err(error) => {
                         let error_payload = error.error_payload();
                         let code = error_payload
-                            .get("code")
+                            .get("data")
+                            .and_then(|data| data.get("code"))
                             .and_then(serde_json::Value::as_str)
+                            .or_else(|| {
+                                error_payload
+                                    .get("code")
+                                    .and_then(serde_json::Value::as_str)
+                            })
                             .unwrap_or("fetch_failed");
                         Ok((
                             BatchFetchResult {

@@ -182,6 +182,65 @@ async fn browser_absent_mcp_search_fetch_and_status_degrade() {
 
 #[cfg(all(feature = "mock", feature = "browser"))]
 #[tokio::test]
+async fn browser_absent_batch_and_unified_fetch_preserve_specific_error_code() {
+    let mut config = AppConfig::default();
+    config.fetch.browser.enabled = true;
+    config.fetch.browser.executable = Some("/synthetic/missing/chrome".to_string());
+    let state = Arc::new(ServerState::build(config).expect("state builds"));
+
+    let batch = super::run_batch_fetch(
+        state.clone(),
+        serde_json::from_value(serde_json::json!({
+            "items": [{
+                "type": "web",
+                "url": "https://example.test/batch-browser",
+                "render": "browser"
+            }]
+        }))
+        .expect("batch arguments deserialize"),
+    )
+    .await
+    .expect("batch preserves the item failure");
+    let batch_error = batch["results"][0]["error"]
+        .as_str()
+        .expect("batch error string");
+    assert!(
+        batch_error.starts_with("browser_unavailable:"),
+        "{batch_error}"
+    );
+    assert!(
+        batch_error.contains("/synthetic/missing/chrome"),
+        "{batch_error}"
+    );
+
+    let unified = super::run_fetch(
+        state,
+        serde_json::from_value(serde_json::json!({
+            "items": {
+                "type": "web",
+                "url": "https://example.test/unified-browser",
+                "render": "browser"
+            }
+        }))
+        .expect("unified fetch arguments deserialize"),
+    )
+    .await
+    .expect("unified fetch preserves the item failure");
+    let unified_error = unified["results"][0]["error"]
+        .as_str()
+        .expect("unified fetch error string");
+    assert!(
+        unified_error.starts_with("browser_unavailable:"),
+        "{unified_error}"
+    );
+    assert!(
+        unified_error.contains("/synthetic/missing/chrome"),
+        "{unified_error}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
 async fn browser_launch_failure_is_named_and_does_not_repeat_http() {
     use httpmock::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};

@@ -1,7 +1,7 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M046 closed)
-Planning baseline: `cd81f4d5e966364918fe2be25485b8ebbf424e71` (origin/main, 2026-11-10 UTC)
+Status: active (M001–M048 closed; M049 active)
+Planning baseline: `4de20a0f0d748b89147829a51384e385a5bee388` (origin/main, 2026-11-24 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
 
@@ -136,6 +136,9 @@ ADR-0019 ──> M035 browser challenge completion
 ADR-0019 §4 ──> M044 challenge solving on by default (corrective to M035)
 ADR-0006 + ADR-0019 §5 ──> M045 browser-fidelity provider access (closed)
                           └──> M046 fetch browser-escalation parity (closed; corrective to M045)
+M039 ──> M047 projection-aware batch-fetch payload budget (closed; corrective)
+M048 inline HTML whitespace fidelity (closed; independent)
+M045 work package 1 ──> M049 Mojeek non-success block classification (active; canonical gate outstanding)
 M029 unified fetch ──> M036 unified fetch repo-item budget and outcome
 M006 repo workflow ──> M037 local repo-search relevance and scope
 M006 routing ──> M038 security-search native advisory routing
@@ -371,6 +374,14 @@ exposed M011's mandatory-`redir` defect.
   remainder is mandatory schema envelope), and M011's difficulty-6 opt-in requires raising
   `max_attempts` alongside `max_difficulty` and the timeouts because the shipped attempt default
   matches the shipped difficulty ceiling of 5.
+- M047 and M048 are `closed` on implementation candidate
+  `9528d4131591392c0d9f6ec5f0422903e4b7815b`; both closure records cite hosted CI run `45127251813`.
+  Evidence: `plans/closure/agentic-retrieval-integrity/047-status.md` and
+  `plans/closure/agentic-retrieval-integrity/048-status.md`.
+- M049 remains `active`: work package 1 is implemented, but the canonical gate is outstanding. Keep
+  its classification corrective scoped to the registered keyless behavior and do not infer a new
+  paid-provider, credential, or default-enable task. Evidence and acceptance gates:
+  `plans/implementation/agentic-retrieval-integrity/049-non-success-block-classification.md`.
 
 ## 10. Recorded decisions
 

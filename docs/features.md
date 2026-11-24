@@ -117,9 +117,12 @@ defaults to `false`; add the feature back explicitly:
 cargo build --no-default-features --features pdf
 ```
 
-The published Python wheel enables `pdf` only
-(`default-features = false, features = ["pdf"]`), so it carries PDF extraction and
-no browser rendering. See the [Python library guide](python-library.md).
+The Python extension builds with `default-features = false` and
+`features = ["pdf", "browser"]`. Every Python wheel target uses this one
+feature set; there is no browser/no-browser wheel variant, and `egress` is not
+compiled. A wheel built from current source includes both PDF extraction and
+browser rendering. The published `eggsearch==0.4.4` wheel remains PDF-only. See
+the [Python library guide](python-library.md).
 
 ### Capabilities
 
@@ -242,7 +245,7 @@ naming the bound, not an empty result. A solved page that fails to parse is
 
 ## Browser Rendering
 
-Headless Chrome/Chromium rendering supports JavaScript-heavy pages that ordinary HTTP fetching cannot render. The `browser` feature is compiled into every artifact built from current source, including the next CLI release and the next Python wheel; the published `v0.4.4` binaries predate it. A system Chrome/Chromium executable is a runtime dependency only and is never bundled; its absence degrades browser functionality rather than breaking the product.
+Headless Chrome/Chromium rendering supports JavaScript-heavy pages that ordinary HTTP fetching cannot render. The `browser` feature is compiled into the default artifact set built from current source, including the CLI and the single Python wheel feature set; the published `v0.4.4` binaries predate it. Chrome/Chromium is an external runtime dependency and is never bundled. Its absence does not prevent installation, process startup, search, or HTTP fetching; only requests that need rendering are degraded.
 
 ### Enabling
 
@@ -306,12 +309,17 @@ requests. A request that does not require rendering continues on its HTTP path.
 
 | Condition | Explicit browser request | Implicit (`auto`) request |
 |---|---|---|
-| Feature not compiled | `browser_not_compiled_in` | HTTP outcome, `browser_unavailable` warning if rendering was warranted |
-| `enabled = false` | `browser_disabled` | same |
-| Enabled, no executable found | `browser_unavailable` with an actionable reason | same |
-| Enabled, unsupported version | `browser_unavailable` naming the version | same |
-| Enabled, explicit path invalid | `browser_unavailable` naming the path; no fallback to auto-discovery | same |
-| Enabled and discovered but the launch fails | `browser_unavailable`-class failure naming the launch error, never a silent HTTP fetch | the original HTTP outcome plus the failure reason |
+| Feature not compiled | `browser_not_compiled_in` | HTTP outcome plus a `browser_unavailable` warning only if rendering was warranted |
+| `enabled = false` | `browser_disabled` | HTTP outcome plus a `browser_unavailable` warning only if rendering was warranted |
+| Enabled, no executable found | Structured `browser_unavailable` error with the discovery reason | HTTP outcome plus a `browser_unavailable` warning with the discovery reason only if rendering was warranted |
+| Enabled, unrecognized Chrome/Chromium version output | Structured `browser_unavailable` error naming the output | HTTP outcome plus a `browser_unavailable` warning with the discovery reason only if rendering was warranted |
+| Enabled, explicit path invalid | Structured `browser_unavailable` error naming the path; no fallback to auto-discovery | HTTP outcome plus a `browser_unavailable` warning only if rendering was warranted |
+| Enabled and discovered but the launch fails | Structured `browser_unavailable`-class failure naming the launch error, never a silent HTTP fetch | Original HTTP outcome plus a `browser_unavailable` warning with the launch cause only if rendering was warranted |
+
+The explicit tool error carries `data.code = "browser_unavailable"` and a
+`data.message` naming the discovery, version, path, or launch cause. In `auto`,
+HTTP remains the outcome when rendering is unavailable; no warning is added when
+rendering was not warranted.
 
 `provider_status.browser_capabilities` always reports `compiled`, `configured`,
 `discovered`, `usable`, `reason`, and the lifecycle counters, in every one of

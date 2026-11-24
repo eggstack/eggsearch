@@ -1,6 +1,6 @@
 # Browser Artifact Availability and Render Bounds Roadmap
 
-Status: closing (M001–M005 acceptance complete; PR #16 merged as `aea34ee`); ready (M006 absent-browser degradation)
+Status: active (M001–M005 acceptance complete; M006 absent-browser degradation in progress; PR #16 merged as `aea34ee`)
 Baseline: `f265f08` (branch `feat/auto-20261110-0a674cdc`)
 Owner: fetch/extraction and distribution
 Decision: `plans/adrs/ADR-0014-browser-artifact-availability-and-render-bounds.md`;
@@ -62,8 +62,9 @@ M003–M008), the release producer (`release/eggpack/`), challenge solving
 
 ## 4. Current state
 
-- Release binaries compile `pdf` and `browser` by default. Browser defaults to
-  `enabled = true` and `policy = "auto"`; the Python wheel remains PDF-only.
+- Release binaries and Python wheels compile `pdf` and `browser`. Browser defaults to
+  `enabled = true` and `policy = "auto"`; Chrome is discovered at runtime, and its absence is
+  a supported state governed by M006.
 - HTTP is the hot path. `auto` escalates only for JavaScript shells,
   non-interactive verification pages, or detected challenges.
 - The shared lifecycle enforces `max_requests`, tears down after 90 seconds idle,
@@ -257,8 +258,8 @@ and continue to receive HTTP extraction.
 ## 9. Risks and deferred work
 
 - **armv7 build.** `chromiumoxide` must compile for `armv7-unknown-linux-gnueabihf`.
-  This is a hard gate in M002; if it fails, the workstream returns to PDF-only
-  default rather than introducing per-target feature sets.
+  This is a hard gate for Python M006 under ADR-0024; if it fails, stop the single-wheel delivery
+  rather than publishing a PDF-only armv7 variant or introducing per-target feature sets.
 - **armv7 runtime.** Chromium is effectively unavailable on that target. The
   feature compiles but cannot escalate, and capability reporting must say so
   rather than leaving agents to guess.
@@ -276,7 +277,7 @@ and continue to receive HTTP extraction.
   asymmetry moves from capability to environment: a wheel host without Chrome still runs, and the
   M006 degradation contract governs what it reports.
 
-### M006 — Absent-browser degradation contract (correctness) — ready
+### M006 — Absent-browser degradation contract (correctness) — active
 
 **Objective.** Prove and, where needed, complete the promise this workstream already makes: a host
 without Chrome still installs, starts, searches, and fetches, and every browser-unavailable outcome
@@ -292,6 +293,6 @@ discovered-but-launch-fails path (container sandbox, missing shared library); a 
 lane with no browser executable; documentation of the degradation table and discovery order.
 
 **Exit.** Every seam degrades without panic, hang, or silent explicit fallback; capability reporting
-is accurate for all five discovery states; the no-Chrome lane is the regression barrier.
+is accurate for all four discovery states; the no-Chrome lane is the regression barrier.
 
 **Plan.** `plans/implementation/browser-artifact-availability/006-absent-browser-degradation-contract.md`.

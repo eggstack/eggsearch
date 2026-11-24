@@ -45,9 +45,9 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
 
     // Discover the browser before creating any profile state so an
     // invalid configured executable cannot leave an orphaned profile.
-    let discovery = match eggsearch::fetch::browser::discover_browser(
-        cfg.fetch.browser.executable.as_deref(),
-    ) {
+    let discovery_state =
+        eggsearch::fetch::browser::discover_browser(cfg.fetch.browser.executable.as_deref());
+    let discovery = match &discovery_state {
         eggsearch::fetch::browser::BrowserDiscoveryState::Available(discovery) => Some(discovery),
         eggsearch::fetch::browser::BrowserDiscoveryState::ExplicitPathInvalid { path } => {
             return Err(anyhow!("configured browser executable is invalid: {path}"));
@@ -73,7 +73,7 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
     println!("  Profile:  {}", profile_dir.display());
     println!();
 
-    if let Some(ref discovery) = discovery {
+    if let Some(discovery) = discovery {
         println!(
             "Chrome discovered. Launching headed browser at {}...",
             meta.allowed_origin
@@ -109,7 +109,10 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
             }
         }
     } else {
-        println!("No Chrome/Chromium executable found.");
+        println!(
+            "Browser unavailable: {}",
+            unavailable_browser_reason(&discovery_state)
+        );
         println!("Install Chrome or set [fetch.browser].executable in config.");
         println!();
         println!("Profile '{display_name}' has been created. Once Chrome is available,");
@@ -117,6 +120,11 @@ pub async fn run(cfg: &AppConfig, origin: &str, profile_name: Option<&str>) -> R
     }
 
     Ok(())
+}
+
+fn unavailable_browser_reason(state: &eggsearch::fetch::browser::BrowserDiscoveryState) -> String {
+    eggsearch::fetch::browser::browser_discovery_reason(state)
+        .unwrap_or_else(|| "browser rendering is unavailable".to_string())
 }
 
 async fn launch_headed_browser(
@@ -191,5 +199,15 @@ mod tests {
         assert_eq!(parse_major_version("120.0.6099.109"), Some(120));
         assert_eq!(parse_major_version("1"), Some(1));
         assert_eq!(parse_major_version("abc"), None);
+    }
+
+    #[test]
+    fn browser_absent_login_names_unrecognized_version() {
+        let state = eggsearch::fetch::browser::BrowserDiscoveryState::VersionUnrecognized {
+            version: "Chromium unknown".to_string(),
+        };
+        let reason = unavailable_browser_reason(&state);
+        assert!(reason.contains("not recognized as Chrome/Chromium"));
+        assert!(reason.contains("Chromium unknown"));
     }
 }

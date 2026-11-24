@@ -113,6 +113,7 @@ struct ClientState {
     lifecycle: Mutex<Lifecycle>,
     cancelled: CancellationToken,
     drained: Notify,
+    close_completion: tokio::sync::OnceCell<()>,
 }
 
 impl ClientState {
@@ -154,13 +155,19 @@ impl ClientState {
             .ok_or_else(client_closed_error)
     }
 
-    fn release_client(&self) {
-        let client = self
-            .client
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        drop(client);
+    async fn release_client(&self) {
+        self.close_completion
+            .get_or_init(|| async {
+                let client = self
+                    .client
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take();
+                if let Some(client) = client {
+                    client.close().await;
+                }
+            })
+            .await;
     }
 
     async fn wait_drained(&self) {
@@ -218,6 +225,7 @@ fn build_state(config: AppConfig) -> PyResult<Arc<ClientState>> {
         lifecycle: Mutex::new(Lifecycle::default()),
         cancelled: CancellationToken::new(),
         drained: Notify::new(),
+        close_completion: tokio::sync::OnceCell::new(),
     }))
 }
 
@@ -325,7 +333,7 @@ impl PyAsyncEggsearch {
         let state = self.state.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             state.wait_drained().await;
-            state.release_client();
+            state.release_client().await;
             Python::attach(|py| Ok(py.None()))
         })
     }

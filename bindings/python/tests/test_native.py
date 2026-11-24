@@ -490,7 +490,8 @@ def test_public_error_exposes_structured_fields(config_path):
 
 
 def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
-    missing_executable = tmp_path / "missing-chrome"
+    auto_discovery_absence = os.environ.get("EGGSEARCH_TEST_BROWSER_AUTO_ABSENCE") == "1"
+    missing_executable = None if auto_discovery_absence else tmp_path / "missing-chrome"
     config = _write_browser_config(
         tmp_path / "absent-browser.toml", executable=missing_executable
     )
@@ -505,8 +506,11 @@ def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
                 assert capabilities["configured"] is True
                 assert capabilities["discovered"] is False
                 assert capabilities["usable"] is False
-                assert "invalid" in capabilities["reason"]
-                assert str(missing_executable) in capabilities["reason"]
+                if auto_discovery_absence:
+                    assert "no Chrome/Chromium executable was found" in capabilities["reason"]
+                else:
+                    assert "invalid" in capabilities["reason"]
+                    assert str(missing_executable) in capabilities["reason"]
                 lifecycle = capabilities["lifecycle"]
                 assert {
                     "resident",
@@ -523,7 +527,9 @@ def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
                 assert unavailable.value.data["code"] == "browser_unavailable"
                 assert "executable" in unavailable.value.data["message"]
 
-                fetched = await client.web_fetch(url=url, render="http_only")
+                fetched = await client.fetch(
+                    items={"type": "web", "url": url, "render": "http_only"}
+                )
                 assert isinstance(fetched, dict)
                 assert "http-only-marker" in json.dumps(fetched)
 
@@ -540,7 +546,16 @@ def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
                     for card in cards
                 )
             finally:
-                await client.close()
+                await client.aclose()
+                await client.aclose()
+
+            with pytest.raises(EggsearchError) as closed:
+                await client.provider_status(probe=False)
+            assert closed.value.code == "client_closed"
+
+            with pytest.raises(EggsearchError) as closed_browser:
+                await client.web_fetch(url=url, render="browser")
+            assert closed_browser.value.code == "client_closed"
 
         asyncio.run(run())
 

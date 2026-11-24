@@ -164,13 +164,20 @@ features = ["pdf", "browser"]`: the wheel compiles both PDF extraction and
 browser rendering; `egress` is not compiled. A wheel built from current source
 matches the CLI binaries built from the same source; the published
 `eggsearch==0.4.4` wheel is PDF-only. A system Chrome/Chromium executable is a runtime
-dependency only and is never bundled.
-If it is absent, `provider_status.browser_capabilities.usable` is `false`;
-installation, import, search, and HTTP fetch remain available. An `auto` request
-keeps the HTTP outcome and adds a `browser_unavailable` warning when rendering
-was warranted, while an explicit browser request reports `browser_unavailable`
-with its reason. See the [browser degradation contract]
-(features.md#browser-rendering). The native library uses the same Eggsearch
+dependency only and is never bundled. If it is absent,
+`provider_status.browser_capabilities.usable` is `false`; installation, import,
+process startup, search, and HTTP fetch remain available. An `auto` request
+retains the HTTP outcome and adds a structured `browser_unavailable` warning
+only when rendering was warranted. An explicit browser request raises
+`EggsearchError` with `code == "capability_unavailable"` and
+`data["code"] == "browser_unavailable"`; `data["message"]` names the
+discovery or launch cause. An explicit `[fetch.browser].executable` path is
+checked first and an invalid path never falls back. Otherwise discovery checks
+Linux absolute candidates, macOS app-bundle candidates, then `PATH` names; the
+[configuration guide](config.md#executable-discovery-and-override) lists the
+exact order and candidates. Set `[fetch.browser].executable` as the escape
+hatch for Chrome/Chromium installed elsewhere. See the [browser degradation
+contract](features.md#browser-rendering). The native library uses the same Eggsearch
 configuration, provider credential environment variables, bounded operations,
 sanitation, and trust labels as the Rust engine. It does not probe credentials
 during import. Python distributions do not alter Eggpack's binary release

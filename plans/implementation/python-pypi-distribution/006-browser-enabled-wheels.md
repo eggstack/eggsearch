@@ -1,7 +1,8 @@
 # M006 — Browser-Enabled Python Wheels
 
-Status: proposed (waits on ADR-0024 acceptance)
+Status: active
 Date: 2026-11-24
+Baseline: `e012dd7aa9071b1fc14e206e727ac8635f4064e4` on `docs/user-facing-polish-20261123`, after merging `origin/main` `4de20a0f0d748b89147829a51384e385a5bee388`
 Subsystem: Python PyPI distribution and prebuilt SBC wheels
 Milestone class: capability (distribution alignment)
 Decision: `plans/adrs/ADR-0024-browser-enabled-wheels-and-absent-browser-degradation.md`

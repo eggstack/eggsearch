@@ -534,15 +534,19 @@ DNS/refused/unreachable→Connection, TLS/protocol/other→Other).
 
 Headless Chrome/Chromium over CDP. The `browser` feature is in the default set, so
 the capability is compiled into default binaries and `[fetch.browser].policy`
-defaults to `auto`; HTTP remains the hot path and rendering is escalation.
+defaults to `auto`; HTTP remains the hot path and rendering is escalation. A
+system Chrome/Chromium executable is a runtime dependency and is never bundled.
+Its absence does not block process startup, search, or HTTP-only fetch.
 An explicit `render = "browser"` or `browser_profile` request reports the stable
 codes `browser_not_compiled_in` (feature absent), `browser_disabled`
 (`enabled = false`), and `browser_unavailable` (no discovered executable)
-instead of silently performing an HTTP fetch. The tool-level codes are the
-agent contract; the fetch-layer error variants of the same names remain reserved
-for direct library use. `RenderPolicy::Auto` never errors:
-when escalation was warranted but unavailable, the call returns the HTTP document
-with the `browser_unavailable` structured warning and `browser_escalated: false`.
+instead of silently performing an HTTP fetch. For `browser_unavailable`, the
+structured tool error carries the discovery or launch cause in its message. The
+tool-level codes are the agent contract; the fetch-layer error variants of the
+same names remain reserved for direct library use. `RenderPolicy::Auto` never
+errors: when escalation was warranted but unavailable, the call returns the HTTP
+document with the `browser_unavailable` structured warning and
+`browser_escalated: false`; no warning is added when rendering is not warranted.
 Escalation is triggered by wall-shaped `2xx` content or by a browser-gated status
 (`429` or `5xx`); § Browser challenge completion states the status seam, the
 return rule, and the retry interaction.
@@ -551,14 +555,15 @@ return rule, and the retry interaction.
 
 | Entry point | Outcome with no discovered browser |
 |---|---|
+| CLI `mcp serve` / Python import and client initialization | Startup and import do not require a usable browser and continue normally. |
 | CLI `search` / MCP `web_search` | Search remains available through providers that do not need browser rendering; a missing browser does not disable search. |
 | CLI `fetch` | HTTP-only fetch returns normally. `auto` returns the HTTP document with `browser_unavailable` when a wall warrants rendering; a configured explicit `browser` policy fails with `browser_unavailable` and the discovery reason. |
-| MCP `web_fetch`, `batch_fetch`, unified `fetch` web items | `auto` keeps HTTP content and adds a `browser_unavailable` structured warning only when escalation is warranted. Explicit browser requests return `browser_unavailable`; disabled and uncompiled cases retain `browser_disabled` and `browser_not_compiled_in`. |
+| MCP `web_fetch`, `batch_fetch`, unified `fetch` web items | `auto` keeps HTTP content and adds a `browser_unavailable` structured warning only when escalation is warranted. Explicit browser requests return a structured `browser_unavailable` error with the discovery or launch cause; disabled and uncompiled cases retain `browser_disabled` and `browser_not_compiled_in`. |
 | MCP `provider_status` | `browser_capabilities` retains its existing fields and reports `usable: false` with a discovery reason. |
 | CLI `doctor` | Does not probe Chrome; ordinary diagnostics remain available. |
 | CLI `browser_login` | Creates the requested profile metadata and reports that Chrome was not discovered; it does not require a browser process to start. |
 | CLI `browser_profiles` | List/remove remain local profile-store operations. Inspect reports browser compatibility only when a browser is discovered. |
-| Python `AsyncEggsearch` | Delegates canonical calls through the native execution bridge; fetch render/profile arguments use the same MCP outcome and error codes. |
+| Python `AsyncEggsearch` | Delegates canonical calls through the native execution bridge; explicit browser failures raise `EggsearchError` with the same `code` and cause message. |
 
 The CI `browser-absence` job configures a deterministic nonexistent executable, so its
 contract tests do not depend on whether the hosted image happens to contain Chrome. A launch error
@@ -586,7 +591,9 @@ an extra HTTP request.
   anything else → `ExplicitPathInvalid { path }`. No auto-discovery fallback.
 - Otherwise probe Linux well-known paths, macOS bundles (`~` expanded), then
   `PATH` binaries. Each candidate must exist, be a file, and survive a
-  5 s `--version` probe. Nothing found → `NotFound`.
+  5 s `--version` probe. Nothing found → `NotFound`. The exact candidate order
+  and the `[fetch.browser].executable` escape hatch are documented in
+  [Configuration](../docs/config.md#executable-discovery-and-override).
 
 ### Lifecycle: ephemeral vs persistent
 

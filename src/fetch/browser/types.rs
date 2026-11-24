@@ -326,10 +326,9 @@ impl BrowserAvailability {
 #[derive(Clone, Debug)]
 pub enum BrowserDiscoveryState {
     Available(BrowserDiscovery),
-    NotConfigured,
     ExplicitPathInvalid { path: String },
     NotFound,
-    VersionUnsupported { version: String },
+    VersionUnrecognized { version: String },
 }
 
 impl BrowserDiscoveryState {

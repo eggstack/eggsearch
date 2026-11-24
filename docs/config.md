@@ -808,8 +808,9 @@ The `[fetch.browser]` section configures headless Chrome/Chromium rendering. The
 `browser` feature is compiled into every artifact built from current source,
 including the next CLI release and the next Python wheel; the published `v0.4.4`
 binaries predate it. A system Chrome/Chromium executable is a runtime dependency
-only and is never bundled. Its absence does not break installation,
-search, or an HTTP fetch; browser requests follow the degradation contract below.
+only and is never bundled. Its absence does not break installation, process
+startup, search, or an HTTP fetch; browser requests follow the degradation
+contract below.
 `enabled` defaults to the compiled-in feature state, and `policy` defaults to
 `auto`.
 
@@ -859,14 +860,19 @@ The following table is normative for explicit browser requests and implicit
 
 | Condition | Explicit browser request | Implicit (`auto`) request |
 |---|---|---|
-| Feature not compiled | `browser_not_compiled_in` | HTTP outcome, `browser_unavailable` warning if rendering was warranted |
-| `enabled = false` | `browser_disabled` | same |
-| Enabled, no executable found | `browser_unavailable` with an actionable reason | same |
-| Enabled, unsupported version | `browser_unavailable` naming the version | same |
-| Enabled, explicit path invalid | `browser_unavailable` naming the path; no fallback to auto-discovery | same |
-| Enabled and discovered but the launch fails | `browser_unavailable`-class failure naming the launch error, never a silent HTTP fetch | the original HTTP outcome plus the failure reason |
+| Feature not compiled | `browser_not_compiled_in` | HTTP outcome plus a `browser_unavailable` warning only if rendering was warranted |
+| `enabled = false` | `browser_disabled` | HTTP outcome plus a `browser_unavailable` warning only if rendering was warranted |
+| Enabled, no executable found | Structured `browser_unavailable` error with the discovery reason | HTTP outcome plus a `browser_unavailable` warning with the discovery reason only if rendering was warranted |
+| Enabled, unrecognized Chrome/Chromium version output | Structured `browser_unavailable` error naming the output | HTTP outcome plus a `browser_unavailable` warning with the discovery reason only if rendering was warranted |
+| Enabled, explicit path invalid | Structured `browser_unavailable` error naming the path; no fallback to auto-discovery | HTTP outcome plus a `browser_unavailable` warning only if rendering was warranted |
+| Enabled and discovered but the launch fails | Structured `browser_unavailable`-class failure naming the launch error, never a silent HTTP fetch | Original HTTP outcome plus a `browser_unavailable` warning with the launch cause only if rendering was warranted |
 
-`provider_status.browser_capabilities` always reports `compiled`, `configured`,
+The explicit tool error carries `data.code = "browser_unavailable"` and a
+`data.message` naming the discovery, version, path, or launch cause. In `auto`,
+HTTP remains the outcome when rendering is unavailable; no warning is added when
+rendering was not warranted.
+
+`provider_status.browser_capabilities` always reports `compiled`, `configured`
 `discovered`, `usable`, `reason`, and the lifecycle counters, in every one of
 those states.
 

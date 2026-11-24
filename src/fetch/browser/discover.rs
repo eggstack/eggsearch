@@ -8,26 +8,42 @@ pub fn discover_browser(configured_path: Option<&str>) -> BrowserDiscoveryState 
     if let Some(path) = configured_path {
         if !path.is_empty() {
             let p = PathBuf::from(path);
-            match try_validate(&p, BrowserSource::Configured) {
-                Some(disc) => return BrowserDiscoveryState::Available(disc),
-                None => {
-                    return BrowserDiscoveryState::ExplicitPathInvalid {
-                        path: path.to_string(),
-                    };
+            return match try_validate(&p, BrowserSource::Configured) {
+                CandidateValidation::Available(discovery) => {
+                    BrowserDiscoveryState::Available(discovery)
                 }
-            }
+                CandidateValidation::VersionUnrecognized(version) => {
+                    BrowserDiscoveryState::VersionUnrecognized { version }
+                }
+                CandidateValidation::Invalid => BrowserDiscoveryState::ExplicitPathInvalid {
+                    path: path.to_string(),
+                },
+            };
         }
     }
 
+    let mut unrecognized_version = None;
     for candidate in linux_candidates() {
-        if let Some(disc) = try_validate(&candidate, BrowserSource::AutoDiscovered) {
-            return BrowserDiscoveryState::Available(disc);
+        match try_validate(&candidate, BrowserSource::AutoDiscovered) {
+            CandidateValidation::Available(discovery) => {
+                return BrowserDiscoveryState::Available(discovery)
+            }
+            CandidateValidation::VersionUnrecognized(version) => {
+                unrecognized_version.get_or_insert(version);
+            }
+            CandidateValidation::Invalid => {}
         }
     }
 
     for candidate in macos_candidates() {
-        if let Some(disc) = try_validate_expanded(&candidate, BrowserSource::AutoDiscovered) {
-            return BrowserDiscoveryState::Available(disc);
+        match try_validate_expanded(&candidate, BrowserSource::AutoDiscovered) {
+            CandidateValidation::Available(discovery) => {
+                return BrowserDiscoveryState::Available(discovery)
+            }
+            CandidateValidation::VersionUnrecognized(version) => {
+                unrecognized_version.get_or_insert(version);
+            }
+            CandidateValidation::Invalid => {}
         }
     }
 
@@ -38,29 +54,34 @@ pub fn discover_browser(configured_path: Option<&str>) -> BrowserDiscoveryState 
         "chromium-browser",
     ] {
         if let Some(path) = find_in_path(name) {
-            if let Some(discovery) = try_validate(&path, BrowserSource::AutoDiscovered) {
-                return BrowserDiscoveryState::Available(discovery);
+            match try_validate(&path, BrowserSource::AutoDiscovered) {
+                CandidateValidation::Available(discovery) => {
+                    return BrowserDiscoveryState::Available(discovery)
+                }
+                CandidateValidation::VersionUnrecognized(version) => {
+                    unrecognized_version.get_or_insert(version);
+                }
+                CandidateValidation::Invalid => {}
             }
         }
     }
 
-    BrowserDiscoveryState::NotFound
+    unrecognized_version.map_or(BrowserDiscoveryState::NotFound, |version| {
+        BrowserDiscoveryState::VersionUnrecognized { version }
+    })
 }
 
 pub fn browser_discovery_reason(state: &BrowserDiscoveryState) -> Option<String> {
     match state {
         BrowserDiscoveryState::Available(_) => None,
-        BrowserDiscoveryState::NotConfigured => Some(
-            "no browser executable is configured; set [fetch.browser].executable or install Chrome/Chromium".to_string(),
-        ),
         BrowserDiscoveryState::ExplicitPathInvalid { path } => Some(format!(
             "configured browser executable is invalid: {path}; set [fetch.browser].executable to a valid executable"
         )),
         BrowserDiscoveryState::NotFound => Some(
             "no Chrome/Chromium executable was found; install Chrome/Chromium or set [fetch.browser].executable".to_string(),
         ),
-        BrowserDiscoveryState::VersionUnsupported { version } => Some(format!(
-            "browser version is unsupported: {version}; install a supported Chrome/Chromium version"
+        BrowserDiscoveryState::VersionUnrecognized { version } => Some(format!(
+            "browser version output is not recognized as Chrome/Chromium: {version}; set [fetch.browser].executable to a Chrome/Chromium executable that reports its version"
         )),
     }
 }
@@ -83,23 +104,26 @@ fn macos_candidates() -> Vec<String> {
     ]
 }
 
-fn try_validate(path: &Path, source: BrowserSource) -> Option<BrowserDiscovery> {
-    if !path.exists() {
-        return None;
+enum CandidateValidation {
+    Available(BrowserDiscovery),
+    VersionUnrecognized(String),
+    Invalid,
+}
+
+fn try_validate(path: &Path, source: BrowserSource) -> CandidateValidation {
+    if !path.exists() || !path.is_file() || !is_executable(path) {
+        return CandidateValidation::Invalid;
     }
-    if !path.is_file() {
-        return None;
+    let Some(version) = run_version(path) else {
+        return CandidateValidation::Invalid;
+    };
+    if !has_recognized_version_output(&version) {
+        return CandidateValidation::VersionUnrecognized(version);
     }
 
-    if !is_executable(path) {
-        return None;
-    }
-    let family = detect_family(path);
-    let version = run_version(path)?;
-
-    Some(BrowserDiscovery {
+    CandidateValidation::Available(BrowserDiscovery {
         path: path.to_path_buf(),
-        family,
+        family: detect_family(path),
         version,
         source,
     })
@@ -118,13 +142,24 @@ fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
 
-fn try_validate_expanded(path_str: &str, source: BrowserSource) -> Option<BrowserDiscovery> {
+fn try_validate_expanded(path_str: &str, source: BrowserSource) -> CandidateValidation {
     let expanded = if let Some(rest) = path_str.strip_prefix("~/") {
-        dirs::home_dir()?.join(rest)
+        let Some(home) = dirs::home_dir() else {
+            return CandidateValidation::Invalid;
+        };
+        home.join(rest)
     } else {
         PathBuf::from(path_str)
     };
     try_validate(&expanded, source)
+}
+
+fn has_recognized_version_output(version: &str) -> bool {
+    let version = version.trim();
+    let recognized_product = ["Google Chrome", "Chrome", "Chromium"]
+        .iter()
+        .any(|product| version.starts_with(product));
+    recognized_product && super::profiles::parse_browser_major_version(version).is_some()
 }
 
 fn detect_family(path: &Path) -> BrowserFamily {
@@ -281,6 +316,14 @@ mod tests {
     }
 
     #[test]
+    fn version_output_requires_a_recognized_product_and_version() {
+        assert!(has_recognized_version_output("Google Chrome 142.0.7431.0"));
+        assert!(has_recognized_version_output("Chromium 120.0.0.0"));
+        assert!(!has_recognized_version_output("Chrome unknown"));
+        assert!(!has_recognized_version_output("Unknown browser 120.0.0.0"));
+    }
+
+    #[test]
     fn capability_report_no_browser() {
         let report = browser_capability_report(true, false, None);
         assert_eq!(report["browser_feature_compiled"], true);
@@ -299,10 +342,6 @@ mod tests {
         });
         assert_eq!(browser_discovery_reason(&available), None);
         assert_eq!(
-            browser_discovery_reason(&BrowserDiscoveryState::NotConfigured).as_deref(),
-            Some("no browser executable is configured; set [fetch.browser].executable or install Chrome/Chromium")
-        );
-        assert_eq!(
             browser_discovery_reason(&BrowserDiscoveryState::ExplicitPathInvalid {
                 path: "/synthetic/missing/chrome".to_string(),
             })
@@ -314,11 +353,11 @@ mod tests {
             Some("no Chrome/Chromium executable was found; install Chrome/Chromium or set [fetch.browser].executable")
         );
         assert_eq!(
-            browser_discovery_reason(&BrowserDiscoveryState::VersionUnsupported {
-                version: "Chromium 69.0.0.0".to_string(),
+            browser_discovery_reason(&BrowserDiscoveryState::VersionUnrecognized {
+                version: "Chromium unknown".to_string(),
             })
             .as_deref(),
-            Some("browser version is unsupported: Chromium 69.0.0.0; install a supported Chrome/Chromium version")
+            Some("browser version output is not recognized as Chrome/Chromium: Chromium unknown; set [fetch.browser].executable to a Chrome/Chromium executable that reports its version")
         );
     }
 }

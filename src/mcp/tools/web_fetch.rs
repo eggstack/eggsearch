@@ -38,6 +38,7 @@ pub(crate) fn validate_batch_route_options(
     render: Option<&str>,
     browser_profile: Option<&str>,
     include_screenshot: bool,
+    _enforce_runtime_availability: bool,
 ) -> Result<(), ToolError> {
     #[cfg(not(feature = "browser"))]
     let _ = url;
@@ -89,8 +90,14 @@ pub(crate) fn validate_batch_route_options(
         let explicit_browser =
             matches!(render_policy, RenderPolicy::Browser) || browser_profile.is_some();
         match state.browser_lifecycle() {
-            None if explicit_browser => return Err(browser_disabled_error()),
-            Some(lifecycle) if !lifecycle.is_available() && explicit_browser => {
+            None if explicit_browser && _enforce_runtime_availability => {
+                return Err(browser_disabled_error())
+            }
+            Some(lifecycle)
+                if !lifecycle.is_available()
+                    && explicit_browser
+                    && _enforce_runtime_availability =>
+            {
                 return Err(browser_unavailable_error(
                     &crate::fetch::browser::browser_discovery_reason(
                         &state.browser_discovery_state,
@@ -312,6 +319,7 @@ async fn run_web_fetch_inner(
         args.render.as_deref(),
         args.browser_profile.as_deref(),
         include_screenshot,
+        true,
     )?;
 
     if let Some(0) = args.max_chars {
@@ -1087,14 +1095,31 @@ async fn run_web_fetch_inner(
                             }
                         }
                         #[cfg(not(feature = "browser"))]
-                        if matches!(render_request, RenderRequest::Auto) {
+                        if state.config.fetch.browser.enabled
+                            && matches!(render_request, RenderRequest::Auto)
+                        {
                             let body_bytes = resp.raw_text.as_deref().unwrap_or("").as_bytes();
-                            if crate::fetch::challenge::detect(
+                            let text_len = resp
+                                .document
+                                .as_ref()
+                                .map(|document| {
+                                    document
+                                        .blocks
+                                        .iter()
+                                        .map(|block| block.text.trim().chars().count())
+                                        .sum::<usize>()
+                                })
+                                .or_else(|| {
+                                    resp.text.as_deref().map(|text| text.trim().chars().count())
+                                })
+                                .unwrap_or(0);
+                            if crate::fetch::classify::browser_rendering_is_warranted(
+                                resp.status,
+                                resp.content_type.as_deref(),
                                 resp.title.as_deref(),
-                                &String::from_utf8_lossy(body_bytes),
-                            )
-                            .is_some()
-                            {
+                                text_len,
+                                body_bytes,
+                            ) {
                                 auto_escalation_unavailable =
                                     Some(browser_unavailable_reason.clone());
                             }

@@ -211,6 +211,13 @@ impl EggsearchClient {
         };
         result.map_err(SdkError::from)
     }
+
+    pub async fn close(&self) {
+        #[cfg(feature = "browser")]
+        if let Some(lifecycle) = self.state.browser_lifecycle.as_ref() {
+            lifecycle.close().await;
+        }
+    }
 }
 
 fn decode<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T, SdkError> {

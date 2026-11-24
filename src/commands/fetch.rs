@@ -308,6 +308,18 @@ async fn fetch_response(
                     }
                 }
             }
+            #[cfg(not(feature = "browser"))]
+            if cfg.fetch.browser.enabled
+                && cfg.fetch.browser.policy == "auto"
+                && response_requires_browser(&response)
+            {
+                response
+                    .structured_warnings
+                    .push(eggsearch::core::warning::AgentWarning::new(
+                        eggsearch::core::warning::WarningCode::BrowserUnavailable,
+                        "browser rendering is not compiled into this build".to_string(),
+                    ));
+            }
             Ok(response)
         }
         Err(error) => {
@@ -387,25 +399,18 @@ async fn fetch_response(
     }
 }
 
-#[cfg(feature = "browser")]
 fn response_requires_browser(response: &WebFetchResponse) -> bool {
     let body = response.raw_text.as_deref().unwrap_or("");
     let text_len = response
         .raw_text_chars_returned
         .unwrap_or_else(|| body.chars().count());
-    let disposition = eggsearch::fetch::browser::classify_response(
+    eggsearch::fetch::classify::browser_rendering_is_warranted(
         response.status,
         response.content_type.as_deref(),
         response.title.as_deref(),
         text_len,
         body.as_bytes(),
-    );
-    eggsearch::fetch::challenge::detect(response.title.as_deref(), body).is_some()
-        || matches!(
-            disposition,
-            eggsearch::fetch::browser::FetchDisposition::JavascriptShell
-                | eggsearch::fetch::browser::FetchDisposition::NonInteractiveVerification
-        )
+    )
 }
 
 /// Resolve the CLI policy; a disabled browser forces `http_only`, matching MCP behavior.
@@ -547,6 +552,62 @@ mod tests {
             .any(|warning| warning.code
                 == eggsearch::core::warning::WarningCode::BrowserUnavailable
                 && warning.message.contains("/synthetic/missing/chrome")));
+    }
+
+    #[cfg(not(feature = "browser"))]
+    #[tokio::test]
+    async fn browser_uncompiled_auto_warns_only_when_rendering_is_warranted() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        let _ordinary = server.mock(|when, then| {
+            when.method(GET).path("/ordinary");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body("<html><body>Ordinary readable article content.</body></html>");
+        });
+        let _verification = server.mock(|when, then| {
+            when.method(GET).path("/verification");
+            then.status(200)
+                .header("content-type", "text/html")
+                .body("<html><head><title>Checking your browser</title></head><body>Please wait while we verify.</body></html>");
+        });
+        let mut cfg = AppConfig::default();
+        cfg.fetch.allow_localhost = true;
+        cfg.fetch.allow_private_network = true;
+        cfg.fetch.browser.enabled = true;
+        cfg.fetch.browser.policy = "auto".to_string();
+
+        let ordinary = fetch_response(
+            &cfg,
+            &server.url("/ordinary"),
+            Some(1000),
+            Some(5000),
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect("ordinary HTTP fetch succeeds without the browser feature");
+        assert!(!ordinary.structured_warnings.iter().any(|warning| {
+            warning.code == eggsearch::core::warning::WarningCode::BrowserUnavailable
+        }));
+
+        let verification = fetch_response(
+            &cfg,
+            &server.url("/verification"),
+            Some(1000),
+            Some(5000),
+            false,
+            false,
+            false,
+        )
+        .await
+        .expect("auto fetch retains HTTP response without the browser feature");
+        assert!(verification.structured_warnings.iter().any(|warning| {
+            warning.code == eggsearch::core::warning::WarningCode::BrowserUnavailable
+                && warning.message.contains("not compiled")
+        }));
     }
 
     #[cfg(not(feature = "browser"))]

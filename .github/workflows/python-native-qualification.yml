@@ -68,6 +68,21 @@ jobs:
           python -m pip install packaging==26.0
           python -m pip install --no-index --no-deps --only-binary=:all: dist/*.whl
           python -c "from importlib.metadata import distribution; from packaging.utils import parse_wheel_filename; from pathlib import Path; d=distribution('eggsearch'); wheels=list(Path('dist').glob('*.whl')); assert len(wheels) == 1; name, version, build, tags=parse_wheel_filename(wheels[0].name); assert name == 'eggsearch' and str(version) == d.version; assert all(tag.abi == 'abi3' and tag.interpreter == 'cp311' for tag in tags); print(d.metadata['Name'], d.version, d.metadata['Requires-Python']); print(*d.files, sep='\\n')" > dist/metadata.txt
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one wheel, found {len(wheels)}")
+          wheel = wheels[0]
+          size = wheel.stat().st_size
+          line = f"- {wheel.name}: {size} bytes ({size / 1_000_000:.2f} MB)"
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(line + "\n")
+          if size > 20_000_000:
+              raise SystemExit(f"{wheel.name} exceeds 20 MB; maintainer review required")
+          PY
           sha256sum dist/*.whl | tee dist/SHA256SUMS
           cat dist/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
       - id: upload
@@ -204,6 +219,35 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}
 
+  browser-auto-discovery-no-chrome:
+    name: Verify automatic discovery without Chrome
+    needs: build-wheel
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: wheel-linux-x86_64
+          path: ${{ runner.temp }}/wheelhouse
+      - name: Run installed-wheel contract in a browser-free container
+        env:
+          EGGSEARCH_TEST_BROWSER_AUTO_ABSENCE: "1"
+        run: |
+          docker run --rm \
+            -e EGGSEARCH_TEST_BROWSER_AUTO_ABSENCE \
+            -v "$GITHUB_WORKSPACE:/source:ro" \
+            -v "$RUNNER_TEMP/wheelhouse:/wheelhouse:ro" \
+            python:3.11-slim-bookworm \
+            /bin/sh -euxc '
+              python -m venv /tmp/eggsearch-venv
+              /tmp/eggsearch-venv/bin/python -m pip install --no-index --no-deps --only-binary=:all: /wheelhouse/*.whl
+              /tmp/eggsearch-venv/bin/python -m pip install pytest==8.4.2
+              cd /tmp
+              /tmp/eggsearch-venv/bin/python -m pytest -q -s /source/bindings/python/tests/test_native.py -k browser_absence_is_explicit_and_http_operations_still_work
+            '
+        shell: bash
+        working-directory: ${{ runner.temp }}
+
   armv7-build:
     name: Build ARMv7 hard-float wheel
     runs-on: ubuntu-24.04
@@ -231,8 +275,23 @@ jobs:
         run: |
           python -m pip install packaging==26.0
           python bindings/python/scripts/audit_armv7_wheel.py dist/*.whl | tee dist/armv7-audit.txt
-          sha256sum dist/*.whl | tee dist/SHA256SUMS
           cat dist/armv7-audit.txt >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"expected one ARMv7 wheel, found {len(wheels)}")
+          wheel = wheels[0]
+          size = wheel.stat().st_size
+          line = f"- linux-armv7l: {wheel.name}, {size} bytes ({size / 1_000_000:.2f} MB)"
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(line + "\n")
+          if size > 20_000_000:
+              raise SystemExit(f"{wheel.name} exceeds 20 MB; maintainer review required")
+          PY
+          sha256sum dist/*.whl | tee dist/SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: wheel-linux-armv7l
@@ -303,6 +362,19 @@ jobs:
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/runtime-venv/bin/python" -m pytest -q "$source_dir/bindings/python/tests"
           "$RUNNER_TEMP/runtime-venv/bin/python" -c "import tomllib; from pathlib import Path; import eggsearch; from importlib.metadata import distribution; expected=tomllib.loads(Path('$GITHUB_WORKSPACE/bindings/python/pyproject.toml').read_text())['project']['version']; assert len(eggsearch.tool_names()) == 9; assert distribution('eggsearch').version == expected"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          artifacts = sorted([*Path("dist").glob("*.tar.gz"), *Path("extracted-wheel").glob("*.whl")])
+          if not artifacts:
+              raise SystemExit("no sdist or rebuilt wheel found")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              for artifact in artifacts:
+                  size = artifact.stat().st_size
+                  line = f"- {artifact.name}: {size} bytes ({size / 1_000_000:.2f} MB)"
+                  print(line)
+                  summary.write(line + "\n")
+          PY
           sha256sum "$GITHUB_WORKSPACE"/dist/* "$GITHUB_WORKSPACE"/extracted-wheel/* | tee "$GITHUB_WORKSPACE/dist/SHA256SUMS"
           cat "$GITHUB_WORKSPACE/dist/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
