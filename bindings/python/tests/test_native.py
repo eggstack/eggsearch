@@ -564,10 +564,36 @@ def test_browser_absence_is_explicit_and_http_operations_still_work(tmp_path):
     os.environ.get("EGGSEARCH_TEST_BROWSER_WITH_CHROME") != "1",
     reason="real Chrome qualification is enabled only in its CI lane",
 )
+@contextmanager
+def _browser_render_fixture_page():
+    yield "https://93.184.216.34/eggsearch-browser-render-fixture"
+
+
+@pytest.mark.skipif(
+    os.environ.get("EGGSEARCH_TEST_BROWSER_WITH_CHROME") != "1",
+    reason="real Chrome qualification is enabled only in its CI lane",
+)
+def test_browser_capability_with_chrome(tmp_path):
+    config = _write_browser_config(tmp_path / "available-browser.toml")
+
+    async def run():
+        client = AsyncEggsearch(str(config))
+        try:
+            capabilities = (await client.provider_status(probe=False))["browser_capabilities"]
+            assert capabilities["compiled"] is True
+            assert capabilities["configured"] is True
+            assert capabilities["discovered"] is True
+            assert capabilities["usable"] is True
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
 def test_browser_render_with_chrome(tmp_path):
     config = _write_browser_config(tmp_path / "available-browser.toml")
 
-    with _local_page() as url:
+    with _browser_render_fixture_page() as url:
         async def run():
             client = AsyncEggsearch(str(config))
             try:
@@ -608,7 +634,7 @@ def test_browser_idle_and_session_cap_counters_are_visible(tmp_path):
         tmp_path / "idle-teardown.toml", idle_timeout_ms=5000
     )
 
-    with _local_page() as url:
+    with _browser_render_fixture_page() as url:
         async def run():
             cap_client = AsyncEggsearch(str(config_cap))
             try:

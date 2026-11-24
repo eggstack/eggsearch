@@ -168,17 +168,37 @@ jobs:
         with:
           name: wheel-linux-x86_64
           path: ${{ runner.temp }}/wheelhouse
-      - name: Install built wheel in a clean environment
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.89.0
+      - name: Install the release wheel in a clean environment
         run: |
           python -m venv "$RUNNER_TEMP/.venv"
           "$RUNNER_TEMP/.venv/bin/python" -m pip install --no-index --no-deps --only-binary=:all: "$RUNNER_TEMP"/wheelhouse/*.whl
           "$RUNNER_TEMP/.venv/bin/python" -m pip install pytest==8.4.2
         shell: bash
-      - name: Assert Chrome discovery, browser rendering, and teardown counters
+      - name: Assert Chrome discovery in the release wheel
         env:
           EGGSEARCH_TEST_BROWSER_WITH_CHROME: "1"
         run: >-
           "$RUNNER_TEMP/.venv/bin/python" -m pytest -q -s
+          "$GITHUB_WORKSPACE/bindings/python/tests/test_native.py" -k
+          browser_capability_with_chrome
+        shell: bash
+        working-directory: ${{ runner.temp }}
+      - name: Build and install a mock-only deterministic fixture wheel
+        run: |
+          python -m pip install maturin==1.15.0
+          maturin build --manifest-path bindings/python/Cargo.toml --release --locked --features eggsearch/mock --out "$RUNNER_TEMP/fixture-wheelhouse" -i python3.11
+          python -m venv "$RUNNER_TEMP/fixture-venv"
+          "$RUNNER_TEMP/fixture-venv/bin/python" -m pip install --no-index --no-deps --only-binary=:all: "$RUNNER_TEMP"/fixture-wheelhouse/*.whl
+          "$RUNNER_TEMP/fixture-venv/bin/python" -m pip install pytest==8.4.2
+        shell: bash
+      - name: Assert real Chrome renders the deterministic fixture and lifecycle bounds
+        env:
+          EGGSEARCH_TEST_BROWSER_WITH_CHROME: "1"
+        run: >-
+          "$RUNNER_TEMP/fixture-venv/bin/python" -m pytest -q -s
           "$GITHUB_WORKSPACE/bindings/python/tests/test_native.py" -k
           "browser_render_with_chrome or browser_idle_and_session_cap_counters_are_visible"
         shell: bash
@@ -261,7 +281,7 @@ jobs:
           toolchain: 1.89.0
           targets: armv7-unknown-linux-gnueabihf
       - name: Install ARMv7 C compiler for the binding check
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y gcc-arm-linux-gnueabihf
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y gcc-arm-linux-gnueabihf libc6-dev-armhf-cross
       - name: Check Python binding for ARMv7
         env:
           CC_armv7_unknown_linux_gnueabihf: arm-linux-gnueabihf-gcc
@@ -368,7 +388,11 @@ jobs:
           python - <<'PY'
           import os
           from pathlib import Path
-          artifacts = sorted([*Path("dist").glob("*.tar.gz"), *Path("extracted-wheel").glob("*.whl")])
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          artifacts = sorted([
+              *workspace.joinpath("dist").glob("*.tar.gz"),
+              *workspace.joinpath("extracted-wheel").glob("*.whl"),
+          ])
           if not artifacts:
               raise SystemExit("no sdist or rebuilt wheel found")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:

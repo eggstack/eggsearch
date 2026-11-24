@@ -1,6 +1,8 @@
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "mock")]
+use base64::Engine as _;
 use chromiumoxide::cdp::browser_protocol::fetch as cdp_fetch;
 use chromiumoxide::cdp::browser_protocol::network as cdp_network;
 use chromiumoxide::page::Page;
@@ -17,6 +19,16 @@ use super::types::{
 use crate::core::sanitize::{
     bound_text, frame, scan_injection_markers, strip_control_chars, TrustMarkers, TITLE_MAX_CHARS,
 };
+
+#[cfg(feature = "mock")]
+const MOCK_BROWSER_FIXTURE_URL: &str = "https://93.184.216.34/eggsearch-browser-render-fixture";
+#[cfg(feature = "mock")]
+const MOCK_BROWSER_FIXTURE_BODY: &str = concat!(
+    "<!doctype html><html><head><title>browser fixture</title></head><body>",
+    "<p>http-only-marker</p><script>",
+    "document.querySelector('p').textContent=atob('YnJvd3Nlci1yZW5kZXItbWFya2Vy')",
+    "</script></body></html>"
+);
 
 /// Status and content type of the main document response, captured
 /// from CDP Network.responseReceived events.
@@ -230,6 +242,32 @@ async fn enforce_policy_per_request(page: &Page) -> Option<tokio::task::JoinHand
             };
             match decision {
                 Ok(()) => {
+                    #[cfg(feature = "mock")]
+                    if request_url == MOCK_BROWSER_FIXTURE_URL {
+                        let body = base64::engine::general_purpose::STANDARD
+                            .encode(MOCK_BROWSER_FIXTURE_BODY.as_bytes());
+                        let params = cdp_fetch::FulfillRequestParams {
+                            request_id: event.request_id.clone(),
+                            response_code: 200,
+                            response_headers: Some(vec![cdp_fetch::HeaderEntry {
+                                name: "Content-Type".to_string(),
+                                value: "text/html; charset=utf-8".to_string(),
+                            }]),
+                            body: Some(body.into()),
+                            binary_response_headers: None,
+                            response_phrase: None,
+                        };
+                        if task_page.execute(params).await.is_err() {
+                            let _ = task_page
+                                .execute(cdp_fetch::FailRequestParams::new(
+                                    event.request_id.clone(),
+                                    cdp_network::ErrorReason::Failed,
+                                ))
+                                .await;
+                        }
+                        continue;
+                    }
+
                     let _ = task_page
                         .execute(cdp_fetch::ContinueRequestParams::new(
                             event.request_id.clone(),
@@ -811,6 +849,12 @@ pub fn browser_result_to_response(
 mod tests {
     use super::super::intercept::is_request_allowed;
     use super::*;
+
+    #[cfg(feature = "mock")]
+    #[test]
+    fn mock_browser_fixture_uses_policy_approved_public_target() {
+        assert!(is_request_allowed(MOCK_BROWSER_FIXTURE_URL).is_ok());
+    }
 
     #[test]
     fn policy_blocks_private_url() {
