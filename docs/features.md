@@ -700,12 +700,15 @@ Cache identity includes the route, so an entry fetched directly never satisfies
 a proxied request or the reverse. `cache_only` performs no network and still
 requires a matching route identity.
 
-Scope: `fetch` and `batch_fetch` web items only. Provider upstreams,
+Scope: `fetch` and `batch_fetch` web items, plus knowledge-brief web fetches
+that share the same handler. Provider upstreams,
 `repo_fetch`, site discovery, browser rendering, forge, package-resolver,
 updater, loopback health, and rmcp traffic stay direct. Browser-escalated
 responses keep direct cache identity and never report proxy metadata. A solved
-challenge cookie is origin-keyed; changing the egress address can invalidate it,
-and cookies are never shared across routes. Multi-hop chains are supported by
+challenge cookie is origin-keyed in a process-wide cache; changing the egress
+address can invalidate it, and a cookie solved on one route can be replayed on
+another route to the same origin, but it is never presented to a different
+origin. Multi-hop chains are supported by
 pointing the single endpoint at an operator-run loopback relay; the relay stays
 outside the trust boundary.
 

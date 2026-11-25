@@ -69,5 +69,10 @@ mod tests {
             MAX_ATTRIBUTE_VALUE_CHARS
         );
         assert_eq!(extracted[0].values[63].ordinal, 63);
+        assert_eq!(extracted[0].values[1].value, "value1");
+        assert!(extracted[0]
+            .values
+            .iter()
+            .all(|value| !value.value.contains('\u{1}')));
     }
 }

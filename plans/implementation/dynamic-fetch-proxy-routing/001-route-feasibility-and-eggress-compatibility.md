@@ -1,6 +1,6 @@
 # M001 — Route Feasibility and Eggress Compatibility
 
-Status: ready
+Status: closed
 Date: 2026-11-24
 Subsystem: dynamic-fetch proxy routing
 Milestone class: infrastructure (feasibility and decision evidence)

@@ -608,9 +608,9 @@ DNS/refused/unreachable→Connection, TLS/protocol/other→Other).
 
 Dynamic web fetch gains a single-endpoint proxy route through eggfetch's own
 `proxy` feature (`src/fetch/proxy.rs`), never through `egress.rs`.
-`FetchClient::with_proxy_route` clones the direct client; only the `fetch` and
-`batch_fetch` web-item handlers call it, so `repo_fetch`, workflows, site
-discovery, and browser traffic stay direct.
+`FetchClient::with_proxy_route` clones the direct client; the `fetch` and
+`batch_fetch` web-item handlers call it, and knowledge-brief web fetches reach
+the same handler. `repo_fetch`, site discovery, and browser traffic stay direct.
 
 The route decision is selected once from the initial URL and must stay
 identical for every redirect hop; a hop that would change it fails with

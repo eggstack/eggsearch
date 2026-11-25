@@ -56,7 +56,7 @@ rather than claiming a configuration it cannot honour.
 | Default equals the compiled feature state | `documents_enabled_defaults_to_the_compiled_feature` | pass |
 | The setting parses and is honoured | `documents_enabled_parses_from_toml`; `disabled_setting_refuses_container_extraction` | pass |
 | Feature absent behaves exactly as before | `docx_without_the_feature_keeps_the_unsupported_outcome`, `csv_without_the_feature_keeps_the_table_preview` | pass |
-| A cache-derived body cannot bypass the switch | the gate sits in `derive_from_raw_scoped` as well as the pre-body path | pass |
+| A cache-derived body cannot bypass the switch | the gate sits in `derive_from_raw_scoped` as well as the pre-body path; `cached_container_body_is_refused_when_documents_are_disabled` | pass |
 | Disabling never degrades into reading bytes as text | typed error before extraction on both paths | pass |
 
 ## Implementation note

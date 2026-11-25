@@ -66,14 +66,14 @@ Closed or superseded implementation plans are archived under
 | Subsystem | Milestone | Candidate | Closure record |
 |---|---|---|---|
 | Browser artifact availability | M006 closed | `fedf82c67a6d331fa1fab127b4ad5376cd27a84c` | `plans/closure/browser-artifact-availability/006-status.md` |
-| Web acquisition expansion | M001 closed | local candidate (uncommitted) | `plans/closure/web-acquisition-expansion/001-status.md` |
-| Web acquisition expansion | M002 closed | local candidate (uncommitted) | `plans/closure/web-acquisition-expansion/002-status.md` |
-| Web acquisition expansion | M003 closed | local candidate (uncommitted) | `plans/closure/web-acquisition-expansion/003-status.md` |
-| Web acquisition expansion | M004 closed | local candidate (uncommitted) | `plans/closure/web-acquisition-expansion/004-status.md` |
-| Web acquisition expansion | M006 closed | local candidate (uncommitted) | `plans/closure/web-acquisition-expansion/006-status.md` |
-| Dynamic-fetch proxy routing | M001 closed | local candidate (uncommitted) | `plans/closure/dynamic-fetch-proxy-routing/001-status.md` |
-| Dynamic-fetch proxy routing | M002 closed | local candidate (uncommitted) | `plans/closure/dynamic-fetch-proxy-routing/002-status.md` |
-| Dynamic-fetch proxy routing | M003 closed | local candidate (uncommitted) | `plans/closure/dynamic-fetch-proxy-routing/003-status.md` |
+| Web acquisition expansion | M001 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/web-acquisition-expansion/001-status.md` |
+| Web acquisition expansion | M002 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/web-acquisition-expansion/002-status.md` |
+| Web acquisition expansion | M003 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/web-acquisition-expansion/003-status.md` |
+| Web acquisition expansion | M004 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/web-acquisition-expansion/004-status.md` |
+| Web acquisition expansion | M006 closed | `c7cb5c06467d80ce800757d5e8a885241ac328ac` | `plans/closure/web-acquisition-expansion/006-status.md` |
+| Dynamic-fetch proxy routing | M001 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/dynamic-fetch-proxy-routing/001-status.md` |
+| Dynamic-fetch proxy routing | M002 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/dynamic-fetch-proxy-routing/002-status.md` |
+| Dynamic-fetch proxy routing | M003 closed | `f57dcfca2ba456d64e7c81054a92b68ed988656e` | `plans/closure/dynamic-fetch-proxy-routing/003-status.md` |
 | Python PyPI distribution | M006 closed | `fedf82c67a6d331fa1fab127b4ad5376cd27a84c` | `plans/closure/python-pypi-distribution/006-status.md` |
 
 ## Closure rule

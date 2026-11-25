@@ -391,3 +391,38 @@ async fn site_discovery_query_drop_collapses_duplicate_urls() {
     assert_eq!(map["counts"]["duplicates"], 1);
     assert_eq!(target.hits(), 0);
 }
+
+#[tokio::test]
+async fn site_discovery_refuses_a_cross_origin_sitemap_redirect() {
+    let server = MockServer::start();
+    let base = origin(&server);
+    let elsewhere = MockServer::start();
+    let robots_body = include_str!("fixtures/site_map/robots_sitemap.txt")
+        .replace("{{SITEMAP_URL}}", &format!("{base}/sitemap.xml"));
+    let robots = server.mock(|when, then| {
+        when.method(GET).path("/robots.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(robots_body);
+    });
+    let redirect = server.mock(|when, then| {
+        when.method(GET).path("/sitemap.xml");
+        then.status(302)
+            .header("location", elsewhere.url("/sitemap.xml"));
+    });
+    let crossed = elsewhere.mock(|when, then| {
+        when.method(GET).path("/sitemap.xml");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body("<urlset></urlset>");
+    });
+    let response = discover(format!("{base}/entry"), None, false, None).await;
+    assert_eq!(response["results"][0]["ok"], false);
+    assert!(response["results"][0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("site_map_cross_origin_redirect"));
+    assert_eq!(robots.hits(), 1);
+    assert_eq!(redirect.hits(), 1);
+    assert_eq!(crossed.hits(), 0);
+}

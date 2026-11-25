@@ -231,6 +231,24 @@ mod tests {
     }
 
     #[test]
+    fn attribute_pair_count_is_bounded() {
+        let attributes: Vec<FetchAttributeRequest> = (0..=MAX_ATTRIBUTES)
+            .map(|index| FetchAttributeRequest {
+                selector: format!("a{index}"),
+                attribute: "href".to_string(),
+            })
+            .collect();
+        let error = validate_selector_request(None, None, Some(&attributes))
+            .err()
+            .expect("the attribute pair bound must refuse one over the limit");
+        assert_eq!(error.group, "attributes");
+        assert_eq!(error.index, MAX_ATTRIBUTES);
+        assert!(error
+            .reason
+            .contains("maximum of 16 attribute pairs exceeded"));
+    }
+
+    #[test]
     fn inclusion_roots_are_ordered_deduplicated_and_exclusions_use_source_tree() {
         let scope = validate_selector_request(
             Some(&[".target".into(), "#first".into()]),

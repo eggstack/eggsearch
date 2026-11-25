@@ -105,6 +105,37 @@ fn derive_from_raw_reuses_bounded_html_bytes() {
     assert_eq!(response.links[0].url, "https://example.com/next");
 }
 
+#[cfg(feature = "documents")]
+#[test]
+fn cached_container_body_is_refused_when_documents_are_disabled() {
+    let client = test_client();
+    let error = client
+        .derive_from_raw(
+            "https://example.com/report.docx",
+            "https://example.com/report.docx".to_string(),
+            200,
+            Some(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    .to_string(),
+            ),
+            std::collections::HashMap::new(),
+            None,
+            0,
+            b"PK\x03\x04cached-container".to_vec(),
+            false,
+            crate::fetch::budget::FetchBudgets::new(50_000, 12_000),
+            ExtractMode::Text,
+            false,
+            None,
+            None,
+        )
+        .expect_err("a cached container body must not bypass the documents switch");
+    assert!(matches!(
+        error.kind(),
+        crate::fetch::FetchErrorKind::DocumentDisabled
+    ));
+}
+
 #[tokio::test]
 async fn fetch_200_text_html_happy_path() {
     let server = MockServer::start();

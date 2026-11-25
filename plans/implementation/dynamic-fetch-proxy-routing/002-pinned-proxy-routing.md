@@ -1,6 +1,6 @@
 # M002 — Pinned Proxy Routing for Dynamic Fetch
 
-Status: ready
+Status: closed
 Date: 2026-11-24
 Subsystem: dynamic-fetch proxy routing
 Milestone class: capability

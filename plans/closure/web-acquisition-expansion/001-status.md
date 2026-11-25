@@ -38,7 +38,7 @@ key, and additive response fields. No tool was added or renamed.
 | Selectors parsed before any I/O | `web_fetch_invalid_selector_fails_before_io` (`tests/web_fetch_integration.rs:3052`) and `invalid_selector` assertion in `tests/batch_fetch_retrieval.rs:548` | pass |
 | Scoped output is a document-order subset | `selector_inclusion_exclusion_and_attribute_values_are_bounded`; `inclusion_roots_are_ordered_deduplicated_and_exclusions_use_source_tree` | pass |
 | Empty inclusion match | `matched_roots == 0` with `selector_no_match`; body carries only the standard Tier-2 empty frame | pass |
-| Attribute bounds and sanitisation | 16 pairs, 64 values/pair, 512 chars/value asserted in the scoping regression | pass |
+| Attribute bounds and sanitisation | `attribute_pair_count_is_bounded` (16 pairs) and `attribute_values_are_ordered_sanitized_and_capped` (64 values, 512 chars, control-character stripping) | pass |
 | `cache_only` performs no network | Mock origin with a request-count guard; typed `cache_only_miss` on miss | pass |
 | `cache_only` + browser | `cache_only_render_conflict` before browser I/O; batch preflight covered | pass |
 | Cache isolation | `scoping_fingerprint` in `ExtractionCacheKey`; scoped and unscoped keys differ; `renderer_version` still 5 (asserted in `src/fetch/cache/tests.rs`) | pass |

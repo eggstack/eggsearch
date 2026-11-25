@@ -1,6 +1,6 @@
 # M001 — Selector Scoping, Attributes, and Cache-Only Policy
 
-Status: ready
+Status: closed
 Date: 2026-11-24
 Subsystem: web acquisition expansion
 Milestone class: capability

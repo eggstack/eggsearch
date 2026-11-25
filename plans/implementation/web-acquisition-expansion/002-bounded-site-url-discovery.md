@@ -1,6 +1,6 @@
 # M002 — Bounded Site URL Discovery
 
-Status: ready
+Status: closed
 Date: 2026-11-24
 Subsystem: web acquisition expansion
 Milestone class: capability

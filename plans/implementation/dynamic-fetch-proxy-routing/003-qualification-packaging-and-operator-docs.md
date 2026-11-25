@@ -1,6 +1,6 @@
 # M003 — Qualification, Packaging, and Operator Documentation
 
-Status: blocked
+Status: closed
 Date: 2026-11-24
 Subsystem: dynamic-fetch proxy routing
 Milestone class: infrastructure (qualification and operator contract)
