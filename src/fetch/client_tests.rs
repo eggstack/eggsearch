@@ -14,6 +14,7 @@ fn test_limits() -> FetchLimits {
         allow_private_network: true,
         allow_localhost: true,
         pdf_enabled: false,
+        documents_enabled: false,
         pdf_max_pages: 25,
         pdf_max_chars_per_page: 12000,
         pdf_max_total_chars: 50000,

@@ -109,6 +109,10 @@ pub enum FetchError {
     #[error("PDF extraction is disabled; set [fetch].pdf_enabled = true in config")]
     PdfDisabled,
 
+    /// Container-document extraction is disabled by configuration.
+    #[error("document extraction is disabled; set [fetch].documents_enabled = true in config")]
+    DocumentDisabled,
+
     /// PDF parse failure.
     #[error("PDF parse error: {0}")]
     PdfParseError(String),
@@ -243,6 +247,8 @@ pub enum FetchErrorKind {
     PdfNotCompiledIn,
     /// PDF disabled by config.
     PdfDisabled,
+    /// Container-document extraction disabled by config.
+    DocumentDisabled,
     /// PDF parse error.
     PdfParseError,
     /// PDF decompressed content exceeds the bound.
@@ -310,6 +316,7 @@ impl FetchError {
             FetchError::ExtractError(_) => FetchErrorKind::ExtractError,
             FetchError::PdfNotCompiledIn => FetchErrorKind::PdfNotCompiledIn,
             FetchError::PdfDisabled => FetchErrorKind::PdfDisabled,
+            FetchError::DocumentDisabled => FetchErrorKind::DocumentDisabled,
             FetchError::PdfParseError(_) => FetchErrorKind::PdfParseError,
             FetchError::PdfDecompressionBoundExceeded { .. } => {
                 FetchErrorKind::PdfDecompressionBoundExceeded
@@ -366,6 +373,7 @@ impl FetchError {
             FetchErrorKind::ExtractError => "extract_error",
             FetchErrorKind::PdfNotCompiledIn => "pdf_not_compiled_in",
             FetchErrorKind::PdfDisabled => "pdf_disabled",
+            FetchErrorKind::DocumentDisabled => "document_disabled",
             FetchErrorKind::PdfParseError => "pdf_parse_error",
             FetchErrorKind::PdfDecompressionBoundExceeded => "pdf_decompression_bound_exceeded",
             FetchErrorKind::PdfEncrypted => "pdf_encrypted",

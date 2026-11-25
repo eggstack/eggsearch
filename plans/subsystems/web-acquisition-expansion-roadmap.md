@@ -1,6 +1,6 @@
 # Web Acquisition Expansion Roadmap
 
-Status: active (M001, M002, M003, and M004 closed; M005 closed as no-go)
+Status: active (M001, M002, M003, M004, and M006 closed; M005 closed as no-go)
 Planning baseline: `d932115d1f86af51710747d243455792ff63a6fb` (`docs/user-facing-polish-20261123`)
 Owner: fetch extraction, discovery, and document formats
 
@@ -96,6 +96,7 @@ M005 screening ─────────────── rejected ──> cl
 | M003 — Deterministic change comparison | capability | closed | `plans/implementation/web-acquisition-expansion/003-deterministic-change-comparison.md` | ADR-0026 Decision 1 (accepted); interface: M001 | A second fetch reports new/same/changed/removed plus a bounded deterministic diff |
 | M004 — Document formats beyond PDF | capability | closed | `plans/implementation/web-acquisition-expansion/004-document-formats-beyond-pdf.md` | ADR-0026 Decision 2 (accepted); `documents` optional feature | An explicit URL to CSV, EPUB, DOCX, XLSX, or PPTX returns bounded structured text |
 | M005 — Instruction-signal screening | capability | closed (no-go) | `plans/implementation/web-acquisition-expansion/005-instruction-signal-screening.md` | ADR-0026 Decision 3 (rejected) | No field ships; the existing marker scan and its limits remain the contract |
+| M006 — Documents capability reporting and operator switch | corrective | closed | `plans/implementation/web-acquisition-expansion/006-documents-capability-reporting.md` | ADR-0026 Decision 2; M004 closure record | `provider_status` reports container-document support and `[fetch].documents_enabled` can refuse it, without changing non-default behaviour |
 
 ## 8. Cross-cutting requirements
 

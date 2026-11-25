@@ -308,6 +308,44 @@ fn provider_status_pdf_capabilities_track_feature_and_config() {
 }
 
 #[test]
+fn provider_status_documents_capabilities_track_feature_and_config() {
+    for documents_enabled in [false, true] {
+        let mut cfg = AppConfig::default();
+        cfg.fetch.documents_enabled = documents_enabled;
+        let state = Arc::new(ServerState::build(cfg).expect("state builds"));
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+            },
+        )
+        .expect("provider status");
+
+        let caps = &v["documents_capabilities"];
+        assert_eq!(
+            caps["compiled"],
+            cfg!(feature = "documents"),
+            "compiled must match the build feature"
+        );
+        let expected_configured = cfg!(feature = "documents") && documents_enabled;
+        assert_eq!(
+            caps["configured"], expected_configured,
+            "configured must require both the feature and the setting"
+        );
+        assert_eq!(caps["usable"], expected_configured);
+        assert_eq!(
+            caps["formats"],
+            serde_json::json!(["csv", "epub", "docx", "xlsx", "pptx"])
+        );
+        assert_eq!(
+            v["server_capabilities"]["container_documents"],
+            serde_json::json!(expected_configured)
+        );
+    }
+}
+
+#[test]
 fn provider_status_reports_active_mcp_advertisement() {
     let cases = [
         (eggsearch::core::config::McpToolPreset::Full, 9usize, 0usize),

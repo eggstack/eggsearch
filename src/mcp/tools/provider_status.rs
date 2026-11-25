@@ -133,6 +133,10 @@ fn build_payload_without_probe(
         }
     };
 
+    let documents_build = cfg!(feature = "documents");
+    let documents_configured = documents_build && state.config.fetch.documents_enabled;
+    let documents_usable = documents_configured;
+
     let solve_snapshot = crate::meta::challenge::solve_ledger().snapshot();
     let mut payload = serde_json::json!({
         "providers": descriptors,
@@ -180,6 +184,7 @@ fn build_payload_without_probe(
             "document_fetch": matches!(fetch_allowed(state.config.fetch.enabled), Policy::Allow),
             "pdf_fetch": pdf_compiled,
             "pdf_text": pdf_compiled,
+            "container_documents": documents_usable,
             "pdf_layout": false,
             "pdf_ocr": false,
             "browser_rendering": browser_usable,
@@ -206,6 +211,12 @@ fn build_payload_without_probe(
             "usable": pdf_usable,
             "layout": "deferred",
             "ocr": "deferred",
+        },
+        "documents_capabilities": {
+            "compiled": documents_build,
+            "configured": documents_configured,
+            "usable": documents_usable,
+            "formats": ["csv", "epub", "docx", "xlsx", "pptx"],
         },
         "cache_capabilities": {
             "memory_cache_enabled": state.fetch_cache.is_some(),

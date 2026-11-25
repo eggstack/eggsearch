@@ -436,6 +436,9 @@ fn default_browser_verification_wait_ms() -> u64 {
 fn default_pdf_enabled() -> bool {
     cfg!(feature = "pdf")
 }
+fn default_documents_enabled() -> bool {
+    cfg!(feature = "documents")
+}
 fn default_browser_enabled() -> bool {
     cfg!(feature = "browser")
 }
@@ -758,6 +761,13 @@ pub struct FetchSection {
     /// compiled-in state.
     #[serde(default = "default_pdf_enabled")]
     pub pdf_enabled: bool,
+    /// Whether container-document extraction (CSV, EPUB, DOCX, XLSX,
+    /// PPTX) is enabled. Requires the `documents` Cargo feature to be
+    /// compiled in; when the feature is absent the setting is inert and
+    /// such responses keep the ordinary unsupported-content outcome.
+    /// Defaults to the compiled-in state.
+    #[serde(default = "default_documents_enabled")]
+    pub documents_enabled: bool,
     /// Maximum number of PDF pages to attempt extracting text from.
     /// Default: 25.
     #[serde(default = "default_pdf_max_pages")]
@@ -866,6 +876,7 @@ impl Default for FetchSection {
             user_agent: default_user_agent(),
             sanitize_output: default_sanitize_output(),
             pdf_enabled: default_pdf_enabled(),
+            documents_enabled: default_documents_enabled(),
             pdf_max_pages: default_pdf_max_pages(),
             pdf_max_chars_per_page: default_pdf_max_chars_per_page(),
             pdf_max_total_chars: default_pdf_max_total_chars(),
@@ -1371,6 +1382,7 @@ impl AppConfig {
             allow_private_network: self.fetch.allow_private_network,
             allow_localhost: self.fetch.allow_localhost,
             pdf_enabled: self.fetch.pdf_enabled,
+            documents_enabled: self.fetch.documents_enabled,
             pdf_max_pages: self.fetch.pdf_max_pages,
             pdf_max_chars_per_page: self.fetch.pdf_max_chars_per_page,
             pdf_max_total_chars: self.fetch.pdf_max_total_chars,

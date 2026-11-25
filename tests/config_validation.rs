@@ -6,6 +6,18 @@ fn default_config() -> AppConfig {
 }
 
 #[test]
+fn documents_enabled_defaults_to_the_compiled_feature() {
+    let config = AppConfig::default();
+    assert_eq!(config.fetch.documents_enabled, cfg!(feature = "documents"));
+}
+
+#[test]
+fn documents_enabled_parses_from_toml() {
+    let config: AppConfig = toml::from_str("[fetch]\ndocuments_enabled = false\n").unwrap();
+    assert!(!config.fetch.documents_enabled);
+}
+
+#[test]
 fn unknown_toml_top_level_key_is_silently_ignored() {
     let toml = r#"
 [unknown_section]

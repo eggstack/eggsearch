@@ -610,6 +610,10 @@ impl FetchClient {
         if kind.is_pdf && !self.limits.pdf_enabled {
             return Err(FetchError::PdfDisabled);
         }
+        #[cfg(feature = "documents")]
+        if is_document && !self.limits.documents_enabled {
+            return Err(FetchError::DocumentDisabled);
+        }
 
         // Read the full body now, incorporating any magic-chunk we
         // peeked for PDF detection.
@@ -787,6 +791,9 @@ impl FetchClient {
                 super::detect::detect_document_format(content_type.as_deref(), &final_url)
                     .or_else(|| super::documents::detect_container_format(&body));
             if let Some(format) = document_format {
+                if !self.limits.documents_enabled {
+                    return Err(FetchError::DocumentDisabled);
+                }
                 let document_markdown_tokens =
                     parse_token_header(&cache_headers, "x-markdown-tokens");
                 let document_original_tokens =

@@ -207,6 +207,14 @@ the feature absent, every request behaves exactly as before, CSV keeps its
 existing bounded table preview, and a `.docx` or `.epub` URL returns the
 ordinary unsupported-content outcome.
 
+In a build that has the feature, `[fetch].documents_enabled` is the operator
+switch. It defaults to the compiled-in state; setting it to `false` refuses
+every detected container with `document_disabled` instead of extracting it.
+`provider_status` reports the same state before a call:
+`documents_capabilities { compiled, configured, usable, formats }` plus
+`server_capabilities.container_documents`. Without the feature the triad is all
+`false` and the setting does nothing, because the code is absent.
+
 ### Capabilities
 
 - One part per addressable unit: a CSV row block, an EPUB spine document, a

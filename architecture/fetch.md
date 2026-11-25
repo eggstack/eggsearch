@@ -401,6 +401,15 @@ Part selection is not a request control in this version: there is no
 web-fetch part selector, so every part is returned and `parts_total` reports
 the count.
 
+In a build that has the feature, `[fetch].documents_enabled` (defaulting to the
+compiled-in state) is an operator switch. Both the pre-body path and raw-cache
+re-derivation refuse a detected container with `document_disabled` before
+parsing, so a cached body cannot bypass it. `provider_status` reports
+`documents_capabilities { compiled, configured, usable, formats }` and
+`server_capabilities.container_documents`: `compiled` reads the build, and
+`configured` requires both the feature and the setting, so a build without the
+feature reports all three false even if the setting is `true`.
+
 ### `extract.rs`
 
 Legacy HTML helpers kept alongside the block pipeline: `HtmlExtractor` /

@@ -639,6 +639,7 @@ batch_concurrency = 2
 | `include_links_default` | `false` |
 | `sanitize_output` | `true` |
 | `pdf_enabled` | Compiled-in feature state. Enabled by default in current source builds, absent from published `v0.4.4` binaries, and disabled by `--no-default-features` |
+| `documents_enabled` | Compiled-in `documents` feature state. `false` in every default build and in the Python wheel; when the feature is absent the setting is inert |
 | `pdf_max_pages` | `25` |
 | `pdf_max_chars_per_page` | `12_000` |
 | `pdf_max_total_chars` | `50_000` |

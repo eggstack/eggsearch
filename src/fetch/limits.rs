@@ -169,6 +169,9 @@ pub struct FetchLimits {
     pub allow_localhost: bool,
     /// Whether PDF text extraction is enabled.
     pub pdf_enabled: bool,
+    /// Whether container-document extraction is enabled. Only consulted
+    /// when the `documents` feature is compiled in.
+    pub documents_enabled: bool,
     /// Maximum number of PDF pages to attempt extracting.
     pub pdf_max_pages: usize,
     /// Maximum characters to extract per PDF page.
@@ -202,6 +205,7 @@ impl Default for FetchLimits {
             allow_private_network: false,
             allow_localhost: false,
             pdf_enabled: cfg!(feature = "pdf"),
+            documents_enabled: cfg!(feature = "documents"),
             pdf_max_pages: 25,
             pdf_max_chars_per_page: 12000,
             pdf_max_total_chars: 50000,

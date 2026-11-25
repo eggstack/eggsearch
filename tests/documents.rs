@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use eggsearch::core::config::AppConfig;
 use eggsearch::mcp::state::ServerState;
+#[cfg(not(feature = "documents"))]
+use eggsearch::mcp::tools::{run_provider_status, ProviderStatusArgs};
 use eggsearch::mcp::tools::{run_web_fetch, WebFetchArgs};
 use httpmock::prelude::*;
 
@@ -54,6 +56,26 @@ async fn docx_without_the_feature_keeps_the_unsupported_outcome() {
     .await
     .expect_err("a container document is unsupported without the feature");
     assert!(error_text(&error).contains("unsupported_content_type"));
+}
+
+#[cfg(not(feature = "documents"))]
+#[tokio::test]
+async fn capability_report_is_honest_without_the_feature() {
+    let mut config = AppConfig::default();
+    config.fetch.documents_enabled = true;
+    let state = Arc::new(ServerState::build(config).expect("state builds"));
+    let status = run_provider_status(
+        state,
+        ProviderStatusArgs {
+            probe: false,
+            recipe_detail: None,
+        },
+    )
+    .expect("provider status");
+    assert_eq!(status["documents_capabilities"]["compiled"], false);
+    assert_eq!(status["documents_capabilities"]["configured"], false);
+    assert_eq!(status["documents_capabilities"]["usable"], false);
+    assert_eq!(status["server_capabilities"]["container_documents"], false);
 }
 
 #[cfg(not(feature = "documents"))]
@@ -204,6 +226,34 @@ async fn csv_url_returns_fixed_row_blocks() {
     assert!(first_block.contains("name1"));
     assert!(first_block.contains("value1"));
     assert!(parts[1]["title"].as_str().unwrap().contains("rows 101-151"));
+}
+
+#[cfg(feature = "documents")]
+#[tokio::test]
+async fn disabled_setting_refuses_container_extraction() {
+    let server = MockServer::start();
+    let body = docx_with_sections();
+    server.mock(|when, then| {
+        when.method(GET).path("/report.docx");
+        then.status(200)
+            .header("content-type", DOCX_CONTENT_TYPE)
+            .body(body.as_slice());
+    });
+    let mut config = AppConfig::default();
+    config.fetch.allow_localhost = true;
+    config.fetch.allow_private_network = true;
+    config.fetch.documents_enabled = false;
+    let state = Arc::new(ServerState::build(config).expect("state builds"));
+    let error = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/report.docx"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("a disabled setting must refuse container extraction");
+    assert!(error_text(&error).contains("document_disabled"));
 }
 
 #[cfg(feature = "documents")]

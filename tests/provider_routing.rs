@@ -156,6 +156,13 @@ fn provider_status_includes_server_capabilities() {
         serde_json::json!(expected_pdf),
         "pdf_fetch should match cfg!(feature = \"pdf\")"
     );
+
+    let expected_documents = cfg!(feature = "documents");
+    assert_eq!(
+        caps["container_documents"],
+        serde_json::json!(expected_documents),
+        "container_documents should match cfg!(feature = \"documents\")"
+    );
 }
 
 #[cfg(feature = "mock")]

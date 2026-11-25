@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6616 | 30 |
-| `--features mock` | 6552 | 6 |
+| `--all-features` | 6620 | 30 |
+| `--features mock` | 6556 | 6 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `mcp_http` via `live-mcp-smoke`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 
@@ -110,7 +110,7 @@ Every case is generated synthetically by this repository; no third-party documen
 | `proxy_route_feasibility` | None (Eggress comparison under `egress`) | 11 (+1 with `egress`) | Loopback-only dynamic-proxy characterization: CONNECT authority and pinned-IP/Host/SNI behavior, HTTP forward and pin rejection, SOCKS5/SOCKS5H, authentication, proxy TLS, malformed route, timeout, pinned redirect, `NO_PROXY`, loopback refusal, handler-level pinned CONNECT and SOCKS5 targeting, proxy `407` mapping, redirect route-change refusal, and optional Eggress custom-dialer comparison |
 | `fetch_proxy_route` | `mock` | 7 | `[fetch.proxy]` handler contract: `no_proxy` reporting for single and batch items, direct route metadata omission, `proxy_required` plaintext refusal before any direct request, unreachable-endpoint fail-closed, missing credentials before target lookup, `cache_only` under a proxy route, and redacted `provider_status` without environment names |
 | `snapshot_change` | `mock` | 6 | Persistent deterministic comparison across `new`/`same`/`changed`/`removed`, sanitized storage and privacy, brief-projection retention, disabled and corrupt-store degradation, caller-key validation, and the no-store default |
-| `documents` | `documents` (feature-off cases run without it) | 2 without the feature; 7 with it | Container-document extraction and outcome contract for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic part order across repeated runs, and feature-off parity for CSV and container formats |
+| `documents` | `documents` (feature-off cases run without it) | 3 without the feature; 8 with it | Container-document extraction and outcome contract for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic part order across repeated runs, the `documents_enabled` switch, the capability triad, and feature-off parity for CSV and container formats |
 
 ## Forge Adapter Tests (`tests/forge_adapter.rs`)
 
