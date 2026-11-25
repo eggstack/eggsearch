@@ -1,8 +1,10 @@
 # ADR-0003: Outcome B Optional Outbound Routing
 
-Status: accepted
+Status: superseded by ADR-0025 for dynamic fetch only; the provider-upstream decision remains accepted
 
 Date: 2026-09-25
+
+Superseded by: `plans/adrs/ADR-0025-dynamic-fetch-proxy-route.md` (dynamic-fetch exclusion only).
 
 Decision owners: project maintainers
 

@@ -1,0 +1,3 @@
+User-agent: *
+Sitemap: {{SITEMAP_URL}}
+Sitemap: {{CROSS_SITEMAP_URL}}

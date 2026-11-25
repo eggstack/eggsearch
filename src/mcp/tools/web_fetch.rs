@@ -1,3 +1,6 @@
+#[path = "web_fetch_snapshot.rs"]
+mod snapshot_response;
+
 use super::common::*;
 #[cfg(feature = "browser")]
 use super::web_fetch_escalation::{escalate_gated_status, GatedEscalation, GatedEscalationRequest};
@@ -10,129 +13,10 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-fn is_none_or_false(value: &Option<bool>) -> bool {
-    !value.unwrap_or(false)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RenderRequest {
-    HttpOnly,
-    Auto,
-    Browser,
-}
-
-fn parse_render_request(raw: Option<&str>) -> Result<RenderRequest, ToolError> {
-    match raw.unwrap_or("http_only") {
-        "http_only" => Ok(RenderRequest::HttpOnly),
-        "auto" => Ok(RenderRequest::Auto),
-        "browser" => Ok(RenderRequest::Browser),
-        other => Err(ToolError::Validation(format!(
-            "invalid render policy '{other}': expected http_only, auto, or browser"
-        ))),
-    }
-}
-
-pub(crate) fn validate_batch_route_options(
-    state: &ServerState,
-    url: &str,
-    render: Option<&str>,
-    browser_profile: Option<&str>,
-    include_screenshot: bool,
-    _enforce_runtime_availability: bool,
-) -> Result<(), ToolError> {
-    #[cfg(not(feature = "browser"))]
-    let _ = url;
-
-    let configured_render = if state.config.fetch.browser.enabled {
-        match state.config.fetch.browser.policy.as_str() {
-            "http_only" | "auto" | "browser" => state.config.fetch.browser.policy.as_str(),
-            _ => "http_only",
-        }
-    } else {
-        "http_only"
-    };
-    let parsed_render_request = parse_render_request(Some(render.unwrap_or(configured_render)))?;
-    if include_screenshot && render == Some("http_only") {
-        return Err(ToolError::conflicting_arguments(
-            "include_screenshot=true conflicts with explicit render=http_only",
-            Some("render"),
-        ));
-    }
-    let render_request = if include_screenshot {
-        RenderRequest::Browser
-    } else {
-        parsed_render_request
-    };
-
-    #[cfg(not(feature = "browser"))]
-    {
-        if matches!(render_request, RenderRequest::Browser) || browser_profile.is_some() {
-            return Err(browser_not_compiled_error());
-        }
-    }
-
-    #[cfg(feature = "browser")]
-    {
-        use crate::fetch::browser::RenderPolicy;
-        let render_policy = match render_request {
-            RenderRequest::HttpOnly => RenderPolicy::HttpOnly,
-            RenderRequest::Auto => RenderPolicy::Auto,
-            RenderRequest::Browser => RenderPolicy::Browser,
-        };
-        if matches!(render_policy, RenderPolicy::HttpOnly) && browser_profile.is_some() {
-            if !state.config.fetch.browser.enabled {
-                return Err(browser_disabled_error());
-            }
-            return Err(ToolError::Validation(
-                "browser_profile is not valid with render=http_only".to_string(),
-            ));
-        }
-        let explicit_browser =
-            matches!(render_policy, RenderPolicy::Browser) || browser_profile.is_some();
-        match state.browser_lifecycle() {
-            None if explicit_browser && _enforce_runtime_availability => {
-                return Err(browser_disabled_error())
-            }
-            Some(lifecycle)
-                if !lifecycle.is_available()
-                    && explicit_browser
-                    && _enforce_runtime_availability =>
-            {
-                return Err(browser_unavailable_error(
-                    &crate::fetch::browser::browser_discovery_reason(
-                        &state.browser_discovery_state,
-                    )
-                    .unwrap_or_else(|| "browser rendering is unavailable".to_string()),
-                ));
-            }
-            _ => {}
-        }
-        if let Some(profile_name) = browser_profile {
-            let mgr = state.profile_manager.as_ref().ok_or_else(|| {
-                ToolError::Validation(
-                    "browser profiles are not enabled; \
-                     set [fetch.browser].persistent_profiles_enabled = true"
-                        .to_string(),
-                )
-            })?;
-            let parsed_url = url::Url::parse(url)
-                .map_err(|error| ToolError::Validation(format!("invalid URL: {error}")))?;
-            let request_origin = format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
-            mgr.resolve_for_origin(profile_name, &request_origin)
-                .map_err(|error| match error {
-                    crate::fetch::browser::ProfileError::ProfileNotFound(message) => {
-                        ToolError::Validation(format!("browser_profile: {message}"))
-                    }
-                    crate::fetch::browser::ProfileError::ProfilesDisabled => {
-                        ToolError::Validation("browser profiles are not enabled".to_string())
-                    }
-                    other => ToolError::internal(format!("browser_profile: {other}")),
-                })?;
-        }
-    }
-
-    Ok(())
-}
+pub(crate) use super::web_fetch_options::{
+    cache_only_miss, cache_only_render_conflict, fetch_tool_error, is_none_or_false,
+    parse_render_request, selector_validation_error, validate_batch_route_options, RenderRequest,
+};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct WebFetchArgs {
@@ -152,11 +36,20 @@ pub struct WebFetchArgs {
     /// `[fetch].include_links_default` config value when omitted.
     #[serde(default)]
     pub include_links: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "CSS selectors to include in document order.")]
+    pub include_selectors: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "CSS selectors whose subtrees are excluded.")]
+    pub exclude_selectors: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Bounded CSS-selector HTML attribute extractions.")]
+    pub attributes: Option<Vec<crate::core::fetch::FetchAttributeRequest>>,
     /// PDF-specific options. Only applies when fetching a PDF document.
     #[serde(default)]
     pub pdf: Option<crate::core::fetch::PdfFetchOptions>,
     /// Cache policy: "default" (use cache), "bypass" (skip read),
-    /// or "refresh" (revalidate even if fresh).
+    /// "refresh" (revalidate even if fresh), or "cache_only" (read stored derived data only).
     #[serde(default)]
     pub cache_policy: Option<crate::core::fetch::FetchCachePolicy>,
     /// Caller maximum acceptable cache age in seconds. Only tightens
@@ -176,6 +69,9 @@ pub struct WebFetchArgs {
     /// `max_chars` budget.
     #[serde(default)]
     pub focus_max_chars: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[allow(missing_docs)]
+    pub snapshot: Option<crate::core::fetch::FetchSnapshotRequest>,
     /// Render policy: "http_only" (default), "auto", or "browser".
     /// Controls whether fetch may escalate to headless browser rendering
     /// for JavaScript-heavy pages. Requires the `browser` feature.
@@ -263,12 +159,16 @@ pub(crate) async fn run_web_fetch_for_knowledge_brief(
         timeout_ms: None,
         extract_mode: Some(crate::core::fetch::ExtractMode::Text),
         include_links: Some(false),
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         pdf: None,
         cache_policy: None,
         max_cache_age_seconds: None,
         focus: Some(focus),
         focus_max_chunks: Some(2),
         focus_max_chars: Some(max_chars),
+        snapshot: None,
         render: Some("http_only".into()),
         browser_profile: None,
         include_screenshot: Some(false),
@@ -293,13 +193,30 @@ async fn run_web_fetch_inner(
     use crate::core::fetch::ExtractMode;
     use crate::fetch::accept::select_accept_policy;
     use crate::fetch::cache::{
-        build_raw_cache_key, build_raw_response_hash, should_cache_response, CacheScope,
+        build_raw_cache_key_with_route, build_raw_response_hash, should_cache_response, CacheScope,
         CacheStatus, FetchCacheMetadata,
     };
     use crate::fetch::origin::{classify_network_error, OriginKey};
 
     if matches!(fetch_allowed(state.config.fetch.enabled), Policy::Deny) {
         return Err(ToolError::Validation(web_fetch_denied_message()));
+    }
+
+    let snapshot_request = line_snapshot_request(args.snapshot)?;
+
+    let selector_scope = crate::fetch::scope::validate_selector_request(
+        args.include_selectors.as_deref(),
+        args.exclude_selectors.as_deref(),
+        args.attributes.as_deref(),
+    )
+    .map_err(|error| selector_validation_error(error, None))?;
+    let include_screenshot = args.include_screenshot.unwrap_or(false);
+    let requested_cache_policy =
+        crate::core::fetch_policy::cache_policy_or_default(args.cache_policy);
+    if requested_cache_policy == crate::core::fetch::FetchCachePolicy::CacheOnly
+        && (args.render.as_deref() == Some("browser") || include_screenshot)
+    {
+        return Err(cache_only_render_conflict(None));
     }
 
     let target = crate::core::fetch_locator::resolve_fetch_target(
@@ -312,7 +229,8 @@ async fn run_web_fetch_inner(
         ));
     };
     let trimmed_url = resolved_url.as_str();
-    let include_screenshot = args.include_screenshot.unwrap_or(false);
+    let proxy_plan = crate::fetch::proxy::FetchProxyPlan::new(&state.config.fetch.proxy)
+        .map_err(fetch_tool_error)?;
     validate_batch_route_options(
         state.as_ref(),
         trimmed_url,
@@ -361,7 +279,7 @@ async fn run_web_fetch_inner(
 
     let extract_mode = args.extract_mode.unwrap_or(ExtractMode::Text);
 
-    let client: Arc<FetchClient> = match prepared_client {
+    let base_client: Arc<FetchClient> = match prepared_client {
         Some(client) => client,
         None => {
             let base_client: Arc<FetchClient> = state.fetch_client().ok_or_else(|| {
@@ -378,6 +296,7 @@ async fn run_web_fetch_inner(
             }
         }
     };
+    let client = Arc::new(base_client.with_proxy_route(proxy_plan.clone()));
 
     let include_links = args
         .include_links
@@ -386,7 +305,7 @@ async fn run_web_fetch_inner(
     let cache_policy = if include_screenshot {
         crate::core::fetch::FetchCachePolicy::Bypass
     } else {
-        crate::core::fetch_policy::cache_policy_or_default(args.cache_policy)
+        requested_cache_policy
     };
 
     if let Err(e) = crate::core::fetch_policy::validate_cache_age(args.max_cache_age_seconds) {
@@ -553,11 +472,19 @@ async fn run_web_fetch_inner(
         CacheScope::Anonymous
     };
 
-    let origin_key = OriginKey::from_url(
-        &url::Url::parse(trimmed_url)
-            .map_err(|e| ToolError::Validation(format!("invalid URL: {e}")))?,
-    )
-    .ok_or_else(|| ToolError::Validation("URL must be http or https".into()))?;
+    let parsed_url = url::Url::parse(trimmed_url)
+        .map_err(|e| ToolError::Validation(format!("invalid URL: {e}")))?;
+    let origin_key = OriginKey::from_url(&parsed_url)
+        .ok_or_else(|| ToolError::Validation("URL must be http or https".into()))?;
+    let (route_fingerprint, response_route) = if matches!(render_request, RenderRequest::Browser) {
+        (None, None)
+    } else {
+        let route_decision = proxy_plan.select(&parsed_url);
+        (
+            route_decision.fingerprint,
+            proxy_plan.response_route(&parsed_url),
+        )
+    };
 
     let mut metadata = FetchCacheMetadata::default();
 
@@ -595,9 +522,24 @@ async fn run_web_fetch_inner(
     };
 
     let mut cached_response: Option<crate::core::fetch::WebFetchResponse> = None;
+    let mut cache_only_miss_state =
+        if cache_policy == crate::core::fetch::FetchCachePolicy::CacheOnly {
+            Some(if state.fetch_cache.is_some() {
+                "raw_missing"
+            } else {
+                "cache_unavailable"
+            })
+        } else {
+            None
+        };
     if cache_policy != crate::core::fetch::FetchCachePolicy::Bypass {
         if let Some(ref cache) = state.fetch_cache {
-            let raw_key = build_raw_cache_key(trimmed_url, &scope, target_accept_policy);
+            let raw_key = build_raw_cache_key_with_route(
+                trimmed_url,
+                &scope,
+                target_accept_policy,
+                route_fingerprint,
+            );
             if let Some(raw_entry) = cache.get_raw(&raw_key).await {
                 let browser_cache_allowed = {
                     #[cfg(feature = "browser")]
@@ -619,9 +561,12 @@ async fn run_web_fetch_inner(
                         true
                     }
                 };
+                if cache_policy == crate::core::fetch::FetchCachePolicy::CacheOnly {
+                    cache_only_miss_state = Some("render_mismatch");
+                }
                 if browser_cache_allowed {
                     let raw_hash = build_raw_response_hash(&raw_entry.body);
-                    let derived_key = crate::fetch::cache::build_derived_key(
+                    let derived_key = crate::fetch::cache::build_derived_key_scoped_with_route(
                         &scope,
                         raw_hash,
                         extract_mode,
@@ -635,14 +580,17 @@ async fn run_web_fetch_inner(
                         pdf_ocr.as_deref(),
                         include_media,
                         state.config.fetch.sanitize_output,
+                        selector_scope.fingerprint,
+                        route_fingerprint,
                     );
+                    let selector_scope_ref = &selector_scope;
                     let derive = |cache_derived: bool| {
                         let client = &client;
                         let raw_entry = &raw_entry;
                         let derived_key = &derived_key;
                         let pdf = args.pdf.as_ref();
                         async move {
-                            let mut derived = client.derive_from_raw(
+                            let mut derived = client.derive_from_raw_scoped(
                                 trimmed_url,
                                 raw_entry.final_url.clone(),
                                 raw_entry.status,
@@ -657,6 +605,7 @@ async fn run_web_fetch_inner(
                                 include_links,
                                 pdf,
                                 None,
+                                Some(selector_scope_ref),
                             )?;
                             derived.transport = Some(
                                 match raw_entry.representation {
@@ -677,16 +626,31 @@ async fn run_web_fetch_inner(
                             Ok::<_, crate::fetch::FetchError>(derived)
                         }
                     };
-                    let locally_fresh = raw_entry.freshness.is_fresh()
-                        && (!raw_entry.freshness.private
-                            || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
-                        && entry_satisfies_caller_max_age(&raw_entry);
-                    let force_revalidation =
-                        cache_policy == crate::core::fetch::FetchCachePolicy::Refresh;
-                    if locally_fresh && !force_revalidation {
-                        metadata.cache_status = CacheStatus::Hit;
-                        cached_response =
-                            if let Some(derived) = cache.get_derived_shared(&derived_key).await {
+                    if cache_policy == crate::core::fetch::FetchCachePolicy::CacheOnly {
+                        cache_only_miss_state = Some("derived_missing");
+                        if let Some(derived) = cache.get_derived_shared(&derived_key).await {
+                            metadata.cache_status = CacheStatus::Hit;
+                            cached_response = Some(cached_document_response(
+                                trimmed_url,
+                                &raw_entry,
+                                &derived.response,
+                                budgets.window_chars(),
+                                state.config.fetch.sanitize_output,
+                            ));
+                            cache_only_miss_state = None;
+                        }
+                    } else {
+                        let locally_fresh = raw_entry.freshness.is_fresh()
+                            && (!raw_entry.freshness.private
+                                || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
+                            && entry_satisfies_caller_max_age(&raw_entry);
+                        let force_revalidation =
+                            cache_policy == crate::core::fetch::FetchCachePolicy::Refresh;
+                        if locally_fresh && !force_revalidation {
+                            metadata.cache_status = CacheStatus::Hit;
+                            cached_response = if let Some(derived) =
+                                cache.get_derived_shared(&derived_key).await
+                            {
                                 Some(cached_document_response(
                                     trimmed_url,
                                     &raw_entry,
@@ -697,99 +661,104 @@ async fn run_web_fetch_inner(
                             } else {
                                 derive(true).await.ok()
                             };
-                    } else if matches!(
-                        raw_entry.representation,
-                        crate::fetch::cache::RawRepresentation::Http
-                    ) && !raw_entry.freshness.no_store
-                        && !raw_entry.freshness.no_cache
-                        && (!raw_entry.freshness.private
-                            || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
-                        && (raw_entry.validators.etag.is_some()
-                            || raw_entry.validators.last_modified.is_some())
-                    {
-                        let circuit_blocked = if let Some(ref ctrl) = state.origin_controller {
-                            ctrl.circuit_is_open(&origin_key).await.is_some()
-                        } else {
-                            false
-                        };
-                        if !circuit_blocked {
-                            let conditional =
-                                crate::fetch::cache::build_request_conditional_headers(
-                                    &raw_entry.validators,
-                                );
-                            if !conditional.is_empty() {
-                                match client
-                                    .fetch_conditional(
-                                        trimmed_url,
-                                        &conditional,
-                                        raw_key.accept_policy,
-                                    )
-                                    .await
-                                {
-                                    Ok((304, reval_headers, _, _)) => {
-                                        let mut updated_freshness = raw_entry.freshness.clone();
-                                        let mut updated_validators = raw_entry.validators.clone();
-                                        crate::fetch::cache::apply_304_headers(
-                                            &mut updated_freshness,
-                                            &mut updated_validators,
-                                            &reval_headers,
-                                        );
-                                        let revalidated_cacheable =
-                                            crate::fetch::cache::should_cache_response(
-                                                raw_entry.status,
-                                                raw_entry.content_type.as_deref(),
-                                                &updated_freshness,
-                                                &scope,
+                        } else if matches!(
+                            raw_entry.representation,
+                            crate::fetch::cache::RawRepresentation::Http
+                        ) && !raw_entry.freshness.no_store
+                            && !raw_entry.freshness.no_cache
+                            && (!raw_entry.freshness.private
+                                || !matches!(&scope, crate::fetch::cache::CacheScope::Anonymous))
+                            && (raw_entry.validators.etag.is_some()
+                                || raw_entry.validators.last_modified.is_some())
+                        {
+                            let circuit_blocked = if let Some(ref ctrl) = state.origin_controller {
+                                ctrl.circuit_is_open(&origin_key).await.is_some()
+                            } else {
+                                false
+                            };
+                            if !circuit_blocked {
+                                let conditional =
+                                    crate::fetch::cache::build_request_conditional_headers(
+                                        &raw_entry.validators,
+                                    );
+                                if !conditional.is_empty() {
+                                    match client
+                                        .fetch_conditional(
+                                            trimmed_url,
+                                            &conditional,
+                                            raw_key.accept_policy,
+                                        )
+                                        .await
+                                    {
+                                        Ok((304, reval_headers, _, _)) => {
+                                            let mut updated_freshness = raw_entry.freshness.clone();
+                                            let mut updated_validators =
+                                                raw_entry.validators.clone();
+                                            crate::fetch::cache::apply_304_headers(
+                                                &mut updated_freshness,
+                                                &mut updated_validators,
+                                                &reval_headers,
                                             );
-                                        let revalidated_status = if revalidated_cacheable {
-                                            CacheStatus::Revalidated
-                                        } else {
-                                            CacheStatus::NotCacheable
-                                        };
-                                        metadata.cache_status = revalidated_status;
-                                        updated_freshness.fetched_at =
-                                            Some(std::time::SystemTime::now());
-                                        if revalidated_cacheable {
-                                            cache
-                                                .insert_raw(
-                                                    raw_key.clone(),
-                                                    crate::fetch::cache::RawFetchCacheEntry {
-                                                        freshness: updated_freshness,
-                                                        validators: updated_validators,
-                                                        ..raw_entry.clone()
-                                                    },
-                                                )
-                                                .await;
-                                            cached_response = if let Some(derived) =
-                                                cache.get_derived_shared(&derived_key).await
-                                            {
-                                                let mut resp = cached_document_response(
-                                                    trimmed_url,
-                                                    &raw_entry,
-                                                    &derived.response,
-                                                    budgets.window_chars(),
-                                                    state.config.fetch.sanitize_output,
+                                            let revalidated_cacheable =
+                                                crate::fetch::cache::should_cache_response(
+                                                    raw_entry.status,
+                                                    raw_entry.content_type.as_deref(),
+                                                    &updated_freshness,
+                                                    &scope,
                                                 );
-                                                resp.cache_status = revalidated_status;
-                                                Some(resp)
+                                            let revalidated_status = if revalidated_cacheable {
+                                                CacheStatus::Revalidated
                                             } else {
-                                                derive(true).await.ok()
+                                                CacheStatus::NotCacheable
                                             };
-                                        } else {
-                                            cache.invalidate_raw_response(&raw_key, raw_hash).await;
-                                            cached_response = derive(false).await.ok();
+                                            metadata.cache_status = revalidated_status;
+                                            updated_freshness.fetched_at =
+                                                Some(std::time::SystemTime::now());
+                                            if revalidated_cacheable {
+                                                cache
+                                                    .insert_raw(
+                                                        raw_key.clone(),
+                                                        crate::fetch::cache::RawFetchCacheEntry {
+                                                            freshness: updated_freshness,
+                                                            validators: updated_validators,
+                                                            ..raw_entry.clone()
+                                                        },
+                                                    )
+                                                    .await;
+                                                cached_response = if let Some(derived) =
+                                                    cache.get_derived_shared(&derived_key).await
+                                                {
+                                                    let mut resp = cached_document_response(
+                                                        trimmed_url,
+                                                        &raw_entry,
+                                                        &derived.response,
+                                                        budgets.window_chars(),
+                                                        state.config.fetch.sanitize_output,
+                                                    );
+                                                    resp.cache_status = revalidated_status;
+                                                    Some(resp)
+                                                } else {
+                                                    derive(true).await.ok()
+                                                };
+                                            } else {
+                                                cache
+                                                    .invalidate_raw_response(&raw_key, raw_hash)
+                                                    .await;
+                                                cached_response = derive(false).await.ok();
+                                            }
                                         }
-                                    }
-                                    Ok(_) => {}
-                                    Err(reval_err) => {
-                                        // Serve cached content after revalidation fails; retrying would add load to an unhealthy origin.
-                                        tracing::warn!(
-                                            url = trimmed_url,
-                                            error = %reval_err,
-                                            "conditional revalidation failed; serving cached response"
-                                        );
-                                        let cached =
-                                            match cache.get_derived_shared(&derived_key).await {
+                                        Ok(_) => {}
+                                        Err(reval_err) => {
+                                            // Serve cached content after revalidation fails; retrying would add load to an unhealthy origin.
+                                            tracing::warn!(
+                                                url = trimmed_url,
+                                                error = %reval_err,
+                                                "conditional revalidation failed; serving cached response"
+                                            );
+                                            let cached = match cache
+                                                .get_derived_shared(&derived_key)
+                                                .await
+                                            {
                                                 Some(derived) => Some(cached_document_response(
                                                     trimmed_url,
                                                     &raw_entry,
@@ -799,14 +768,15 @@ async fn run_web_fetch_inner(
                                                 )),
                                                 None => derive(true).await.ok(),
                                             };
-                                        if let Some(mut resp) = cached {
-                                            metadata.cache_status = CacheStatus::Hit;
-                                            resp.cache_status = CacheStatus::Hit;
-                                            resp.warnings.push(format!(
-                                                "cache_revalidation_failed: serving cached \
+                                            if let Some(mut resp) = cached {
+                                                metadata.cache_status = CacheStatus::Hit;
+                                                resp.cache_status = CacheStatus::Hit;
+                                                resp.warnings.push(format!(
+                                                    "cache_revalidation_failed: serving cached \
                                                  response without revalidation ({reval_err})"
-                                            ));
-                                            cached_response = Some(resp);
+                                                ));
+                                                cached_response = Some(resp);
+                                            }
                                         }
                                     }
                                 }
@@ -818,9 +788,17 @@ async fn run_web_fetch_inner(
         }
     }
 
+    if cache_policy == crate::core::fetch::FetchCachePolicy::CacheOnly && cached_response.is_none()
+    {
+        return Err(cache_only_miss(
+            cache_only_miss_state.unwrap_or("derived_missing"),
+        ));
+    }
+
     let max_attempts = state.config.fetch.retry_max_attempts.max(1);
     let mut last_err: Option<crate::fetch::FetchError> = None;
     let mut response = cached_response;
+    let response_is_cached = response.is_some();
     let mut attempt_count: usize = if response.is_some() { 1 } else { 0 };
     let mut retry_after_ms: Option<u64> = None;
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(budget_ms);
@@ -1257,6 +1235,30 @@ async fn run_web_fetch_inner(
             let err = last_err.unwrap_or(crate::fetch::FetchError::Unknown(
                 "fetch failed after all attempts".into(),
             ));
+            if let Some(value) =
+                snapshot_response::removed_payload(snapshot_response::RemovedPayloadContext {
+                    request: snapshot_request.as_ref(),
+                    error: &err,
+                    config: state.config.fetch.snapshots.clone(),
+                    identity: crate::fetch::snapshot::SnapshotIdentity {
+                        scope: scope.clone(),
+                        url: trimmed_url.to_string(),
+                        extract_mode,
+                        scoping_fingerprint: selector_scope.fingerprint,
+                        representation_class: String::new(),
+                    },
+                    url: trimmed_url,
+                    response_detail: args.response_detail,
+                    schema_profile: state.config.mcp.schema_profile,
+                    brief_max_chars: state.config.mcp.brief_max_chars,
+                })
+                .await
+            {
+                return Ok(ToolOutcome {
+                    value,
+                    images: Vec::new(),
+                });
+            }
             if matches!(
                 err,
                 crate::fetch::FetchError::BrowserInteractiveChallenge(_)
@@ -1288,14 +1290,47 @@ async fn run_web_fetch_inner(
                     data,
                 ));
             }
-            return Err(ToolError::upstream_failed(format!(
-                "{}: {}",
-                err.error_code(),
-                err
-            )));
+            return Err(fetch_tool_error(err));
         }
     };
 
+    let mut resp = if response_is_cached || selector_scope.is_empty() {
+        resp
+    } else {
+        client
+            .apply_selector_scope(
+                resp,
+                &selector_scope,
+                budgets,
+                extract_mode,
+                include_links,
+                args.pdf.as_ref(),
+            )
+            .map_err(|error| {
+                ToolError::upstream_failed(format!("{}: {error}", error.error_code()))
+            })?
+    };
+
+    let snapshot_change = if let Some(request) = snapshot_request {
+        snapshot_response::compare_response(
+            state.config.fetch.snapshots.clone(),
+            request,
+            scope.clone(),
+            trimmed_url.to_string(),
+            extract_mode,
+            selector_scope.fingerprint,
+            &mut resp,
+        )
+        .await
+    } else {
+        None
+    };
+
+    let (route_fingerprint, response_route) = if resp.transport.as_deref() == Some("browser") {
+        (None, None)
+    } else {
+        (route_fingerprint, response_route)
+    };
     metadata.attempt_count = attempt_count + resp.attempt_count.unwrap_or(1).saturating_sub(1);
     metadata.retry_after_ms = retry_after_ms;
 
@@ -1315,10 +1350,11 @@ async fn run_web_fetch_inner(
             || metadata.cache_status == CacheStatus::Bypassed)
     {
         if let Some(ref cache) = state.fetch_cache {
-            let raw_key = build_raw_cache_key(
+            let raw_key = build_raw_cache_key_with_route(
                 trimmed_url,
                 &scope,
                 resp.accept_policy.unwrap_or(target_accept_policy),
+                route_fingerprint,
             );
             let raw_body_bytes = resp.raw_body.as_deref().unwrap_or(&[]);
             let raw_hash = build_raw_response_hash(raw_body_bytes);
@@ -1386,7 +1422,7 @@ async fn run_web_fetch_inner(
                 };
                 cache.insert_raw(raw_key, raw_entry).await;
 
-                let derived_key = crate::fetch::cache::build_derived_key(
+                let derived_key = crate::fetch::cache::build_derived_key_scoped_with_route(
                     &scope,
                     raw_hash,
                     extract_mode,
@@ -1400,6 +1436,8 @@ async fn run_web_fetch_inner(
                     pdf_ocr.as_deref(),
                     include_media,
                     state.config.fetch.sanitize_output,
+                    selector_scope.fingerprint,
+                    route_fingerprint,
                 );
                 cache
                     .insert_derived(
@@ -1413,6 +1451,7 @@ async fn run_web_fetch_inner(
         }
     }
 
+    resp.route = response_route.clone();
     let mut structured = crate::core::warning::convert_fetch_warnings(&resp.warnings);
     structured.extend(resp.structured_warnings.iter().cloned());
     if resp.links_truncated {
@@ -1469,7 +1508,7 @@ async fn run_web_fetch_inner(
         window,
         doc_id,
     } = windowed;
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "url": resp.url,
         "final_url": resp.final_url,
         "stable_id": resp.stable_id,
@@ -1486,6 +1525,8 @@ async fn run_web_fetch_inner(
         "links": resp.links,
         "links_seen": resp.links_seen,
         "links_truncated": resp.links_truncated,
+        "attributes": resp.attributes,
+        "matched_roots": resp.matched_roots,
         "warnings": resp.warnings,
         "trust_markers": serde_json::to_value(&resp.trust_markers)
             .unwrap_or(serde_json::json!({})),
@@ -1494,6 +1535,8 @@ async fn run_web_fetch_inner(
         "fetch_transform": resp.fetch_transform,
         "structured_warnings": structured,
         "cache_status": serde_json::to_value(metadata.cache_status).unwrap_or(serde_json::json!("miss")),
+        "cache_age_seconds": resp.cache_age_seconds,
+        "stale": resp.stale,
         "attempt_count": metadata.attempt_count,
         "retry_after_ms": metadata.retry_after_ms,
         "origin_backoff_ms": metadata.origin_backoff_ms,
@@ -1503,6 +1546,12 @@ async fn run_web_fetch_inner(
         "transport": resp.transport.as_deref().unwrap_or("http"),
         "browser_escalated": resp.browser_escalated,
     });
+    if let Some(change) = snapshot_change {
+        payload["change"] = change;
+    }
+    if let Some(route) = response_route {
+        payload["route"] = serde_json::to_value(route).unwrap_or(serde_json::Value::Null);
+    }
     let payload = match window {
         Some(window) => {
             let mut payload = with_addressing_keys(payload, TEXT_ADDRESS_KEYS, window);

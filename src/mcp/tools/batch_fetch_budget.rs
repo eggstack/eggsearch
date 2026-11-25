@@ -29,12 +29,11 @@ pub(super) fn enforce_projected_batch_total_budget(
             let Some(object) = item.as_object_mut() else {
                 continue;
             };
-            let item_type =
-                if object.get("item_type").and_then(serde_json::Value::as_str) == Some("repo") {
-                    crate::core::batch_fetch::BatchFetchItemType::Repo
-                } else {
-                    crate::core::batch_fetch::BatchFetchItemType::Web
-                };
+            let item_type = match object.get("item_type").and_then(serde_json::Value::as_str) {
+                Some("repo") => crate::core::batch_fetch::BatchFetchItemType::Repo,
+                Some("site") => crate::core::batch_fetch::BatchFetchItemType::Site,
+                _ => crate::core::batch_fetch::BatchFetchItemType::Web,
+            };
             let label = object
                 .get("label")
                 .and_then(serde_json::Value::as_str)

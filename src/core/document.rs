@@ -72,6 +72,70 @@ impl DocumentKind {
     }
 }
 
+/// A supported document container or tabular format.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentFormat {
+    /// Comma-separated values.
+    Csv,
+    /// EPUB publication.
+    Epub,
+    /// Office Open XML word-processing document.
+    Docx,
+    /// Office Open XML spreadsheet.
+    Xlsx,
+    /// Office Open XML presentation.
+    Pptx,
+}
+
+impl DocumentFormat {
+    /// Returns the stable snake_case label for this format.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Csv => "csv",
+            Self::Epub => "epub",
+            Self::Docx => "docx",
+            Self::Xlsx => "xlsx",
+            Self::Pptx => "pptx",
+        }
+    }
+}
+
+/// The kind of an addressable document part.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DocumentPartKind {
+    /// A CSV or TSV row block.
+    TableBlock,
+    /// A heading-delimited document section.
+    Section,
+    /// A spreadsheet sheet.
+    Sheet,
+    /// A presentation slide.
+    Slide,
+    /// An EPUB spine item.
+    SpineItem,
+}
+
+/// An addressable piece of a supported container document.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DocumentPart {
+    /// One-based part index.
+    pub index: usize,
+    /// Semantic part kind.
+    pub kind: DocumentPartKind,
+    /// Optional part title.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Extracted part text.
+    pub text: String,
+    /// Number of characters in `text`.
+    pub chars: usize,
+    /// Whether the part was clipped by a caller character budget.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
 /// The render format used to represent the document content.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -382,6 +446,15 @@ pub struct FetchDocument {
     pub doc_id: String,
     /// The kind of document that was fetched.
     pub kind: DocumentKind,
+    /// The detected container or tabular format, when applicable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<DocumentFormat>,
+    /// Addressable parts for supported container documents.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<DocumentPart>,
+    /// Total number of addressable parts before caller output budgets.
+    #[serde(default)]
+    pub parts_total: usize,
     /// The render format used for blocks and chunks.
     pub render_format: RenderFormat,
     /// The format of the legacy `text` field.

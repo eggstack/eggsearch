@@ -13,6 +13,7 @@ pub struct RawCacheKey {
     pub url: String,
     pub scope: CacheScope,
     pub accept_policy: crate::fetch::accept::AcceptPolicy,
+    pub route_fingerprint: Option<u64>,
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
@@ -67,6 +68,8 @@ pub struct ExtractionCacheKey {
     pub include_media: bool,
     pub renderer_version: u32,
     pub sanitize_output: bool,
+    pub scoping_fingerprint: Option<u64>,
+    pub route_fingerprint: Option<u64>,
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
@@ -249,6 +252,8 @@ pub struct CachedExtractedDocument {
     pub links: Vec<crate::core::fetch::ExtractedLink>,
     pub links_seen: Option<usize>,
     pub links_truncated: bool,
+    pub attributes: Vec<crate::core::fetch::FetchAttributeExtraction>,
+    pub matched_roots: Option<usize>,
     pub truncated: bool,
     pub document: Option<crate::core::document::FetchDocument>,
     pub trust_markers: crate::core::sanitize::TrustMarkers,
@@ -275,6 +280,12 @@ fn derived_entry_bytes(entry: &DerivedDocumentCacheEntry) -> usize {
     }
     if let Some(t) = &r.raw_text {
         bytes += t.len();
+    }
+    for attribute in &r.attributes {
+        bytes += attribute.selector.len() + attribute.attribute.len();
+        for value in &attribute.values {
+            bytes += value.value.len();
+        }
     }
     for link in &r.links {
         bytes += link.url.len() + link.text.len();
@@ -607,11 +618,21 @@ pub fn build_raw_cache_key(
     scope: &CacheScope,
     accept_policy: crate::fetch::accept::AcceptPolicy,
 ) -> RawCacheKey {
+    build_raw_cache_key_with_route(url, scope, accept_policy, None)
+}
+
+pub fn build_raw_cache_key_with_route(
+    url: &str,
+    scope: &CacheScope,
+    accept_policy: crate::fetch::accept::AcceptPolicy,
+    route_fingerprint: Option<u64>,
+) -> RawCacheKey {
     let normalized = crate::core::identity::canonicalize_url(url);
     RawCacheKey {
         url: normalized,
         scope: scope.clone(),
         accept_policy,
+        route_fingerprint,
     }
 }
 
@@ -631,6 +652,62 @@ pub fn build_derived_key(
     include_media: bool,
     sanitize_output: bool,
 ) -> DerivedCacheKey {
+    build_derived_key_scoped(
+        scope,
+        raw_hash,
+        extract_mode,
+        budget,
+        include_links,
+        pdf_pages,
+        pdf_ocr,
+        include_media,
+        sanitize_output,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_derived_key_scoped(
+    scope: &CacheScope,
+    raw_hash: u64,
+    extract_mode: ExtractMode,
+    budget: ExtractionBudgetClass,
+    include_links: bool,
+    pdf_pages: Option<&str>,
+    pdf_ocr: Option<&str>,
+    include_media: bool,
+    sanitize_output: bool,
+    scoping_fingerprint: Option<u64>,
+) -> DerivedCacheKey {
+    build_derived_key_scoped_with_route(
+        scope,
+        raw_hash,
+        extract_mode,
+        budget,
+        include_links,
+        pdf_pages,
+        pdf_ocr,
+        include_media,
+        sanitize_output,
+        scoping_fingerprint,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_derived_key_scoped_with_route(
+    scope: &CacheScope,
+    raw_hash: u64,
+    extract_mode: ExtractMode,
+    budget: ExtractionBudgetClass,
+    include_links: bool,
+    pdf_pages: Option<&str>,
+    pdf_ocr: Option<&str>,
+    include_media: bool,
+    sanitize_output: bool,
+    scoping_fingerprint: Option<u64>,
+    route_fingerprint: Option<u64>,
+) -> DerivedCacheKey {
     DerivedCacheKey {
         scope: scope.clone(),
         raw_content_hash: raw_hash,
@@ -643,6 +720,8 @@ pub fn build_derived_key(
             include_media,
             renderer_version: 5,
             sanitize_output,
+            scoping_fingerprint,
+            route_fingerprint,
         },
     }
 }

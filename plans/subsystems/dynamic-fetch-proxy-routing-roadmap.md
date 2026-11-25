@@ -1,10 +1,10 @@
 # Dynamic-Fetch Proxy Routing Roadmap
 
-Status: proposed (M001 ready; M002 and M003 blocked on M001 and ADR-0025 acceptance)
+Status: closed (M001–M003 closed)
 Planning baseline: `d932115d1f86af51710747d243455792ff63a6fb` (`docs/user-facing-polish-20261123`)
 Owner: fetch transport and configuration
 
-References: `plans/000-long-term-specification.md` §4; `plans/001-terminology-and-domain-model.md` §4; ADR-0002 (transport ownership); ADR-0003 (provider upstream routing, superseded for dynamic fetch on acceptance of ADR-0025); ADR-0025 (proposed); `architecture/fetch.md` §8; `docs/features.md` § Outbound Proxy-Chain Routing; `docs/config.md` § Outbound Proxy-Chain Routing.
+References: `plans/000-long-term-specification.md` §4; `plans/001-terminology-and-domain-model.md` §4; ADR-0002 (transport ownership); ADR-0003 (provider upstream routing, superseded for dynamic fetch on acceptance of ADR-0025); ADR-0025 (accepted); `architecture/fetch.md` §8; `docs/features.md` § Outbound Proxy-Chain Routing; `docs/config.md` § Outbound Proxy-Chain Routing.
 
 ## 1. Purpose and ownership boundary
 
@@ -86,9 +86,9 @@ M002 implementation -- hard --> M003 qualification
 
 | Milestone | Class | Status | Handoff | Dependencies | User-visible exit |
 |---|---|---|---|---|---|
-| M001 — Route feasibility and Eggress compatibility | infrastructure | ready | `plans/implementation/dynamic-fetch-proxy-routing/001-route-feasibility-and-eggress-compatibility.md` | None | A recorded route matrix, a loopback proof of pinned CONNECT, and an accept-or-reject recommendation for ADR-0025 |
-| M002 — Pinned proxy routing for dynamic fetch | capability | blocked | Not drafted until ADR-0025 is accepted | Hard: M001 evidence and ADR-0025 acceptance | An operator enables `[fetch.proxy]` and a `fetch` request reaches the origin through the proxy, pinned, or fails closed with a typed error |
-| M003 — Qualification, packaging, and operator documentation | infrastructure | blocked | Not drafted | Hard: M002 | Proxy lane, failure matrix, size measurement, and docs updated on an exact candidate |
+| M001 — Route feasibility and Eggress compatibility | infrastructure | closed | `plans/implementation/dynamic-fetch-proxy-routing/001-route-feasibility-and-eggress-compatibility.md` | None | A recorded route matrix, a loopback proof of pinned CONNECT, and an accept-or-reject recommendation for ADR-0025 |
+| M002 — Pinned proxy routing for dynamic fetch | capability | closed | `plans/implementation/dynamic-fetch-proxy-routing/002-pinned-proxy-routing.md` | Hard: M001 evidence and ADR-0025 acceptance (both satisfied) | An operator enables `[fetch.proxy]` and a `fetch` request reaches the origin through the proxy, pinned, or fails closed with a typed error |
+| M003 — Qualification, packaging, and operator documentation | infrastructure | closed | `plans/implementation/dynamic-fetch-proxy-routing/003-qualification-packaging-and-operator-docs.md` | Hard: M002 | Proxy lane, failure matrix, size measurement, and docs updated on an exact candidate |
 
 ## 8. Cross-cutting requirements
 

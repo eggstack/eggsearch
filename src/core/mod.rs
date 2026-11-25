@@ -66,6 +66,7 @@ pub mod workflow_coverage;
 pub use crate::fetch::span::SelectedSpan;
 pub use batch_fetch::{
     BatchFetchItem, BatchFetchItemType, BatchFetchResponse, BatchFetchResult, BatchFetchTelemetry,
+    SiteQueryNormalization,
 };
 pub use code_context::{
     detect_language, detect_language_str, extract_code_context, extract_imports,

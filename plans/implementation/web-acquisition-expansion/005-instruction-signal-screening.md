@@ -1,6 +1,6 @@
 # M005 — Instruction-Signal Screening
 
-Status: proposed (research spike; no production behavior until measured)
+Status: closed (no-go; rejected by ADR-0026 Decision 3)
 Date: 2026-11-24
 Subsystem: web acquisition expansion
 Milestone class: capability (research-first)
@@ -22,6 +22,38 @@ fetched document is marked `external_untrusted`. What is missing is a
 measurable answer to "does this page contain instruction-shaped text". A
 detector that fires on ordinary documentation is worse than none, so precision
 must be measured before any schema field ships.
+
+## Decision — no-go (ADR-0026 Decision 3)
+
+Rejected. No `injection_signals` field ships, and no corpus was assembled.
+The rejection is a design decision, not a failed measurement: the detector class
+cannot meet the bar, and most of the proposed signal already exists.
+
+1. **The signal already exists.** `scan_injection_markers`
+   (`src/core/sanitize.rs:221`) detects override phrases, system/assistant role
+   prefixes, and ChatML tags, records byte offsets, and `TrustMarkers` reports
+   the counts. The marginal capability here is spans and excerpts, not detection.
+2. **Invisible-character evasion is already handled.** Tier-1 sanitisation
+   strips bidi, zero-width, and control characters, and the marker scan strips
+   them before matching so `ign<U+200B>ore` still matches.
+3. **The precision bar is a model-class target.** Quoted attacks in security
+   articles, API docs, and legal text are ordinary benign content. At most two
+   reviewed false positives on 200 benign pages with at least 80 percent recall
+   is not reachable with fixed patterns, and model calls are forbidden here.
+4. **Hidden text is an extraction gap.** `aria-hidden="true"` is skipped
+   (`src/fetch/render/blocks.rs:342`), but `display:none` and
+   `visibility:hidden` text survives because extraction has no CSS engine.
+   That is a deterministic fidelity defect, not instruction semantics.
+5. **Homoglyph mixing cannot be separated from legitimate multilingual text**
+   without a model.
+6. **A weak field implies a guarantee.** The honest contract is
+   `external_untrusted` plus framing plus marker counts. Adding spans and
+   excerpts would grow the payload and overstate what the server knows.
+
+Consequences: the fetch trust contract is unchanged; the marker scan's scope and
+limits should be stated in `docs/safety.md`; and CSS-hidden text or
+confusable-script handling, if wanted, belongs to a separate sanitisation plan
+that is not presented as instruction detection.
 
 ## Candidate signals (deterministic, no model)
 
@@ -50,7 +82,11 @@ Capped at 8 signals and 256 characters per excerpt, ordered by span start, and
 covered by the existing payload budget. Trust markers are unchanged; the field
 is evidence, not a verdict, and never blocks or alters extracted text.
 
-## Corpus and success criteria
+## Corpus and success criteria (retained as the rejected bar)
+
+These thresholds were not measured. They record what a future proposal would
+have had to clear; the decision above rejects the detector class rather than
+claiming a measurement that was never taken.
 
 - A benign corpus of at least 200 captured pages across docs, blogs, forums,
   legal text, and API references: zero signals is the target, and every hit must
@@ -65,7 +101,10 @@ If the benign corpus produces more than two reviewed false positives, or
 detection stays below 80 percent, the milestone is rejected and the field is
 not shipped.
 
-## Ordered work packages
+## Ordered work packages (not executed)
+
+No work package below was started; the record is retained so a future proposal
+knows what the spike would have required.
 
 1. Corpus assembly and a labelled fixture manifest (paths and provenance, no
    third-party content that cannot be redistributed).
@@ -76,9 +115,9 @@ not shipped.
 
 ## Verification
 
-Corpus harness results, per-signal tests, latency measurement, and a regression
-test that a clean page produces an empty signal list. `make check`;
-`make docs-check`.
+No code, corpus, or latency measurement was produced. The existing marker-scan
+unit tests in `src/core/sanitize.rs` continue to cover the signal that does
+ship, and the accepted decision is recorded in ADR-0026.
 
 ## Acceptance and stop conditions
 
@@ -96,6 +135,7 @@ test that a clean page produces an empty signal list. `make check`;
 
 ## Closure evidence
 
-Corpus manifest, precision and recall table, latency measurement, false-positive
-review notes, the go/no-go decision, and either the shipped field evidence or a
-recorded rejection.
+ADR-0026 Decision 3, the duplicate-signal and precision analysis above, and the
+roadmap and registry status change. No corpus manifest, precision table, or
+latency measurement exists because the milestone was rejected before that work
+was justified.

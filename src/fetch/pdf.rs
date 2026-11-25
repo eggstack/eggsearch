@@ -972,6 +972,9 @@ pub fn extract_pdf_text(
     let document = FetchDocument {
         doc_id: String::new(),
         kind: DocumentKind::Pdf,
+        format: None,
+        parts: Vec::new(),
+        parts_total: 0,
         render_format: RenderFormat::AgentBlocksV1,
         text_format: "plain".to_string(),
         text_chars_returned,

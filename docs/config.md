@@ -672,6 +672,42 @@ schema for compatibility but is unsupported.
 
 When `allow_private_network = false` (the default), eggsearch blocks fetches to all RFC 1918 private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), carrier-grade NAT (`100.64.0.0/10`), link-local (`169.254.0.0/16`), multicast, reserved, and documentation addresses. When `allow_localhost = false` (the default), loopback addresses (`127.0.0.0/8`, `::1`) are blocked independently. The two flags are fully independent. Redirect targets are validated against these same ranges. See [safety.md](safety.md#blocked-address-ranges) for the full policy table.
 
+## Fetch Snapshots
+
+Optional `[fetch.snapshots]` section for the deterministic change comparison
+store. It is disabled by default; with it off no store file is opened or
+created, and a request that asks for a comparison reports
+`snapshot_store_disabled` instead of silently comparing.
+
+```toml
+[fetch.snapshots]
+enabled = false
+path = "/optional/override/snapshots.sqlite3"
+max_entries = 10000
+max_bytes = 134217728
+retention_days = 30
+```
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Opens the store and allows `snapshot.compare = "line"` |
+| `path` | `<data_local_dir>/eggsearch/snapshots.sqlite3` | Store location override |
+| `max_entries` | `10000` | Retained snapshot rows |
+| `max_bytes` | `134217728` (128 MiB) | Store byte budget, also bounding the SQLite page count |
+| `retention_days` | `30` | Entries older than this are pruned |
+
+Pruning runs after each write and continues until both caps hold: expired
+entries by `retention_days`, then oldest `last_seen`, then lexicographic
+key. A prune failure is a warning, never a failed fetch.
+
+The store is created with a `0700` directory and a `0600` file,
+`secure_delete`, `journal_mode = DELETE`, and `busy_timeout = 5000`.
+`user_version` carries the schema version: a newer schema fails with
+`snapshot_store_schema_unsupported` and a corrupt file with
+`snapshot_store_corrupt`. Neither silently resets the store. Snapshots hold
+sanitised extracted text and metadata only, never raw bodies, headers,
+credentials, or browser profile data.
+
 ## Knowledge Delta
 
 Optional `[knowledge_delta]` section for model cutoffs and the local evidence
@@ -747,6 +783,36 @@ Disable the index by setting `enabled = false` or removing the section; a live b
 ## Reserved Live Settings
 
 `[search].live.user_agent` and `[search].live.respect_robots_txt` are parsed for compatibility but are no-ops in the current build.
+
+## Web Fetch Proxy Routing
+
+`[fetch.proxy]` optionally routes HTTP-tool web `fetch` and `batch_fetch` items
+through one configured HTTP CONNECT or SOCKS5 proxy. The default is `direct`.
+This is separate from `[egress]`: it does not route `repo_fetch`, workflow or
+provider traffic, or browser requests. Proxy environment variables are ignored.
+
+```toml eggsearch-config-parse-only
+[fetch.proxy]
+route = "proxy"
+url = "http://127.0.0.1:3128"
+username_env = "EGGSEARCH_PROXY_USER"
+password_env = "EGGSEARCH_PROXY_PASSWORD"
+no_proxy = ["localhost", "127.0.0.1", ".internal.example"]
+```
+
+`route` accepts `direct`, `proxy`, or `proxy_required`. `direct` rejects all
+other proxy fields. `proxy` uses the proxy except for exact `no_proxy` hosts
+and their subdomains; those requests stay direct and report that reason.
+`proxy_required` never permits a direct exception and rejects a non-empty
+`no_proxy`. Proxy URLs must be `http://` or `socks5://` endpoints without
+userinfo, paths, queries, or fragments. Credentials must be named together
+and are read from those environment variables at request time; values are
+never stored in config or diagnostics.
+
+Only HTTPS targets can use a proxy because the resolved target-address pin must
+remain bound to the connection. Unsupported routes and route-changing redirects
+fail closed. Cache entries are isolated by route, and responses disclose only
+route kind, reason, and proxy scheme.
 
 ## Outbound Proxy-Chain Routing
 

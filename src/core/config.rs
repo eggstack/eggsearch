@@ -586,6 +586,131 @@ impl Default for FetchBrowserSection {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum FetchProxyMode {
+    #[default]
+    Direct,
+    Proxy,
+    ProxyRequired,
+}
+
+impl FetchProxyMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Proxy => "proxy",
+            Self::ProxyRequired => "proxy_required",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+#[allow(missing_docs)]
+pub struct FetchProxySection {
+    pub route: FetchProxyMode,
+    pub url: Option<String>,
+    pub username_env: Option<String>,
+    pub password_env: Option<String>,
+    pub no_proxy: Vec<String>,
+}
+
+impl FetchProxySection {
+    pub(crate) fn validate(&self) -> CoreResult<()> {
+        let configured = self.url.is_some()
+            || self.username_env.is_some()
+            || self.password_env.is_some()
+            || !self.no_proxy.is_empty();
+        if self.route == FetchProxyMode::Direct {
+            if configured {
+                return Err(CoreError::Config(
+                    "[fetch.proxy] route=direct does not accept url, credentials, or no_proxy"
+                        .into(),
+                ));
+            }
+            return Ok(());
+        }
+        if self.route == FetchProxyMode::ProxyRequired && !self.no_proxy.is_empty() {
+            return Err(CoreError::Config(
+                "proxy_required_conflicts_with_no_proxy: [fetch.proxy].no_proxy must be empty for proxy_required".into(),
+            ));
+        }
+        let url = self
+            .url
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                CoreError::Config(
+                    "proxy_route_unconfigured: [fetch.proxy].url is required for proxy routes"
+                        .into(),
+                )
+            })?;
+        let parsed = url::Url::parse(url).map_err(|_| {
+            CoreError::Config(
+                "proxy_route_unconfigured: [fetch.proxy].url must be an absolute proxy URL".into(),
+            )
+        })?;
+        if !matches!(parsed.scheme(), "http" | "socks5") {
+            return Err(CoreError::Config(
+                "proxy_scheme_unsupported: [fetch.proxy].url scheme must be http or socks5".into(),
+            ));
+        }
+        if parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || !matches!(parsed.path(), "" | "/")
+        {
+            return Err(CoreError::Config(
+                "[fetch.proxy].url must not contain userinfo, a path, query, or fragment".into(),
+            ));
+        }
+        let port = parsed.port().unwrap_or(match parsed.scheme() {
+            "http" => 80,
+            _ => 1080,
+        });
+        if port == 0 {
+            return Err(CoreError::Config(
+                "[fetch.proxy].url port must be non-zero".into(),
+            ));
+        }
+        match (&self.username_env, &self.password_env) {
+            (Some(username), Some(password))
+                if valid_proxy_env_name(username) && valid_proxy_env_name(password) => {}
+            (None, None) => {}
+            (Some(_), Some(_)) => {
+                return Err(CoreError::Config(
+                    "[fetch.proxy] credential environment variable names must be non-empty and contain no whitespace".into(),
+                ));
+            }
+            _ => {
+                return Err(CoreError::Config(
+                    "[fetch.proxy].username_env and [fetch.proxy].password_env must be configured together".into(),
+                ));
+            }
+        }
+        for host in &self.no_proxy {
+            let pattern = host.strip_prefix('.').unwrap_or(host);
+            if pattern.is_empty() || host != host.trim() || !is_valid_egress_host(pattern) {
+                return Err(CoreError::Config(
+                    "[fetch.proxy].no_proxy entries must be bare hostnames or IP literals".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn valid_proxy_env_name(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| !ch.is_whitespace() && !ch.is_control())
+}
+
 /// The `[fetch]` section of the eggsearch configuration file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FetchSection {
@@ -705,9 +830,17 @@ pub struct FetchSection {
     pub origin_circuit_duration_ms: u64,
 
     // --- Cache configuration ---
+    #[serde(default)]
+    #[allow(missing_docs)]
+    pub proxy: FetchProxySection,
+
     /// In-memory fetch cache configuration.
     #[serde(default)]
     pub cache: FetchCacheSection,
+
+    #[serde(default)]
+    #[allow(missing_docs)]
+    pub snapshots: FetchSnapshotSection,
 
     // --- Browser rendering configuration ---
     /// Optional browser rendering configuration (Phase 4). Disabled by
@@ -751,7 +884,9 @@ impl Default for FetchSection {
             origin_browser_concurrency: default_origin_browser_concurrency(),
             origin_circuit_failure_threshold: default_origin_circuit_failure_threshold(),
             origin_circuit_duration_ms: default_origin_circuit_duration_ms(),
+            proxy: FetchProxySection::default(),
             cache: FetchCacheSection::default(),
+            snapshots: FetchSnapshotSection::default(),
             browser: FetchBrowserSection::default(),
         }
     }
@@ -1295,6 +1430,7 @@ impl AppConfig {
                 "[fetch].timeout_ms must be > 0".to_string(),
             ));
         }
+        self.fetch.proxy.validate()?;
         if self.search.default_max_results == 0 {
             return Err(CoreError::Config(
                 "[search].default_max_results must be > 0".to_string(),
@@ -1547,6 +1683,7 @@ impl AppConfig {
                 "[fetch].cache.derived_max_bytes must be > 0".to_string(),
             ));
         }
+        self.fetch.snapshots.validate()?;
 
         if self.fetch.browser.startup_timeout_ms == 0 {
             return Err(CoreError::Config(
@@ -1890,6 +2027,7 @@ pub fn default_config_path() -> PathBuf {
 mod challenge;
 mod mcp;
 mod routing;
+mod snapshot;
 
 #[cfg(test)]
 mod tests;
@@ -1902,3 +2040,4 @@ pub use mcp::{
     MIN_EXCERPT_BUDGET_CHARS, MIN_TASK_POLL_INTERVAL_MS, MIN_TASK_TTL_MS,
 };
 pub use routing::{IntentRoutingMode, RoutingSection, INTENT_ROUTING_MAX_EXTRA_PROVIDERS};
+pub use snapshot::FetchSnapshotSection;

@@ -74,6 +74,34 @@ pub const MAX_FOCUS_QUERY_CHARS: usize = 512;
 /// extend, origin freshness.
 pub const MAX_CACHE_AGE_SECONDS: u64 = 2_592_000;
 
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FetchAttributeRequest {
+    #[schemars(description = "CSS selector whose elements provide this attribute.")]
+    pub selector: String,
+    #[schemars(description = "HTML attribute name to extract.")]
+    pub attribute: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum SnapshotCompare {
+    #[default]
+    None,
+    Line,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+#[allow(missing_docs)]
+pub struct FetchSnapshotRequest {
+    pub compare: SnapshotCompare,
+    pub key: Option<String>,
+    pub max_hunks: Option<usize>,
+    pub max_diff_chars: Option<usize>,
+}
+
 /// Request type for the `web_fetch` tool.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct WebFetchRequest {
@@ -91,6 +119,18 @@ pub struct WebFetchRequest {
     /// Whether to include extracted links.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_links: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "CSS selectors to include in document order.")]
+    #[allow(missing_docs)]
+    pub include_selectors: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "CSS selectors whose subtrees are excluded.")]
+    #[allow(missing_docs)]
+    pub exclude_selectors: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Bounded CSS-selector HTML attribute extractions.")]
+    #[allow(missing_docs)]
+    pub attributes: Option<Vec<FetchAttributeRequest>>,
     /// PDF-specific options. Only applies when fetching a PDF document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pdf: Option<PdfFetchOptions>,
@@ -114,6 +154,9 @@ pub struct WebFetchRequest {
     /// `max_chars` budget.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focus_max_chars: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[allow(missing_docs)]
+    pub snapshot: Option<FetchSnapshotRequest>,
 }
 
 /// Bounded query-focused chunk selection over an already-extracted
@@ -287,6 +330,41 @@ pub enum FetchCachePolicy {
     Bypass,
     /// Revalidate or fetch even when locally fresh, then update cache.
     Refresh,
+    /// Return only a stored derived cache entry without performing I/O.
+    CacheOnly,
+}
+
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FetchAttributeValue {
+    pub value: String,
+    pub ordinal: usize,
+}
+
+#[allow(missing_docs)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FetchAttributeExtraction {
+    pub selector: String,
+    pub attribute: String,
+    pub values: Vec<FetchAttributeValue>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+#[allow(missing_docs)]
+pub enum FetchRouteKind {
+    Direct,
+    Proxy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[allow(missing_docs)]
+pub struct FetchRouteInfo {
+    pub kind: FetchRouteKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheme: Option<String>,
 }
 
 /// Response type for the `web_fetch` tool.
@@ -376,6 +454,12 @@ pub struct WebFetchResponse {
     /// Whether the link list was truncated at the cap.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub links_truncated: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[allow(missing_docs)]
+    pub attributes: Vec<FetchAttributeExtraction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[allow(missing_docs)]
+    pub matched_roots: Option<usize>,
     /// Warning messages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
@@ -420,6 +504,12 @@ pub struct WebFetchResponse {
     /// came from cache, required revalidation, or was a fresh fetch.
     #[serde(default)]
     pub cache_status: CacheStatus,
+    #[allow(missing_docs)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_age_seconds: Option<u64>,
+    #[allow(missing_docs)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stale: bool,
     /// Number of attempts made (including the initial request).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt_count: Option<usize>,
@@ -442,6 +532,9 @@ pub struct WebFetchResponse {
     /// HTTP-fetched content from browser-rendered content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport: Option<String>,
+    #[allow(missing_docs)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<FetchRouteInfo>,
     /// Content-negotiation policy that produced this response. Internal
     /// plumbing for raw cache-key selection so a fallback response is
     /// stored under the policy that actually fetched it.

@@ -510,6 +510,7 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
         "batch_status",
         "build_configs",
         "cache_status",
+        "change",
         "capability_enforcement",
         "code",
         "code_span_id",
@@ -654,6 +655,9 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
         "group_from",
         "total_groups",
         "returned_groups",
+        "route",
+        "kind",
+        "scheme",
         "aggregate_scope",
         "focus_scope",
         "payload_chars",
@@ -663,8 +667,10 @@ fn reduce_brief_fields(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(object) => {
             object.retain(|key, _| FIELDS.contains(&key.as_str()));
-            for child in object.values_mut() {
-                reduce_brief_fields(child);
+            for (key, child) in object.iter_mut() {
+                if key != "change" {
+                    reduce_brief_fields(child);
+                }
             }
         }
         serde_json::Value::Array(values) => {
@@ -1149,16 +1155,17 @@ fn project_batch_fetch(mut value: serde_json::Value, compact: bool) -> serde_jso
     };
     if let Some(results) = value.get_mut("results").and_then(|v| v.as_array_mut()) {
         for result in results.iter_mut() {
-            let is_repo = result
-                .get("item_type")
-                .and_then(|v| v.as_str())
-                .is_some_and(|item_type| item_type == "repo");
+            let item_type = match result.get("item_type").and_then(|value| value.as_str()) {
+                Some("repo") => crate::core::batch_fetch::BatchFetchItemType::Repo,
+                Some("site") => crate::core::batch_fetch::BatchFetchItemType::Site,
+                _ => crate::core::batch_fetch::BatchFetchItemType::Web,
+            };
             if let Some(payload) = result.get_mut("response") {
                 if !payload.is_null() {
                     let taken = payload.take();
                     *payload = project_batch_fetch_item_response(
                         taken,
-                        is_repo,
+                        item_type,
                         detail,
                         DEFAULT_BRIEF_MAX_CHARS,
                     );
@@ -1172,15 +1179,17 @@ fn project_batch_fetch(mut value: serde_json::Value, compact: bool) -> serde_jso
 
 pub(crate) fn project_batch_fetch_item_response(
     value: serde_json::Value,
-    is_repo: bool,
+    item_type: crate::core::batch_fetch::BatchFetchItemType,
     detail: ResponseDetail,
     brief_max_chars: usize,
 ) -> serde_json::Value {
-    if detail == ResponseDetail::Diagnostic {
+    if detail == ResponseDetail::Diagnostic
+        || item_type == crate::core::batch_fetch::BatchFetchItemType::Site
+    {
         return value;
     }
     let compact = matches!(detail, ResponseDetail::Compact | ResponseDetail::Brief);
-    let mut projected = if is_repo {
+    let mut projected = if item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {
         project_repo_fetch(value, compact)
     } else {
         project_web_fetch(value, compact)
@@ -1220,5 +1229,36 @@ mod tests {
         let v = serde_json::json!({"query": "x", "routing_decision": {"a": 1}});
         let out = project("web_search", v.clone(), ResponseDetail::Diagnostic);
         assert_eq!(out, v);
+    }
+
+    #[test]
+    fn fetch_proxy_route_survives_compact_and_brief_projection() {
+        let route = serde_json::json!({
+            "kind": "proxy",
+            "scheme": "http",
+        });
+        let response = serde_json::json!({"url": "https://example.com/", "route": route});
+        for detail in [
+            ResponseDetail::Standard,
+            ResponseDetail::Compact,
+            ResponseDetail::Brief,
+        ] {
+            let projected = project("web_fetch", response.clone(), detail);
+            assert_eq!(projected["route"]["kind"], "proxy");
+            assert_eq!(projected["route"]["scheme"], "http");
+
+            let batch = serde_json::json!({
+                "results": [{"item_type": "web", "response": response.clone()}]
+            });
+            let projected = project("fetch", batch, detail);
+            assert_eq!(
+                projected["results"][0]["response"]["route"]["kind"],
+                "proxy"
+            );
+            assert_eq!(
+                projected["results"][0]["response"]["route"]["scheme"],
+                "http"
+            );
+        }
     }
 }

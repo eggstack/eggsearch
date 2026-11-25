@@ -440,6 +440,9 @@ mod pagination {
             timeout_ms: None,
             extract_mode: None,
             include_links: None,
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             pdf: None,
             cache_policy: None,
             max_cache_age_seconds: None,
@@ -448,6 +451,7 @@ mod pagination {
             focus_max_chars: None,
             render: None,
             browser_profile: None,
+            snapshot: None,
             include_screenshot: None,
             response_detail: None,
         }
@@ -770,6 +774,9 @@ mod pagination {
                 url: server.url(format!("/item{index}")),
                 extract_mode: None,
                 include_links: None,
+                include_selectors: None,
+                exclude_selectors: None,
+                attributes: None,
                 max_chars: None,
                 cache_policy: None,
                 max_cache_age_seconds: None,
@@ -779,6 +786,7 @@ mod pagination {
                 pdf: None,
                 render: None,
                 browser_profile: None,
+                snapshot: None,
                 include_screenshot: None,
             })
             .collect()
@@ -1028,10 +1036,14 @@ mod document_budget {
             timeout_ms: None,
             extract_mode: None,
             include_links: None,
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             pdf: None,
             cache_policy: None,
             render: None,
             browser_profile: None,
+            snapshot: None,
             include_screenshot: None,
             max_cache_age_seconds: None,
             focus: None,
@@ -1348,6 +1360,8 @@ mod document_budget {
         let mut right = hit_4k.clone();
         left["cache_status"] = serde_json::Value::Null;
         right["cache_status"] = serde_json::Value::Null;
+        left["cache_age_seconds"] = serde_json::Value::Null;
+        right["cache_age_seconds"] = serde_json::Value::Null;
         assert_eq!(
             left, right,
             "a cache hit must return the bytes a cold fetch of the same window returns"

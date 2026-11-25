@@ -721,6 +721,9 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
 
     let state = state_with_default();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://github.com/tokio-rs/axum/blob/main/src/lib.rs".to_string(),
         extract_mode: Some(ExtractMode::Text),
         ..Default::default()
@@ -927,6 +930,11 @@ fn web_fetch_response_includes_fetch_transform_field() {
         pdf_quality_score: None,
         pdf_content_ok: None,
         cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attributes: vec![],
+        matched_roots: None,
+        route: None,
+        cache_age_seconds: None,
+        stale: false,
         attempt_count: None,
         retry_after_ms: None,
         origin_backoff_ms: None,
@@ -982,6 +990,11 @@ fn web_fetch_response_omits_fetch_transform_when_none() {
         pdf_quality_score: None,
         pdf_content_ok: None,
         cache_status: eggsearch::fetch::cache::CacheStatus::default(),
+        attributes: vec![],
+        matched_roots: None,
+        route: None,
+        cache_age_seconds: None,
+        stale: false,
         attempt_count: None,
         retry_after_ms: None,
         origin_backoff_ms: None,

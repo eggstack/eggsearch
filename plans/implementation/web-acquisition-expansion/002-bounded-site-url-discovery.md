@@ -61,8 +61,10 @@ Rules:
   and are counted.
 - A candidate whose host differs from the requested origin is dropped and
   counted as `cross_origin_skipped`. It is never fetched, resolved, or
-  contacted. `include_subdomains` requires an exact registrable-domain match
-  and is an explicit opt-in.
+  contacted. `include_subdomains` is an explicit opt-in that admits the requested
+  host and hosts ending in `.<requested-host>` on a label boundary. It never
+  widens to a sibling registrable domain; callers request the parent host when
+  they want the whole site. No public-suffix dependency is introduced.
 - The entry URL, robots, and each sitemap pass the ordinary `FetchClient`
   validation independently; a sitemap pointing elsewhere does not authorize it.
 - Redirects are followed only within the requested origin. A cross-origin

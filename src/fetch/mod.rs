@@ -4,6 +4,7 @@
 //! extracts readable text/metadata, and returns bounded structured output.
 
 pub mod accept;
+pub(crate) mod attributes;
 #[cfg(feature = "browser")]
 #[allow(missing_docs)]
 pub mod browser;
@@ -17,6 +18,10 @@ pub mod challenge;
 pub mod classify;
 pub mod client;
 pub mod detect;
+/// Container document extraction for CSV, EPUB, DOCX, XLSX, and PPTX
+/// (requires the `documents` Cargo feature).
+#[cfg(feature = "documents")]
+pub mod documents;
 pub mod egress;
 pub mod extract;
 pub mod limits;
@@ -35,9 +40,14 @@ mod pdf_quality;
 #[cfg(feature = "pdf")]
 pub mod pdf_stream;
 pub(crate) mod projection;
+pub(crate) mod proxy;
 /// HTML structural rendering (blocks, text, markdown).
 pub mod render;
+pub(crate) mod scope;
 /// Symbol/span-aware block expansion for `repo_fetch`.
+pub(crate) mod site_map;
+/// Durable snapshot store and deterministic line comparison.
+pub mod snapshot;
 pub mod span;
 pub mod types;
 

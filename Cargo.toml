@@ -44,6 +44,7 @@ default = ["pdf", "browser"]
 mock = []
 pdf = ["dep:lopdf", "dep:flate2"]
 browser = ["dep:chromiumoxide"]
+documents = ["dep:zip", "dep:calamine"]
 live-mcp-smoke = []
 live-smoke = ["mock"]
 egress = ["dep:eggress-outbound", "dep:eggress-uri", "dep:eggress-core"]
@@ -67,7 +68,7 @@ url = { version = "2", features = ["serde"] }
 eggress-outbound = { version = "=1.0.12", default-features = false, optional = true }
 eggress-uri = { version = "=1.0.12", default-features = false, optional = true }
 eggress-core = { version = "=1.0.12", default-features = false, optional = true }
-eggfetch-core = { version = "0.2.2", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli"] }
+eggfetch-core = { version = "0.2.2", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli", "proxy"] }
 semver = "1"
 scraper = "0.20"
 ego-tree = "0.6.2"
@@ -79,6 +80,8 @@ quick-xml = { version = "0.41", default-features = false }
 dirs = "5"
 pulldown-cmark = "0.12"
 lopdf = { version = "0.42", optional = true, default-features = false }
+zip = { version = "=9.8.1", optional = true, default-features = false, features = ["deflate-flate2"] }
+calamine = { version = "0.38", optional = true, default-features = false, features = ["dates"] }
 flate2 = { version = "1", optional = true, default-features = false, features = ["rust_backend"] }
 chromiumoxide = { version = "0.9", optional = true, default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
@@ -87,6 +90,7 @@ libc = "0.2"
 lru = "0.18"
 self-replace = "1"
 sha2 = "0.10"
+similar = "2.7"
 pbkdf2 = "0.12"
 base64 = "0.22"
 tempfile = "3"

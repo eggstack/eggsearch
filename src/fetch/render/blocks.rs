@@ -52,6 +52,42 @@ pub fn render_blocks(
     Vec<String>,
     bool,
 ) {
+    let (title, description, rendered, warnings, non_utf8, _) =
+        render_blocks_inner(html, base_url, max_chars, markdown, None);
+    (title, description, rendered, warnings, non_utf8)
+}
+
+pub(crate) fn render_blocks_scoped(
+    html: &[u8],
+    base_url: &str,
+    max_chars: usize,
+    markdown: bool,
+    scope: &crate::fetch::scope::SelectorScope,
+) -> (
+    Option<String>,
+    Option<String>,
+    RenderedBlocks,
+    Vec<String>,
+    bool,
+    Option<usize>,
+) {
+    render_blocks_inner(html, base_url, max_chars, markdown, Some(scope))
+}
+
+fn render_blocks_inner(
+    html: &[u8],
+    base_url: &str,
+    max_chars: usize,
+    markdown: bool,
+    scope: Option<&crate::fetch::scope::SelectorScope>,
+) -> (
+    Option<String>,
+    Option<String>,
+    RenderedBlocks,
+    Vec<String>,
+    bool,
+    Option<usize>,
+) {
     let (html_str, mut warnings, non_utf8) = decode_html(html);
     let document = Html::parse_document(&html_str);
 
@@ -61,16 +97,49 @@ pub fn render_blocks(
     let mut blocks = Vec::new();
     let mut outline = Vec::new();
 
-    let root = select_content_root(&document);
-    walk_element(
-        root,
-        &mut blocks,
-        &mut outline,
-        base_url,
-        &mut warnings,
-        markdown,
-        0,
-    );
+    let matches = scope
+        .filter(|scope| scope.has_selectors())
+        .map(|scope| crate::fetch::scope::match_document(&document, scope));
+    let matched_roots = scope
+        .filter(|scope| scope.has_includes())
+        .map(|_| matches.as_ref().map_or(0, |matches| matches.roots.len()));
+    if scope.is_some_and(|scope| scope.has_includes()) {
+        let matched = matches.as_ref().expect("include selectors were matched");
+        if matched.roots.is_empty() {
+            warnings.push("selector_no_match".to_string());
+        }
+        let all = Selector::parse("*").expect("universal CSS selector is valid");
+        for element in document.select(&all) {
+            if matched.roots.contains(&element.id()) {
+                walk_node(
+                    element,
+                    &mut blocks,
+                    &mut outline,
+                    base_url,
+                    &mut warnings,
+                    markdown,
+                    WalkOptions {
+                        depth: 0,
+                        matches: matches.as_ref(),
+                    },
+                );
+            }
+        }
+    } else {
+        let root = select_content_root(&document);
+        walk_element(
+            root,
+            &mut blocks,
+            &mut outline,
+            base_url,
+            &mut warnings,
+            markdown,
+            WalkOptions {
+                depth: 0,
+                matches: matches.as_ref(),
+            },
+        );
+    }
 
     let block_truncated = truncate_blocks_at_budget(&mut blocks, max_chars);
 
@@ -99,6 +168,7 @@ pub fn render_blocks(
         },
         warnings,
         non_utf8,
+        matched_roots,
     )
 }
 
@@ -197,7 +267,18 @@ fn probe_root<'a>(
 ) -> (usize, usize) {
     blocks.clear();
     outline.clear();
-    walk_element(element, blocks, outline, base_url, warnings, markdown, 0);
+    walk_element(
+        element,
+        blocks,
+        outline,
+        base_url,
+        warnings,
+        markdown,
+        WalkOptions {
+            depth: 0,
+            matches: None,
+        },
+    );
     let total_chars: usize = blocks.iter().map(|b| b.text.chars().count()).sum();
     (blocks.len(), total_chars)
 }
@@ -264,6 +345,12 @@ fn should_skip(elem: &ElementRef) -> bool {
     false
 }
 
+#[derive(Clone, Copy)]
+struct WalkOptions<'a> {
+    depth: usize,
+    matches: Option<&'a crate::fetch::scope::SelectorMatches>,
+}
+
 fn walk_element(
     element: ElementRef,
     blocks: &mut Vec<RenderedBlock>,
@@ -271,92 +358,78 @@ fn walk_element(
     base_url: &str,
     warnings: &mut Vec<String>,
     markdown: bool,
-    depth: usize,
+    options: WalkOptions<'_>,
 ) {
-    if depth >= super::super::MAX_TREE_WALK_DEPTH {
+    let depth = options.depth;
+    let matches = options.matches;
+    if depth >= super::super::MAX_TREE_WALK_DEPTH || is_excluded(&element, matches) {
         return;
     }
     for child in element.children() {
-        let child_elem = match ElementRef::wrap(child) {
-            Some(e) => e,
-            None => continue,
-        };
-
-        if should_skip(&child_elem) {
+        let Some(child_elem) = ElementRef::wrap(child) else {
             continue;
-        }
+        };
+        walk_node(
+            child_elem, blocks, outline, base_url, warnings, markdown, options,
+        );
+    }
+}
 
-        let tag = child_elem.value().name();
-        match tag {
-            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-                let level = tag[1..].parse().unwrap_or(1);
-                let text = collect_inline_text(child, markdown, base_url);
-                let anchor = child_elem.value().id().map(|s| s.to_string()).or_else(|| {
-                    if text.is_empty() {
-                        None
-                    } else {
-                        Some(make_slug(&text))
-                    }
-                });
-                let block_index = blocks.len();
-                blocks.push(RenderedBlock {
-                    kind: BlockKind::Heading,
-                    text: String::new(), // placeholder
-                    level: Some(level),
-                    anchor: anchor.clone(),
-                    language: None,
-                    line_start: None,
-                    line_end: None,
-                    page: None,
-                });
-                // Set text after push so block_index is valid
-                blocks[block_index].text = text;
-                outline.push(DocumentOutlineEntry {
-                    level,
-                    title: blocks[block_index].text.clone(),
-                    anchor,
-                    block_index: Some(block_index),
-                    page: None,
-                });
-            }
-            "p" => {
-                let text = collect_inline_text(child, markdown, base_url);
-                if !text.is_empty() {
-                    blocks.push(RenderedBlock {
-                        kind: BlockKind::Paragraph,
-                        text,
-                        level: None,
-                        anchor: None,
-                        language: None,
-                        line_start: None,
-                        line_end: None,
-                        page: None,
-                    });
+fn walk_node(
+    element: ElementRef,
+    blocks: &mut Vec<RenderedBlock>,
+    outline: &mut Vec<DocumentOutlineEntry>,
+    base_url: &str,
+    warnings: &mut Vec<String>,
+    markdown: bool,
+    options: WalkOptions<'_>,
+) {
+    let depth = options.depth;
+    let matches = options.matches;
+    if depth >= super::super::MAX_TREE_WALK_DEPTH
+        || should_skip(&element)
+        || is_excluded(&element, matches)
+    {
+        return;
+    }
+    let node = *element;
+    let tag = element.value().name();
+    match tag {
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+            let level = tag[1..].parse().unwrap_or(1);
+            let text = collect_inline_text(node, markdown, base_url, matches);
+            let anchor = element.value().id().map(|s| s.to_string()).or_else(|| {
+                if text.is_empty() {
+                    None
+                } else {
+                    Some(make_slug(&text))
                 }
-            }
-            "pre" => {
-                let text = collect_raw_text(child);
-                let language = detect_language_from_pre(&child_elem);
+            });
+            let block_index = blocks.len();
+            blocks.push(RenderedBlock {
+                kind: BlockKind::Heading,
+                text: String::new(),
+                level: Some(level),
+                anchor: anchor.clone(),
+                language: None,
+                line_start: None,
+                line_end: None,
+                page: None,
+            });
+            blocks[block_index].text = text;
+            outline.push(DocumentOutlineEntry {
+                level,
+                title: blocks[block_index].text.clone(),
+                anchor,
+                block_index: Some(block_index),
+                page: None,
+            });
+        }
+        "p" => {
+            let text = collect_inline_text(node, markdown, base_url, matches);
+            if !text.is_empty() {
                 blocks.push(RenderedBlock {
-                    kind: BlockKind::Code,
-                    text,
-                    level: None,
-                    anchor: None,
-                    language,
-                    line_start: None,
-                    line_end: None,
-                    page: None,
-                });
-            }
-            "table" => {
-                let (text, irregular) = render_table_text(&child_elem);
-                if irregular {
-                    warnings.push(
-                        "table has irregular row lengths; rendering may be incomplete".to_string(),
-                    );
-                }
-                blocks.push(RenderedBlock {
-                    kind: BlockKind::Table,
+                    kind: BlockKind::Paragraph,
                     text,
                     level: None,
                     anchor: None,
@@ -366,52 +439,86 @@ fn walk_element(
                     page: None,
                 });
             }
-            "blockquote" => {
-                let text = collect_inline_text(child, markdown, base_url);
-                if !text.is_empty() {
-                    blocks.push(RenderedBlock {
-                        kind: BlockKind::BlockQuote,
-                        text,
-                        level: None,
-                        anchor: None,
-                        language: None,
-                        line_start: None,
-                        line_end: None,
-                        page: None,
-                    });
-                }
-            }
-            "dl" => {
-                render_definition_list(&child_elem, blocks, base_url, markdown);
-            }
-            "hr" => {
-                blocks.push(RenderedBlock {
-                    kind: BlockKind::HorizontalRule,
-                    text: String::new(),
-                    level: None,
-                    anchor: None,
-                    language: None,
-                    line_start: None,
-                    line_end: None,
-                    page: None,
-                });
-            }
-            "ul" | "ol" => {
-                render_list(&child_elem, blocks, base_url, markdown, 0);
-            }
-            _ => {
-                walk_element(
-                    child_elem,
-                    blocks,
-                    outline,
-                    base_url,
-                    warnings,
-                    markdown,
-                    depth + 1,
+        }
+        "pre" => {
+            let text = collect_raw_text(node, matches);
+            let language = detect_language_from_pre(&element);
+            blocks.push(RenderedBlock {
+                kind: BlockKind::Code,
+                text,
+                level: None,
+                anchor: None,
+                language,
+                line_start: None,
+                line_end: None,
+                page: None,
+            });
+        }
+        "table" => {
+            let (text, irregular) = render_table_text(&element, matches);
+            if irregular {
+                warnings.push(
+                    "table has irregular row lengths; rendering may be incomplete".to_string(),
                 );
             }
+            blocks.push(RenderedBlock {
+                kind: BlockKind::Table,
+                text,
+                level: None,
+                anchor: None,
+                language: None,
+                line_start: None,
+                line_end: None,
+                page: None,
+            });
         }
+        "blockquote" => {
+            let text = collect_inline_text(node, markdown, base_url, matches);
+            if !text.is_empty() {
+                blocks.push(RenderedBlock {
+                    kind: BlockKind::BlockQuote,
+                    text,
+                    level: None,
+                    anchor: None,
+                    language: None,
+                    line_start: None,
+                    line_end: None,
+                    page: None,
+                });
+            }
+        }
+        "dl" => render_definition_list(&element, blocks, base_url, markdown, matches),
+        "hr" => blocks.push(RenderedBlock {
+            kind: BlockKind::HorizontalRule,
+            text: String::new(),
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        }),
+        "ul" | "ol" => render_list(&element, blocks, base_url, markdown, 0, matches),
+        _ => walk_element(
+            element,
+            blocks,
+            outline,
+            base_url,
+            warnings,
+            markdown,
+            WalkOptions {
+                depth: depth + 1,
+                ..options
+            },
+        ),
     }
+}
+
+fn is_excluded(
+    element: &ElementRef,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
+) -> bool {
+    matches.is_some_and(|matches| matches.excluded.contains(&element.id()))
 }
 
 /// Collect inline text from a node, normalizing whitespace.
@@ -421,22 +528,21 @@ fn collect_inline_text<'a>(
     node: NodeRef<'a, scraper::Node>,
     markdown: bool,
     base_url: &str,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
 ) -> String {
     let mut parts = Vec::new();
-    collect_text_parts(node, &mut parts, markdown, base_url, 0);
+    collect_text_parts(node, &mut parts, markdown, base_url, matches, 0);
     let text = parts.join("");
-    // `normalize_whitespace` collapses runs to single spaces in one pass;
-    // the intermediate `Vec<&str>` and extra copy are unnecessary.
     crate::core::sanitize::normalize_whitespace(&text)
         .trim()
         .to_string()
 }
-
 fn collect_text_parts<'a>(
     node: NodeRef<'a, scraper::Node>,
     parts: &mut Vec<String>,
     markdown: bool,
     base_url: &str,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
     depth: usize,
 ) {
     if depth >= super::super::MAX_TREE_WALK_DEPTH {
@@ -447,22 +553,20 @@ fn collect_text_parts<'a>(
             parts.push(text.to_string());
         }
     } else if let Some(elem) = ElementRef::wrap(node) {
-        if should_skip(&elem) {
+        if should_skip(&elem) || is_excluded(&elem, matches) {
             return;
         }
         let tag = elem.value().name();
         if markdown && tag == "code" {
-            // Inline code: wrap in backticks.
-            let raw_inner = collect_raw_text(node);
+            let raw_inner = collect_raw_text(node, matches);
             let inner = raw_inner.trim();
-            let rendered = (!inner.is_empty()).then(|| format!("`{inner}`"));
+            let rendered = (!inner.is_empty()).then(|| format!("\x60{inner}\x60"));
             push_inline_part_with_source_boundaries(parts, &raw_inner, rendered);
             return;
         }
         if markdown && tag == "a" {
-            // Inline link: produce [text](url) Markdown syntax.
             let href = elem.value().attr("href").unwrap_or("");
-            let raw_link_text = collect_raw_text(node);
+            let raw_link_text = collect_raw_text(node, matches);
             let link_text = raw_link_text.trim();
             let rendered = if link_text.is_empty() || href.is_empty() {
                 None
@@ -474,11 +578,10 @@ fn collect_text_parts<'a>(
             return;
         }
         for child in node.children() {
-            collect_text_parts(child, parts, markdown, base_url, depth + 1);
+            collect_text_parts(child, parts, markdown, base_url, matches, depth + 1);
         }
     }
 }
-
 fn push_inline_part_with_source_boundaries(
     parts: &mut Vec<String>,
     source: &str,
@@ -504,28 +607,35 @@ fn push_inline_part_with_source_boundaries(
 }
 
 /// Collect raw text from a node, preserving whitespace (for code blocks).
-fn collect_raw_text<'a>(node: NodeRef<'a, scraper::Node>) -> String {
+fn collect_raw_text<'a>(
+    node: NodeRef<'a, scraper::Node>,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
+) -> String {
     let mut text = String::new();
-    collect_raw_text_inner(node, &mut text, 0);
+    collect_raw_text_inner(node, &mut text, 0, matches);
     text
 }
 
-fn collect_raw_text_inner<'a>(node: NodeRef<'a, scraper::Node>, text: &mut String, depth: usize) {
+fn collect_raw_text_inner<'a>(
+    node: NodeRef<'a, scraper::Node>,
+    text: &mut String,
+    depth: usize,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
+) {
     if depth >= super::super::MAX_TREE_WALK_DEPTH {
         return;
     }
     if let Some(t) = node.value().as_text() {
         text.push_str(t);
     } else if let Some(elem) = ElementRef::wrap(node) {
-        if should_skip(&elem) {
+        if should_skip(&elem) || is_excluded(&elem, matches) {
             return;
         }
         for child in node.children() {
-            collect_raw_text_inner(child, text, depth + 1);
+            collect_raw_text_inner(child, text, depth + 1, matches);
         }
     }
 }
-
 fn detect_language_from_pre(pre: &ElementRef) -> Option<String> {
     if let Ok(code_sel) = Selector::parse("code") {
         if let Some(code_el) = pre.select(&code_sel).next() {
@@ -559,14 +669,15 @@ fn render_list(
     base_url: &str,
     markdown: bool,
     depth: usize,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
 ) {
     if depth >= super::super::MAX_TREE_WALK_DEPTH {
         return;
     }
     for child in list.children() {
         if let Some(li) = ElementRef::wrap(child) {
-            if li.value().name() == "li" {
-                let text = collect_inline_text(child, markdown, base_url);
+            if li.value().name() == "li" && !is_excluded(&li, matches) {
+                let text = collect_inline_text(child, markdown, base_url, matches);
                 if !text.is_empty() {
                     blocks.push(RenderedBlock {
                         kind: BlockKind::ListItem,
@@ -579,12 +690,18 @@ fn render_list(
                         page: None,
                     });
                 }
-                // Flatten nested lists
                 for nested_child in li.children() {
                     if let Some(nested_elem) = ElementRef::wrap(nested_child) {
                         let tag = nested_elem.value().name();
-                        if tag == "ul" || tag == "ol" {
-                            render_list(&nested_elem, blocks, base_url, markdown, depth + 1);
+                        if (tag == "ul" || tag == "ol") && !is_excluded(&nested_elem, matches) {
+                            render_list(
+                                &nested_elem,
+                                blocks,
+                                base_url,
+                                markdown,
+                                depth + 1,
+                                matches,
+                            );
                         }
                     }
                 }
@@ -592,19 +709,22 @@ fn render_list(
         }
     }
 }
-
-fn render_table_text(table: &ElementRef) -> (String, bool) {
+fn render_table_text(
+    table: &ElementRef,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
+) -> (String, bool) {
     let mut rows = Vec::new();
-
     if let Ok(tr_sel) = Selector::parse("tr") {
         for tr in table.select(&tr_sel) {
+            if is_excluded(&tr, matches) {
+                continue;
+            }
             let mut cells = Vec::new();
             for child in tr.children() {
                 if let Some(cell) = ElementRef::wrap(child) {
                     let tag = cell.value().name();
-                    if tag == "td" || tag == "th" {
-                        let text = collect_inline_text(child, false, "");
-                        cells.push(text);
+                    if (tag == "td" || tag == "th") && !is_excluded(&cell, matches) {
+                        cells.push(collect_inline_text(*cell, false, "", matches));
                     }
                 }
             }
@@ -613,15 +733,12 @@ fn render_table_text(table: &ElementRef) -> (String, bool) {
             }
         }
     }
-
     if rows.is_empty() {
-        return (collect_inline_text(**table, false, ""), false);
+        return (collect_inline_text(**table, false, "", matches), false);
     }
-
     let max_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     let irregular = rows.iter().any(|r| r.len() != max_cols);
     let mut lines = Vec::new();
-
     for (i, row) in rows.iter().enumerate() {
         let mut line = String::from("|");
         for cell in row {
@@ -631,33 +748,31 @@ fn render_table_text(table: &ElementRef) -> (String, bool) {
             line.push_str(" |");
         }
         lines.push(line);
-
         if i == 0 {
             let sep = " --- |".repeat(max_cols);
             lines.push(format!("|{sep}"));
         }
     }
-
     (lines.join("\n"), irregular)
 }
-
 fn render_definition_list(
     dl: &ElementRef,
     blocks: &mut Vec<RenderedBlock>,
     base_url: &str,
     markdown: bool,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
 ) {
     let mut current_term = String::new();
-
     for child in dl.children() {
         if let Some(elem) = ElementRef::wrap(child) {
+            if is_excluded(&elem, matches) {
+                continue;
+            }
             let tag = elem.value().name();
             match tag {
-                "dt" => {
-                    current_term = collect_inline_text(child, markdown, base_url);
-                }
+                "dt" => current_term = collect_inline_text(child, markdown, base_url, matches),
                 "dd" => {
-                    let definition = collect_inline_text(child, markdown, base_url);
+                    let definition = collect_inline_text(child, markdown, base_url, matches);
                     let text = if current_term.is_empty() {
                         definition
                     } else if definition.is_empty() {
@@ -683,7 +798,6 @@ fn render_definition_list(
         }
     }
 }
-
 fn make_slug(text: &str) -> String {
     text.to_lowercase()
         .chars()

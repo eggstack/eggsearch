@@ -786,6 +786,8 @@ fn bench_derived_cache_hits(c: &mut Criterion) {
                 include_media: false,
                 renderer_version: 1,
                 sanitize_output: true,
+                scoping_fingerprint: None,
+                route_fingerprint: None,
             },
         }
     }
@@ -803,6 +805,8 @@ fn bench_derived_cache_hits(c: &mut Criterion) {
                 raw_text_cap: None,
                 links: Vec::new(),
                 links_seen: None,
+                attributes: Vec::new(),
+                matched_roots: None,
                 links_truncated: false,
                 truncated: false,
                 document: None,

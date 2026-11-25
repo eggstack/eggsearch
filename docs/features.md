@@ -187,6 +187,179 @@ unsupported.
   a capability this build does not have
 - PDF layout reconstruction and OCR are deferred
 
+## Document Formats
+
+CSV, EPUB, DOCX, XLSX, and PPTX are read as bounded, addressable documents when
+the binary includes the `documents` Cargo feature. PDF extraction is separate,
+stays on by default, and is described under [PDF Extraction](#pdf-extraction).
+
+### Enabling
+
+`documents` is not in the default feature set. A source build that needs the
+container formats opts in explicitly:
+
+```bash
+cargo build --features documents
+```
+
+The feature adds the `zip` and `calamine` dependencies. It is additive: with
+the feature absent, every request behaves exactly as before, CSV keeps its
+existing bounded table preview, and a `.docx` or `.epub` URL returns the
+ordinary unsupported-content outcome.
+
+### Capabilities
+
+- One part per addressable unit: a CSV row block, an EPUB spine document, a
+  DOCX heading-delimited section, a spreadsheet sheet, or a presentation slide
+- `extract_mode = "text"` and `extract_mode = "markdown"`; `metadata_only`
+  returns metadata and no parts
+- Fixed ordering: DOCX body order, `presentation.xml` slide order, workbook
+  sheet order, EPUB spine order, and fixed 100-row CSV blocks. ZIP directory
+  order is never used
+- ISO 8601 dates and locale-independent numbers for spreadsheets
+- Text only: no OCR, no layout geometry, no rendering, no macros
+
+### Part Addressing
+
+| Format | Part | `title` |
+|---|---|---|
+| CSV/TSV | One fixed 100-row block | `rows 1-100` |
+| EPUB | One spine document | Section heading or spine item label |
+| DOCX | One heading-delimited section | The heading text |
+| XLSX | One sheet | The sheet name |
+| PPTX | One slide | The title placeholder, when present |
+
+Parts are one-indexed, and `parts_total` reports the count. This version
+returns every part; selection over parts is not yet a request control, because
+the web-fetch request shape has no part selector (only PDF page selection).
+
+### Limits
+
+| Bound | Value |
+|---|---|
+| Input archive | 16 MiB |
+| Total decompressed data | 64 MiB |
+| Inflation ratio | 100:1 |
+| Archive entries | 4,096 |
+| Parts | 4,096 |
+| Characters before the caller budget | 200,000 |
+| XML depth | 64 |
+
+ZIP central-directory sizes are attacker-controlled, so actual inflated bytes
+are counted through a bounded reader and the archive is pre-scanned before a
+spreadsheet parser inflates it. A bound breach is a typed error, never a partial
+success. Nothing is written to disk, and absolute or parent-traversal entry
+names are rejected defensively. No DTD, external entity, `XInclude`, or
+external media reference is resolved.
+
+### Outcome Contract
+
+| Outcome | Meaning |
+|---|---|
+| `document_empty` | The container parsed but carried no text |
+| `document_malformed` | The archive or its XML is structurally invalid |
+| `document_unsupported` | ODF, legacy binary Office, or RTF |
+| `document_encrypted` | Password-protected OOXML (`EncryptedPackage`) |
+
+A supported format returns the document object instead of the ordinary text
+body. ODF, legacy `.doc`/`.xls`/`.ppt`, and RTF are refused explicitly
+rather than guessed at.
+
+### Limitations
+
+- No OCR, image understanding, or scanned-document recovery
+- No layout blocks, bounding boxes, forms, comments, or tracked changes
+- No macro execution and no embedded-object or external-relationship resolution
+- No ODF or legacy binary Office formats
+- No document writing or conversion
+- Local arbitrary-path parsing stays inside the existing authorized workspace rules
+
+## Deterministic Change Comparison
+
+A second fetch of the same document can answer "did this change" without
+re-reading the whole page. Comparison is opt-in per web item, survives a process
+restart, and never calls a model.
+
+### Enabling
+
+Enable the store:
+
+```toml
+[fetch.snapshots]
+enabled = true
+```
+
+Then ask for a comparison on a web item:
+
+```json
+{"url": "https://example.com/release-notes", "snapshot": {"compare": "line"}}
+```
+
+With `compare = "none"` (the default) the request behaves exactly as before
+and no store is opened.
+
+### Request Fields
+
+| Field | Default | Meaning |
+|---|---|---|
+| `compare` | `none` | `none` or `line` |
+| `key` | absent | Caller label scoping independent comparisons, at most 128 bytes |
+| `max_hunks` | `20` | Returned hunks, maximum 100 |
+| `max_diff_chars` | `8192` | Returned diff characters, maximum 32768 |
+
+### Change Statuses
+
+| Status | Meaning |
+|---|---|
+| `new` | No stored snapshot for this key |
+| `same` | Identical normalised text |
+| `changed` | Differing text with a bounded line diff |
+| `removed` | The origin returned 404 or 410 for a key that has a snapshot; the snapshot is retained. Counts are zero and `hunks` is empty, because there is no new text to compare |
+
+`changed` carries `previous_fetched_at`, `current_fetched_at`,
+`chars_added`, `chars_removed`, hunks ordered by `old_start` then
+`new_start`, and a `truncated` flag. Each hunk records `old_start`,
+`old_lines`, `new_start`, `new_lines`, and the diff `lines`, with three
+lines of context. `chars_added` and `chars_removed` count characters in hunk
+lines only, so they agree with the bounded output even when `truncated` is true.
+
+### Identity and Scope
+
+The snapshot key is (scope, normalised URL, extract mode, scoping fingerprint,
+representation class, caller key). `CacheScope` participates, so a snapshot
+written under one browser profile is invisible to anonymous requests and to
+other profiles. Equality is SHA-256 over normalised text; addressing keeps the
+content-derived FNV-1a rules.
+
+### Bounds and Degradation
+
+- 1 MiB of stored text per snapshot, 4,096 UTF-8-boundary-checked lines
+- The diff guard is size-based, never wall-clock: more than 20,000 combined
+  lines or 4,000,000 line pairs returns counts with `truncated: true` and no
+  hunks, so repeated runs stay byte-identical
+- Disabled store: the response carries `snapshot_store_disabled` and no
+  `change` object; it never reports `new` as if a comparison happened
+- Store error: the fetch still succeeds, the response carries
+  `snapshot_store_unavailable`, and `change` is omitted
+- A snapshot write failure never fails a successful fetch
+
+### Storage and Privacy
+
+Snapshots hold sanitised extracted text and metadata only: no raw HTML, no
+headers, no credentials, no TLS material, and no browser profile data.
+Browser-rendered responses are not snapshotted. The store is a SQLite file with
+`secure_delete`, `journal_mode = DELETE`, a page limit derived from
+`max_bytes`, a `0700` directory and a `0600` file. A newer schema is
+refused rather than reset, and a corrupt file is reported rather than silently
+recreated.
+
+### Limitations
+
+- No scheduling, polling, webhooks, or notifications
+- No cross-host or cross-device snapshot sharing
+- No semantic or model-based summarisation of change
+- Browser-rendered responses are not compared in this version
+
 ---
 
 ## Bounded Challenge Solving
@@ -465,6 +638,72 @@ enabled = true
 - `browser-login` and profile-scoped MCP fetches use the same Eggsearch-owned `chrome-data` directory
 - Chrome manages cookies and storage within the profile directory. Eggsearch never exports, logs, or serializes cookies
 - Process-local cache is not invalidated when a profile is removed from the CLI (cache is process-scoped)
+
+---
+
+## Dynamic-Fetch Proxy Routing
+
+Optional single-endpoint proxy route for the web URLs an agent supplies to
+`fetch` and `batch_fetch`. It is compiled into every build, unlike the
+provider-only `[egress]` route, because it protects dynamic targets rather than
+operator-owned upstreams. It is disabled by default.
+
+The authorized resolved address still binds the physical connection: every
+proxied request carries an eggfetch target pin, so the proxy tunnels to the
+address eggsearch validated instead of resolving the origin name itself.
+Eggfetch remains the HTTP, pooling, destination-TLS, decompression, redirect,
+and deadline owner.
+
+```toml eggsearch-config-parse-only
+[fetch.proxy]
+route = "proxy"
+url = "http://127.0.0.1:3128"
+username_env = "EGGSEARCH_PROXY_USER"
+password_env = "EGGSEARCH_PROXY_PASSWORD"
+no_proxy = ["localhost", "127.0.0.1", ".internal.example"]
+```
+
+- `direct` (default) never proxies. `url`, the credential variables, and
+  `no_proxy` must be absent.
+- `proxy` routes every web target except a `no_proxy` host match. A bypass is
+  reported in the response `route` field; it is never silent.
+- `proxy_required` routes every target and rejects a non-empty `no_proxy`: the
+  configuration cannot express a direct path.
+
+`url` accepts `http://` (HTTP CONNECT) and `socks5://` (local resolution).
+`socks5h://`, `https://`, and inline credentials are rejected. Credentials
+come only from the two environment variables, must be supplied together, and
+are resolved per call. Proxy environment variables (`HTTP_PROXY`,
+`HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are never read; there is no PAC, no
+rotation, and no per-call override.
+
+Supported: an HTTPS target through HTTP CONNECT or local-resolution SOCKS5.
+Refused with a typed error before proxy I/O: a plaintext `http://` target, and
+`socks5h` remote resolution. A redirect that would change the route decision
+for the hop fails closed. A missing or unusable route fails closed; a proxy is
+never silently bypassed.
+
+Failures are typed: `proxy_route_unconfigured`, `proxy_scheme_unsupported`,
+`proxy_credentials_missing`, `proxy_authentication_failed`,
+`proxy_connect_failed`, `proxy_target_unsupported`, and
+`proxy_route_changed_by_redirect`.
+
+Cache identity includes the route, so an entry fetched directly never satisfies
+a proxied request or the reverse. `cache_only` performs no network and still
+requires a matching route identity.
+
+Scope: `fetch` and `batch_fetch` web items only. Provider upstreams,
+`repo_fetch`, site discovery, browser rendering, forge, package-resolver,
+updater, loopback health, and rmcp traffic stay direct. Browser-escalated
+responses keep direct cache identity and never report proxy metadata. A solved
+challenge cookie is origin-keyed; changing the egress address can invalidate it,
+and cookies are never shared across routes. Multi-hop chains are supported by
+pointing the single endpoint at an operator-run loopback relay; the relay stays
+outside the trust boundary.
+
+`provider_status` reports a redacted `fetch_proxy` summary: route class,
+scheme, host, port, and whether credentials are present. It never reports
+credential values, environment-variable names, or a serialized proxy.
 
 ---
 

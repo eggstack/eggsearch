@@ -288,6 +288,36 @@ redirect, origin-concurrency, profile-isolation, content, or sanitization
 policy. Conditional revalidation treats HTTP 304 as a revalidation signal, not
 a redirect.
 
+### Durable snapshots (`snapshot/`, opt-in)
+
+`FetchCache` is memory-only by design: it bounds bytes and dies with the
+process. Change comparison needs the opposite property — the same document must
+be addressable across restarts — so it lives in a separate, opt-in SQLite store
+under `src/fetch/snapshot/`, never in the two-tier cache.
+
+- `store.rs` opens `<data_local_dir>/eggsearch/snapshots.sqlite3` (or the
+  `[fetch.snapshots].path` override) with the same hardening as the local
+  evidence index: `secure_delete`, `journal_mode = DELETE`, a
+  `max_page_count` derived from `max_bytes`, `busy_timeout = 5000`, a `0700`
+  directory, and a `0600` file. `user_version` is the schema version; a newer
+  schema fails with `snapshot_store_schema_unsupported` and a corrupt file with
+  `snapshot_store_corrupt`. Neither resets the store.
+- `diff.rs` normalises the extracted text, hashes it with SHA-256 for equality,
+  and produces a `similar` Patience diff with three context lines. The cost
+  guard is size-based on line counts, never wall-clock, so repeated runs are
+  byte-identical.
+- `mod.rs` resolves the key, drives the store, and builds the `change` object
+  outside the MCP handler, because `mcp/tools/web_fetch.rs` sits against its
+  ordinary 1,600-line ceiling.
+
+The key includes `CacheScope`, so a snapshot written under a browser profile is
+invisible to anonymous requests and to other profiles. Only sanitised extracted
+text and metadata are stored — no raw body, headers, credentials, or profile
+data — and browser-rendered responses are excluded. Degradation is explicit: a
+disabled store reports `snapshot_store_disabled` and omits `change`; a store
+error reports `snapshot_store_unavailable` and still returns the fetched
+document.
+
 ---
 
 ## 4. OriginController (`origin.rs`)
@@ -334,6 +364,42 @@ Unknown or `text/plain` bodies fall to an 8 KB / 200-line heuristic (shebang,
 imports, `fn`/`def`/`func`/`struct`/`class` signals, brace depth) returning
 `Code` or `PlainText`. The `line_preserving` flag selects the line-preserving
 renderer in `FetchClient`.
+
+### Container documents (`documents/`, feature `documents`)
+
+`DocumentKind` describes text-shaped content and is matched exhaustively across
+the renderer, so container formats do not extend it. A separate
+`DocumentFormat` (`Csv`, `Epub`, `Docx`, `Xlsx`, `Pptx`) is detected by
+content type, then URL extension, then container introspection — `mimetype` for
+EPUB and `[Content_Types].xml` for OOXML, because a `PK` signature alone
+matches every ZIP. ODF, legacy binary Office, and RTF resolve to
+`document_unsupported`; password-protected OOXML (CFB `EncryptedPackage`)
+resolves to `document_encrypted`.
+
+`FetchClient` mirrors its PDF early return with a document path: the pre-body
+gate admits a supported format only when the feature is compiled in, the body is
+read under a 16 MiB document cap, and the same extraction runs from a fresh
+response and from raw-cache re-derivation. With the feature off, every path
+behaves exactly as before.
+
+Bounds are enforced on real inflated bytes, not on central-directory sizes,
+which the archive controls: 64 MiB decompressed, a 100:1 inflation ratio, 4,096
+archive entries, 4,096 parts, 200,000 characters before the caller budget, and
+XML depth 64. The archive is pre-scanned before `calamine` inflates it. Entries
+are never extracted to disk, absolute and parent-traversal names are rejected,
+and no DTD, external entity, `XInclude`, or external relationship is resolved.
+
+Ordering is fixed and independent of ZIP directory order: DOCX body order, PPTX
+`presentation.xml` slide order, workbook sheet order, EPUB spine order, and
+fixed 100-row CSV blocks. `FetchDocument` carries `format`, `parts`, and
+`parts_total` additively; the response-level `text` remains the bounded
+concatenation, so an agent that never reads `parts` still sees the document.
+The document path is admitted before the ordinary HTML/text/PDF rejection, so a
+container format is no longer refused as an unsupported content type when the
+feature is compiled in; with the feature off, that rejection is unchanged.
+Part selection is not a request control in this version: there is no
+web-fetch part selector, so every part is returned and `parts_total` reports
+the count.
 
 ### `extract.rs`
 
@@ -527,6 +593,28 @@ DNS/refused/unreachable→Connection, TLS/protocol/other→Other).
   loopback health, rmcp, and browser traffic stay direct. Eggfetch keeps owning
   HTTP, pooling, destination TLS/SNI, decompression, redirect mechanics, and
   deadlines above the dialer. Prebuilt/default binaries exclude the feature.
+
+
+### Dynamic-fetch proxy route (native eggfetch `proxy`)
+
+Dynamic web fetch gains a single-endpoint proxy route through eggfetch's own
+`proxy` feature (`src/fetch/proxy.rs`), never through `egress.rs`.
+`FetchClient::with_proxy_route` clones the direct client; only the `fetch` and
+`batch_fetch` web-item handlers call it, so `repo_fetch`, workflows, site
+discovery, and browser traffic stay direct.
+
+The route decision is selected once from the initial URL and must stay
+identical for every redirect hop; a hop that would change it fails with
+`proxy_route_changed_by_redirect`. Each hop still runs
+`validate_fetch_target_with_resolved_addrs`, and a proxied hop applies the
+per-request `proxy_target_addresses` pin instead of `resolved_addresses`.
+Plaintext targets under a proxy route are refused before I/O, as are SOCKS5H
+and `https://` proxy endpoints. Proxy environment variables are never read.
+
+Cache identity carries `route_fingerprint` on both the raw and derived keys, so
+a direct entry never serves a proxied request. `cache_only` computes the
+fingerprint without any network access. `provider_status` exposes a redacted
+summary. See ADR-0025 and `docs/features.md` § Dynamic-Fetch Proxy Routing.
 
 ---
 
@@ -986,6 +1074,31 @@ on `WebFetchResponse` and per-item `batch_fetch` payloads.
   re-project from the same stored document.
 
 ---
+
+## 10. Deterministic Change Snapshots (`snapshot/`)
+
+`[fetch.snapshots]` is disabled by default, and `compare = "none"` does not
+open or write the store. For `compare = "line"`, the `snapshot/` helper persists
+normalized extracted content in the bounded SQLite store. Identity includes the
+cache scope (anonymous or opaque profile ID), normalized URL, extraction mode,
+selector-scoping fingerprint, representation class, and optional caller key;
+one caller label never crosses URLs or profiles.
+
+The snapshot source is Tier-1-sanitized `FetchDocument.blocks`, projected with
+`project_document_text` under the raw text cap. Truncated documents, blocks, or
+projections are refused with `snapshot_content_limit_exceeded`; `response.text`
+is used only when no document exists. The path deliberately avoids `raw_text`,
+which is derived from decoded transport bytes and may contain HTML. Browser
+rendered responses are excluded. HTTP 404/410 is observed before ordinary
+fetch-error conversion and reports `removed` without deleting the prior entry.
+
+SHA-256 over normalized text decides equality; `similar` Patience diff produces
+three context lines with stable ordering and no clock-based budget. Stored
+content is capped at 1 MiB and 4,096 lines; diff work is capped at 20,000
+combined lines / 4,000,000 cells, with caller caps of 100 hunks and 32,768 diff
+characters. SQLite schema refusal, corruption, write/prune failures, and a
+disabled store degrade to warnings rather than failing a successful fetch. The
+`change` field is retained by brief response projection.
 
 ## 11. Errors (`types.rs`) and Safety Invariants
 

@@ -1,8 +1,11 @@
 # ADR-0025: Dynamic-Fetch Proxy Routing Ownership
 
-Status: proposed
+Status: accepted
 
 Date: 2026-11-24
+
+Acceptance evidence: `plans/closure/dynamic-fetch-proxy-routing/001-status.md`
+(loopback route matrix and pinned-CONNECT capture, 2026-11-24).
 
 Decision owners: project maintainers
 
@@ -16,7 +19,7 @@ Affected subsystem roadmaps:
 - `plans/subsystems/dynamic-fetch-proxy-routing-roadmap.md`
 - `plans/subsystems/optional-outbound-routing-roadmap.md` (closed; retained as history)
 
-Supersedes on acceptance: ADR-0003, for the dynamic-fetch exclusion only. The
+Supersedes: ADR-0003, for the dynamic-fetch exclusion only. The
 provider-upstream route and Eggress ownership decision from ADR-0003 are
 restated here unchanged, so no part of ADR-0003 is silently dropped.
 
@@ -127,6 +130,6 @@ unchanged.
 
 ## Supersession
 
-On acceptance this ADR supersedes ADR-0003 for dynamic fetch only. ADR-0003
-stays accepted until then, and its status line changes to
-"superseded by ADR-0025" in the same commit that accepts this record.
+This ADR supersedes ADR-0003 for dynamic fetch only. ADR-0003 remains accepted
+for the provider-upstream route, and its status line records the partial
+supersession. ADR-0003 is not rewritten.

@@ -233,6 +233,9 @@ pub fn synthetic_document_for_text(text: &str, id_prefix: &str) -> FetchDocument
     FetchDocument {
         doc_id: String::new(),
         kind: DocumentKind::Html,
+        format: None,
+        parts: Vec::new(),
+        parts_total: 0,
         render_format: RenderFormat::AgentBlocksV1,
         text_format: "plain".to_string(),
         text_chars_returned: text.chars().count(),
@@ -293,6 +296,9 @@ mod tests {
         FetchDocument {
             doc_id: String::new(),
             kind: crate::core::document::DocumentKind::Html,
+            format: None,
+            parts: Vec::new(),
+            parts_total: 0,
             render_format: crate::core::document::RenderFormat::AgentBlocksV1,
             text_format: "plain".to_string(),
             text_chars_returned: 0,

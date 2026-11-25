@@ -761,6 +761,9 @@ pub fn browser_result_to_response(
     let document = Some(FetchDocument {
         doc_id: document_id.clone(),
         kind: DocumentKind::Html,
+        format: None,
+        parts: Vec::new(),
+        parts_total: 0,
         render_format: RenderFormat::AgentBlocksV1,
         text_format: if extract_mode == crate::core::fetch::ExtractMode::Markdown {
             "markdown".to_string()
@@ -822,6 +825,8 @@ pub fn browser_result_to_response(
             None
         },
         links_truncated: link_result.truncated,
+        attributes: Vec::new(),
+        matched_roots: None,
         warnings,
         trust_markers,
         document,
@@ -832,6 +837,8 @@ pub fn browser_result_to_response(
         pdf_quality_score: None,
         pdf_content_ok: None,
         cache_status: crate::fetch::cache::CacheStatus::default(),
+        cache_age_seconds: None,
+        stale: false,
         attempt_count: Some(1),
         retry_after_ms: None,
         origin_backoff_ms: None,
@@ -841,6 +848,7 @@ pub fn browser_result_to_response(
         accept_policy: Some(crate::fetch::accept::AcceptPolicy::Html),
         manual_interaction_required,
         focus: None,
+        route: None,
         raw_body: Some(body.clone()),
     }
 }

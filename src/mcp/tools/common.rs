@@ -23,6 +23,7 @@ pub enum ToolErrorCode {
     InvalidRequest,
     PlanMismatch,
     DocumentUnavailable,
+    InvalidSnapshotKey,
     Internal,
 }
 
@@ -41,6 +42,7 @@ impl ToolErrorCode {
             Self::InvalidRequest => "invalid_request",
             Self::PlanMismatch => "plan_mismatch",
             Self::DocumentUnavailable => "document_unavailable",
+            Self::InvalidSnapshotKey => "invalid_snapshot_key",
             Self::Internal => "internal",
         }
     }
@@ -115,6 +117,38 @@ pub enum ToolError {
         message: String,
         data: Option<serde_json::Value>,
     },
+}
+
+pub(crate) fn validate_snapshot_request(
+    request: &crate::core::fetch::FetchSnapshotRequest,
+    item_index: Option<usize>,
+) -> Result<(), ToolError> {
+    crate::fetch::snapshot::validate_request(request).map_err(|message| {
+        let prefix = item_index
+            .map(|index| format!("item {index}: "))
+            .unwrap_or_default();
+        let (code, field) = if message.starts_with("invalid_snapshot_key:") {
+            (ToolErrorCode::InvalidSnapshotKey, "snapshot.key")
+        } else {
+            (ToolErrorCode::InvalidSemanticValue, "snapshot")
+        };
+        ToolError::execution_with_repair(
+            code,
+            format!("{prefix}{message}"),
+            RepairHint::new(Some(field), &[], None),
+        )
+    })
+}
+
+pub(crate) fn line_snapshot_request(
+    snapshot: Option<crate::core::fetch::FetchSnapshotRequest>,
+) -> Result<Option<crate::core::fetch::FetchSnapshotRequest>, ToolError> {
+    let request =
+        snapshot.filter(|request| request.compare == crate::core::fetch::SnapshotCompare::Line);
+    if let Some(request) = request.as_ref() {
+        validate_snapshot_request(request, None)?;
+    }
+    Ok(request)
 }
 
 pub(crate) enum AddressError {
@@ -982,6 +1016,8 @@ pub(crate) fn cached_document_response(
         links: document.links.clone(),
         links_seen: document.links_seen,
         links_truncated: document.links_truncated,
+        attributes: document.attributes.clone(),
+        matched_roots: document.matched_roots,
         warnings: vec![crate::core::fetch::WebFetchResponse::untrusted_warning()],
         trust_markers: document.trust_markers.clone(),
         document: structured_document,
@@ -992,6 +1028,13 @@ pub(crate) fn cached_document_response(
         pdf_quality_score: None,
         pdf_content_ok: None,
         cache_status: crate::fetch::cache::CacheStatus::Hit,
+        cache_age_seconds: Some(
+            std::time::SystemTime::now()
+                .duration_since(raw.fetched_at)
+                .unwrap_or_default()
+                .as_secs(),
+        ),
+        stale: !raw.freshness.is_fresh(),
         attempt_count: Some(1),
         retry_after_ms: None,
         origin_backoff_ms: None,
@@ -1001,6 +1044,7 @@ pub(crate) fn cached_document_response(
         accept_policy: None,
         manual_interaction_required: false,
         focus: None,
+        route: None,
         raw_body: None,
     };
     project_cached_response(&mut response, window_chars, sanitize_output);
@@ -1025,6 +1069,8 @@ pub(crate) fn derived_cache_entry(
             links: response.links.clone(),
             links_seen: response.links_seen,
             links_truncated: response.links_truncated,
+            attributes: response.attributes.clone(),
+            matched_roots: response.matched_roots,
             truncated: response.truncated,
             document: response.document.clone(),
             trust_markers: response.trust_markers.clone(),

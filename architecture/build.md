@@ -58,15 +58,20 @@ cargo test --locked --all-features --test tool_surface_live -- --ignored
 
 ### eggsearch-owned HTTP goes through eggfetch-core
 
-`eggfetch-core 0.2.0` (`default-features = false`) is the single owner of transport, pooling, TLS, decompression, total deadlines, bounded hard-error reads, pinned routing, redirect mechanics, and typed failures for all eggsearch-owned outbound requests.
+`eggfetch-core 0.2.2` (`default-features = false`) is the single owner of transport, pooling, TLS, decompression, total deadlines, bounded hard-error reads, pinned routing, redirect mechanics, and typed failures for all eggsearch-owned outbound requests.
 
 Enabled feature budget (locked by `eggfetch_feature_budget_stays_bounded`):
 
-- `standard-http1`, `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`, `compression-brotli`
+- `standard-http1`, `advanced-routing`, `redirects`, `tls-rustls`, `json`, `compression-gzip`, `compression-brotli`, `proxy`
+
+`proxy` is enabled for the dynamic-fetch route required by ADR-0025: it is the
+only seam that can carry a caller-supplied target pin through a proxy
+(`proxy_target_addresses`). It does not route provider upstreams, browser
+traffic, or any non-fetch path.
 
 Forbidden (selective split, must stay off):
 
-- `logical-retry`, `basic-auth`, `proxy`, `tls-native-roots`, `http2`, `http3`, `cookies`, `multipart`
+- `logical-retry`, `basic-auth`, `tls-native-roots`, `http2`, `http3`, `cookies`, `multipart`
 
 Consequences:
 
@@ -74,7 +79,7 @@ Consequences:
 - Retry authority belongs to `OriginController` alone; eggfetch `logical-retry` stays disabled so retry policy is not split across two owners.
 - Engines use automatic gzip/Brotli decompression; no `.decompress(false)` workaround remains after eggfetch-core 0.2.0 (guard `html_scrape_engines_use_automatic_decompression`).
 - HTML scrape and JSON API engines pair an explicit `engine_timeout()` total deadline with `read_bounded_body()` streaming byte caps.
-- The `egress` route (`src/fetch/egress.rs`, `EggressDialer` beneath the eggfetch `Dialer` seam) is provider-upstreams-only, fail-closed, credential-indirected via `password_env`. Dynamic `FetchClient` targets keep resolved-address pinning and never use egress; loopback health (`startup`, `integrations/common`, `update`, `forge_adapter`, `package_resolver`, `mcp/http`) and browser traffic stay direct (guards `egress_route_stays_out_of_*`).
+- The `egress` route (`src/fetch/egress.rs`, `EggressDialer` beneath the eggfetch `Dialer` seam) is provider-upstreams-only, fail-closed, credential-indirected via `password_env`. Dynamic `FetchClient` targets keep resolved-address pinning, never use egress, and reach a proxy only through eggfetch's native `proxy` feature with a mandatory request-level `proxy_target_addresses` pin (ADR-0025); loopback health (`startup`, `integrations/common`, `update`, `forge_adapter`, `package_resolver`, `mcp/http`) and browser traffic stay direct (guards `egress_route_stays_out_of_*`).
 
 ### rmcp features required for integrate --apply
 

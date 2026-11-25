@@ -54,12 +54,16 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
             url,
             extract_mode,
             include_links,
+            include_selectors,
+            exclude_selectors,
+            attributes,
             max_chars,
             cache_policy,
             max_cache_age_seconds,
             focus,
             focus_max_chunks,
             focus_max_chars,
+            snapshot,
             pdf,
             render,
             browser_profile,
@@ -76,12 +80,16 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                 timeout_ms: None,
                 extract_mode: *extract_mode,
                 include_links: *include_links,
+                include_selectors: include_selectors.clone(),
+                exclude_selectors: exclude_selectors.clone(),
+                attributes: attributes.clone(),
                 pdf: pdf.clone(),
                 cache_policy: *cache_policy,
                 max_cache_age_seconds: *max_cache_age_seconds,
                 focus: focus.clone(),
                 focus_max_chunks: *focus_max_chunks,
                 focus_max_chars: *focus_max_chars,
+                snapshot: snapshot.clone(),
                 render: render.clone(),
                 browser_profile: browser_profile.clone(),
                 include_screenshot: *include_screenshot,
@@ -228,6 +236,72 @@ pub(crate) fn make_batch_fetch_future(context: BatchFetchItemContext<'_>) -> Bat
                         BatchFetchResult {
                             index: i,
                             item_type: BatchFetchItemType::Repo,
+                            label,
+                            stable_id: Some(stable_id),
+                            ok: false,
+                            response: None,
+                            error: Some(error.to_string()),
+                            chars_returned: 0,
+                            payload_chars: 0,
+                            degraded_fields: Vec::new(),
+                            truncated: false,
+                        },
+                        None,
+                    )),
+                }
+            })
+        }
+        BatchFetchItem::Site {
+            url,
+            limit,
+            include_subdomains,
+            link_discovery,
+            normalize_query,
+        } => {
+            let stable_id = batch_fetch_id(&label, i);
+            let site_request = crate::fetch::site_map::SiteMapRequest {
+                url: url.clone(),
+                limit: *limit,
+                include_subdomains: include_subdomains.unwrap_or(false),
+                link_discovery: link_discovery.unwrap_or(true),
+                normalize_query: *normalize_query,
+                timeout_ms: timeout_ms.unwrap_or(state.config.fetch.timeout_ms),
+            };
+            Box::pin(async move {
+                let _permit = semaphore
+                    .acquire_owned()
+                    .await
+                    .map_err(|error| ToolError::internal(format!("semaphore closed: {error}")))?;
+                match crate::fetch::site_map::discover(&client, site_request).await {
+                    Ok(site_map) => {
+                        let payload = serde_json::json!({"site_map": site_map});
+                        let truncated = payload
+                            .pointer("/site_map/truncated")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false);
+                        let chars_returned =
+                            batch_returned_chars(&payload, BatchFetchItemType::Site);
+                        Ok((
+                            BatchFetchResult {
+                                index: i,
+                                item_type: BatchFetchItemType::Site,
+                                label,
+                                stable_id: Some(stable_id),
+                                ok: true,
+                                response: Some(payload),
+                                error: None,
+                                chars_returned,
+                                payload_chars: 0,
+                                degraded_fields: Vec::new(),
+                                truncated,
+                            },
+                            None,
+                        ))
+                    }
+                    Err(error) => Ok((
+                        BatchFetchResult {
+                            index: i,
+                            item_type: BatchFetchItemType::Site,
                             label,
                             stable_id: Some(stable_id),
                             ok: false,

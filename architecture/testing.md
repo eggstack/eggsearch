@@ -1,6 +1,6 @@
 # Testing
 
-**Location:** `tests/` (78 `*.rs` suites), `src/**/tests` (module unit tests), `bindings/python/tests/`, `benches/perf.rs`, `fuzz/fuzz_targets/` (23 targets)
+**Location:** `tests/` (94 `*.rs` suites), `src/**/tests` (module unit tests), `bindings/python/tests/`, `benches/perf.rs`, `fuzz/fuzz_targets/` (23 targets)
 **Purpose:** Behavioral contracts first, property tests for pure functions, fault injection for dispatch, corpus regression for multi-step workflows, fuzz for adversarial input, Criterion for characterization.
 
 Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in `skills/eggsearch-dev/SKILL.md` and the table below is the placement authority. This document explains how the layers fit together and which commands are canonical.
@@ -9,11 +9,13 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 
 ## Suite count and layout
 
-`tests/*.rs` holds 80 suites (high-70s to low-80s as suites are added or merged; treat `docs/test-inventory.md` as the count source of truth). Layout:
+`tests/*.rs` holds 94 suites; treat `docs/test-inventory.md` as the count source of truth. Layout:
 
 | Location | Purpose |
 |----------|---------|
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
+| `tests/snapshot_change.rs` | Durable deterministic fetch snapshots, sanitized stored text, brief projection, disabled and corrupt-store degradation, and caller-key validation |
+| `tests/documents.rs` | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic ordering, typed outcomes, and feature-off parity |
 | `tests/support/mod.rs` | Shared integration-test harness: git fixture and mock/local state builders, imported with `mod support;` (a module, never a suite target) |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
@@ -40,6 +42,8 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `mcp_tools` | Stable tool surface: registration, input validation for all 10 tools, response shape, edge cases (empty queries, invalid URLs), and deterministic opt-in screenshot bounds, capability/conflict errors, JSON/cache separation, and batch image association |
 | `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds, derived-intent reporting/applied reranking, search-result cache and coalescing equivalence |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
+| `snapshot_change` | Persistent `new`/`same`/`changed`/`removed` comparison, content privacy, brief projection, disabled and corrupt-store degradation, and caller-key validation |
+| `documents` | Bounded container-document extraction, deterministic part order, the four outcome kinds, and feature-off parity |
 | `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
@@ -71,6 +75,9 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `codegg_evidence_contract`, `native_security_attempts` | CodeGG evidence handoff shape; native advisory attempt preservation |
 | `native_forge_smoke` | Maintainer-only native forge diagnostics (`live-smoke`-gated, ignored by default; never release evidence) |
 | `egress_routing`, `egress_qualify_contract` | Egress route behavior and egress qualification CI contract |
+| `proxy_route_feasibility` | Loopback-only dynamic-proxy route/pinning characterization, with an `egress`-gated Eggress comparison |
+| `fetch_proxy_route` | `[fetch.proxy]` handler contract: route reporting, fail-closed cases, cache-only isolation, and redacted diagnostics |
+| `site_map` | Bounded same-origin site URL discovery as a `fetch` item |
 | `dependency_fixtures` | Realistic minimized lockfile fixtures per ecosystem and version (`tests/fixtures/dependency_evidence/`) |
 | `pdf_fidelity` | Committed synthetic PDF corpus (`tests/fixtures/pdf/`, one case per document class): line-shape floors and ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification, running-head repetition, and outline count/depth; a join-lines-and-strip-spaces negative control that every declared metric must reject; ignored opt-in recorder into `target/pdf-corpus/` |
 | `bounded_command` | Bounded git command execution (caps, timeout, termination) |
@@ -273,7 +280,15 @@ make eval-retrieval-quality
 cargo test --locked --all-features --test mcp_http
 ```
 
-`tests/egress_routing.rs` covers the opt-in proxy-chain route: config validation (including IPv6 literals), credential redaction, dialer and SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, cancellation and deadline handling, HTTPS TLS/SNI, gzip/Brotli decode with body limits, authenticated proxies with credential non-forwarding, malformed-proxy fail-closed, and routed redirects. Proxy composition tests sit under the `egress` feature; the shape and validation tests run without it. `tests/egress_qualify_contract.rs` pins the egress qualification CI contract (exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage) and is mirrored by `packaging/check-egress-qualify-contract.sh` inside `make packaging-check`.
+`tests/egress_routing.rs` covers the opt-in proxy-chain route: config validation (including IPv6 literals), credential redaction, dialer and SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, cancellation and deadline handling, HTTPS TLS/SNI, gzip/Brotli decode with body limits, authenticated proxies with credential non-forwarding, malformed-proxy fail-closed, and routed redirects. Proxy composition tests sit under the `egress` feature; the shape and validation tests run without it. `tests/egress_qualify_contract.rs` pins the egress qualification CI contract (exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage) and is mirrored by `packaging/check-egress-qualify-contract.sh` inside `make packaging-check`. `tests/proxy_route_feasibility.rs` is a loopback-only, keyless dynamic-fetch routing characterization for eggfetch proxy behavior: CONNECT authority and target pinning, HTTP forward/SOCKS routes, auth and proxy TLS, malformed routes and timeouts, pinned redirects, `NO_PROXY`, and loopback refusal. Its Eggress custom-dialer comparison is enabled by `egress`; the measured matrix is recorded in `plans/closure/dynamic-fetch-proxy-routing/001-status.md` and ADR-0025 is accepted on it. `tests/fetch_proxy_route.rs` covers the `[fetch.proxy]` handler contract, `tests/site_map.rs` covers bounded site discovery, `tests/snapshot_change.rs` covers durable deterministic comparison and privacy, and `tests/documents.rs` covers container-document extraction and its feature-off parity.
+
+```bash
+cargo test --locked --all-features --test proxy_route_feasibility
+cargo test --locked --features mock --test fetch_proxy_route
+cargo test --locked --features mock --test site_map
+cargo test --locked --features mock --test snapshot_change
+cargo test --locked --all-features --test documents
+```
 
 Browser suites are gated by the `browser` feature:
 
@@ -363,6 +378,9 @@ cargo test --locked --all-features --test adversarial_corpus
 cargo test --locked --all-features --test tool_surface_evaluation
 cargo test --locked --all-features --test tool_surface_live -- --ignored
 cargo test --locked --all-features --test mcp_http
+cargo test --locked --all-features --test proxy_route_feasibility
+cargo test --locked --features mock --test fetch_proxy_route
+cargo test --locked --features mock --test site_map
 cargo test --locked --all-features --test fetch_safety
 cargo test --locked --all-features --test forge_adapter
 ```

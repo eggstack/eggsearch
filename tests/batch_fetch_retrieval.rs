@@ -58,6 +58,9 @@ fn web_item(url: String) -> BatchFetchItem {
         url,
         extract_mode: None,
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: None,
@@ -67,6 +70,7 @@ fn web_item(url: String) -> BatchFetchItem {
         pdf: None,
         render: None,
         browser_profile: None,
+        snapshot: None,
         include_screenshot: None,
     }
 }
@@ -76,6 +80,9 @@ fn focused_web_item(url: String, focus: &str) -> BatchFetchItem {
         url,
         extract_mode: None,
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: None,
@@ -85,6 +92,7 @@ fn focused_web_item(url: String, focus: &str) -> BatchFetchItem {
         pdf: None,
         render: None,
         browser_profile: None,
+        snapshot: None,
         include_screenshot: None,
     }
 }
@@ -392,6 +400,9 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         url: "https://example.com".to_string(),
         extract_mode: None,
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: None,
@@ -401,6 +412,7 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         pdf: None,
         render: None,
         browser_profile: None,
+        snapshot: None,
         include_screenshot: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![bad_empty]))
@@ -412,6 +424,9 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         url: "https://example.com".to_string(),
         extract_mode: None,
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: None,
@@ -421,6 +436,7 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         pdf: None,
         render: None,
         browser_profile: None,
+        snapshot: None,
         include_screenshot: None,
     };
     let err = run_batch_fetch(state.clone(), batch_args(vec![bad_chunks]))
@@ -432,6 +448,9 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         url: "https://example.com".to_string(),
         extract_mode: None,
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: None,
@@ -441,6 +460,7 @@ async fn batch_focus_validation_aligned_to_web_fetch() {
         pdf: None,
         render: None,
         browser_profile: None,
+        snapshot: None,
         include_screenshot: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![bad_chars]))
@@ -461,7 +481,14 @@ async fn batch_prevalidates_target_options_before_fetching_any_item() {
     });
     let state = localhost_state();
     let mut invalid_render = web_item(server.url("/must-not-fetch"));
-    if let BatchFetchItem::Web { ref mut render, .. } = invalid_render {
+    if let BatchFetchItem::Web {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
+        ref mut render,
+        ..
+    } = invalid_render
+    {
         *render = Some("invalid".to_string());
     }
     let error = run_batch_fetch(
@@ -511,12 +538,61 @@ async fn batch_prevalidates_target_options_before_fetching_any_item() {
 }
 
 #[tokio::test]
+async fn batch_prevalidates_selectors_and_cache_only_render_before_io() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/selector-preflight");
+        then.status(200).body("must not be fetched");
+    });
+    let state = localhost_state();
+    let mut invalid = web_item(server.url("/selector-preflight"));
+    if let BatchFetchItem::Web {
+        include_selectors, ..
+    } = &mut invalid
+    {
+        *include_selectors = Some(vec!["[".to_string()]);
+    }
+    let error = run_batch_fetch(state.clone(), batch_args(vec![invalid]))
+        .await
+        .expect_err("invalid selector must fail batch preflight");
+    assert_eq!(error.error_payload()["data"]["code"], "invalid_selector");
+    assert_eq!(error.error_payload()["data"]["item_index"], 0);
+
+    let mut conflict = web_item(server.url("/selector-preflight"));
+    if let BatchFetchItem::Web {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
+        cache_policy,
+        render,
+        ..
+    } = &mut conflict
+    {
+        *cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::CacheOnly);
+        *render = Some("browser".to_string());
+    }
+    let error = run_batch_fetch(state, batch_args(vec![conflict]))
+        .await
+        .expect_err("cache-only browser request must fail batch preflight");
+    assert_eq!(
+        error.error_payload()["data"]["code"],
+        "cache_only_render_conflict"
+    );
+    mock.assert_hits(0);
+}
+
+#[tokio::test]
 async fn batch_focus_rejected_for_metadata_only() {
     let state = localhost_state();
     let item = BatchFetchItem::Web {
         url: "https://example.com".to_string(),
         extract_mode: Some(ExtractMode::MetadataOnly),
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         max_chars: None,
         cache_policy: None,
         max_cache_age_seconds: None,
@@ -526,6 +602,7 @@ async fn batch_focus_rejected_for_metadata_only() {
         pdf: None,
         render: None,
         browser_profile: None,
+        snapshot: None,
         include_screenshot: None,
     };
     let err = run_batch_fetch(state, batch_args(vec![item]))
@@ -665,6 +742,9 @@ async fn batch_focus_utf8_boundaries() {
     let state = localhost_state();
     let mut item = focused_web_item(server.url("/utf8"), "tokio runtime");
     if let BatchFetchItem::Web {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         ref mut focus_max_chars,
         ..
     } = item
@@ -711,6 +791,9 @@ async fn batch_focus_with_cache_hit() {
                     url,
                     extract_mode: None,
                     include_links: None,
+                    include_selectors: None,
+                    exclude_selectors: None,
+                    attributes: None,
                     max_chars: None,
                     cache_policy: None,
                     max_cache_age_seconds: None,
@@ -720,6 +803,7 @@ async fn batch_focus_with_cache_hit() {
                     pdf: None,
                     render: None,
                     browser_profile: None,
+                    snapshot: None,
                     include_screenshot: None,
                 }]),
             )
@@ -913,7 +997,7 @@ async fn batch_web_and_workspace_repo_in_one_batch() {
     )
     .await
     .expect("mixed batch works");
-    assert_eq!(v["fetched"], 2);
+    assert_eq!(v["fetched"], 2, "batch payload: {v}");
     let web_response = &v["results"][0]["response"];
     let repo_result = &v["results"][1];
     let repo_response = &repo_result["response"];
@@ -962,6 +1046,9 @@ async fn batch_web_target_options_match_web_fetch() {
             max_chars: Some(5000),
             extract_mode: Some(ExtractMode::Markdown),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
             focus: Some("tokio runtime scheduler".to_string()),
             focus_max_chunks: Some(2),
@@ -979,6 +1066,9 @@ async fn batch_web_target_options_match_web_fetch() {
             url,
             extract_mode: Some(ExtractMode::Markdown),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             max_chars: Some(5000),
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
             max_cache_age_seconds: None,
@@ -988,6 +1078,7 @@ async fn batch_web_target_options_match_web_fetch() {
             pdf: None,
             render: Some("http_only".to_string()),
             browser_profile: None,
+            snapshot: None,
             include_screenshot: None,
         }]),
     )
@@ -1032,6 +1123,9 @@ async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
     let direct_page_one = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: url.clone(),
             max_chars: Some(5000),
             pdf: Some(eggsearch::core::fetch::PdfFetchOptions {
@@ -1053,6 +1147,9 @@ async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
             url: url.clone(),
             extract_mode: None,
             include_links: None,
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             max_chars: Some(5000),
             cache_policy: None,
             max_cache_age_seconds: None,
@@ -1067,6 +1164,7 @@ async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
             }),
             render: Some("http_only".to_string()),
             browser_profile: None,
+            snapshot: None,
             include_screenshot: None,
         }]),
     )
@@ -1098,7 +1196,14 @@ async fn batch_pdf_invalid_page_syntax_fails_before_any_fetch() {
             .body(include_bytes!("fixtures/pdf/clean_text/single_column_notes.pdf").as_slice());
     });
     let mut item = web_item(server.url("/invalid.pdf"));
-    if let BatchFetchItem::Web { pdf, .. } = &mut item {
+    if let BatchFetchItem::Web {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
+        pdf,
+        ..
+    } = &mut item
+    {
         *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
             pages: Some("0".to_string()),
             pdf_password: None,
@@ -1131,7 +1236,14 @@ async fn batch_pdf_out_of_range_is_item_local_and_preserves_mixed_order() {
             .body(article_body());
     });
     let mut pdf_item = web_item(server.url("/out-of-range.pdf"));
-    if let BatchFetchItem::Web { pdf, .. } = &mut pdf_item {
+    if let BatchFetchItem::Web {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
+        pdf,
+        ..
+    } = &mut pdf_item
+    {
         *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
             pages: Some("99".to_string()),
             pdf_password: None,
@@ -1183,6 +1295,9 @@ async fn batch_pdf_options_are_ignored_for_html_and_metadata_only_matches_web_fe
     let direct = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: url.clone(),
             max_chars: Some(5000),
             extract_mode: Some(ExtractMode::MetadataOnly),
@@ -1202,7 +1317,12 @@ async fn batch_pdf_options_are_ignored_for_html_and_metadata_only_matches_web_fe
     .expect("metadata-only web fetch");
     let mut html_item = web_item(server.url("/html"));
     if let BatchFetchItem::Web {
-        pdf, cache_policy, ..
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
+        pdf,
+        cache_policy,
+        ..
     } = &mut html_item
     {
         *pdf = Some(eggsearch::core::fetch::PdfFetchOptions {
@@ -1215,6 +1335,9 @@ async fn batch_pdf_options_are_ignored_for_html_and_metadata_only_matches_web_fe
     }
     let mut metadata_item = web_item(url);
     if let BatchFetchItem::Web {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         extract_mode,
         pdf,
         cache_policy,
@@ -1460,7 +1583,12 @@ fn suggested_fetch_to_batch_round_trip() {
     );
     match &web {
         BatchFetchItem::Web {
-            url, extract_mode, ..
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
+            url,
+            extract_mode,
+            ..
         } => {
             assert_eq!(url, "https://example.com/docs");
             assert_eq!(*extract_mode, Some(ExtractMode::Markdown));
@@ -1515,7 +1643,14 @@ fn suggested_fetch_to_batch_round_trip() {
     };
     let round = research.to_batch_item();
     match round {
-        BatchFetchItem::Web { url, focus, .. } => {
+        BatchFetchItem::Web {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
+            url,
+            focus,
+            ..
+        } => {
             assert_eq!(url, "https://example.com/paper");
             assert_eq!(focus.as_deref(), Some("axum router"));
         }
@@ -1542,7 +1677,13 @@ fn suggested_fetch_to_batch_round_trip() {
     };
     let round = security.to_batch_item();
     match round {
-        BatchFetchItem::Web { url, .. } => {
+        BatchFetchItem::Web {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
+            url,
+            ..
+        } => {
             assert_eq!(url, "https://osv.dev/vulnerability/GHSA-xxxx");
         }
         other => panic!("expected web handoff, got {other:?}"),

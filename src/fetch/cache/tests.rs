@@ -644,6 +644,7 @@ async fn cache_insert_and_get_raw() {
         url: "https://x.com".into(),
         scope: CacheScope::Anonymous,
         accept_policy: crate::fetch::accept::AcceptPolicy::Markdown,
+        route_fingerprint: None,
     };
     let entry = RawFetchCacheEntry {
         final_url: "https://x.com".into(),
@@ -681,6 +682,7 @@ async fn cache_evicts_oldest_on_byte_pressure() {
             url: format!("https://x.com/{i}"),
             scope: CacheScope::Anonymous,
             accept_policy: crate::fetch::accept::AcceptPolicy::Markdown,
+            route_fingerprint: None,
         };
         let entry = RawFetchCacheEntry {
             final_url: format!("https://x.com/{i}"),
@@ -745,6 +747,7 @@ async fn cache_raw_capacity_eviction_keeps_byte_accounting_exact() {
                     url: format!("https://x.com/{i}"),
                     scope: CacheScope::Anonymous,
                     accept_policy: crate::fetch::accept::AcceptPolicy::Markdown,
+                    route_fingerprint: None,
                 },
                 make_raw_entry(i, 10),
             )
@@ -759,6 +762,7 @@ async fn cache_raw_capacity_eviction_keeps_byte_accounting_exact() {
             url: "https://x.com/0".into(),
             scope: CacheScope::Anonymous,
             accept_policy: crate::fetch::accept::AcceptPolicy::Markdown,
+            route_fingerprint: None,
         })
         .await
         .is_none());
@@ -779,6 +783,8 @@ async fn cache_derived_insert_and_get() {
             include_media: false,
             renderer_version: 4,
             sanitize_output: true,
+            scoping_fingerprint: None,
+            route_fingerprint: None,
         },
     };
     let entry = DerivedDocumentCacheEntry {
@@ -794,6 +800,8 @@ async fn cache_derived_insert_and_get() {
             links: Vec::new(),
             links_seen: None,
             links_truncated: false,
+            attributes: Vec::new(),
+            matched_roots: None,
             truncated: false,
             document: None,
             trust_markers: crate::core::sanitize::TrustMarkers::default(),
@@ -821,6 +829,8 @@ fn make_derived_entry(raw_content_hash: u64, text_len: usize) -> DerivedDocument
             include_media: false,
             renderer_version: 4,
             sanitize_output: true,
+            scoping_fingerprint: None,
+            route_fingerprint: None,
         },
         response: CachedExtractedDocument {
             title: None,
@@ -832,6 +842,8 @@ fn make_derived_entry(raw_content_hash: u64, text_len: usize) -> DerivedDocument
             links: Vec::new(),
             links_seen: None,
             links_truncated: false,
+            attributes: Vec::new(),
+            matched_roots: None,
             truncated: false,
             document: None,
             trust_markers: crate::core::sanitize::TrustMarkers::default(),
@@ -856,6 +868,8 @@ fn make_derived_key(raw_content_hash: u64) -> DerivedCacheKey {
             include_media: false,
             renderer_version: 4,
             sanitize_output: true,
+            scoping_fingerprint: None,
+            route_fingerprint: None,
         },
     }
 }
@@ -936,6 +950,7 @@ async fn cache_raw_oversized_entry_not_stored_with_separate_derived_budget() {
         url: "https://x.com".into(),
         scope: CacheScope::Anonymous,
         accept_policy: crate::fetch::accept::AcceptPolicy::Markdown,
+        route_fingerprint: None,
     };
     let entry = RawFetchCacheEntry {
         final_url: "https://x.com".into(),
@@ -992,6 +1007,35 @@ fn build_derived_key_distinguishes_modes() {
         true,
     );
     assert_ne!(k1, k2);
+}
+
+#[test]
+fn derived_key_scoping_fingerprint_isolates_scoped_extractions() {
+    let unscoped = build_derived_key_scoped(
+        &CacheScope::Anonymous,
+        100,
+        ExtractMode::Text,
+        ExtractionBudgetClass::document_scoped(50_000),
+        false,
+        None,
+        None,
+        false,
+        true,
+        None,
+    );
+    let scoped = build_derived_key_scoped(
+        &CacheScope::Anonymous,
+        100,
+        ExtractMode::Text,
+        ExtractionBudgetClass::document_scoped(50_000),
+        false,
+        None,
+        None,
+        false,
+        true,
+        Some(42),
+    );
+    assert_ne!(unscoped, scoped);
 }
 
 #[test]
@@ -1145,6 +1189,7 @@ async fn invalidate_scope_evicts_raw_and_derived_entries() {
         url: "https://x.com".into(),
         scope: CacheScope::Profile(ProfileId("prof_abc".into())),
         accept_policy: crate::fetch::accept::AcceptPolicy::Markdown,
+        route_fingerprint: None,
     };
     let raw_entry = RawFetchCacheEntry {
         final_url: "https://x.com".into(),

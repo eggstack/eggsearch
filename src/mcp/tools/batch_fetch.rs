@@ -353,13 +353,35 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                 url,
                 max_chars,
                 extract_mode,
+                include_selectors,
+                exclude_selectors,
+                attributes,
+                cache_policy,
                 max_cache_age_seconds,
+                snapshot,
                 pdf,
                 render,
                 browser_profile,
                 include_screenshot,
                 ..
             } => {
+                if let Some(request) = snapshot
+                    .as_ref()
+                    .filter(|request| request.compare == crate::core::fetch::SnapshotCompare::Line)
+                {
+                    super::common::validate_snapshot_request(request, Some(i))?;
+                }
+                crate::fetch::scope::validate_selector_request(
+                    include_selectors.as_deref(),
+                    exclude_selectors.as_deref(),
+                    attributes.as_deref(),
+                )
+                .map_err(|error| super::web_fetch::selector_validation_error(error, Some(i)))?;
+                if *cache_policy == Some(crate::core::fetch::FetchCachePolicy::CacheOnly)
+                    && (render.as_deref() == Some("browser") || include_screenshot.unwrap_or(false))
+                {
+                    return Err(super::web_fetch::cache_only_render_conflict(Some(i)));
+                }
                 let target = crate::core::fetch_locator::resolve_fetch_target(
                     crate::core::fetch_locator::FetchTarget::WebUrl(url),
                 )
@@ -521,6 +543,19 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     }
                 }
             }
+            BatchFetchItem::Site { url, limit, .. } => {
+                crate::core::fetch_locator::resolve_fetch_target(
+                    crate::core::fetch_locator::FetchTarget::WebUrl(url),
+                )
+                .map_err(|error| ToolError::Validation(format!("item {i}: {error}")))?;
+                if let Some(limit) = limit {
+                    if *limit == 0 || *limit > 2_000 {
+                        return Err(ToolError::Validation(format!(
+                            "item {i}: site limit must be between 1 and 2000"
+                        )));
+                    }
+                }
+            }
         }
     }
 
@@ -578,6 +613,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     item_type: match item {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                        BatchFetchItem::Site { .. } => BatchFetchItemType::Site,
                     },
                     label: item.label(),
                     stable_id: None,
@@ -640,6 +676,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     item_type: match item {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                        BatchFetchItem::Site { .. } => BatchFetchItemType::Site,
                     },
                     label: item.label(),
                     stable_id: None,
@@ -780,6 +817,7 @@ pub(crate) async fn run_batch_fetch_with_item_windows_and_progress(
                     let item_type = match &effective_items[*idx] {
                         BatchFetchItem::Web { .. } => BatchFetchItemType::Web,
                         BatchFetchItem::Repo { .. } => BatchFetchItemType::Repo,
+                        BatchFetchItem::Site { .. } => BatchFetchItemType::Site,
                     };
                     results[*idx] = Some(BatchFetchResult {
                         index: window.from + *idx,
@@ -1145,7 +1183,7 @@ fn projected_batch_payload(
 ) -> serde_json::Value {
     crate::mcp::projection::project_batch_fetch_item_response(
         payload.clone(),
-        item_type == crate::core::batch_fetch::BatchFetchItemType::Repo,
+        item_type,
         detail,
         brief_max_chars,
     )
@@ -1289,6 +1327,19 @@ fn batch_payload_metadata_chars(
             chars = chars
                 .saturating_add(batch_string_chars(link.get("url")))
                 .saturating_add(batch_string_chars(link.get("text")));
+        }
+    }
+    if item_type == crate::core::batch_fetch::BatchFetchItemType::Site {
+        if let Some(site_map) = payload.get("site_map") {
+            chars = chars.saturating_add(batch_string_chars(site_map.get("origin")));
+            if let Some(urls) = site_map.get("urls").and_then(serde_json::Value::as_array) {
+                for url in urls {
+                    chars = chars
+                        .saturating_add(batch_string_chars(url.get("url")))
+                        .saturating_add(batch_string_chars(url.get("source")))
+                        .saturating_add(batch_string_chars(url.get("lastmod")));
+                }
+            }
         }
     }
     if item_type == crate::core::batch_fetch::BatchFetchItemType::Repo {

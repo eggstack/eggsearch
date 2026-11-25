@@ -26,6 +26,18 @@ pub enum BatchFetchItem {
         /// Whether to include extracted links.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         include_links: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "CSS selectors to include in document order.")]
+        #[allow(missing_docs)]
+        include_selectors: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "CSS selectors whose subtrees are excluded.")]
+        #[allow(missing_docs)]
+        exclude_selectors: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Bounded CSS-selector HTML attribute extractions.")]
+        #[allow(missing_docs)]
+        attributes: Option<Vec<crate::core::fetch::FetchAttributeRequest>>,
         /// Maximum characters to extract for this item.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_chars: Option<usize>,
@@ -48,6 +60,9 @@ pub enum BatchFetchItem {
         /// effective per-item `max_chars` budget.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[allow(missing_docs)]
+        snapshot: Option<crate::core::fetch::FetchSnapshotRequest>,
         /// PDF options for this item; same fields and validation as `fetch`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pdf: Option<crate::core::fetch::PdfFetchOptions>,
@@ -85,6 +100,34 @@ pub enum BatchFetchItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus_max_chars: Option<usize>,
     },
+    /// Return a bounded URL inventory without fetching discovered targets.
+    Site {
+        /// Entry URL whose origin defines the inventory boundary.
+        url: String,
+        /// Maximum returned URLs (default 200, maximum 2,000).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+        /// Allow sibling subdomains under the same registrable domain.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        include_subdomains: Option<bool>,
+        /// Include same-site anchor links from one entry-page read (default true).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        link_discovery: Option<bool>,
+        /// Keep or drop query strings when normalizing candidates (default keep).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        normalize_query: Option<SiteQueryNormalization>,
+    },
+}
+
+/// Query-string handling for site URL inventory normalization.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SiteQueryNormalization {
+    /// Preserve query strings.
+    #[default]
+    Keep,
+    /// Remove query strings.
+    Drop,
 }
 
 impl BatchFetchItem {
@@ -96,6 +139,7 @@ impl BatchFetchItem {
                 let h = host.as_deref().unwrap_or("github");
                 format!("{h}:{}/{}/{}", target.owner, target.repo, target.path)
             }
+            BatchFetchItem::Site { url, .. } => url.clone(),
         }
     }
 
@@ -104,6 +148,7 @@ impl BatchFetchItem {
         match self {
             BatchFetchItem::Web { max_chars, .. } => *max_chars,
             BatchFetchItem::Repo { target, .. } => target.max_chars,
+            BatchFetchItem::Site { .. } => None,
         }
     }
 
@@ -112,6 +157,7 @@ impl BatchFetchItem {
         match self {
             BatchFetchItem::Web { focus, .. } => focus.as_deref(),
             BatchFetchItem::Repo { focus, .. } => focus.as_deref(),
+            BatchFetchItem::Site { .. } => None,
         }
     }
 
@@ -124,6 +170,7 @@ impl BatchFetchItem {
             BatchFetchItem::Repo {
                 focus_max_chunks, ..
             } => *focus_max_chunks,
+            BatchFetchItem::Site { .. } => None,
         }
     }
 
@@ -136,6 +183,7 @@ impl BatchFetchItem {
             BatchFetchItem::Repo {
                 focus_max_chars, ..
             } => *focus_max_chars,
+            BatchFetchItem::Site { .. } => None,
         }
     }
 }
@@ -148,6 +196,8 @@ pub enum BatchFetchItemType {
     Web,
     /// A repository file fetch.
     Repo,
+    /// A bounded site URL inventory.
+    Site,
 }
 
 /// The result of fetching a single item in a batch.
@@ -271,12 +321,16 @@ mod tests {
             url: "https://example.com".to_string(),
             extract_mode: None,
             include_links: None,
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             max_chars: None,
             cache_policy: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            snapshot: None,
             pdf: None,
             render: None,
             browser_profile: None,
@@ -313,6 +367,17 @@ mod tests {
         let v = serde_json::to_value(&repo).unwrap();
         assert_eq!(v["type"], "repo");
         assert_eq!(v["owner"], "tokio-rs");
+
+        let site = BatchFetchItem::Site {
+            url: "https://example.com/docs/".to_string(),
+            limit: None,
+            include_subdomains: None,
+            link_discovery: None,
+            normalize_query: None,
+        };
+        let value = serde_json::to_value(site).unwrap();
+        assert_eq!(value["type"], "site");
+        assert_eq!(value["url"], "https://example.com/docs/");
     }
 
     #[test]
@@ -321,12 +386,16 @@ mod tests {
             url: "https://example.com".to_string(),
             extract_mode: None,
             include_links: None,
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             max_chars: None,
             cache_policy: None,
             max_cache_age_seconds: None,
             focus: None,
             focus_max_chunks: None,
             focus_max_chars: None,
+            snapshot: None,
             pdf: None,
             render: None,
             browser_profile: None,

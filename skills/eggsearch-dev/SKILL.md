@@ -49,6 +49,12 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/knowledge_delta_index.rs` | None | Local evidence index precision, partition isolation, and refusal |
 | `tests/egress_routing.rs` | None (proxy composition under `egress`) | Egress config validation (incl. IPv6), SSRF gate, deterministic HTTP/SOCKS/multi-hop composition, pool reuse, TLS/SNI, compression/body limits, auth isolation, malformed-proxy and redirect regressions |
 | `tests/egress_qualify_contract.rs` | None | Egress qualification CI contract: exact target-set equality, per-target egress check, non-publishing, MSRV 1.89, route-seam trigger and symbol coverage (`packaging/check-egress-qualify-contract.sh` enforces the same in `make packaging-check`) |
+| `tests/proxy_route_feasibility.rs` | None (Eggress comparison under `egress`) | Loopback-only dynamic-proxy feasibility: pinned CONNECT/SOCKS behavior, forward-proxy rejection, auth/TLS, fail-closed cases, handler-level pinning and `407` mapping, and Eggress comparison |
+| `tests/fetch_proxy_route.rs` | `mock` | `[fetch.proxy]` handler contract: route reporting, `proxy_required` refusal, unreachable endpoint, missing credentials, `cache_only` isolation, and redacted diagnostics |
+| `tests/snapshot_change.rs` | `mock` | Deterministic persistent fetch comparison, sanitized storage, brief projection, and disabled-store warning |
+| `tests/site_map.rs` | `mock` | Bounded same-origin site URL discovery: robots/sitemap/index/link sources, normalization, malformed XML, bounds, determinism, and zero fetch of discovered URLs |
+| `tests/snapshot_change.rs` | `mock` | Durable deterministic change comparison: `new`/`same`/`changed`/`removed`, sanitized storage, disabled and corrupt-store degradation, and caller-key validation |
+| `tests/documents.rs` | `documents` (feature-off cases run without it) | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic ordering, typed outcomes, and feature-off parity |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, excerpt economy) |
@@ -72,7 +78,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/mcp_http.rs` | `all-features`; live test via `live-mcp-smoke` | Loopback Streamable HTTP lifecycle, bounds, identity, shutdown, plus ignored real-provider MCP smoke exercising default PDF/browser features without `mock` |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
-This table is representative, not exhaustive — 83 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 94 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -86,6 +92,11 @@ cargo test --locked --features mock --test retrieval_quality
 cargo test --locked --all-features --test tool_surface_live -- --ignored  # opt-in only
 cargo test --locked --all-features --test dispatch_fault_injection
 cargo test --locked --all-features --test adversarial_corpus
+cargo test --locked --all-features --test proxy_route_feasibility
+cargo test --locked --features mock --test fetch_proxy_route
+cargo test --locked --features mock --test site_map
+cargo test --locked --all-features --test documents
+cargo test --locked --features mock --test snapshot_change
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test static_guards
 ```
 

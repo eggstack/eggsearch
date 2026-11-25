@@ -489,17 +489,19 @@ eggsearch will import, so no provider id stands behind it.
 | Comparative/architectural/deep research | `research_search` | `web_search` with multiple queries |
 | Cutoff-aware candidate developments | `knowledge_brief` | `research_search` without a cutoff |
 | One or more explicit web/repo targets | `fetch` | none |
+| Bounded URL inventory for a known site | `fetch` with one `type: "site"` item | none |
 | Structured repository file/line/symbol retrieval | `fetch` with one `type: "repo"` item | none |
 | Handoff to another agent | `build_evidence_bundle` | raw summary |
 
 ### Canonical Fetch
 
-Use `fetch` for one or more explicitly selected targets. The required `items`
-value is either one tagged object or a non-empty array; `type` selects the
-`web` or `repo` variant. Each variant keeps its target-specific controls,
-while request-level budgets and collection addressing apply across the items.
-Document addressing stays on a web item, separate from the top-level item
-`offset`/`limit`.
+Use `fetch` for one or more explicitly selected targets or a bounded site URL
+inventory. The required `items` value is either one tagged object or a
+non-empty array; `type` selects the `web`, `repo`, or `site` variant. Each
+variant keeps its target-specific controls, while request-level budgets and
+collection addressing apply across the items. A `site` item returns candidate
+URLs only; it never fetches discovered targets. Document addressing stays on a
+web item, separate from the top-level item `offset`/`limit`.
 
 `fetch` always returns the same batch-style outer envelope: an ordered
 `results` array plus aggregate counts, truncation, total characters, warnings,
@@ -515,6 +517,15 @@ telemetry, and collection-addressing metadata, including for a single item.
     { "type": "web", "url": "https://example.com/guide" },
     { "type": "repo", "host": "github", "owner": "tokio-rs", "repo": "axum", "path": "src/lib.rs" }
   ]
+}
+
+{
+  "items": {
+    "type": "site",
+    "url": "https://example.com/docs/",
+    "limit": 200,
+    "link_discovery": true
+  }
 }
 ```
 

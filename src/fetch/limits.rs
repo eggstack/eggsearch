@@ -217,9 +217,11 @@ impl FetchLimits {
     /// everything else keeps `max_bytes`. A PDF recognised only by `%PDF-`
     /// magic is not PDF-identified here, because the cap is fixed before the
     /// first bytes arrive.
-    pub(crate) fn body_cap(&self, is_pdf: bool) -> usize {
+    pub(crate) fn body_cap(&self, is_pdf: bool, is_document: bool) -> usize {
         if is_pdf {
             self.pdf_max_bytes
+        } else if is_document {
+            self.max_bytes.min(16_777_216)
         } else {
             self.max_bytes
         }

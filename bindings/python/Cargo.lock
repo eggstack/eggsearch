@@ -742,14 +742,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27463e41d20019d7f1dd877ab2e71d49db14a01e2781766ecc2ef112421e4055"
 dependencies = [
  "async-compression",
+ "base64 0.23.1",
  "brotli",
  "bytes",
+ "eggfetch-http-connect",
  "flate2",
  "futures-core",
  "futures-util",
+ "getrandom 0.2.17",
  "http",
  "http-body",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-rustls",
  "hyper-util",
@@ -766,6 +770,17 @@ dependencies = [
  "tower-service",
  "url",
  "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "eggfetch-http-connect"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbc41df795f7b7152912bc8fccf424c58ceb76da83eed31096edaef2a9340d5f"
+dependencies = [
+ "base64 0.23.1",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -800,6 +815,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "similar",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -2555,6 +2571,12 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "siphasher"

@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during a fetch operation.
+#[allow(missing_docs)]
 #[derive(Error, Debug, Clone)]
 pub enum FetchError {
     /// Invalid URL.
@@ -52,6 +53,43 @@ pub enum FetchError {
     /// Unsupported content type.
     #[error("unsupported content type: {0}")]
     UnsupportedContentType(String),
+
+    #[error("proxy route is not configured")]
+    ProxyRouteUnconfigured,
+
+    #[error("proxy scheme is unsupported")]
+    ProxySchemeUnsupported,
+
+    #[error("proxy credentials are missing")]
+    ProxyCredentialsMissing,
+
+    #[error("proxy authentication failed")]
+    ProxyAuthenticationFailed,
+
+    #[error("proxy connection failed")]
+    ProxyConnectFailed,
+
+    #[error("proxy target is unsupported")]
+    ProxyTargetUnsupported,
+
+    #[error("proxy route changed by redirect")]
+    ProxyRouteChangedByRedirect,
+
+    /// Document contains no extractable content.
+    #[error("document contains no extractable content")]
+    DocumentEmpty,
+
+    /// Document structure is malformed or exceeds an extraction bound.
+    #[error("document is malformed: {0}")]
+    DocumentMalformed(String),
+
+    /// Document format is recognized but not supported.
+    #[error("document format is not supported: {0}")]
+    DocumentUnsupported(String),
+
+    /// Document is encrypted or password-protected.
+    #[error("document is encrypted or password-protected")]
+    DocumentEncrypted,
 
     /// Network error.
     #[error("network error: {0}")]
@@ -165,6 +203,7 @@ pub enum FetchError {
 }
 
 /// Kind of fetch error for MCP error mapping.
+#[allow(missing_docs)]
 #[derive(Clone, Copy, Debug)]
 pub enum FetchErrorKind {
     /// Invalid URL error.
@@ -191,6 +230,13 @@ pub enum FetchErrorKind {
     UnsupportedContentType,
     /// Network error.
     NetworkError,
+    ProxyRouteUnconfigured,
+    ProxySchemeUnsupported,
+    ProxyCredentialsMissing,
+    ProxyAuthenticationFailed,
+    ProxyConnectFailed,
+    ProxyTargetUnsupported,
+    ProxyRouteChangedByRedirect,
     /// Extraction error.
     ExtractError,
     /// PDF not compiled in.
@@ -250,6 +296,17 @@ impl FetchError {
             FetchError::ContentTooLarge(..) => FetchErrorKind::ContentTooLarge,
             FetchError::UnsupportedContentType(_) => FetchErrorKind::UnsupportedContentType,
             FetchError::NetworkError(_) => FetchErrorKind::NetworkError,
+            FetchError::ProxyRouteUnconfigured => FetchErrorKind::ProxyRouteUnconfigured,
+            FetchError::ProxySchemeUnsupported => FetchErrorKind::ProxySchemeUnsupported,
+            FetchError::ProxyCredentialsMissing => FetchErrorKind::ProxyCredentialsMissing,
+            FetchError::ProxyAuthenticationFailed => FetchErrorKind::ProxyAuthenticationFailed,
+            FetchError::ProxyConnectFailed => FetchErrorKind::ProxyConnectFailed,
+            FetchError::ProxyTargetUnsupported => FetchErrorKind::ProxyTargetUnsupported,
+            FetchError::ProxyRouteChangedByRedirect => FetchErrorKind::ProxyRouteChangedByRedirect,
+            FetchError::DocumentEmpty
+            | FetchError::DocumentMalformed(_)
+            | FetchError::DocumentUnsupported(_)
+            | FetchError::DocumentEncrypted => FetchErrorKind::ExtractError,
             FetchError::ExtractError(_) => FetchErrorKind::ExtractError,
             FetchError::PdfNotCompiledIn => FetchErrorKind::PdfNotCompiledIn,
             FetchError::PdfDisabled => FetchErrorKind::PdfDisabled,
@@ -279,6 +336,13 @@ impl FetchError {
 
     /// Returns a machine-readable error code for MCP error mapping.
     pub fn error_code(&self) -> &'static str {
+        match self {
+            FetchError::DocumentEmpty => return "document_empty",
+            FetchError::DocumentMalformed(_) => return "document_malformed",
+            FetchError::DocumentUnsupported(_) => return "document_unsupported",
+            FetchError::DocumentEncrypted => return "document_encrypted",
+            _ => {}
+        }
         match self.kind() {
             FetchErrorKind::InvalidUrl => "invalid_url",
             FetchErrorKind::UnsupportedScheme => "unsupported_scheme",
@@ -292,6 +356,13 @@ impl FetchError {
             FetchErrorKind::ContentTooLarge => "content_too_large",
             FetchErrorKind::UnsupportedContentType => "unsupported_content_type",
             FetchErrorKind::NetworkError => "network_error",
+            FetchErrorKind::ProxyRouteUnconfigured => "proxy_route_unconfigured",
+            FetchErrorKind::ProxySchemeUnsupported => "proxy_scheme_unsupported",
+            FetchErrorKind::ProxyCredentialsMissing => "proxy_credentials_missing",
+            FetchErrorKind::ProxyAuthenticationFailed => "proxy_authentication_failed",
+            FetchErrorKind::ProxyConnectFailed => "proxy_connect_failed",
+            FetchErrorKind::ProxyTargetUnsupported => "proxy_target_unsupported",
+            FetchErrorKind::ProxyRouteChangedByRedirect => "proxy_route_changed_by_redirect",
             FetchErrorKind::ExtractError => "extract_error",
             FetchErrorKind::PdfNotCompiledIn => "pdf_not_compiled_in",
             FetchErrorKind::PdfDisabled => "pdf_disabled",

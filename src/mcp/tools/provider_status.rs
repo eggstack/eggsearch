@@ -136,6 +136,7 @@ fn build_payload_without_probe(
     let solve_snapshot = crate::meta::challenge::solve_ledger().snapshot();
     let mut payload = serde_json::json!({
         "providers": descriptors,
+        "fetch_proxy": crate::fetch::proxy::diagnostics(&state.config.fetch.proxy),
         "challenge_solver": {
             "enabled": state.config.search.challenge.enabled,
             "untracked_providers": solve_snapshot.untracked_providers,

@@ -514,7 +514,7 @@ impl EggsearchServer {
 
     #[tool(
         name = "fetch",
-        description = "Fetch one or more explicitly selected web URLs or repository targets in one bounded call. Repo items take a structured locator with optional symbol or line span. Not for search or crawling.",
+        description = "Fetch explicitly selected web URLs and repository targets, or return a bounded site URL inventory without fetching discovered targets. Repo items take a structured locator with optional symbol or line span. Site discovery does not traverse discovered URLs.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

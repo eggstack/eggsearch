@@ -29,6 +29,22 @@ pub(crate) enum FetchItem {
         #[schemars(description = "Maximum focused characters to return.")]
         focus_max_chars: Option<usize>,
     },
+    Site {
+        #[schemars(description = "Entry URL whose same origin bounds site URL discovery.")]
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Maximum discovered URLs (default 200, maximum 2000).")]
+        limit: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Allow the requested host and its subdomains.")]
+        include_subdomains: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Include links from one bounded entry-page read (default true).")]
+        link_discovery: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(description = "Keep or drop query strings (default keep).")]
+        normalize_query: Option<crate::core::batch_fetch::SiteQueryNormalization>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -41,6 +57,15 @@ pub(crate) struct FetchWebItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Whether to include extracted links.")]
     include_links: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "CSS selectors to include in document order.")]
+    include_selectors: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "CSS selectors whose subtrees are excluded.")]
+    exclude_selectors: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Bounded CSS-selector HTML attribute extractions.")]
+    attributes: Option<Vec<crate::core::fetch::FetchAttributeRequest>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Maximum characters to extract for this item.")]
     max_chars: Option<usize>,
@@ -59,6 +84,9 @@ pub(crate) struct FetchWebItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Maximum focused characters to return.")]
     focus_max_chars: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[allow(missing_docs)]
+    snapshot: Option<crate::core::fetch::FetchSnapshotRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "PDF-specific fetch options.")]
     pdf: Option<crate::core::fetch::PdfFetchOptions>,
@@ -128,7 +156,7 @@ impl<'de> Deserialize<'de> for FetchItems {
     }
 }
 
-const ACCEPTED_FETCH_ITEM_SHAPES: &str = r#"accepted shapes: {"type":"web","url":"<url>"} and {"type":"repo","owner":"<owner>","repo":"<repo>","path":"<path>"}"#;
+const ACCEPTED_FETCH_ITEM_SHAPES: &str = r#"accepted shapes: {"type":"web","url":"<url>"}, {"type":"repo","owner":"<owner>","repo":"<repo>","path":"<path>"}, and {"type":"site","url":"<url>"}"#;
 
 fn validate_fetch_item_shape(
     value: &serde_json::Value,
@@ -165,6 +193,17 @@ fn validate_fetch_item_shape(
                 ));
             }
         }
+        Some("site") => {
+            let present = object
+                .get("url")
+                .and_then(|url| url.as_str())
+                .is_some_and(|text| !text.trim().is_empty());
+            if !present {
+                return Err(format!(
+                    r#"{prefix}site item is missing the required `url` field; accepted shape: {{"type":"site","url":"https://example.com/"}}"#
+                ));
+            }
+        }
         _ if !object.contains_key("type") => {
             return Err(format!(
                 "{prefix}fetch item is missing the required `type` tag; {ACCEPTED_FETCH_ITEM_SHAPES}"
@@ -172,7 +211,7 @@ fn validate_fetch_item_shape(
         }
         _ => {
             return Err(format!(
-                "{prefix}fetch item has an unknown `type` tag; accepted values are `web` and `repo`; {ACCEPTED_FETCH_ITEM_SHAPES}"
+                "{prefix}fetch item has an unknown `type` tag; accepted values are `web`, `repo`, and `site`; {ACCEPTED_FETCH_ITEM_SHAPES}"
             ));
         }
     }
@@ -202,12 +241,16 @@ impl FetchItem {
                         url: item.url,
                         extract_mode: item.extract_mode,
                         include_links: item.include_links,
+                        include_selectors: item.include_selectors,
+                        exclude_selectors: item.exclude_selectors,
+                        attributes: item.attributes,
                         max_chars: item.max_chars,
                         cache_policy: item.cache_policy,
                         max_cache_age_seconds: item.max_cache_age_seconds,
                         focus: item.focus,
                         focus_max_chunks: item.focus_max_chunks,
                         focus_max_chars: item.focus_max_chars,
+                        snapshot: item.snapshot,
                         pdf: item.pdf,
                         render: item.render,
                         browser_profile: item.browser_profile,
@@ -228,6 +271,22 @@ impl FetchItem {
                     focus,
                     focus_max_chunks,
                     focus_max_chars,
+                },
+                None,
+            ),
+            Self::Site {
+                url,
+                limit,
+                include_subdomains,
+                link_discovery,
+                normalize_query,
+            } => (
+                BatchFetchItem::Site {
+                    url,
+                    limit,
+                    include_subdomains,
+                    link_discovery,
+                    normalize_query,
                 },
                 None,
             ),
@@ -343,7 +402,9 @@ mod tests {
                 assert_eq!(item.offset, Some(12));
                 assert_eq!(item.limit, Some(34));
             }
-            FetchItem::Repo { .. } => panic!("single item must remain a web target"),
+            FetchItem::Repo { .. } | FetchItem::Site { .. } => {
+                panic!("single item must remain a web target")
+            }
         }
 
         let (_, scalar_windows) = scalar_for_windows.into_batch_parts();
@@ -354,14 +415,23 @@ mod tests {
         let array: FetchArgs = serde_json::from_value(serde_json::json!({
             "items": [
                 {"type": "web", "url": "https://example.com"},
-                {"type": "repo", "owner": "owner", "repo": "repo", "path": "src/lib.rs"}
+                {"type": "repo", "owner": "owner", "repo": "repo", "path": "src/lib.rs"},
+                {"type": "site", "url": "https://example.com/docs/", "limit": 200, "normalize_query": "drop"}
             ]
         }))
         .expect("mixed item array deserializes");
         let (batch, windows) = array.into_batch_parts();
-        assert_eq!(batch.items.len(), 2);
+        assert_eq!(batch.items.len(), 3);
         assert!(matches!(&batch.items[0], BatchFetchItem::Web { .. }));
         assert!(matches!(&batch.items[1], BatchFetchItem::Repo { .. }));
+        assert!(matches!(
+            &batch.items[2],
+            BatchFetchItem::Site {
+                limit: Some(200),
+                normalize_query: Some(crate::core::batch_fetch::SiteQueryNormalization::Drop),
+                ..
+            }
+        ));
         assert!(windows.iter().all(|window| window.is_none()));
     }
 
@@ -414,7 +484,7 @@ mod tests {
             assert!(!scalar_message.contains("Repr"), "{scalar_message}");
             if expected.contains("unknown") {
                 assert!(
-                    scalar_message.contains("accepted values are `web` and `repo`"),
+                    scalar_message.contains("accepted values are `web`, `repo`, and `site`"),
                     "{scalar_message}"
                 );
             }

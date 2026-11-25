@@ -61,6 +61,20 @@ class RetrievalSummary(TypedDict, total=False):
     attempts: list[dict[str, JSONValue]]
 
 
+DocumentFormat = Literal["csv", "epub", "docx", "xlsx", "pptx"]
+
+DocumentPartKind = Literal["table_block", "section", "sheet", "slide", "spine_item"]
+
+
+class DocumentPart(TypedDict, total=False):
+    index: int
+    kind: DocumentPartKind
+    title: str
+    text: str
+    chars: int
+    truncated: bool
+
+
 class FetchDocument(TypedDict, total=False):
     title: str
     text: str
@@ -69,6 +83,43 @@ class FetchDocument(TypedDict, total=False):
     total_chars: int
     trust: TrustLabel
     trust_markers: TrustMarkers
+    format: DocumentFormat
+    parts: list[DocumentPart]
+    parts_total: int
+
+
+class SiteMapUrl(TypedDict, total=False):
+    url: str
+    source: Literal["sitemap", "link"]
+    lastmod: str
+
+
+class SiteMapCounts(TypedDict, total=False):
+    sitemap: int
+    link: int
+    cross_origin_skipped: int
+    duplicates: int
+    total: int
+
+
+class SiteMap(TypedDict, total=False):
+    origin: str
+    urls: list[SiteMapUrl]
+    counts: SiteMapCounts
+    sitemap_index_used: bool
+    robots_sitemaps: int
+    truncated: bool
+
+
+class SiteMapPayload(TypedDict, total=False):
+    site_map: SiteMap
+
+
+class BatchFetchItemResult(TypedDict, total=False):
+    item_type: Literal["web", "repo", "site"]
+    response: SiteMapPayload | dict[str, JSONValue]
+    error: str
+    truncated: bool
 
 
 class FetchResult(TypedDict, total=False):
@@ -138,18 +189,55 @@ class WebSearchRequest(TypedDict, total=False):
     response_detail: ResponseDetail | None
 
 
+class FetchAttributeRequest(TypedDict, total=False):
+    selector: Required[str]
+    attribute: Required[str]
+
+
+SnapshotCompare = Literal["none", "line"]
+
+
+class FetchSnapshotRequest(TypedDict, total=False):
+    compare: SnapshotCompare
+    key: str | None
+    max_hunks: int | None
+    max_diff_chars: int | None
+
+
+class FetchChangeHunk(TypedDict):
+    old_start: int
+    old_lines: int
+    new_start: int
+    new_lines: int
+    lines: list[str]
+
+
+class FetchChange(TypedDict):
+    status: Literal["new", "same", "changed", "removed"]
+    previous_fetched_at: str | None
+    current_fetched_at: str
+    chars_added: int
+    chars_removed: int
+    hunks: list[FetchChangeHunk]
+    truncated: bool
+
+
 class WebFetchRequest(TypedDict, total=False):
     url: Required[str]
     max_chars: int | None
     timeout_ms: int | None
     extract_mode: str | None
     include_links: bool | None
+    include_selectors: list[str] | None
+    exclude_selectors: list[str] | None
+    attributes: list[FetchAttributeRequest] | None
     pdf: dict[str, JSONValue] | None
     cache_policy: str | None
     max_cache_age_seconds: int | None
     focus: str | None
     focus_max_chunks: int | None
     focus_max_chars: int | None
+    snapshot: FetchSnapshotRequest | None
     render: str | None
     browser_profile: str | None
     include_screenshot: bool | None
@@ -159,7 +247,7 @@ class WebFetchRequest(TypedDict, total=False):
 
 
 class BatchFetchRequest(TypedDict, total=False):
-    items: Required[list[dict[str, JSONValue]]]
+    items: Required[list["FetchItem"]]
     max_items: int | None
     max_chars_per_item: int | None
     max_total_chars: int | None
@@ -175,12 +263,16 @@ class WebFetchItem(TypedDict, total=False):
     url: Required[str]
     extract_mode: str | None
     include_links: bool | None
+    include_selectors: list[str] | None
+    exclude_selectors: list[str] | None
+    attributes: list[FetchAttributeRequest] | None
     max_chars: int | None
     cache_policy: str | None
     max_cache_age_seconds: int | None
     focus: str | None
     focus_max_chunks: int | None
     focus_max_chars: int | None
+    snapshot: FetchSnapshotRequest | None
     pdf: dict[str, JSONValue] | None
     render: str | None
     browser_profile: str | None
@@ -213,7 +305,16 @@ class RepoFetchItem(TypedDict, total=False):
     prefer_local: bool | None
 
 
-FetchItem = WebFetchItem | RepoFetchItem
+class SiteFetchItem(TypedDict, total=False):
+    type: Required[Literal["site"]]
+    url: Required[str]
+    limit: int | None
+    include_subdomains: bool | None
+    link_discovery: bool | None
+    normalize_query: Literal["keep", "drop"] | None
+
+
+FetchItem = WebFetchItem | RepoFetchItem | SiteFetchItem
 
 
 class FetchRequest(TypedDict, total=False):
@@ -401,6 +502,7 @@ class ToolResponse(TypedDict, total=False):
     fetches: list[FetchResult]
     items: list[FetchResult]
     document: FetchDocument
+    change: FetchChange
     next_actions: list[dict[str, JSONValue]]
     structured_warnings: list[AgentWarning]
     providers_failed: list[ProviderFailure]
@@ -428,10 +530,19 @@ class ToolContractSet(TypedDict):
     tools: list[ToolContract]
 
 
+class FetchResponse(TypedDict, total=False):
+    results: list[BatchFetchItemResult]
+    fetched: int
+    failed: int
+    total: int
+    total_chars: int
+    truncated: bool
+    warnings: list[AgentWarning]
+
+
 WebSearchResponse = ToolResponse
 WebFetchResponse = ToolResponse
-BatchFetchResponse = ToolResponse
-FetchResponse = ToolResponse
+BatchFetchResponse = FetchResponse
 ProviderStatusResponse = ToolResponse
 RepoSearchResponse = ToolResponse
 RepoFetchResponse = ToolResponse
@@ -447,13 +558,20 @@ __all__ = [
     "CutoffOverride",
     "BatchFetchRequest",
     "BatchFetchResponse",
+    "BatchFetchItemResult",
     "EvidenceBundle",
     "EvidenceFetchInput",
     "EvidenceBundleRequest",
     "EvidenceBundleResponse",
     "EvidenceSourceInput",
+    "DocumentFormat",
+    "DocumentPart",
+    "DocumentPartKind",
+    "FetchChange",
+    "FetchChangeHunk",
     "FetchDocument",
     "FetchItem",
+    "FetchSnapshotRequest",
     "FetchRequest",
     "FetchResponse",
     "FetchResult",
@@ -477,6 +595,12 @@ __all__ = [
     "ResponseDetail",
     "SecuritySearchRequest",
     "SecuritySearchResponse",
+    "SiteFetchItem",
+    "SnapshotCompare",
+    "SiteMap",
+    "SiteMapCounts",
+    "SiteMapPayload",
+    "SiteMapUrl",
     "SourceCard",
     "ToolResponse",
     "ToolContract",

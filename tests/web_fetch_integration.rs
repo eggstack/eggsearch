@@ -78,6 +78,9 @@ async fn web_fetch_disabled_by_policy_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: "https://example.com/".into(),
             ..Default::default()
         },
@@ -115,6 +118,9 @@ async fn web_fetch_markdown_extract_mode_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/page"),
             extract_mode: Some(ExtractMode::Markdown),
             ..Default::default()
@@ -142,6 +148,9 @@ async fn web_fetch_zero_max_chars_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: "https://example.com/".into(),
             max_chars: Some(0),
             ..Default::default()
@@ -178,6 +187,9 @@ async fn web_fetch_respects_include_links_default() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/page"),
             ..Default::default()
         },
@@ -218,6 +230,9 @@ async fn web_fetch_accepts_uppercase_html_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/page"),
             ..Default::default()
         },
@@ -251,6 +266,9 @@ async fn web_fetch_accepts_uppercase_text_plain_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/page"),
             ..Default::default()
         },
@@ -294,6 +312,9 @@ async fn web_fetch_sanitize_emits_marker_warning() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/inject"),
             ..Default::default()
         },
@@ -335,6 +356,9 @@ async fn web_fetch_empty_url_returns_validation_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: "".into(),
             ..Default::default()
         },
@@ -353,6 +377,9 @@ async fn web_fetch_unsupported_scheme_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: "file:///etc/passwd".into(),
             ..Default::default()
         },
@@ -371,6 +398,9 @@ async fn web_fetch_embedded_credentials_returns_error() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: "https://user:pass@example.com/secret".into(),
             ..Default::default()
         },
@@ -387,6 +417,9 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
         let res = run_web_fetch(
             state.clone(),
             WebFetchArgs {
+                include_selectors: None,
+                exclude_selectors: None,
+                attributes: None,
                 url: url.into(),
                 ..Default::default()
             },
@@ -420,6 +453,9 @@ async fn web_fetch_redirect_target_with_credentials_is_blocked() {
     let res = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/redirect"),
             ..Default::default()
         },
@@ -463,6 +499,9 @@ async fn web_fetch_mcp_level_full_response_shape() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/article"),
             max_chars: Some(5000),
             ..Default::default()
@@ -599,6 +638,9 @@ async fn web_fetch_mcp_level_omits_raw_text_from_output() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/page"),
             max_chars: Some(5000),
             ..Default::default()
@@ -654,6 +696,9 @@ async fn web_fetch_mcp_level_metadata_only_mode() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/meta"),
             extract_mode: Some(ExtractMode::MetadataOnly),
             ..Default::default()
@@ -719,6 +764,9 @@ async fn web_fetch_document_html_has_kind_and_render_format() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/doc"),
             ..Default::default()
         },
@@ -756,6 +804,9 @@ async fn web_fetch_document_plaintext_has_kind_plain_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/plain"),
             ..Default::default()
         },
@@ -798,6 +849,9 @@ async fn web_fetch_document_metadata_only_no_body_text() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/meta"),
             extract_mode: Some(ExtractMode::MetadataOnly),
             ..Default::default()
@@ -845,6 +899,9 @@ async fn web_fetch_document_character_truncation_sets_text_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/long"),
             max_chars: Some(30),
             ..Default::default()
@@ -899,6 +956,9 @@ async fn web_fetch_document_byte_truncation_distinct_from_char_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/small"),
             ..Default::default()
         },
@@ -950,6 +1010,9 @@ async fn web_fetch_document_has_blocks_and_chunks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/structured"),
             ..Default::default()
         },
@@ -1013,6 +1076,9 @@ async fn web_fetch_document_chunks_are_split_and_stable() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/chunked"),
             ..Default::default()
         },
@@ -1087,6 +1153,9 @@ async fn web_fetch_document_metadata_has_bytes_read_and_redirects() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/page"),
             ..Default::default()
         },
@@ -1141,6 +1210,9 @@ async fn web_fetch_legacy_fields_still_present_with_document() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/both"),
             ..Default::default()
         },
@@ -1196,6 +1268,9 @@ async fn web_fetch_document_outline_populated_from_title() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/outline"),
             ..Default::default()
         },
@@ -1251,6 +1326,9 @@ async fn web_fetch_document_sanitize_output_frames_text_not_blocks() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/sanitize"),
             ..Default::default()
         },
@@ -1303,6 +1381,9 @@ async fn web_fetch_document_rust_source_has_code_kind() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/main.rs"),
             ..Default::default()
         },
@@ -1353,6 +1434,9 @@ async fn web_fetch_document_json_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/data.json"),
             ..Default::default()
         },
@@ -1392,6 +1476,9 @@ async fn web_fetch_document_markdown_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/readme.md"),
             ..Default::default()
         },
@@ -1454,6 +1541,9 @@ async fn web_fetch_document_toml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/Cargo.toml"),
             ..Default::default()
         },
@@ -1495,6 +1585,9 @@ async fn web_fetch_document_yaml_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/config.yaml"),
             ..Default::default()
         },
@@ -1533,6 +1626,9 @@ async fn web_fetch_document_diff_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/changes.diff"),
             ..Default::default()
         },
@@ -1574,6 +1670,9 @@ async fn web_fetch_document_plain_text_preserves_paragraphs() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/prose.txt"),
             ..Default::default()
         },
@@ -1624,6 +1723,9 @@ async fn web_fetch_document_code_preserves_line_ranges() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/lib.rs"),
             ..Default::default()
         },
@@ -1676,6 +1778,9 @@ async fn web_fetch_document_json_url_extension_no_content_type() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/config.json"),
             ..Default::default()
         },
@@ -1719,6 +1824,9 @@ async fn web_fetch_document_truncation_at_line_boundary() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/big.rs"),
             max_chars: Some(500), // Small budget
             ..Default::default()
@@ -1755,6 +1863,9 @@ async fn web_fetch_document_metadata_only_suppresses_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/code.rs"),
             extract_mode: Some(ExtractMode::MetadataOnly),
             ..Default::default()
@@ -1796,6 +1907,9 @@ async fn web_fetch_document_application_json_no_extension() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/api/data"),
             ..Default::default()
         },
@@ -1847,6 +1961,9 @@ async fn web_fetch_links_classification() {
         WebFetchArgs {
             url: server.url("/page"),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             ..Default::default()
         },
     )
@@ -1913,6 +2030,9 @@ async fn web_fetch_links_seen_metadata() {
         WebFetchArgs {
             url: server.url("/page"),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             ..Default::default()
         },
     )
@@ -1956,6 +2076,9 @@ async fn web_fetch_links_empty_when_not_requested() {
         WebFetchArgs {
             url: server.url("/page"),
             include_links: Some(false),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             ..Default::default()
         },
     )
@@ -2002,6 +2125,9 @@ async fn web_fetch_links_same_domain_detection() {
         WebFetchArgs {
             url: server.url("/page"),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             ..Default::default()
         },
     )
@@ -2064,6 +2190,9 @@ async fn web_fetch_minified_json_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/bundle.json"),
             max_chars: Some(100),
             ..Default::default()
@@ -2106,6 +2235,9 @@ async fn web_fetch_minified_js_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/bundle.js"),
             max_chars: Some(100),
             ..Default::default()
@@ -2143,6 +2275,9 @@ async fn web_fetch_single_diff_line_longer_than_max_chars_is_truncated() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/changes.diff"),
             max_chars: Some(100),
             ..Default::default()
@@ -2184,6 +2319,9 @@ async fn web_fetch_long_plaintext_paragraph_longer_than_max_chars_is_truncated()
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/long.txt"),
             max_chars: Some(100),
             ..Default::default()
@@ -2231,6 +2369,9 @@ async fn web_fetch_code_block_text_covers_the_document_budget() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/minified.js"),
             max_chars: Some(200),
             ..Default::default()
@@ -2338,6 +2479,9 @@ async fn web_fetch_pdf_metadata_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/doc.pdf"),
             ..Default::default()
         },
@@ -2421,6 +2565,9 @@ async fn web_fetch_pdf_metadata_only_populates_fetch_context() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/doc.pdf"),
             extract_mode: Some(ExtractMode::MetadataOnly),
             ..Default::default()
@@ -2498,6 +2645,9 @@ async fn web_fetch_empty_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/sparse-main"),
             ..Default::default()
         },
@@ -2540,6 +2690,9 @@ async fn web_fetch_non_empty_main_preferred_over_body_noise() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/rich-main"),
             ..Default::default()
         },
@@ -2587,6 +2740,9 @@ async fn web_fetch_tiny_main_falls_back_to_body() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/tiny-main"),
             ..Default::default()
         },
@@ -2627,6 +2783,9 @@ async fn web_fetch_body_only_page_still_works() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/body-only"),
             ..Default::default()
         },
@@ -2682,6 +2841,9 @@ async fn web_fetch_document_link_truncated_mirrors_top_level() {
         WebFetchArgs {
             url: server.url("/many-links"),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             ..Default::default()
         },
     )
@@ -2752,6 +2914,9 @@ async fn web_fetch_document_link_truncated_false_when_no_truncation() {
         WebFetchArgs {
             url: server.url("/few-links"),
             include_links: Some(true),
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             ..Default::default()
         },
     )
@@ -2814,6 +2979,9 @@ async fn web_fetch_document_outline_indexes_in_bounds_after_truncation() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/truncated-outline"),
             max_chars: Some(12),
             ..Default::default()
@@ -2892,6 +3060,9 @@ async fn web_fetch_retries_on_network_error_then_succeeds() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/retry-test"),
             ..Default::default()
         },
@@ -2944,6 +3115,9 @@ async fn web_fetch_respects_deadline_during_retry() {
     let result = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/slow-503"),
             timeout_ms: Some(200),
             ..Default::default()
@@ -2986,6 +3160,9 @@ async fn web_fetch_concurrent_same_origin_respects_semaphore() {
             run_web_fetch(
                 s,
                 WebFetchArgs {
+                    include_selectors: None,
+                    exclude_selectors: None,
+                    attributes: None,
                     url,
                     ..Default::default()
                 },
@@ -3027,6 +3204,9 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/cache-hit-test"),
             ..Default::default()
         },
@@ -3039,6 +3219,9 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/cache-hit-test"),
             ..Default::default()
         },
@@ -3046,6 +3229,151 @@ async fn web_fetch_cache_hit_on_fresh_entry() {
     .await
     .expect("second fetch ok");
     assert_eq!(v2["cache_status"], "hit");
+}
+
+#[tokio::test]
+async fn web_fetch_invalid_selector_fails_before_io() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mock = server.mock(|when, then| {
+        when.method(GET).path("/invalid-selector");
+        then.status(200).body("must not be fetched");
+    });
+    let error = run_web_fetch(
+        state_with_localhost(),
+        WebFetchArgs {
+            url: server.url("/invalid-selector"),
+            include_selectors: Some(vec!["[".to_string()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("invalid selector must fail preflight");
+    let payload = error.error_payload();
+    assert_eq!(payload["data"]["code"], "invalid_selector");
+    assert_eq!(payload["data"]["index"], 0);
+    mock.assert_hits(0);
+}
+
+#[tokio::test]
+async fn web_fetch_scoping_attributes_and_cache_only_partitioning() {
+    use httpmock::prelude::*;
+
+    let server = MockServer::start();
+    let mut initial = server.mock(|when, then| {
+        when.method(GET).path("/scoped-cache");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .header("cache-control", "max-age=3600")
+            .body("<html><body><main><section class='pick' id='one'><h2>First</h2><p>Alpha</p><a href='/one'>one</a></section><section class='pick excluded' id='two'><h2>Hidden</h2><p>Secret</p><a href='/two'>two</a></section><section class='pick' id='three'><h2>Third</h2><p>Beta</p><a href='/three'>three</a></section></main></body></html>");
+    });
+    let state = state_with_localhost();
+    let include_selectors = vec![".pick".to_string(), "#one".to_string(), "a".to_string()];
+    let exclude_selectors = vec![".excluded".to_string()];
+    let attributes = vec![eggsearch::core::fetch::FetchAttributeRequest {
+        selector: ".pick:not(.excluded) a".to_string(),
+        attribute: "href".to_string(),
+    }];
+    let first = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/scoped-cache"),
+            include_selectors: Some(include_selectors.clone()),
+            exclude_selectors: Some(exclude_selectors.clone()),
+            attributes: Some(attributes.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("scoped fetch");
+    let text = first["text"].as_str().unwrap_or_default();
+    assert_eq!(first["matched_roots"], 2);
+    assert!(text.contains("First") && text.contains("Third"));
+    assert!(!text.contains("Hidden") && !text.contains("Secret"));
+    let values = first["attributes"][0]["values"].as_array().expect("values");
+    assert_eq!(values.len(), 2);
+    assert_eq!(values[0]["value"], "/one");
+    assert_eq!(values[1]["value"], "/three");
+    initial.assert_hits(1);
+    initial.delete();
+
+    let no_network = server.mock(|when, then| {
+        when.method(GET).path("/scoped-cache");
+        then.status(500).body("cache-only must not issue a request");
+    });
+    let cached = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/scoped-cache"),
+            include_selectors: Some(include_selectors),
+            exclude_selectors: Some(exclude_selectors),
+            attributes: Some(attributes),
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::CacheOnly),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("cache-only scoped hit");
+    assert_eq!(cached["cache_status"], "hit");
+    assert!(cached["cache_age_seconds"].as_u64().is_some());
+    assert_eq!(cached["stale"], false);
+
+    let miss = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/scoped-cache"),
+            include_selectors: Some(vec![".other".to_string()]),
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::CacheOnly),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("a different scoped derived key must miss");
+    let payload = miss.error_payload();
+    assert_eq!(payload["data"]["code"], "cache_only_miss");
+    assert_eq!(payload["data"]["cache_entry_state"], "derived_missing");
+
+    let no_match = run_web_fetch(
+        state.clone(),
+        WebFetchArgs {
+            url: server.url("/scoped-cache"),
+            include_selectors: Some(vec![".missing".to_string()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("no-match selector is a successful empty extraction");
+    assert_eq!(no_match["matched_roots"], 0);
+    assert!(no_match["text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains(">>>\n\n<<<END>>>"));
+    assert!(no_match["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning == "selector_no_match"));
+
+    let conflict = run_web_fetch(
+        state,
+        WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
+            url: server.url("/scoped-cache"),
+            cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::CacheOnly),
+            render: Some("browser".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("cache-only browser rendering must be rejected");
+    assert_eq!(
+        conflict.error_payload()["data"]["code"],
+        "cache_only_render_conflict"
+    );
+    no_network.assert_hits(0);
 }
 
 #[tokio::test]
@@ -3071,6 +3399,9 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/refresh-test"),
             ..Default::default()
         },
@@ -3091,6 +3422,9 @@ async fn web_fetch_cache_refresh_policy_refetches() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/refresh-test"),
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Refresh),
             ..Default::default()
@@ -3125,6 +3459,9 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/bypass-test"),
             ..Default::default()
         },
@@ -3144,6 +3481,9 @@ async fn web_fetch_cache_bypass_policy_skips_cache() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/bypass-test"),
             cache_policy: Some(eggsearch::core::fetch::FetchCachePolicy::Bypass),
             ..Default::default()
@@ -3178,6 +3518,9 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/private-page"),
             ..Default::default()
         },
@@ -3189,6 +3532,9 @@ async fn web_fetch_cache_private_directive_not_cached_in_anonymous_scope() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/private-page"),
             ..Default::default()
         },
@@ -3268,6 +3614,9 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v1 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/vary-page"),
             ..Default::default()
         },
@@ -3279,6 +3628,9 @@ async fn web_fetch_cache_vary_unsupported_header_not_cached() {
     let v2 = run_web_fetch(
         state.clone(),
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/vary-page"),
             ..Default::default()
         },
@@ -3305,6 +3657,9 @@ async fn web_fetch_render_http_only_never_uses_browser() {
     cfg.fetch.allow_private_network = true;
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/page", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("http_only".to_string()),
@@ -3329,6 +3684,9 @@ async fn web_fetch_render_auto_returns_useful_http_content() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/article", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3353,6 +3711,9 @@ async fn web_fetch_render_auto_no_escalate_401() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/auth", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3376,6 +3737,9 @@ async fn web_fetch_render_auto_no_escalate_429() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/rate-limited", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3399,6 +3763,9 @@ async fn web_fetch_render_auto_no_escalate_404() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/not-found", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3422,6 +3789,9 @@ async fn web_fetch_render_auto_no_escalate_403() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/forbidden", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3436,6 +3806,9 @@ async fn web_fetch_render_auto_no_escalate_403() {
 async fn web_fetch_render_invalid_returns_validation_error() {
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://example.com".to_string(),
         render: Some("invalid_policy".to_string()),
         ..Default::default()
@@ -3458,6 +3831,9 @@ async fn web_fetch_render_invalid_returns_validation_error() {
 async fn web_fetch_profile_with_http_only_rejected() {
     let state = state_with_default();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://example.com".to_string(),
         render: Some("http_only".to_string()),
         browser_profile: Some("test-profile".to_string()),
@@ -3484,6 +3860,9 @@ async fn web_fetch_response_has_transport_field() {
 
     let state = state_with_localhost();
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("http_only".to_string()),
@@ -3530,6 +3909,9 @@ async fn web_fetch_profile_lock_acquired_and_released() {
     });
 
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://example.com/page".to_string(),
         extract_mode: Some(ExtractMode::Text),
         render: Some("http_only".to_string()),
@@ -3579,6 +3961,9 @@ async fn web_fetch_profile_origin_mismatch_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://other-site.com/page".to_string(),
         extract_mode: Some(ExtractMode::Text),
         render: Some("http_only".to_string()),
@@ -3615,6 +4000,9 @@ async fn web_fetch_auto_preserves_http_when_browser_unavailable() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: format!("http://localhost:{}/article", server.port()),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3644,6 +4032,9 @@ async fn web_fetch_explicit_browser_unavailable_returns_failure() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://example.com/page".to_string(),
         extract_mode: Some(ExtractMode::Text),
         render: Some("browser".to_string()),
@@ -3685,6 +4076,9 @@ async fn web_fetch_profile_lock_contention_rejected() {
     let state = Arc::new(ServerState::build(cfg).expect("state builds"));
 
     let args = WebFetchArgs {
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         url: "https://example.com/page".to_string(),
         extract_mode: Some(ExtractMode::Text),
         render: Some("auto".to_string()),
@@ -3839,6 +4233,9 @@ async fn web_fetch_pdf_above_max_bytes_within_pdf_budget_extracts() {
     let v = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/paper.pdf"),
             ..Default::default()
         },
@@ -3884,6 +4281,9 @@ async fn web_fetch_pdf_above_pdf_budget_returns_size_outcome() {
     let err = run_web_fetch(
         state,
         WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
             url: server.url("/huge.pdf"),
             ..Default::default()
         },
@@ -4092,6 +4492,9 @@ fn fetch_args_for(url: String) -> WebFetchArgs {
         timeout_ms: None,
         extract_mode: None,
         include_links: None,
+        include_selectors: None,
+        exclude_selectors: None,
+        attributes: None,
         pdf: None,
         cache_policy: None,
         render: None,
@@ -4101,6 +4504,7 @@ fn fetch_args_for(url: String) -> WebFetchArgs {
         focus: None,
         focus_max_chunks: None,
         focus_max_chars: None,
+        snapshot: None,
         response_detail: None,
     }
 }

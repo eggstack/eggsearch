@@ -15,10 +15,14 @@ import pytest
 from eggsearch import (
     AsyncEggsearch,
     EggsearchError,
+    FetchChange,
+    FetchChangeHunk,
     FetchItem,
     FetchRequest,
     FetchResponse,
+    FetchSnapshotRequest,
     RepoFetchItem,
+    SnapshotCompare,
     WebFetchItem,
     tool_names,
 )
@@ -203,6 +207,32 @@ def test_native_module_import_and_tool_inventory():
     assert len(set(names)) == len(names)
 
 
+def test_snapshot_types_match_web_fetch_request_and_change_shapes():
+    assert FetchSnapshotRequest is eggsearch_types.FetchSnapshotRequest
+    assert FetchChange is eggsearch_types.FetchChange
+    assert FetchChangeHunk is eggsearch_types.FetchChangeHunk
+    assert SnapshotCompare is eggsearch_types.SnapshotCompare
+    assert {"FetchChange", "FetchChangeHunk", "FetchSnapshotRequest", "SnapshotCompare"} <= set(eggsearch_types.__all__)
+
+    request_fields = typing.get_type_hints(eggsearch_types.WebFetchRequest, include_extras=True)
+    item_fields = typing.get_type_hints(WebFetchItem, include_extras=True)
+    change_fields = typing.get_type_hints(FetchChange, include_extras=True)
+
+    assert request_fields["snapshot"] == FetchSnapshotRequest | None
+    assert item_fields["snapshot"] == FetchSnapshotRequest | None
+    assert typing.get_type_hints(FetchSnapshotRequest, include_extras=True)["compare"] == SnapshotCompare
+    assert set(change_fields) == {
+        "status",
+        "previous_fetched_at",
+        "current_fetched_at",
+        "chars_added",
+        "chars_removed",
+        "hunks",
+        "truncated",
+    }
+    assert change_fields["hunks"] == list[FetchChangeHunk]
+
+
 def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
     assert FetchItem is eggsearch_types.FetchItem
     assert FetchRequest is eggsearch_types.FetchRequest
@@ -228,6 +258,7 @@ def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
         "focus",
         "focus_max_chunks",
         "focus_max_chars",
+        "snapshot",
         "pdf",
         "render",
         "browser_profile",

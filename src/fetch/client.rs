@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use eggfetch_core::{Client, Timeout};
+use eggfetch_core::{Client, Proxy, ProxyAuth, Timeout};
 use futures::StreamExt;
 
 use super::accept::AcceptPolicy;
@@ -10,6 +10,7 @@ use super::detect;
 use super::extract::{extract_links_from_html, extract_links_from_markdown, LinkExtractionResult};
 use super::limits::{validate_fetch_target_with_resolved_addrs, validate_url, FetchLimits};
 use super::negotiate::{classify_content_type, parse_token_header, representation_of};
+use super::proxy::{FetchProxyPlan, RouteDecision};
 use super::render;
 use super::types::FetchError;
 use crate::core::code_host_fetch::resolve_code_host_fetch_target;
@@ -26,6 +27,9 @@ use crate::core::sanitize::{
 /// HTTP client for fetching URLs.
 pub struct FetchClient {
     client: Client,
+    proxy_client: Option<Client>,
+    proxy_route: Option<FetchProxyPlan>,
+    proxy_error: Option<FetchError>,
     limits: FetchLimits,
     user_agent: String,
     /// Whether to wrap untrusted fetched text in
@@ -40,6 +44,15 @@ pub struct FetchClient {
 enum TimeoutOverrideMode {
     Shared,
     Widened,
+}
+
+pub(crate) struct BoundedSiteResource {
+    pub status: u16,
+    pub final_url: String,
+    pub content_type: Option<String>,
+    pub content_encoding: Option<String>,
+    pub body: Vec<u8>,
+    pub truncated: bool,
 }
 
 fn timeout_override_mode(base_timeout_ms: u64, requested_timeout_ms: u64) -> TimeoutOverrideMode {
@@ -58,6 +71,44 @@ fn build_transport_client(timeout_ms: u64, user_agent: &str) -> Client {
         .build()
 }
 
+fn build_proxy_transport_client(
+    timeout_ms: u64,
+    user_agent: &str,
+    route: &FetchProxyPlan,
+) -> (Option<Client>, Option<FetchError>) {
+    let Some(endpoint) = route.endpoint() else {
+        return (None, None);
+    };
+    let mut proxy = match Proxy::all(&endpoint.url) {
+        Ok(proxy) => proxy,
+        Err(_) => return (None, Some(FetchError::ProxyRouteUnconfigured)),
+    };
+    let (username_env, password_env) = route.credential_envs();
+    if let (Some(username_env), Some(password_env)) = (username_env, password_env) {
+        let username = std::env::var(username_env)
+            .ok()
+            .filter(|value| !value.is_empty());
+        let password = std::env::var(password_env)
+            .ok()
+            .filter(|value| !value.is_empty());
+        let (Some(username), Some(password)) = (username, password) else {
+            return (None, Some(FetchError::ProxyCredentialsMissing));
+        };
+        let auth = match ProxyAuth::basic(username, password) {
+            Ok(auth) => auth,
+            Err(_) => return (None, Some(FetchError::ProxyAuthenticationFailed)),
+        };
+        proxy = proxy.auth(auth);
+    }
+    let client = Client::builder()
+        .proxy(proxy)
+        .user_agent(user_agent)
+        .timeout(client_timeout(timeout_ms))
+        .follow_redirects(false)
+        .build();
+    (Some(client), None)
+}
+
 impl FetchClient {
     /// Creates a new FetchClient with the given limits, user agent,
     /// and sanitize-output flag.
@@ -73,6 +124,9 @@ impl FetchClient {
         let client = build_transport_client(limits.timeout_ms, &user_agent);
         Ok(Self {
             client,
+            proxy_client: None,
+            proxy_route: None,
+            proxy_error: None,
             limits,
             user_agent,
             sanitize_output,
@@ -87,12 +141,53 @@ impl FetchClient {
             TimeoutOverrideMode::Shared => self.client.clone(),
             TimeoutOverrideMode::Widened => build_transport_client(timeout_ms, &self.user_agent),
         };
+        let (proxy_client, proxy_error) = self
+            .proxy_route
+            .as_ref()
+            .map(|route| build_proxy_transport_client(timeout_ms, &self.user_agent, route))
+            .unwrap_or((None, None));
         Ok(Self {
             client,
+            proxy_client,
+            proxy_route: self.proxy_route.clone(),
+            proxy_error,
             limits,
             user_agent: self.user_agent.clone(),
             sanitize_output: self.sanitize_output,
         })
+    }
+
+    pub(crate) fn with_proxy_route(&self, route: FetchProxyPlan) -> Self {
+        let (proxy_client, proxy_error) =
+            build_proxy_transport_client(self.limits.timeout_ms, &self.user_agent, &route);
+        Self {
+            client: self.client.clone(),
+            proxy_client,
+            proxy_route: Some(route),
+            proxy_error,
+            limits: self.limits.clone(),
+            user_agent: self.user_agent.clone(),
+            sanitize_output: self.sanitize_output,
+        }
+    }
+
+    fn route_for_url(&self, url: &url::Url) -> RouteDecision {
+        self.proxy_route
+            .as_ref()
+            .map(|route| route.select(url))
+            .unwrap_or_else(RouteDecision::direct)
+    }
+
+    fn client_for_route(&self, route: &RouteDecision) -> Result<&Client, FetchError> {
+        if !route.is_proxy() {
+            return Ok(&self.client);
+        }
+        if let Some(error) = &self.proxy_error {
+            return Err(error.clone());
+        }
+        self.proxy_client
+            .as_ref()
+            .ok_or(FetchError::ProxyRouteUnconfigured)
     }
 
     /// Fetches a URL and extracts content.
@@ -223,6 +318,7 @@ impl FetchClient {
         // Validate the initial URL (scheme, length, localhost literals,
         // obvious private-network literals, credentials).
         let initial_url = validate_url(url_str, &self.limits)?;
+        let initial_route = self.route_for_url(&initial_url);
 
         // Check if this is a code-host source-file URL that should be
         // rewritten to a raw content URL for fetching.
@@ -256,6 +352,18 @@ impl FetchClient {
         let mut carried_addrs: Option<Vec<std::net::SocketAddr>> = None;
 
         let mut response = loop {
+            let selected_route = if redirect_count == 0 {
+                initial_route.clone()
+            } else {
+                self.route_for_url(&current_url)
+            };
+            if selected_route != initial_route {
+                return Err(FetchError::ProxyRouteChangedByRedirect);
+            }
+            if selected_route.is_proxy() && current_url.scheme() != "https" {
+                return Err(FetchError::ProxyTargetUnsupported);
+            }
+            let request_client = self.client_for_route(&selected_route)?;
             let hop_origin = super::origin::OriginKey::from_url(&current_url);
             let redirected_origin = hop_origin.as_ref() != initial_origin.as_ref();
             if permitted_origin.as_ref() != hop_origin.as_ref() {
@@ -282,14 +390,15 @@ impl FetchClient {
             };
             // Reuse the validated address set so the connect path
             // cannot drift to a different DNS answer for this attempt.
-            let builder = self
-                .client
+            let builder = request_client
                 .get(current_url.as_str())
                 .map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
             let builder = builder.timeout(client_timeout(self.limits.timeout_ms));
             let builder = builder.header("accept", accept_policy.header_value());
-            let builder = match resolved_addrs {
-                Some(addrs) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+            let builder = match (resolved_addrs, selected_route.is_proxy()) {
+                (Some(addrs), true) if !addrs.is_empty() => builder.proxy_target_addresses(addrs),
+                (Some(addrs), false) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+                (_, true) => return Err(FetchError::ProxyConnectFailed),
                 _ => builder,
             };
             let builder = match cookie {
@@ -309,7 +418,11 @@ impl FetchClient {
                                 .await;
                         }
                     }
-                    return Err(map_send_error(error, self.limits.timeout_ms));
+                    return Err(if selected_route.is_proxy() {
+                        map_proxy_send_error(error, self.limits.timeout_ms)
+                    } else {
+                        map_send_error(error, self.limits.timeout_ms)
+                    });
                 }
             };
 
@@ -405,9 +518,21 @@ impl FetchClient {
         // Pre-check Content-Length for honest servers. The streaming
         // body cap below remains the authoritative upper bound for
         // chunked/encoded responses; this is an early bailout.
-        let body_cap = self
-            .limits
-            .body_cap(classify_content_type(content_type.as_deref(), &final_url, false).is_pdf);
+        let detected_kind = classify_content_type(content_type.as_deref(), &final_url, false);
+        let is_pdf = detected_kind.is_pdf;
+        #[cfg(feature = "documents")]
+        let is_document = !detected_kind.is_html
+            && (super::detect::detect_document_format(content_type.as_deref(), &final_url)
+                .is_some()
+                || super::documents::unsupported_document_format(
+                    content_type.as_deref(),
+                    &final_url,
+                    b"",
+                )
+                .is_some());
+        #[cfg(not(feature = "documents"))]
+        let is_document = false;
+        let body_cap = self.limits.body_cap(is_pdf, is_document);
         let mut content_length_header: Option<usize> = None;
         let declared_len: Option<u64> = response
             .wire_content_length()
@@ -472,7 +597,7 @@ impl FetchClient {
             }
         }
 
-        if !kind.is_html && !kind.is_text && !kind.is_pdf {
+        if !kind.is_html && !kind.is_text && !kind.is_pdf && !is_document {
             return Err(FetchError::UnsupportedContentType(
                 content_type.clone().unwrap_or_else(|| "unknown".into()),
             ));
@@ -541,6 +666,107 @@ impl FetchClient {
         pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
         fetch_transform: Option<crate::core::fetch::FetchTransform>,
     ) -> Result<WebFetchResponse, FetchError> {
+        self.derive_from_raw_scoped(
+            url_str,
+            final_url,
+            status,
+            content_type,
+            cache_headers,
+            content_length_header,
+            redirect_count,
+            body,
+            truncated,
+            budgets,
+            extract_mode,
+            include_links,
+            pdf_options,
+            fetch_transform,
+            None,
+        )
+    }
+
+    pub(crate) fn apply_selector_scope(
+        &self,
+        response: WebFetchResponse,
+        selector_scope: &crate::fetch::scope::SelectorScope,
+        budgets: crate::fetch::budget::FetchBudgets,
+        extract_mode: ExtractMode,
+        include_links: bool,
+        pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
+    ) -> Result<WebFetchResponse, FetchError> {
+        if selector_scope.is_empty() {
+            return Ok(response);
+        }
+        let Some(body) = response.raw_body.clone() else {
+            return Ok(response);
+        };
+        let content_length_header = response
+            .document
+            .as_ref()
+            .and_then(|document| document.metadata.as_ref())
+            .and_then(|metadata| metadata.content_length)
+            .or_else(|| {
+                response
+                    .response_headers
+                    .as_ref()
+                    .and_then(|headers| headers.get("content-length"))
+                    .and_then(|value| value.parse().ok())
+            });
+        let redirect_count = response
+            .document
+            .as_ref()
+            .and_then(|document| document.metadata.as_ref())
+            .map_or(0, |metadata| metadata.redirects_followed);
+        let mut scoped = self.derive_from_raw_scoped(
+            &response.url,
+            response.final_url.clone(),
+            response.status,
+            response.content_type.clone(),
+            response.response_headers.clone().unwrap_or_default(),
+            content_length_header,
+            redirect_count,
+            body,
+            response.truncated,
+            budgets,
+            extract_mode,
+            include_links,
+            pdf_options,
+            response.fetch_transform.clone(),
+            Some(selector_scope),
+        )?;
+        scoped.cache_status = response.cache_status;
+        scoped.attempt_count = response.attempt_count;
+        scoped.retry_after_ms = response.retry_after_ms;
+        scoped.origin_backoff_ms = response.origin_backoff_ms;
+        scoped.response_headers = response.response_headers;
+        scoped.transport = response.transport;
+        scoped.browser_escalated = response.browser_escalated;
+        scoped.manual_interaction_required = response.manual_interaction_required;
+        scoped.accept_policy = response.accept_policy;
+        scoped.cache_age_seconds = response.cache_age_seconds;
+        scoped.stale = response.stale;
+        Ok(scoped)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn derive_from_raw_scoped(
+        &self,
+        url_str: &str,
+        final_url: String,
+        status: u16,
+        content_type: Option<String>,
+        cache_headers: std::collections::HashMap<String, String>,
+        content_length_header: Option<usize>,
+        redirect_count: usize,
+        body: Vec<u8>,
+        truncated: bool,
+        budgets: crate::fetch::budget::FetchBudgets,
+        extract_mode: ExtractMode,
+        include_links: bool,
+        pdf_options: Option<&crate::core::fetch::PdfFetchOptions>,
+        fetch_transform: Option<crate::core::fetch::FetchTransform>,
+        selector_scope: Option<&crate::fetch::scope::SelectorScope>,
+    ) -> Result<WebFetchResponse, FetchError> {
         #[cfg(not(feature = "pdf"))]
         let _ = pdf_options;
 
@@ -554,6 +780,249 @@ impl FetchClient {
             &final_url,
             body.starts_with(b"%PDF-"),
         );
+
+        #[cfg(feature = "documents")]
+        {
+            let document_format =
+                super::detect::detect_document_format(content_type.as_deref(), &final_url)
+                    .or_else(|| super::documents::detect_container_format(&body));
+            if let Some(format) = document_format {
+                let document_markdown_tokens =
+                    parse_token_header(&cache_headers, "x-markdown-tokens");
+                let document_original_tokens =
+                    parse_token_header(&cache_headers, "x-original-tokens");
+                if truncated {
+                    let cap = self.limits.body_cap(false, true);
+                    return Err(FetchError::ContentTooLarge(cap.saturating_add(1), cap));
+                }
+                let markdown = extract_mode == ExtractMode::Markdown;
+                let extracted = if extract_mode == ExtractMode::MetadataOnly {
+                    None
+                } else {
+                    Some(super::documents::extract_document(
+                        &body,
+                        format,
+                        &final_url,
+                        content_type.as_deref(),
+                        markdown,
+                        document_chars,
+                        window_chars,
+                    )?)
+                };
+                let (
+                    mut parts,
+                    raw_title,
+                    parts_total,
+                    document_truncated,
+                    text_truncated,
+                    text_format,
+                ) = match extracted {
+                    Some(extracted) => (
+                        extracted.parts,
+                        extracted.title,
+                        extracted.parts_total,
+                        extracted.document_truncated,
+                        extracted.text_truncated,
+                        extracted.text_format,
+                    ),
+                    None => (
+                        Vec::new(),
+                        None,
+                        0,
+                        false,
+                        false,
+                        if markdown { "markdown" } else { "plain" }.to_string(),
+                    ),
+                };
+                let mut warnings = Vec::new();
+                let mut trust_markers = TrustMarkers::default();
+                for part in &mut parts {
+                    if let Some(part_title) = part.title.as_mut() {
+                        let (safe_title, markers) = sanitize_field(
+                            part_title,
+                            "document_part_title",
+                            &final_url,
+                            TITLE_MAX_CHARS,
+                            self.sanitize_output,
+                            &mut warnings,
+                        );
+                        *part_title = safe_title;
+                        trust_markers.merge(&markers);
+                    }
+                    let (safe_text, markers) = sanitize_field(
+                        &part.text,
+                        "document_part",
+                        &final_url,
+                        part.text.chars().count(),
+                        self.sanitize_output,
+                        &mut warnings,
+                    );
+                    part.text = safe_text;
+                    part.chars = part.text.chars().count();
+                    trust_markers.merge(&markers);
+                }
+                let title = if let Some(raw_title) = raw_title.as_ref() {
+                    let (safe_title, markers) = sanitize_field(
+                        raw_title,
+                        "title",
+                        &final_url,
+                        TITLE_MAX_CHARS,
+                        self.sanitize_output,
+                        &mut warnings,
+                    );
+                    trust_markers.merge(&markers);
+                    Some(safe_title)
+                } else {
+                    None
+                };
+                let joined_text = parts
+                    .iter()
+                    .map(|part| part.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                let (bounded_text, window_truncated) = if extract_mode == ExtractMode::MetadataOnly
+                {
+                    (String::new(), false)
+                } else {
+                    bound_text(&joined_text, window_chars)
+                };
+                let text = if extract_mode == ExtractMode::MetadataOnly {
+                    None
+                } else {
+                    let (safe_text, markers) = sanitize_field(
+                        &bounded_text,
+                        "text",
+                        &final_url,
+                        window_chars,
+                        self.sanitize_output,
+                        &mut warnings,
+                    );
+                    trust_markers.merge(&markers);
+                    Some(safe_text)
+                };
+                let text_chars = text.as_ref().map_or(0, |value| value.chars().count());
+                let text_truncated = text_truncated || window_truncated;
+                let document_truncated =
+                    document_truncated || parts.iter().any(|part| part.truncated);
+                let document_id = crate::core::identity::doc_id(
+                    Some(&final_url),
+                    title.as_deref(),
+                    Some(format.as_str()),
+                );
+                let doc_kind = if format == crate::core::document::DocumentFormat::Csv {
+                    DocumentKind::Csv
+                } else {
+                    DocumentKind::PlainText
+                };
+                let source_extension = final_url_parsed.as_ref().and_then(|parsed| {
+                    parsed
+                        .path()
+                        .rsplit('/')
+                        .next()
+                        .and_then(|name| name.rsplit_once('.').map(|(_, extension)| extension))
+                        .filter(|extension| !extension.is_empty() && extension.len() <= 10)
+                        .map(str::to_string)
+                });
+                let document = FetchDocument {
+                    doc_id: document_id,
+                    kind: doc_kind,
+                    format: Some(format),
+                    parts,
+                    parts_total,
+                    render_format: RenderFormat::LegacyText,
+                    text_format,
+                    text_chars_returned: text_chars,
+                    text_truncated,
+                    block_truncated: false,
+                    document_truncated,
+                    link_truncated: false,
+                    metadata: Some(FetchRenderMetadata {
+                        bytes_read: Some(body.len()),
+                        content_length: content_length_header,
+                        charset: None,
+                        redirects_followed: redirect_count,
+                        source_extension,
+                        detected_language: None,
+                        markdown_tokens: document_markdown_tokens,
+                        original_tokens: document_original_tokens,
+                    }),
+                    outline: Vec::new(),
+                    blocks: Vec::new(),
+                    chunks: Vec::new(),
+                };
+                warnings.push(WebFetchResponse::untrusted_warning());
+                let representation = representation_of(content_type.as_deref(), kind);
+                return Ok(WebFetchResponse {
+                    url: url_str.to_string(),
+                    final_url: final_url.clone(),
+                    stable_id: Some(crate::core::identity::fetch_id(
+                        Some(url_str),
+                        None,
+                        None,
+                        None,
+                        None,
+                    )),
+                    source_id: None,
+                    title,
+                    description: None,
+                    content_type,
+                    representation,
+                    status,
+                    fetched: true,
+                    truncated,
+                    trust: FetchTrust::ExternalUntrusted,
+                    text,
+                    raw_text: None,
+                    raw_text_chars_returned: None,
+                    raw_text_truncated: false,
+                    raw_text_cap: None,
+                    links: Vec::new(),
+                    links_seen: None,
+                    links_truncated: false,
+                    attributes: Vec::new(),
+                    matched_roots: None,
+                    warnings,
+                    trust_markers,
+                    document: Some(document),
+                    fetch_transform,
+                    structured_warnings: Vec::new(),
+                    pdf_page_metadata: None,
+                    pdf_document_metadata: None,
+                    pdf_quality_score: None,
+                    pdf_content_ok: None,
+                    cache_status: crate::fetch::cache::CacheStatus::default(),
+                    cache_age_seconds: None,
+                    stale: false,
+                    attempt_count: None,
+                    retry_after_ms: None,
+                    origin_backoff_ms: None,
+                    response_headers: if cache_headers.is_empty() {
+                        None
+                    } else {
+                        Some(cache_headers.clone())
+                    },
+                    transport: Some("http".to_string()),
+                    browser_escalated: false,
+                    accept_policy: None,
+                    manual_interaction_required: false,
+                    focus: None,
+                    route: None,
+                    raw_body: Some(body),
+                });
+            }
+            let unsupported = if kind.is_html {
+                None
+            } else {
+                super::documents::unsupported_document_format(
+                    content_type.as_deref(),
+                    &final_url,
+                    &body,
+                )
+            };
+            if let Some(unsupported) = unsupported {
+                return Err(FetchError::DocumentUnsupported(unsupported));
+            }
+        }
 
         if !kind.is_html && !kind.is_text && !kind.is_pdf {
             return Err(FetchError::UnsupportedContentType(
@@ -582,6 +1051,7 @@ impl FetchClient {
             if truncated {
                 let cap = self.limits.body_cap(
                     classify_content_type(content_type.as_deref(), &final_url, false).is_pdf,
+                    false,
                 );
                 return Err(FetchError::ContentTooLarge(cap.saturating_add(1), cap));
             }
@@ -651,6 +1121,8 @@ impl FetchClient {
                     links: Vec::new(),
                     links_seen: None,
                     links_truncated: false,
+                    attributes: Vec::new(),
+                    matched_roots: None,
                     warnings,
                     trust_markers,
                     document: Some(FetchDocument {
@@ -660,6 +1132,9 @@ impl FetchClient {
                             Some(DocumentKind::Pdf.as_str()),
                         ),
                         kind: DocumentKind::Pdf,
+                        format: None,
+                        parts: Vec::new(),
+                        parts_total: 0,
                         render_format: RenderFormat::AgentBlocksV1,
                         text_format: "plain".to_string(),
                         text_chars_returned: 0,
@@ -688,6 +1163,8 @@ impl FetchClient {
                     pdf_quality_score: None,
                     pdf_content_ok: None,
                     cache_status: crate::fetch::cache::CacheStatus::default(),
+                    cache_age_seconds: None,
+                    stale: false,
                     attempt_count: None,
                     retry_after_ms: None,
                     origin_backoff_ms: None,
@@ -701,6 +1178,7 @@ impl FetchClient {
                     accept_policy: None,
                     manual_interaction_required: false,
                     focus: None,
+                    route: None,
                     raw_body: Some(body),
                 });
             }
@@ -825,6 +1303,8 @@ impl FetchClient {
                 links: Vec::new(),
                 links_seen: None,
                 links_truncated: false,
+                attributes: Vec::new(),
+                matched_roots: None,
                 warnings,
                 trust_markers,
                 document: Some(pdf_result.document),
@@ -835,6 +1315,8 @@ impl FetchClient {
                 pdf_quality_score: Some(pdf_result.quality_score),
                 pdf_content_ok: Some(pdf_result.content_ok),
                 cache_status: crate::fetch::cache::CacheStatus::default(),
+                cache_age_seconds: None,
+                stale: false,
                 attempt_count: None,
                 retry_after_ms: None,
                 origin_backoff_ms: None,
@@ -848,12 +1330,15 @@ impl FetchClient {
                 accept_policy: None,
                 manual_interaction_required: false,
                 focus: None,
+                route: None,
                 raw_body: Some(body),
             });
         }
 
         let mut cached_html_render: Option<render::blocks::RenderedBlocks> = None;
         let mut raw_capped = false;
+        let mut matched_roots = None;
+        let mut attributes = Vec::new();
         let decoded = String::from_utf8_lossy(&body);
 
         let (
@@ -872,6 +1357,9 @@ impl FetchClient {
                 // and structured document construction.
                 let (t, d, _blocks, w, _) =
                     render::blocks::render_blocks(&body, &final_url, document_chars, false);
+                if let Some(scope) = selector_scope.filter(|scope| !scope.is_empty()) {
+                    attributes = crate::fetch::attributes::extract_attributes(&body, scope);
+                }
                 let LinkExtractionResult {
                     links,
                     total_seen,
@@ -901,8 +1389,25 @@ impl FetchClient {
             }
         } else if kind.is_html {
             let is_markdown = extract_mode == ExtractMode::Markdown;
-            let (t, d, rendered, w, _non_utf8) =
-                render::blocks::render_blocks(&body, &final_url, document_chars, is_markdown);
+            let (t, d, rendered, w, _non_utf8, roots) = if let Some(scope) =
+                selector_scope.filter(|scope| scope.has_selectors())
+            {
+                render::blocks::render_blocks_scoped(
+                    &body,
+                    &final_url,
+                    document_chars,
+                    is_markdown,
+                    scope,
+                )
+            } else {
+                let (title, description, rendered, warnings, non_utf8) =
+                    render::blocks::render_blocks(&body, &final_url, document_chars, is_markdown);
+                (title, description, rendered, warnings, non_utf8, None)
+            };
+            matched_roots = roots;
+            if let Some(scope) = selector_scope.filter(|scope| !scope.is_empty()) {
+                attributes = crate::fetch::attributes::extract_attributes(&body, scope);
+            }
             let LinkExtractionResult {
                 links,
                 total_seen,
@@ -1204,6 +1709,9 @@ impl FetchClient {
             Some(FetchDocument {
                 doc_id: document_id.clone(),
                 kind: doc_kind,
+                format: None,
+                parts: Vec::new(),
+                parts_total: 0,
                 render_format: RenderFormat::AgentBlocksV1,
                 text_format: if extract_mode == ExtractMode::Markdown {
                     "markdown".to_string()
@@ -1232,6 +1740,12 @@ impl FetchClient {
         } else {
             None
         };
+
+        if extract_mode == ExtractMode::MetadataOnly
+            && selector_scope.is_some_and(|scope| scope.has_selectors())
+        {
+            warnings.push("selectors_ignored_in_metadata_only".to_string());
+        }
 
         let raw_text_chars_returned = raw_text.as_ref().map(|t| t.chars().count());
         let challenge = super::challenge::detect_html(kind.is_html, raw_title.as_deref(), &body);
@@ -1267,6 +1781,8 @@ impl FetchClient {
                 None
             },
             links_truncated,
+            attributes,
+            matched_roots,
             warnings,
             trust_markers,
             document,
@@ -1277,6 +1793,8 @@ impl FetchClient {
             pdf_quality_score: None,
             pdf_content_ok: None,
             cache_status: crate::fetch::cache::CacheStatus::default(),
+            cache_age_seconds: None,
+            stale: false,
             attempt_count: None,
             retry_after_ms: None,
             origin_backoff_ms: None,
@@ -1290,7 +1808,127 @@ impl FetchClient {
             accept_policy: None,
             manual_interaction_required: challenge.is_some(),
             focus: None,
+            route: None,
             raw_body: Some(body),
+        })
+    }
+
+    pub(crate) async fn validate_site_resource_target(
+        &self,
+        url_str: &str,
+    ) -> Result<(), FetchError> {
+        let url = validate_url(url_str, &self.limits)?;
+        validate_fetch_target_with_resolved_addrs(&url, &self.limits).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn fetch_bounded_site_resource(
+        &self,
+        url_str: &str,
+        max_bytes: usize,
+        redirect_origin: &url::Url,
+    ) -> Result<BoundedSiteResource, FetchError> {
+        let mut current_url = validate_url(url_str, &self.limits)?;
+        let allowed_redirect_origin = super::origin::OriginKey::from_url(redirect_origin);
+        let mut redirect_count = 0usize;
+        let mut carried_addrs: Option<Vec<std::net::SocketAddr>> = None;
+
+        let mut response = loop {
+            let resolved_addrs = match carried_addrs.take() {
+                Some(addrs) => Some(addrs),
+                None => {
+                    validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?
+                }
+            };
+            let builder = self
+                .client
+                .get(current_url.as_str())
+                .map_err(|error| FetchError::InvalidUrl(error.to_string()))?
+                .timeout(client_timeout(self.limits.timeout_ms))
+                .header("accept", "*/*")
+                .header("accept-encoding", "identity");
+            let builder = match resolved_addrs {
+                Some(addrs) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+                _ => builder,
+            };
+            let response = builder
+                .send()
+                .await
+                .map_err(|error| map_send_error(error, self.limits.timeout_ms))?;
+            let status = response.status().as_u16();
+            if !(300..400).contains(&status) {
+                break response;
+            }
+            let location = response
+                .headers()
+                .get("location")
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    FetchError::InvalidRedirectLocation(format!(
+                        "HTTP {status} missing or empty Location header"
+                    ))
+                })?;
+            let redirect_url = current_url.join(location).map_err(|error| {
+                FetchError::InvalidRedirectLocation(format!(
+                    "failed to resolve redirect location: {error}"
+                ))
+            })?;
+            if super::origin::OriginKey::from_url(&redirect_url).as_ref()
+                != allowed_redirect_origin.as_ref()
+            {
+                return Err(FetchError::NetworkError(
+                    "site_map_cross_origin_redirect".to_string(),
+                ));
+            }
+            redirect_count += 1;
+            if redirect_count > self.limits.redirect_limit {
+                return Err(FetchError::RedirectLimitExceeded(redirect_count - 1));
+            }
+            carried_addrs = Some(
+                validate_fetch_target_with_resolved_addrs(&redirect_url, &self.limits)
+                    .await
+                    .map_err(map_redirect_validation_error)?
+                    .unwrap_or_default(),
+            );
+            current_url = redirect_url;
+        };
+
+        let status = response.status().as_u16();
+        let final_url = response.url().to_string();
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let content_encoding = response
+            .headers()
+            .get("content-encoding")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let mut body = Vec::with_capacity(max_bytes.min(64 * 1024));
+        let mut truncated = false;
+        let mut stream = response
+            .bytes_stream()
+            .map_err(|error| FetchError::NetworkError(error.to_string()))?;
+        while let Some(chunk_result) = stream.next().await {
+            let chunk =
+                chunk_result.map_err(|error| FetchError::NetworkError(error.to_string()))?;
+            let remaining = max_bytes.saturating_sub(body.len());
+            if chunk.len() > remaining {
+                body.extend_from_slice(&chunk[..remaining]);
+                truncated = true;
+                break;
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(BoundedSiteResource {
+            status,
+            final_url,
+            content_type,
+            content_encoding,
+            body,
+            truncated,
         })
     }
 
@@ -1316,6 +1954,7 @@ impl FetchClient {
         FetchError,
     > {
         let initial_url = validate_url(url_str, &self.limits)?;
+        let initial_route = self.route_for_url(&initial_url);
         let code_host_target = resolve_code_host_fetch_target(url_str);
         let fetch_url = if let Some(ref target) = code_host_target {
             if let Some(ref raw_url) = target.raw_url {
@@ -1335,6 +1974,18 @@ impl FetchClient {
         let mut carried_addrs: Option<Vec<std::net::SocketAddr>> = None;
 
         let response = loop {
+            let selected_route = if redirect_count == 0 {
+                initial_route.clone()
+            } else {
+                self.route_for_url(&current_url)
+            };
+            if selected_route != initial_route {
+                return Err(FetchError::ProxyRouteChangedByRedirect);
+            }
+            if selected_route.is_proxy() && current_url.scheme() != "https" {
+                return Err(FetchError::ProxyTargetUnsupported);
+            }
+            let request_client = self.client_for_route(&selected_route)?;
             let hop_origin = super::origin::OriginKey::from_url(&current_url);
             let crossed_origin = hop_origin.as_ref() != initial_origin.as_ref();
             let resolved_addrs = match carried_addrs.take() {
@@ -1343,13 +1994,14 @@ impl FetchClient {
                     validate_fetch_target_with_resolved_addrs(&current_url, &self.limits).await?
                 }
             };
-            let builder = self
-                .client
+            let builder = request_client
                 .get(current_url.as_str())
                 .map_err(|e| FetchError::InvalidUrl(e.to_string()))?;
             let builder = builder.timeout(client_timeout(self.limits.timeout_ms));
-            let builder = match resolved_addrs {
-                Some(addrs) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+            let builder = match (resolved_addrs, selected_route.is_proxy()) {
+                (Some(addrs), true) if !addrs.is_empty() => builder.proxy_target_addresses(addrs),
+                (Some(addrs), false) if !addrs.is_empty() => builder.resolved_addresses(addrs),
+                (_, true) => return Err(FetchError::ProxyConnectFailed),
                 _ => builder,
             };
             let mut req = builder;
@@ -1364,10 +2016,13 @@ impl FetchClient {
                 }
             }
 
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| map_send_error(e, self.limits.timeout_ms))?;
+            let resp = req.send().await.map_err(|error| {
+                if selected_route.is_proxy() {
+                    map_proxy_send_error(error, self.limits.timeout_ms)
+                } else {
+                    map_send_error(error, self.limits.timeout_ms)
+                }
+            })?;
 
             let status = resp.status().as_u16();
             if status == 304 {
@@ -1602,6 +2257,18 @@ fn map_send_error(error: eggfetch_core::Error, timeout_ms: u64) -> FetchError {
         FetchError::Timeout(timeout_ms)
     } else {
         FetchError::NetworkError(error.to_string())
+    }
+}
+
+fn map_proxy_send_error(error: eggfetch_core::Error, timeout_ms: u64) -> FetchError {
+    match error {
+        eggfetch_core::Error::ProxyConnectRejected { status: 407, .. } => {
+            FetchError::ProxyAuthenticationFailed
+        }
+        eggfetch_core::Error::Timeout { .. } | eggfetch_core::Error::TransportIoTimeout { .. } => {
+            FetchError::Timeout(timeout_ms)
+        }
+        _ => FetchError::ProxyConnectFailed,
     }
 }
 

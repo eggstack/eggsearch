@@ -1,10 +1,10 @@
 # Web Acquisition Expansion Roadmap
 
-Status: proposed (M001 and M002 ready; M003, M004, and M005 proposed)
+Status: active (M001, M002, M003, and M004 closed; M005 closed as no-go)
 Planning baseline: `d932115d1f86af51710747d243455792ff63a6fb` (`docs/user-facing-polish-20261123`)
 Owner: fetch extraction, discovery, and document formats
 
-References: `plans/000-long-term-specification.md` §§1-4; `plans/001-terminology-and-domain-model.md` §4-5; ADR-0001, ADR-0002, ADR-0006 (keyless deterministic retrieval), ADR-0011 (document addressing), ADR-0014 (render bounds), ADR-0022 (nine tools); `architecture/fetch.md`; `docs/tool-matrix.md`.
+References: `plans/000-long-term-specification.md` §§1-4; `plans/001-terminology-and-domain-model.md` §4-5; ADR-0001, ADR-0002, ADR-0006 (keyless deterministic retrieval), ADR-0011 (document addressing), ADR-0014 (render bounds), ADR-0022 (nine tools); ADR-0026 (snapshot persistence, container formats, and the M005 no-go); `architecture/fetch.md`; `docs/tool-matrix.md`.
 
 ## 1. Purpose and ownership boundary
 
@@ -12,7 +12,8 @@ Widen what one bounded fetch call can obtain from an explicit URL, without
 adding tools, models, or storage the operator did not enable. The workstream
 owns selector-scoped extraction, CSS attribute extraction, cache-only fetch
 semantics, same-origin site URL discovery, deterministic change comparison,
-non-HTML document formats, and deterministic instruction-signal reporting.
+and non-HTML document formats. Instruction-signal screening was evaluated and
+rejected (ADR-0026 Decision 3); it is not an owned capability.
 
 It does not own search providers, ranking, the nine-tool surface, browser
 interaction, crawling and fetching of discovered URLs, or scheduling.
@@ -24,8 +25,8 @@ interaction, crawling and fetching of discovered URLs, or scheduling.
   inside the server; fetched text stays `external_untrusted`; cache identity
   covers every extraction-affecting option.
 - **Capability:** selector scoping and attributes; cache-only fetch; site URL
-  discovery; change comparison; additional document formats; instruction-signal
-  reporting.
+  discovery; change comparison; additional document formats. Instruction-signal
+  reporting is rejected and remains a non-goal.
 - **Infrastructure:** sitemap and robots parsing, a durable snapshot store, a
   format-detection and extraction module set, and a screening corpus.
 - **Polish:** diagnostics, documentation, and payload-economy measurements.
@@ -71,7 +72,6 @@ fetch/attributes.rs    bounded CSS attribute extraction
 fetch/site_map.rs      robots -> sitemap index -> sitemap (quick-xml) -> link fallback
 fetch/snapshots/       opt-in durable store (M003, gated by ADR)
 fetch/documents/       format detection and per-format extraction (M004, feature-gated)
-fetch/instruct.rs      deterministic instruction-signal detection (M005)
 ```
 
 All of it surfaces through the existing `fetch` web item. No tool is added.
@@ -81,20 +81,21 @@ All of it surfaces through the existing `fetch` web item. No tool is added.
 ```text
 M001 selectors + cache-only ── interface ──> M003 change comparison (scope in snapshot key)
 M002 site discovery ────────── soft ───────> M003 (a changed page set becomes expressible)
-ADR for derived-state persistence ── hard ──> M003
-M004 documents ─────────────── independent ──> M005 (screening runs over its text too)
-M005 screening ─────────────── independent
+ADR-0026 Decision 1 ────────── hard ──> M003 (storage, scope, retention, diff guard)
+M004 documents ─────────────── independent ──> (no downstream milestone)
+ADR-0026 Decision 2 ────────── hard ──> M004 (format and dependency set)
+M005 screening ─────────────── rejected ──> closed (ADR-0026 Decision 3)
 ```
 
 ## 7. Milestones
 
 | Milestone | Class | Status | Handoff | Dependencies | User-visible exit |
 |---|---|---|---|---|---|
-| M001 — Selector scoping, attributes, and cache-only policy | capability | ready | `plans/implementation/web-acquisition-expansion/001-selector-scoping-and-cache-only-policy.md` | None | A caller narrows extraction to chosen DOM regions, reads named attributes, and can demand a provably offline fetch |
-| M002 — Bounded site URL discovery | capability | ready | `plans/implementation/web-acquisition-expansion/002-bounded-site-url-discovery.md` | None | One call returns a deterministic, same-origin URL inventory with explicit provenance and truncation |
-| M003 — Deterministic change comparison | capability | proposed | `plans/implementation/web-acquisition-expansion/003-deterministic-change-comparison.md` | Hard: ADR for derived-state persistence; interface: M001 | A second fetch reports new/same/changed/removed plus a bounded deterministic diff |
-| M004 — Document formats beyond PDF | capability | proposed | `plans/implementation/web-acquisition-expansion/004-document-formats-beyond-pdf.md` | None (feature-gated) | An explicit URL to CSV, EPUB, DOCX, XLSX, or PPTX returns bounded structured text |
-| M005 — Instruction-signal screening | capability | proposed | `plans/implementation/web-acquisition-expansion/005-instruction-signal-screening.md` | None | Extracted documents carry bounded, deterministic injection signals with spans, without blocking |
+| M001 — Selector scoping, attributes, and cache-only policy | capability | closed | `plans/implementation/web-acquisition-expansion/001-selector-scoping-and-cache-only-policy.md` | None | A caller narrows extraction to chosen DOM regions, reads named attributes, and can demand a provably offline fetch |
+| M002 — Bounded site URL discovery | capability | closed | `plans/implementation/web-acquisition-expansion/002-bounded-site-url-discovery.md` | None | One call returns a deterministic, same-origin URL inventory with explicit provenance and truncation |
+| M003 — Deterministic change comparison | capability | closed | `plans/implementation/web-acquisition-expansion/003-deterministic-change-comparison.md` | ADR-0026 Decision 1 (accepted); interface: M001 | A second fetch reports new/same/changed/removed plus a bounded deterministic diff |
+| M004 — Document formats beyond PDF | capability | closed | `plans/implementation/web-acquisition-expansion/004-document-formats-beyond-pdf.md` | ADR-0026 Decision 2 (accepted); `documents` optional feature | An explicit URL to CSV, EPUB, DOCX, XLSX, or PPTX returns bounded structured text |
+| M005 — Instruction-signal screening | capability | closed (no-go) | `plans/implementation/web-acquisition-expansion/005-instruction-signal-screening.md` | ADR-0026 Decision 3 (rejected) | No field ships; the existing marker scan and its limits remain the contract |
 
 ## 8. Cross-cutting requirements
 
@@ -116,9 +117,12 @@ M005 screening ─────────────── independent
 ## 9. Verification strategy
 
 Mock-feature suites per milestone; a captured sitemap and robots corpus for
-M002; golden diff fixtures for M003; per-format fixtures including a deliberately
-malformed file for M004; a benign and an injection corpus for M005. `make check`
-and `make docs-check` on every milestone. No test requires the network.
+M002; deterministic diff fixtures as unit cases for M003 (exact hunk lines and
+counts, byte-identical repeated builds); generated per-format archives for M004,
+including deliberately malformed, encrypted, and high-ratio inputs, so no binary
+corpus can drift from the parser. M005 has no corpus because it was rejected.
+`make check` and `make docs-check` on every milestone. No test requires the
+network.
 
 ## 10. Risks and decision points
 
@@ -134,8 +138,11 @@ and `make docs-check` on every milestone. No test requires the network.
   explicit rather than silently truncated.
 - **Dependency weight.** M004 adds crates to a 1.89 MSRV build with strict
   packaging guards; the `pdf` feature history is the template.
-- **Screening false positives.** M005 is a spike until measured on a corpus;
-  it must never block or alter trust markers.
+- **Screening false positives.** M005 was rejected by ADR-0026 Decision 3: the
+  proposed signal duplicates `scan_injection_markers`, and the precision bar is
+  not reachable with fixed patterns. No field ships, and trust markers are
+  unchanged. Structural anomalies such as CSS-hidden text belong to a separate
+  sanitisation plan, not to instruction detection.
 
 Deferred: full-page screenshots, page-to-PDF export, mobile emulation,
 same-origin crawl, and structured JSON extraction. Each is either adjacent to

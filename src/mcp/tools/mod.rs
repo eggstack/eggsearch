@@ -21,6 +21,7 @@ mod security_search;
 mod web_fetch;
 #[cfg(feature = "browser")]
 mod web_fetch_escalation;
+mod web_fetch_options;
 mod web_fetch_window;
 mod web_search;
 

@@ -4,7 +4,61 @@
 //! and lightweight byte heuristics to classify fetched content into
 //! a `DocumentKind` with optional language detection.
 
-use crate::core::document::DocumentKind;
+use crate::core::document::{DocumentFormat, DocumentKind};
+
+/// Detects a supported document format from a content type or URL extension.
+pub fn detect_document_format(content_type: Option<&str>, url: &str) -> Option<DocumentFormat> {
+    if let Some(content_type) = content_type {
+        let content_type = content_type
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let from_type = match content_type.as_str() {
+            "text/csv" | "application/csv" | "text/tab-separated-values" | "application/tsv" => {
+                Some(DocumentFormat::Csv)
+            }
+            "application/epub+zip" => Some(DocumentFormat::Epub),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+                Some(DocumentFormat::Docx)
+            }
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
+                Some(DocumentFormat::Xlsx)
+            }
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+                Some(DocumentFormat::Pptx)
+            }
+            _ => None,
+        };
+        if from_type.is_some() {
+            return from_type;
+        }
+        if content_type.starts_with("text/")
+            || matches!(
+                content_type.as_str(),
+                "application/pdf"
+                    | "application/json"
+                    | "application/ld+json"
+                    | "application/xml"
+                    | "application/xhtml+xml"
+                    | "text/html"
+            )
+        {
+            return None;
+        }
+    }
+    let path = url::Url::parse(url).ok()?.path().to_ascii_lowercase();
+    let extension = path.rsplit('.').next()?;
+    match extension {
+        "csv" | "tsv" => Some(DocumentFormat::Csv),
+        "epub" => Some(DocumentFormat::Epub),
+        "docx" => Some(DocumentFormat::Docx),
+        "xlsx" => Some(DocumentFormat::Xlsx),
+        "pptx" => Some(DocumentFormat::Pptx),
+        _ => None,
+    }
+}
 
 /// Result of content classification.
 #[derive(Clone, Debug)]

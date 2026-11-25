@@ -1,4 +1,4 @@
-use eggsearch::core::config::{ApiProviderConfig, AppConfig, McpToolPreset, Mode};
+use eggsearch::core::config::{ApiProviderConfig, AppConfig, FetchProxyMode, McpToolPreset, Mode};
 use eggsearch::core::provider::KNOWN_PROVIDER_IDS;
 
 fn default_config() -> AppConfig {
@@ -866,6 +866,92 @@ fn searxng_rejects_invalid_base_url() {
     cfg.search.searxng.base_url = Some("not a url".to_string());
     let err = cfg.validate().unwrap_err();
     assert!(err.to_string().contains("not a valid URL"), "got: {err}");
+}
+
+#[test]
+fn fetch_proxy_accepts_http_socks5_credentials_and_no_proxy_hosts() {
+    let cfg: AppConfig = toml::from_str(
+        r#"
+[fetch.proxy]
+route = "proxy"
+url = "socks5://proxy.example:1080"
+username_env = "EGGSEARCH_PROXY_USER"
+password_env = "EGGSEARCH_PROXY_PASSWORD"
+no_proxy = ["localhost", ".internal.example"]
+"#,
+    )
+    .unwrap();
+    assert_eq!(cfg.fetch.proxy.route, FetchProxyMode::Proxy);
+    assert!(cfg.validate().is_ok());
+}
+
+#[test]
+fn fetch_proxy_direct_rejects_any_proxy_fields() {
+    for text in [
+        "url = \"http://proxy.example:3128\"",
+        "username_env = \"PROXY_USER\"\npassword_env = \"PROXY_PASSWORD\"",
+        "no_proxy = [\"localhost\"]",
+    ] {
+        let cfg: AppConfig = toml::from_str(&format!("[fetch.proxy]\n{text}\n")).unwrap();
+        let error = cfg.validate().unwrap_err().to_string();
+        assert!(error.contains("route=direct"), "got: {error}");
+    }
+}
+
+#[test]
+fn fetch_proxy_rejects_unconfigured_or_conflicting_routes() {
+    let mut cfg = default_config();
+    cfg.fetch.proxy.route = FetchProxyMode::Proxy;
+    let error = cfg.validate().unwrap_err().to_string();
+    assert!(error.contains("proxy_route_unconfigured"), "got: {error}");
+
+    cfg.fetch.proxy.route = FetchProxyMode::ProxyRequired;
+    cfg.fetch.proxy.url = Some("http://proxy.example:3128".into());
+    cfg.fetch.proxy.no_proxy = vec!["localhost".into()];
+    let error = cfg.validate().unwrap_err().to_string();
+    assert!(
+        error.contains("proxy_required_conflicts_with_no_proxy"),
+        "got: {error}"
+    );
+}
+
+#[test]
+fn fetch_proxy_rejects_unsupported_urls_and_inline_credentials() {
+    for (url, expected) in [
+        ("socks5h://proxy.example:1080", "proxy_scheme_unsupported"),
+        ("https://proxy.example:443", "proxy_scheme_unsupported"),
+        ("http://user:pass@proxy.example:3128", "userinfo"),
+        ("http://proxy.example:3128/path", "userinfo"),
+        ("http://proxy.example:3128/?q=x", "userinfo"),
+        ("http://proxy.example:0", "non-zero"),
+    ] {
+        let mut cfg = default_config();
+        cfg.fetch.proxy.route = FetchProxyMode::Proxy;
+        cfg.fetch.proxy.url = Some(url.into());
+        let error = cfg.validate().unwrap_err().to_string();
+        assert!(error.contains(expected), "{url}: {error}");
+    }
+}
+
+#[test]
+fn fetch_proxy_rejects_incomplete_credentials_and_invalid_no_proxy_entries() {
+    let mut cfg = default_config();
+    cfg.fetch.proxy.route = FetchProxyMode::Proxy;
+    cfg.fetch.proxy.url = Some("http://proxy.example:3128".into());
+    cfg.fetch.proxy.username_env = Some("PROXY_USER".into());
+    let error = cfg.validate().unwrap_err().to_string();
+    assert!(error.contains("configured together"), "got: {error}");
+
+    cfg.fetch.proxy.password_env = Some("PROXY_PASSWORD".into());
+    cfg.fetch.proxy.username_env = Some("PROXY USER".into());
+    let error = cfg.validate().unwrap_err().to_string();
+    assert!(error.contains("environment variable names"), "got: {error}");
+
+    cfg.fetch.proxy.username_env = None;
+    cfg.fetch.proxy.password_env = None;
+    cfg.fetch.proxy.no_proxy = vec!["*.internal.example".into()];
+    let error = cfg.validate().unwrap_err().to_string();
+    assert!(error.contains("no_proxy entries"), "got: {error}");
 }
 
 #[test]
