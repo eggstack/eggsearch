@@ -560,7 +560,7 @@ telemetry, and collection-addressing metadata, including for a single item.
 
 ### Legacy direct-call compatibility (not canonical discovery)
 
-The names `web_fetch`, `batch_fetch`, and `repo_fetch` remain callable only as explicit direct-call compatibility aliases. Each preserves its existing request and response shape, but none is advertised in `tools/list`, canonical metadata, or `next_actions`. New integrations should discover and call `fetch`.
+The names `web_fetch`, `batch_fetch`, and `repo_fetch` remain callable only as explicit direct-call compatibility aliases. Each preserves its existing request and response shape, but none is advertised in `tools/list`, canonical metadata, or `next_actions`. New integrations should discover and call `fetch`. An alias reports an upstream failure with the same repairable tool-error classes as the canonical operation, so a missing repository file stays an `upstream_failed` tool error rather than a transport fault.
 
 ---
 

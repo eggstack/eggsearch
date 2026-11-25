@@ -4892,3 +4892,160 @@ async fn journey_github_repositories_explicit_discovery() {
         "repository discovery must return the repository: {cards:?}"
     );
 }
+
+fn repo_map_state_with_github_base(base_url: String) -> Arc<ServerState> {
+    let mut cfg = AppConfig::default();
+    cfg.fetch.allow_localhost = true;
+    cfg.fetch.allow_private_network = true;
+    cfg.search.api.insert(
+        "github_code".to_string(),
+        eggsearch::core::config::ApiProviderConfig {
+            enabled: false,
+            api_key_env: None,
+            base_url: Some(base_url),
+        },
+    );
+    Arc::new(ServerState::build(cfg).expect("repo_map state"))
+}
+
+#[tokio::test]
+async fn repo_fetch_maps_an_upstream_http_failure_to_a_repairable_tool_error() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/src/missing.rs");
+        then.status(404).body("not found");
+    });
+    let error = run_repo_fetch(
+        repo_fetch_state(),
+        RepoFetchArgs {
+            host: Some("github".into()),
+            target: eggsearch::core::repo_fetch::RepoTarget {
+                owner: "test-owner".into(),
+                repo: "test-repo".into(),
+                path: "src/missing.rs".into(),
+                ..Default::default()
+            },
+            timeout_ms: None,
+            test_fetch_url: Some(server.url("/src/missing.rs")),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect_err("an upstream 404 must not be reported as a server fault");
+    let payload = error.error_payload();
+    assert_eq!(
+        payload["code"], "upstream_failed",
+        "the alias must use the repairable upstream class: {payload}"
+    );
+    assert!(
+        payload["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("404")),
+        "the upstream status must stay visible: {payload}"
+    );
+}
+
+#[tokio::test]
+async fn repo_map_defaults_an_omitted_host_to_github() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/test-owner/test-repo/commits/main");
+        then.json_body(serde_json::json!({
+            "sha": "commit_sha_abc",
+            "commit": {"tree": {"sha": "tree_sha_def"}}
+        }));
+    });
+    server.mock(|when, then| {
+        when.method(GET).path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({"default_branch": "main"}));
+    });
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/test-owner/test-repo/git/trees/tree_sha_def")
+            .query_param("recursive", "1");
+        then.json_body(serde_json::json!({
+            "truncated": false,
+            "tree": [
+                {"path": "README.md", "type": "blob", "mode": "100644", "size": 10, "sha": "s1"},
+                {"path": "src", "type": "tree", "mode": "040000", "sha": "s2"}
+            ]
+        }));
+    });
+    let state = repo_map_state_with_github_base(server.base_url());
+    let v = run_repo_map(
+        state,
+        RepoMapArgs {
+            host: None,
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: Some("main".into()),
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: Vec::new(),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("repo_map should succeed");
+    assert_eq!(v["host"], "github", "{v}");
+    assert_eq!(v["mode"], "native", "{v}");
+    assert!(
+        v["entries"]
+            .as_array()
+            .is_some_and(|entries| !entries.is_empty()),
+        "the inferred host must return the tree: {v}"
+    );
+}
+
+#[tokio::test]
+async fn repo_map_names_the_inferred_host_when_the_forge_lookup_fails() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/repos/test-owner/test-repo");
+        then.status(404).body("not found");
+    });
+    let state = repo_map_state_with_github_base(server.base_url());
+    let v = run_repo_map(
+        state,
+        RepoMapArgs {
+            host: None,
+            owner: "test-owner".into(),
+            repo: "test-repo".into(),
+            ref_name: None,
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: Vec::new(),
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("a failed forge lookup still returns a fallback map");
+    assert_eq!(v["host"], "github", "{v}");
+    assert_eq!(v["mode"], "fallback_search", "{v}");
+    let guidance = v["structured_warnings"]
+        .as_array()
+        .expect("structured warnings")
+        .iter()
+        .filter_map(|warning| warning["message"].as_str())
+        .any(|message| message.contains("host was not supplied"));
+    assert!(
+        guidance,
+        "a failed inferred host must say it was inferred: {v}"
+    );
+}

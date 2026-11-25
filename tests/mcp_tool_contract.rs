@@ -719,13 +719,13 @@ fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
     );
     assert_eq!(
         server.tool_fingerprint(),
-        "3e3ffec2c35d2b06",
+        "3fa97faac725dc97",
         "the full+full advertisement fingerprint is pinned"
     );
     let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
     assert_eq!(
         bytes.len(),
-        33_820,
+        33_850,
         "the full+full advertised tools/list bytes are pinned"
     );
     let compact = preset_server(

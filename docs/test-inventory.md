@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6623 | 30 |
-| `--features mock` | 6558 | 6 |
+| `--all-features` | 6626 | 30 |
+| `--features mock` | 6561 | 6 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `mcp_http` via `live-mcp-smoke`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets.
 

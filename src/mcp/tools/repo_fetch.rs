@@ -652,7 +652,7 @@ pub async fn run_repo_fetch_with_host_scope(
                 state.config.mcp.brief_max_chars,
             ))
         }
-        Err(e) => Err(ToolError::internal(match prefer_local_skip_reason {
+        Err(e) => Err(ToolError::upstream_failed(match prefer_local_skip_reason {
             Some(reason) => format!(
                 "{}: {}; prefer_local_skipped: local copy was skipped because {reason}",
                 e.error_code(),

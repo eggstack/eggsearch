@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `repo_fetch` reports an upstream fetch failure as a repairable `upstream_failed` tool error instead of a JSON-RPC internal error, so a missing file or a timeout carries the stable error code and stays distinguishable from a server fault. The canonical `fetch` repo item already behaved this way.
+- `repo_map` applies the same omitted-host default as `repo_fetch`: without `host` it tries GitHub under live dispatch instead of returning an empty fallback map, and the off-mode local-only path still performs no remote lookup. A failed forge lookup now keeps its specific structured warning (`forge_rate_limited`, `forge_auth_required`, `repo_ref_not_found`); the finalizer previously overwrote those warnings with the generic fallback notice.
 - Batch fetch budgets now measure each item after its selected response-detail projection, and `payload_chars` / `total_payload_chars` match the returned projected payloads. Web document structure degrades before text clipping or omission, under the existing aggregate cap and envelope-overhead exclusion.
 - HTML extraction preserves source whitespace around inline text, links, and code in text and Markdown output. Repeated whitespace still normalizes, but words are not merged and no spaces are invented when absent from the source.
 

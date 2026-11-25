@@ -9,7 +9,8 @@ pub(super) const COMPACT_FIELDS: &[&str] =
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepoMapArgs {
-    /// Code host. Optional; accepted values: github (gh), gitlab (gl), codeberg (cb), gitea, forgejo.
+    /// Code host: github (gh), gitlab (gl), codeberg (cb), gitea, or forgejo.
+    /// Defaults to github when omitted under live dispatch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
     /// Repository owner.
@@ -125,7 +126,10 @@ pub async fn run_repo_map_with_host_scope(
         )));
     }
 
-    let host = parse_code_host_arg(args.host.as_deref())?;
+    let explicit_host = parse_code_host_arg(args.host.as_deref())?;
+    let inferred_host =
+        explicit_host.is_none() && matches!(live_allowed(state.config.search.mode), Policy::Allow);
+    let host = explicit_host.or(inferred_host.then_some(CodeHost::Github));
 
     if !args.providers.is_empty() {
         return Err(ToolError::Validation(
@@ -205,11 +209,18 @@ pub async fn run_repo_map_with_host_scope(
                     let deadline_exceeded = _e.contains("timed out")
                         || _e.contains("timeout")
                         || _e.contains("deadline");
+                    let message = if inferred_host {
+                        format!(
+                            "forge tree adapter failed: {_e}; host was not supplied, so github was tried; pass host for gitlab, codeberg, gitea, or forgejo"
+                        )
+                    } else {
+                        format!("forge tree adapter failed: {_e}")
+                    };
                     fallback
                         .structured_warnings
                         .push(crate::core::warning::AgentWarning::new(
                             warning_code,
-                            format!("forge tree adapter failed: {_e}"),
+                            message,
                         ));
                     if deadline_exceeded {
                         fallback.telemetry = Some(crate::core::repo_map::RepoMapTelemetry {
@@ -325,7 +336,9 @@ pub async fn run_repo_map_with_host_scope(
     // signal for this degraded mode.
 
     // Populate structured warnings from accumulated string warnings
-    response.structured_warnings = crate::core::warning::convert_warnings(&response.warnings);
+    let mut structured_warnings = std::mem::take(&mut response.structured_warnings);
+    structured_warnings.extend(crate::core::warning::convert_warnings(&response.warnings));
+    response.structured_warnings = structured_warnings;
 
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;

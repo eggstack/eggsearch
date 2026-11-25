@@ -18,9 +18,10 @@ use eggsearch::mcp::state::ServerState;
 // argument with `offset`/`limit`: +1005 definition bytes, +251 estimated tokens.
 // Re-measured after every tool began advertising all four behavior hints and
 // `web_search` stated that it returns no synthesized answer: +660 definition
-// bytes, +165 estimated tokens.
-const BASELINE_TOTAL_BYTES: i64 = 78049;
-const BASELINE_EST_TOKENS: i64 = 19513;
+// bytes, +165 estimated tokens. Re-measured after `repo_map` began stating its
+// omitted-host default: +30 definition bytes, +7 estimated tokens.
+const BASELINE_TOTAL_BYTES: i64 = 78079;
+const BASELINE_EST_TOKENS: i64 = 19520;
 const BASELINE_MAX_DESC: i64 = 186;
 const BASELINE_INSTRUCTIONS_BYTES: i64 = 1614;
 
