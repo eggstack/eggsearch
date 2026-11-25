@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M048 closed; M049 and M050 active)
+Status: active (M001–M048 closed; M049 active; M050 closed)
 Planning baseline: `4de20a0f0d748b89147829a51384e385a5bee388` (origin/main, 2026-11-24 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -379,6 +379,14 @@ exposed M011's mandatory-`redir` defect.
   `9528d4131591392c0d9f6ec5f0422903e4b7815b`; both closure records cite hosted CI run `45127251813`.
   Evidence: `plans/closure/agentic-retrieval-integrity/047-status.md` and
   `plans/closure/agentic-retrieval-integrity/048-status.md`.
+- M050 is `closed` on implementation candidate
+  `79ea653a124916de696637adda8ed95798153715`: a live sweep found that
+  `repo_fetch` reported upstream failures as JSON-RPC internal errors,
+  `repo_map` ignored its documented optional `host`, and the `repo_map`
+  finalizer discarded specific forge-failure warnings. All three are fixed with
+  three regression tests; the advertised surface grew by 30 bytes for the
+  documented host default. Evidence:
+  `plans/closure/agentic-retrieval-integrity/050-status.md`.
 - M049 remains `active`: work package 1 is implemented, but the canonical gate is outstanding. Keep
   its classification corrective scoped to the registered keyless behavior and do not infer a new
   paid-provider, credential, or default-enable task. Evidence and acceptance gates:

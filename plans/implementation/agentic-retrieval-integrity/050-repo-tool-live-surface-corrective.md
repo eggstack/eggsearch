@@ -1,6 +1,6 @@
 # M050 — Repository Tool Live-Surface Corrective
 
-Status: active
+Status: closed
 Date: 2026-11-25
 Subsystem: agentic retrieval integrity
 Milestone class: corrective (corrective to M029 and the repo_map host contract)
