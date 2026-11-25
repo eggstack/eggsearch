@@ -71,6 +71,19 @@ baseline plus this change set.
 | `RUSTUP_TOOLCHAIN=1.89.0 make docs-check` | pass (exit 0) |
 | `python3 packaging/check-planning-consistency.py` (via `make packaging-check`) | pass |
 
+## Live confirmation
+
+On a rebuilt default +`documents` binary over stdio MCP against public hosts:
+
+- `repo_fetch` with `no/such/file.rs` returned `isError: true`,
+  `code: upstream_failed`, and `http_status: HTTP error: 404` in the message.
+- `repo_map` with `host` omitted resolved `host: github`, `mode: native`,
+  and 9 entries.
+- The same call for an absent repository returned `fallback_search` with the
+  warning "host was not supplied, so github was tried; pass host for gitlab,
+  codeberg, gitea, or forgejo".
+- `repo_map` with `host: gitlab` stayed native with 60 entries.
+
 ## Residual risk and limitations
 
 - Only GitHub is inferred. A GitLab or Codeberg repository still needs an
