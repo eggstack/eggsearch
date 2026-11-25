@@ -19,8 +19,8 @@ fetch behaviour are unchanged.
 - `src/fetch/documents/tests.rs` (293 lines): seven offline unit cases with
   generated archives.
 - `src/fetch/documents/mod.rs` (7 lines): the feature-gated surface.
-- `src/core/document.rs` (664 lines): @"@DocumentFormat@", @"@DocumentPartKind@",
-  and @"@DocumentPart@", plus `format`, `parts`, and `parts_total` on
+- `src/core/document.rs` (664 lines): `DocumentFormat`, `DocumentPartKind`,
+  and `DocumentPart`, plus `format`, `parts`, and `parts_total` on
   `FetchDocument`. `DocumentKind` is unchanged, so no renderer match arm moved.
 - `src/fetch/client.rs` (2,290 lines, ratchet 2,600): document detection in the
   pre-body gate, a document body cap, and the early-return extraction path that
@@ -34,8 +34,8 @@ fetch behaviour are unchanged.
   `src/fetch/browser/navigate.rs`: initialisers for the new `FetchDocument`
   fields only.
 - `tests/documents.rs` (new): seven feature-on cases and two feature-off cases.
-- `bindings/python/python/eggsearch/types.py`: @"@DocumentFormat@",
-  @"@DocumentPartKind@", @"@DocumentPart@", and the new `FetchDocument` fields.
+- `bindings/python/python/eggsearch/types.py`: `DocumentFormat`,
+  `DocumentPartKind`, `DocumentPart`, and the new `FetchDocument` fields.
 
 ## Dependency evidence
 
@@ -64,14 +64,14 @@ sharing one archive major, so the recorded fallback (defer XLSX and use
 ## Defects found and corrected during integration
 
 - An extensionless URL whose last path segment is a legacy Office name
-  (@@/doc@@, @@/ppt@@, @@/xls@@) was classified as that legacy format, because the
+  (`/doc`, `/ppt`, `/xls`) was classified as that legacy format, because the
   extension was taken from the final path segment whether or not it followed a
   dot. Any ordinary page at such a path was then refused. The extension now
   requires a dot, and an HTML representation is never treated as a legacy
   document.
 - Known-unsupported document types were rejected by the pre-body gate before
   the typed outcome could be produced, so legacy binary Office surfaced as
-  @@unsupported_content_type@@ instead of @@document_unsupported@@. The gate now
+  `unsupported_content_type` instead of `document_unsupported`. The gate now
   admits them and the post-body check names the specific outcome.
 - The pre-body content-type gate still rejected `application/epub+zip` and the
   OOXML types before the body was read, so EPUB, DOCX, XLSX, and PPTX failed with
