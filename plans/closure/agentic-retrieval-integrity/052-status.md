@@ -188,3 +188,29 @@ egress qualification, 35 egress routing, 14 MCP HTTP, and 12 proxy feasibility).
   by `security_and_security_review_resolve_identically` in `canonical.rs`.
 - Live 429, challenge-wall, and other network-conditional states were not
   exercised.
+
+## Post-closure audit findings (2026-11-26)
+
+A read-only review of commit `02c4163` found two P2 follow-up-binding
+defects. These findings qualify the broader WP3 summary above: the remaining
+placeholders are not all genuine model choices. The prior tests and live smoke
+did not exercise these specific template shapes.
+
+- For a valid package-only `security_search` request with `package` +
+  `ecosystem` and no `query`, `inspect_applicability` binds its `query`
+  from the empty generic request query, omits `package`, and leaves
+  ecosystem/version unbound (`src/meta/recipe_catalog.rs:235-243`,
+  `src/mcp/tools/security_search.rs:317-331`,
+  `src/core/security.rs:1548-1552`).
+- `repo_search`'s single-source `fetch_top_source` template retains
+  `<path>` even when the source card carries `CodeMetadata.path`; the
+  request-layer binding supplies query/owner/repo and URL, but not path
+  (`src/meta/recipe_catalog.rs:167-174`,
+  `src/mcp/tools/repo_search.rs:461-473`,
+  `src/core/workflow.rs:184-224`,
+  `src/core/source_card.rs:307-321`).
+
+M052 remains closed; no remediation is included here. Any fix must be registered
+as a new corrective plan referencing M052 and this closure record. The audit
+identified these gaps because prior tests did not exercise a package-only
+applicability action or a single-source repo pointer carrying a known path.
