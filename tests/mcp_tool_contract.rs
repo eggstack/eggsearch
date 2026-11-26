@@ -719,13 +719,13 @@ fn full_preset_advertisement_is_byte_identical_to_the_pinned_surface() {
     );
     assert_eq!(
         server.tool_fingerprint(),
-        "3fa97faac725dc97",
+        "678e2a042ab5b39b",
         "the full+full advertisement fingerprint is pinned"
     );
     let bytes = serde_json::to_string(&server.tool_definitions()).unwrap();
     assert_eq!(
         bytes.len(),
-        33_850,
+        33_983,
         "the full+full advertised tools/list bytes are pinned"
     );
     let compact = preset_server(
@@ -973,5 +973,27 @@ fn preset_advertisement_bytes_shrink_against_full() {
     println!(
         "preset-bytes-ratio minimal_compact_percent_of_full_compact={}",
         (minimal_compact * 100) / full_compact
+    );
+}
+
+#[test]
+fn probe_description_never_claims_a_health_write() {
+    let server = preset_server(
+        eggsearch::core::config::McpToolPreset::Full,
+        eggsearch::core::config::McpSchemaProfile::Full,
+    );
+    let tools = server.tool_definitions();
+    let status = tools
+        .iter()
+        .find(|tool| tool.name.as_ref() == "provider_status")
+        .expect("provider_status is advertised");
+    let schema = serde_json::to_string(&status.input_schema).expect("schema serializes");
+    assert!(
+        !schema.contains("update advisory health state"),
+        "the probe description must not claim a health write: {schema}"
+    );
+    assert!(
+        schema.contains("never writes routing health"),
+        "the probe description must state the isolation: {schema}"
     );
 }

@@ -966,6 +966,30 @@ pub fn build_local_structure(root: &Path, config: &LocalConfig) -> LocalStructur
     }
 }
 
+/// Build the canonical follow-up actions from the suggested fetches.
+///
+/// Every action is an executable `fetch` call carrying the batch item the
+/// suggestion already resolved, so a caller never reconstructs a locator.
+pub fn build_repo_map_next_actions(
+    response: &RepoMapResponse,
+) -> Vec<crate::core::workflow::AgentNextAction> {
+    response
+        .suggested_fetches
+        .iter()
+        .filter_map(|suggestion| {
+            let item = suggestion.to_batch_item()?;
+            Some(crate::core::workflow::AgentNextAction::new(
+                "fetch",
+                "fetch_important_file",
+                suggestion.priority.unwrap_or(1).min(5) as u8,
+                serde_json::json!({ "items": item }),
+                Vec::new(),
+                None,
+            ))
+        })
+        .collect()
+}
+
 /// Create a `RepoMapResponse` with fallback search mode when no native
 /// tree provider is available.
 pub fn build_fallback_response(request: &RepoMapRequest) -> RepoMapResponse {
@@ -1294,5 +1318,55 @@ mod tests {
             ..LocalConfig::default()
         };
         assert!(read_structure_file(root.path(), "link.rs", &config, 1024).is_none());
+    }
+}
+
+#[cfg(test)]
+mod next_action_tests {
+    use super::*;
+    use crate::core::code_metadata::CodeHost;
+    use crate::core::repo_map::{ImportantFileKind, RepoImportantFile};
+
+    fn response_with_a_readme() -> RepoMapResponse {
+        let mut response = RepoMapResponse {
+            host: CodeHost::Github,
+            ..Default::default()
+        };
+        response.owner = "test-owner".to_string();
+        response.repo = "test-repo".to_string();
+        response.ref_name = Some("main".to_string());
+        response.important_files = vec![RepoImportantFile {
+            path: "README.md".to_string(),
+            kind: ImportantFileKind::Readme,
+            ..Default::default()
+        }];
+        response.suggested_fetches = build_repo_map_suggested_fetches(&response);
+        response
+    }
+
+    #[test]
+    fn every_template_deserializes_as_a_fetch_request() {
+        let response = response_with_a_readme();
+        let actions = build_repo_map_next_actions(&response);
+        assert!(!actions.is_empty(), "the fixture must publish follow-ups");
+        for action in &actions {
+            let _parsed: crate::mcp::tools::FetchArgs = serde_json::from_value(
+                serde_json::json!({ "items": action.input_template["items"].clone() }),
+            )
+            .expect("the template is a callable fetch request");
+        }
+    }
+
+    #[test]
+    fn follow_ups_stay_bounded_and_skip_the_legacy_alias() {
+        let response = response_with_a_readme();
+        let actions = build_repo_map_next_actions(&response);
+        assert!(actions.len() <= crate::core::workflow::MAX_NEXT_ACTIONS);
+        assert!(
+            actions
+                .iter()
+                .all(|action| crate::core::workflow::is_stable_tool(&action.tool)),
+            "every follow-up names an advertised tool"
+        );
     }
 }

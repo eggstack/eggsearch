@@ -176,6 +176,101 @@ pub fn sanitize_next_actions(actions: Vec<AgentNextAction>) -> Vec<AgentNextActi
     out
 }
 
+/// Known request and response values a follow-up template may bind.
+///
+/// A template field is bound only when the response has exactly one value
+/// for it; a multi-candidate choice keeps its placeholder.
+#[derive(Clone, Debug, Default)]
+pub struct NextActionBindings {
+    /// The caller's query, bound verbatim.
+    pub query: Option<String>,
+    /// Repository owner, when the request named one.
+    pub owner: Option<String>,
+    /// Repository name, when the request named one.
+    pub repo: Option<String>,
+    /// Code host, when the request named one.
+    pub host: Option<String>,
+    /// Resolved ref name, when the response reported one.
+    pub ref_name: Option<String>,
+    /// Fetchable URL per source card id.
+    pub url_by_source_id: std::collections::BTreeMap<String, String>,
+}
+
+impl NextActionBindings {
+    fn value_for_key(&self, key: &str) -> Option<&str> {
+        match key {
+            "owner" => self.owner.as_deref(),
+            "repo" => self.repo.as_deref(),
+            "host" => self.host.as_deref(),
+            "ref_name" => self.ref_name.as_deref(),
+            "query" | "research_question" | "vulnerability_or_package" | "focus" => {
+                self.query.as_deref()
+            }
+            _ => None,
+        }
+    }
+
+    /// Bind every executable field of one template in place.
+    pub fn bind_template(&self, template: &mut serde_json::Value, single_url: Option<&str>) {
+        match template {
+            serde_json::Value::Object(map) => {
+                for (key, value) in map.iter_mut() {
+                    if let serde_json::Value::String(text) = value {
+                        if is_template_placeholder(text) {
+                            let bound = self.value_for_key(key).or_else(|| {
+                                if key == "url" {
+                                    single_url
+                                } else {
+                                    None
+                                }
+                            });
+                            if let Some(resolved) = bound {
+                                *text = resolved.to_string();
+                            }
+                        }
+                    } else {
+                        self.bind_template(value, single_url);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items.iter_mut() {
+                    self.bind_template(item, single_url);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn is_template_placeholder(value: &str) -> bool {
+    value.len() > 2
+        && value.starts_with('<')
+        && value.ends_with('>')
+        && value[1..value.len() - 1]
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c == '_')
+}
+
+/// Bind every executable field of a follow-up list in place.
+///
+/// A `url` placeholder is bound only when the action names exactly one
+/// source card, because a multi-candidate action leaves the choice to the
+/// caller.
+pub fn bind_next_actions(actions: &mut [AgentNextAction], bindings: &NextActionBindings) {
+    for action in actions.iter_mut() {
+        let single_url = if action.source_ids.len() == 1 {
+            bindings
+                .url_by_source_id
+                .get(&action.source_ids[0])
+                .map(String::as_str)
+        } else {
+            None
+        };
+        bindings.bind_template(&mut action.input_template, single_url);
+    }
+}
+
 impl AgentWorkflowRecipe {
     /// Return a compact summary suitable for `recipe_detail = "summary"`.
     pub fn summarize(&self) -> serde_json::Value {
@@ -396,5 +491,78 @@ mod tests {
         assert!(summary.get("steps").is_none());
         assert!(summary.get("fallbacks").is_none());
         assert!(summary.get("trust_notes").is_none());
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+
+    fn action(template: serde_json::Value, source_ids: Vec<String>) -> AgentNextAction {
+        AgentNextAction::new("fetch", "test_action", 1, template, source_ids, None)
+    }
+
+    #[test]
+    fn repo_placeholders_bind_from_the_request() {
+        let mut actions = vec![action(
+            serde_json::json!({"query": "<search_query>", "owner": "<owner>", "repo": "<repo>", "focus": "<query>"}),
+            vec![],
+        )];
+        let bindings = NextActionBindings {
+            query: Some("search parallel walker".into()),
+            owner: Some("BurntSushi".into()),
+            repo: Some("ripgrep".into()),
+            ..Default::default()
+        };
+        bind_next_actions(&mut actions, &bindings);
+        assert_eq!(actions[0].input_template["query"], "search parallel walker");
+        assert_eq!(actions[0].input_template["owner"], "BurntSushi");
+        assert_eq!(actions[0].input_template["repo"], "ripgrep");
+        assert_eq!(actions[0].input_template["focus"], "search parallel walker");
+    }
+
+    #[test]
+    fn a_single_candidate_url_binds() {
+        let mut actions = vec![action(
+            serde_json::json!({"items": {"type": "web", "url": "<selected_url>"}}),
+            vec!["src_a".into()],
+        )];
+        let mut bindings = NextActionBindings::default();
+        bindings
+            .url_by_source_id
+            .insert("src_a".into(), "https://example.test/a".into());
+        bind_next_actions(&mut actions, &bindings);
+        assert_eq!(
+            actions[0].input_template["items"]["url"],
+            "https://example.test/a"
+        );
+    }
+
+    #[test]
+    fn a_multi_candidate_url_keeps_its_placeholder() {
+        let mut actions = vec![action(
+            serde_json::json!({"items": [{"type": "web", "url": "<selected_url>"}]}),
+            vec!["src_a".into(), "src_b".into()],
+        )];
+        let mut bindings = NextActionBindings::default();
+        bindings
+            .url_by_source_id
+            .insert("src_a".into(), "https://example.test/a".into());
+        bind_next_actions(&mut actions, &bindings);
+        assert_eq!(
+            actions[0].input_template["items"][0]["url"],
+            "<selected_url>"
+        );
+    }
+
+    #[test]
+    fn unknown_placeholders_and_absent_values_stay() {
+        let mut actions = vec![action(
+            serde_json::json!({"items": {"type": "repo", "path": "<path>"}, "query": "<search_query>"}),
+            vec![],
+        )];
+        bind_next_actions(&mut actions, &NextActionBindings::default());
+        assert_eq!(actions[0].input_template["items"]["path"], "<path>");
+        assert_eq!(actions[0].input_template["query"], "<search_query>");
     }
 }

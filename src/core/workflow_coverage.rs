@@ -451,7 +451,7 @@ fn role_to_next_tool(role: &EvidenceRole) -> (&'static str, &'static str) {
         EvidenceRole::ConfigurationOrFeatureGate => ("repo_search", "fetch_config"),
         EvidenceRole::ManifestOrDependencyMetadata => ("repo_search", "fetch_manifest"),
         EvidenceRole::OfficialDocumentation => ("web_search", "fetch_documentation"),
-        EvidenceRole::ArchitectureOrDesignDocument => ("web_search", "fetch_architecture_doc"),
+        EvidenceRole::ArchitectureOrDesignDocument => ("web_search", "search_architecture_doc"),
         EvidenceRole::ReleaseNoteOrChangelog => ("repo_search", "fetch_release_notes"),
         EvidenceRole::MigrationGuidance => ("web_search", "fetch_migration_guide"),
         EvidenceRole::BenchmarkOrPerformanceEvidence => ("web_search", "fetch_benchmark_evidence"),
@@ -1097,5 +1097,61 @@ mod tests {
                 assert_eq!(source, Some(ResolutionSource::Default));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+    use crate::core::workflow::{bind_next_actions, NextActionBindings};
+
+    fn result_missing(role: EvidenceRole) -> WorkflowCoverageResult {
+        WorkflowCoverageResult {
+            workflow_id: "test".into(),
+            required_roles: vec![role],
+            recommended_roles: vec![],
+            optional_roles: vec![],
+            found_roles: vec![],
+            missing_required: vec![role],
+            missing_recommended: vec![],
+            missing_optional: vec![],
+            retrieval_failures: vec![],
+            status: CoverageStatus::Insufficient,
+            completion_confidence: 0.0,
+            reasons: vec![],
+            next_actions: vec![],
+            resolution_source: None,
+        }
+    }
+
+    #[test]
+    fn bound_gap_actions_carry_the_known_request_values() {
+        let mut actions = generate_gap_driven_next_actions(
+            &result_missing(EvidenceRole::ConfigurationOrFeatureGate),
+            &[],
+            &["src_1".to_string()],
+        );
+        let bindings = NextActionBindings {
+            query: Some("search parallel walker".into()),
+            owner: Some("BurntSushi".into()),
+            repo: Some("ripgrep".into()),
+            ..Default::default()
+        };
+        bind_next_actions(&mut actions, &bindings);
+        let template = &actions[0].input_template;
+        assert_eq!(template["query"], "search parallel walker");
+        assert_eq!(template["owner"], "BurntSushi");
+        assert_eq!(template["repo"], "ripgrep");
+        assert!(
+            !serde_json::to_string(template).unwrap().contains('<'),
+            "no placeholder survives where the request knew the value: {template}"
+        );
+    }
+
+    #[test]
+    fn architecture_gap_names_a_search_reason() {
+        let (tool, reason) = role_to_next_tool(&EvidenceRole::ArchitectureOrDesignDocument);
+        assert_eq!(tool, "web_search");
+        assert_eq!(reason, "search_architecture_doc");
     }
 }

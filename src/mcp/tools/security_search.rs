@@ -318,6 +318,18 @@ pub async fn run_security_search(
     response.next_actions =
         crate::meta::security_search_next_actions(&source_ids, has_suggested_fetches);
 
+    let mut bindings = crate::core::workflow::NextActionBindings {
+        query: Some(req.query.clone()),
+        ..Default::default()
+    };
+    bindings.url_by_source_id = response
+        .groups
+        .iter()
+        .flat_map(|group| group.results.iter())
+        .filter_map(|card| card.stable_id.clone().map(|id| (id, card.url.clone())))
+        .collect();
+    crate::core::workflow::bind_next_actions(&mut response.next_actions, &bindings);
+
     let value = serde_json::to_value(&response)
         .map_err(|e| ToolError::internal(format!("serialization error: {e}")))?;
 

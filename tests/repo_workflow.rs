@@ -5123,3 +5123,51 @@ async fn repo_map_names_the_inferred_host_when_the_forge_lookup_fails() {
         "inference guidance replaces the generic notice: {v}"
     );
 }
+
+#[test]
+fn repo_map_next_actions_are_executable_fetch_calls() {
+    use eggsearch::core::code_metadata::CodeHost;
+    use eggsearch::core::repo_map::{ImportantFileKind, RepoImportantFile, RepoMapResponse};
+
+    let mut response = RepoMapResponse {
+        host: CodeHost::Github,
+        ..Default::default()
+    };
+    response.owner = "test-owner".to_string();
+    response.repo = "test-repo".to_string();
+    response.ref_name = Some("main".to_string());
+    response.important_files = vec![RepoImportantFile {
+        path: "README.md".to_string(),
+        kind: ImportantFileKind::Readme,
+        ..Default::default()
+    }];
+    response.suggested_fetches =
+        eggsearch::meta::repo_mapper::build_repo_map_suggested_fetches(&response);
+    assert!(
+        !response.suggested_fetches.is_empty(),
+        "the fixture must produce at least one suggestion"
+    );
+
+    let actions = eggsearch::meta::repo_mapper::build_repo_map_next_actions(&response);
+    assert!(!actions.is_empty(), "a mapped repo publishes follow-ups");
+    assert!(
+        actions.len() <= 5,
+        "follow-ups stay bounded: {}",
+        actions.len()
+    );
+    for action in &actions {
+        assert_eq!(action.tool, "fetch");
+        assert_eq!(action.reason_code, "fetch_important_file");
+        let item = &action.input_template["items"];
+        assert_eq!(item["type"], "repo");
+        assert_eq!(item["owner"], "test-owner");
+        assert_eq!(item["repo"], "test-repo");
+        assert!(item["path"].is_string(), "a follow-up names a file: {item}");
+    }
+    let sanitized = eggsearch::core::workflow::sanitize_next_actions(actions);
+    assert_eq!(
+        sanitized.len(),
+        response.suggested_fetches.len(),
+        "an action without source cards survives sanitization"
+    );
+}

@@ -229,6 +229,12 @@ Harnesses must cache `tools/list` by this fingerprint plus the
 server version — never by tool count — and apply hydration state
 after retrieving a cached base surface.
 
+The fingerprint is re-pinned deliberately, never incidentally: a change to an
+advertised description, schema, or output envelope updates the pin in
+`tests/mcp_tool_contract.rs` with the advertised byte count, and the closure
+record names the old and new values. One re-pin covers one milestone's surface
+change; a second unrelated correction waits for its own event.
+
 ---
 
 ## 8. Additive-Only Evolution and Schema Budgets

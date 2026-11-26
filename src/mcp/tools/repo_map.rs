@@ -346,6 +346,9 @@ pub async fn run_repo_map_with_host_scope(
     // unsupported-host paths; a concrete forge failure replaces it with
     // one specific warning so a single failure has a single explanation.
 
+    let next_actions = crate::meta::repo_mapper::build_repo_map_next_actions(&response);
+    response.next_actions = crate::core::workflow::sanitize_next_actions(next_actions);
+
     // Populate structured warnings from accumulated string warnings
     let mut structured_warnings = std::mem::take(&mut response.structured_warnings);
     structured_warnings.extend(crate::core::warning::convert_warnings(&response.warnings));

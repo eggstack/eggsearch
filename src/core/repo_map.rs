@@ -463,6 +463,9 @@ pub struct RepoMapResponse {
     /// Suggested fetch URLs for further exploration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggested_fetches: Vec<RepoMapSuggestedFetch>,
+    /// Canonical follow-up actions; each one is an executable `fetch` call.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub next_actions: Vec<crate::core::workflow::AgentNextAction>,
     /// Providers that were queried.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub providers_queried: Vec<String>,

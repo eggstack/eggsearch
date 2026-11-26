@@ -420,7 +420,7 @@ pub async fn run_knowledge_brief(
         "warnings": warnings,
         "truncated": truncated,
         "budget_exhausted": budget_exhausted,
-        "next_actions": next_actions(&emitted),
+        "next_actions": next_actions(&emitted, &query.topic),
     });
     if let Some(object) = value.as_object_mut() {
         if attempts.is_empty() && query.refresh == RefreshMode::Index {
@@ -907,25 +907,82 @@ fn model_resolution(model_id: Option<&str>, cutoff: Option<&ResolvedCutoff>) -> 
     })
 }
 
-fn next_actions(deltas: &[SelectedDelta]) -> Vec<serde_json::Value> {
+fn next_actions(
+    deltas: &[SelectedDelta],
+    topic: &str,
+) -> Vec<crate::core::workflow::AgentNextAction> {
     let mut actions = Vec::new();
     if let Some(delta) = deltas.first() {
         if let Some(url) = delta.urls.first() {
-            actions.push(serde_json::json!({
-                "tool": "fetch",
-                "reason_code": "read_cited_source",
-                "priority": 1,
-                "input_template": {"url": url},
-                "source_ids": delta.source_ids,
-            }));
+            actions.push(crate::core::workflow::AgentNextAction::new(
+                "fetch",
+                "read_cited_source",
+                1,
+                serde_json::json!({"items": {"type": "web", "url": url}}),
+                delta.source_ids.clone(),
+                None,
+            ));
         }
     }
-    actions.push(serde_json::json!({
-        "tool": "research_search",
-        "reason_code": "broaden_evidence",
-        "priority": 2,
-        "input_template": {},
-        "source_ids": [],
-    }));
-    actions
+    if !topic.trim().is_empty() {
+        actions.push(crate::core::workflow::AgentNextAction::new(
+            "research_search",
+            "broaden_evidence",
+            2,
+            serde_json::json!({"query": topic}),
+            Vec::new(),
+            None,
+        ));
+    }
+    crate::core::workflow::sanitize_next_actions(actions)
+}
+
+#[cfg(test)]
+mod next_action_tests {
+    use super::*;
+
+    fn delta() -> SelectedDelta {
+        SelectedDelta {
+            id: "delta_1".to_string(),
+            excerpt: "bounded excerpt".to_string(),
+            trust: "external_untrusted".to_string(),
+            source_ids: vec!["src_1".to_string()],
+            urls: vec!["https://example.test/a".to_string()],
+            date_basis: "published".to_string(),
+            precision: "day".to_string(),
+            temporal_relationship: "after_cutoff".to_string(),
+            conflicted: false,
+            payload_chars: 16,
+            provenance: "provider".to_string(),
+            edge_source_ids: vec![],
+            expanded: false,
+            normalized_date: None,
+            excerpt_clipped: false,
+            source_truncated: false,
+            source_title: "Example".to_string(),
+            spans: vec![],
+            indexable: false,
+        }
+    }
+
+    #[test]
+    fn knowledge_brief_fetch_action_is_an_items_envelope() {
+        let actions = next_actions(&[delta()], "rust async runtimes");
+        assert_eq!(actions.len(), 2);
+        assert_eq!(actions[0].tool, "fetch");
+        assert_eq!(actions[0].input_template["items"]["type"], "web");
+        assert_eq!(
+            actions[0].input_template["items"]["url"],
+            "https://example.test/a"
+        );
+        assert_eq!(actions[1].tool, "research_search");
+        assert_eq!(actions[1].input_template["query"], "rust async runtimes");
+    }
+
+    #[test]
+    fn an_empty_topic_omits_the_broaden_action() {
+        let actions = next_actions(&[delta()], "   ");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].tool, "fetch");
+    }
 }

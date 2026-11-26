@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `repo_map` now publishes `next_actions` alongside `suggested_fetches`. Each entry is an executable `fetch` call carrying the repo item the suggestion already resolved, so a caller never reconstructs a locator, and `suggested_fetches` stays populated as a typed convenience.
+- The advertised `tools/list` fingerprint is re-pinned from `3fa97faac725dc97` (33,850 bytes) to `678e2a042ab5b39b` (33,983 bytes) for the `repo_map` follow-up field and the corrected `provider_status` `probe` description. Hosts cache by fingerprint plus server version, so refresh the cached surface.
+
+### Fixed
+
+- `repo_search` `goal` accepts the workflow spellings the other search tools already honoured (`security_review`, `repository_architecture`, `version_migration`, and the rest), so a goal learned on one search tool no longer fails on another. The advertised enum remains the ten short spellings.
+- Follow-up templates bind the values the response already knows: a `repo_search` action now carries the request's `owner`, `repo`, and `query`, and `web_search`'s single-candidate action carries the source URL. A multi-candidate action keeps its placeholder because the choice is the caller's.
+- `knowledge_brief`'s `fetch` follow-up now carries the `items` envelope the tool accepts instead of a bare `url` it rejects, and its `research_search` follow-up carries the request topic instead of an empty template. Both now pass through `sanitize_next_actions`.
+- The advertised `provider_status` `probe` description no longer says probes update advisory health state. It states that probes follow `[search].timeout_ms` and never write routing health or start a cooldown, matching the implementation.
+
 ### Fixed
 
 - `repo_fetch` reports an upstream fetch failure as a repairable `upstream_failed` tool error instead of a JSON-RPC internal error, so a missing file or a timeout carries the stable error code and stays distinguishable from a server fault. The canonical `fetch` repo item already behaved this way.

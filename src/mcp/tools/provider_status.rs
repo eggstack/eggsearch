@@ -12,7 +12,9 @@ pub(super) const COMPACT_FIELDS: &[&str] = &["probe"];
 pub struct ProviderStatusArgs {
     /// When `true`, perform bounded active liveness probes against
     /// routable providers via the shared probe service. Probes are
-    /// concurrent, time-bounded, and update advisory health state.
+    /// concurrent and bounded per provider by `[search].timeout_ms`.
+    /// Outcomes report success, failure class, latency, and `skip_code`
+    /// only; a probe never writes routing health or starts a cooldown.
     /// Non-routable providers are reported as skipped with a stable
     /// `skip_code` rather than a network failure. When `false` (default),
     /// return cheap process-local config/health only.

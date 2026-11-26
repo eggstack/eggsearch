@@ -259,7 +259,17 @@ pub async fn run_web_search(
         .filter_map(|r| r.stable_id.clone())
         .collect();
     let has_suggestions = !resp.results.is_empty();
-    let next_actions = crate::meta::web_search_next_actions(&source_ids, has_suggestions);
+    let mut next_actions = crate::meta::web_search_next_actions(&source_ids, has_suggestions);
+    let mut bindings = crate::core::workflow::NextActionBindings {
+        query: Some(resp.query.clone()),
+        ..Default::default()
+    };
+    bindings.url_by_source_id = resp
+        .results
+        .iter()
+        .filter_map(|card| card.stable_id.clone().map(|id| (id, card.url.clone())))
+        .collect();
+    crate::core::workflow::bind_next_actions(&mut next_actions, &bindings);
 
     if let Some(ref mut ep) = resp.evidence_postprocess {
         merge_selection_stage_attempts(&routing_decision, &mut ep.retrieval_summary);

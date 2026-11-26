@@ -1262,3 +1262,38 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod next_action_projection_tests {
+    use super::*;
+
+    fn repo_map_payload() -> serde_json::Value {
+        serde_json::json!({
+            "owner": "test-owner",
+            "repo": "test-repo",
+            "next_actions": [{
+                "tool": "fetch",
+                "reason_code": "fetch_important_file",
+                "priority": 1,
+                "input_template": {"items": {"type": "repo", "owner": "test-owner", "repo": "test-repo", "path": "README.md"}},
+                "source_ids": []
+            }],
+            "suggested_fetches": [{"url": "https://example.test/README.md", "reason": "README"}]
+        })
+    }
+
+    #[test]
+    fn repo_map_keeps_both_pointer_shapes_in_economy_projections() {
+        for detail in [ResponseDetail::Compact, ResponseDetail::Brief] {
+            let out = project("repo_map", repo_map_payload(), detail);
+            assert!(
+                out["next_actions"].is_array(),
+                "next_actions must survive the economy projection: {out}"
+            );
+            assert!(
+                out["suggested_fetches"].is_array(),
+                "suggested_fetches stays available: {out}"
+            );
+        }
+    }
+}

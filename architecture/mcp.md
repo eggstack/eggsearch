@@ -434,3 +434,25 @@ The surface described here is pinned by behavioral suites, not prose:
 - `tests/mcp_http.rs` covers legacy initialize/tools-list/call plus modern discover/list/call, structured success, repairable errors, decode failures, and deterministic-list fixtures over the HTTP transport.
 - `tests/mcp_2026_protocol.rs` pins native `structuredContent` + advertised `outputSchema` + representative-payload conformance.
 - The tool-surface evaluation gate caps `EGGSEARCH_INSTRUCTIONS` (current 1614 bytes, max 2000); see `tests/fixtures/tool_surface/README.md` for the definition-byte baseline and fingerprint.
+
+## Follow-up pointers
+
+`AgentNextAction` (`core/workflow.rs`) is the one follow-up envelope. Response
+builders populate it; the MCP tool layer binds it immediately before
+serialization, where the request is still in scope, through
+`NextActionBindings::bind_template` and `bind_next_actions`.
+
+The binding rule is per field: `owner`, `repo`, `host`, and `ref_name` come from
+the resolved target; `query` (also `research_question`, `vulnerability_or_package`, and
+`focus`) is the caller's query verbatim, never a derived intent; `url` binds only when the action names exactly one source card, because
+a multi-candidate action leaves the choice to the model; `path` and
+`symbol_or_query` bind only when the response has one unambiguous value. A
+template that cannot be executed is omitted rather than published with an empty
+body.
+
+`sanitize_next_actions` runs before serialization: an unknown tool name or an
+empty reason code drops the entry, priority is clamped to 1..=5, and the list is
+capped at `MAX_NEXT_ACTIONS`. An action with no source cards is valid;
+`repo_map` publishes those because it has no source cards at all.
+`suggested_fetches` remains alongside `next_actions` on `repo_map` and
+`repo_search` as a typed target list.

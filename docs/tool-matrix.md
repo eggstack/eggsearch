@@ -59,6 +59,35 @@ The legacy `web_fetch` request continues to accept these field-name aliases:
 
 These are wire-compatibility aliases, not separate schema properties. Send one spelling per field: combining a canonical field with its alias is a duplicate-field invalid-arguments error.
 
+## Follow-up pointers
+
+`next_actions` is the canonical follow-up contract. Every tool that suggests a
+follow-up publishes it: `web_search`, `repo_search`, `security_search`,
+`research_search`, `knowledge_brief`, and `repo_map`. `provider_status`,
+`fetch`, and `build_evidence_bundle` propose no follow-up.
+
+Each entry names one advertised tool and carries an `input_template` that is
+already executable. A template field is bound from the response when the
+response has exactly one value for it:
+
+| Template field | Bound from |
+|---|---|
+| `owner`, `repo`, `host`, `ref_name` | the resolved repository target |
+| `query`, `research_question`, `vulnerability_or_package`, `focus` | the caller's query, verbatim |
+| `url` | the source card's URL, only when the action names exactly one card |
+| `path`, `symbol_or_query` | only when the response has one unambiguous value |
+
+A placeholder therefore remains only where the choice is the caller's: a
+multi-candidate action such as `fetch_multiple_focused` keeps
+`<selected_url>`. A pointer that could not be made executable is omitted rather
+than published empty.
+
+`repo_map` and `repo_search` additionally carry `suggested_fetches`, a typed
+list of the same targets already resolved (URL, reason, priority, the
+structured locator, and the batch item). It is a convenience for hosts that want
+the target without an action envelope; `next_actions` is the canonical handoff,
+and both are populated.
+
 ## Advertisement presets
 
 `[mcp].tool_preset` filters what `tools/list` advertises. It is a server
@@ -139,6 +168,8 @@ All tools work without API keys. The keyless baseline provides:
 Optional credentialed adapters (GitHub, GitLab, Gitea, Sourcegraph, Brave API, Semantic Scholar) improve precision and provenance but are not required for baseline operation.
 
 ## Search Hints
+
+- `repo_search` `goal` accepts the ten advertised spellings plus the workflow names the other search tools use (`security_review`, `repository_architecture`, `version_migration`, `dependency_evaluation`, `performance_investigation`, `comparative_research`, `api_comprehension`, `error_investigation`, `pre_change_evidence`, `post_change_review`), so a goal learned on one search tool is accepted by all three. The advertised enum stays at ten: the extra spellings are accepted, not advertised.
 
 - `web_search`, `repo_search`, `security_search`, and `research_search` all emit `next_actions`.
 - `web_search` constraints: `date_range` uses ISO `YYYY-MM-DD` start/end and is mutually exclusive with non-`any` `freshness`. Domain entries must be lowercase hostnames (no schemes, ports, paths, or wildcards, max 32 per list); they are natively enforced by `exa`/`tavily` when selected (reported as `enforced` telemetry) and enforced locally otherwise (reported as `approximated`). `language`/`region` are conservative syntax (best-effort unless enforced). Brave Search API natively enforces `safe_search`, relative/exact `freshness`, `search_lang`, `country`, and `news` intent via dedicated endpoints/parameters; unsupported locales are omitted rather than guessed.

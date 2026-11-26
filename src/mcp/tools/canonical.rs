@@ -82,7 +82,7 @@ pub const SECURITY_INCLUDE_VALUES: &[&str] = &[
 ];
 
 pub fn parse_repo_goal(s: &str) -> Option<WorkflowKind> {
-    match s.to_ascii_lowercase().as_str() {
+    WorkflowKind::parse(s).or_else(|| match s.to_ascii_lowercase().as_str() {
         "understand" => Some(WorkflowKind::ApiComprehension),
         "architecture" => Some(WorkflowKind::RepositoryArchitecture),
         "debug" => Some(WorkflowKind::ErrorInvestigation),
@@ -94,7 +94,7 @@ pub fn parse_repo_goal(s: &str) -> Option<WorkflowKind> {
         "pre_change" | "pre-change" | "prechange" => Some(WorkflowKind::PreChangeEvidence),
         "post_change" | "post-change" | "postchange" => Some(WorkflowKind::PostChangeReview),
         _ => None,
-    }
+    })
 }
 
 pub fn parse_research_goal(s: &str) -> Option<ResearchWorkflow> {
@@ -117,9 +117,6 @@ pub fn parse_research_goal(s: &str) -> Option<ResearchWorkflow> {
 }
 
 pub fn parse_security_goal(s: &str) -> Option<WorkflowKind> {
-    if let Some(w) = WorkflowKind::parse(s) {
-        return Some(w);
-    }
     parse_repo_goal(s)
 }
 
@@ -677,6 +674,56 @@ mod tests {
             Some(WorkflowKind::PreChangeEvidence)
         );
         assert_eq!(parse_repo_goal("bogus"), None);
+    }
+
+    #[test]
+    fn repo_goal_parses_workflow_spellings_as_short_values() {
+        let cases = [
+            (WorkflowKind::ApiComprehension, "understand"),
+            (WorkflowKind::RepositoryArchitecture, "architecture"),
+            (WorkflowKind::ErrorInvestigation, "debug"),
+            (WorkflowKind::VersionMigration, "migration"),
+            (WorkflowKind::SecurityReview, "security"),
+            (WorkflowKind::DependencyEvaluation, "dependency"),
+            (WorkflowKind::PerformanceInvestigation, "performance"),
+            (WorkflowKind::ComparativeResearch, "compare"),
+            (WorkflowKind::PreChangeEvidence, "pre_change"),
+            (WorkflowKind::PostChangeReview, "post_change"),
+        ];
+        for (kind, short) in cases {
+            assert_eq!(parse_repo_goal(kind.as_str()), Some(kind));
+            assert_eq!(parse_repo_goal(short), Some(kind));
+        }
+    }
+
+    #[test]
+    fn repo_goal_keeps_all_short_spellings_and_variants() {
+        for value in REPO_GOAL_VALUES {
+            assert!(
+                parse_repo_goal(value).is_some(),
+                "REPO_GOAL_VALUES advertises '{value}', which parse_repo_goal rejects"
+            );
+        }
+        for value in ["pre-change", "prechange", "post-change", "postchange"] {
+            assert!(
+                parse_repo_goal(value).is_some(),
+                "parse_repo_goal rejects short spelling variant '{value}'"
+            );
+        }
+    }
+
+    #[test]
+    fn security_and_security_review_resolve_identically() {
+        let short = resolve_repo_semantics(Some("security"), None, None, None).unwrap();
+        let long = resolve_repo_semantics(Some("security_review"), None, None, None).unwrap();
+        assert_eq!(short.workflow, long.workflow);
+        assert_eq!(short.profile, long.profile);
+        assert_eq!(short.mode, long.mode);
+    }
+
+    #[test]
+    fn repo_goal_rejects_unsupported_values() {
+        assert_eq!(parse_repo_goal("nonsense"), None);
     }
 
     #[test]
