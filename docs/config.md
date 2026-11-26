@@ -155,6 +155,8 @@ credentials are absent.
 | `cache_ttl_seconds` | `300` (`0` disables; max `86400`) |
 | `cache_max_entries` | `128` (`1`–`4096`) |
 
+Every field in the table is also the field-level serde default, so a partial `[search]` table (for example only `timeout_ms`) inherits the remaining built-ins. `[search.providers]` follows the same rule only when the table is **absent**: an explicitly present empty `[search.providers]` table stays authoritative and empty, and validation then reports that live mode has no traditional or API providers. This keeps a deliberate empty provider set from being silently repopulated.
+
 Profiles are advisory. The built-in profiles are `generic`, `coding`, `security`, and `research`. eggsearch skips unavailable providers and reports warnings instead of failing the request.
 
 `repo_search` canonical `goal` (`understand`, `architecture`, `debug`, `migration`, `security`, `dependency`, `performance`, `compare`, `pre_change`, `post_change`) selects workflow coverage; `goal = "debug"` enables exact-error behavior. Legacy `mode = "exact_error"`, `profile`, `workflow`, and `include_*` booleans remain accepted for backward compatibility.
@@ -964,7 +966,7 @@ process exits.
 
 ## Provider Status
 
-`provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, quality metadata, and workflow recipes. Passing `probe: true` runs a bounded live liveness check through the shared probe service (same core as `eggsearch doctor --probe`).
+`provider_status` reports configuration-derived provider descriptors, code-host summaries, cached health snapshots, server capabilities, tool capabilities, quality metadata, and workflow recipes. Passing `probe: true` runs a bounded live liveness check through the shared probe service (same core as `eggsearch doctor --probe`). The per-provider deadline follows `[search].timeout_ms`; probe outcomes are advisory and never write routing health, so diagnostics cannot raise `consecutive_failures` or start a cooldown.
 
 Each provider descriptor includes:
 

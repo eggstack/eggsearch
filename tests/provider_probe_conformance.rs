@@ -13,6 +13,7 @@ use eggsearch::meta::probe::{
     PROBE_MAX_CONCURRENCY, PROBE_MAX_MESSAGE_CHARS, PROBE_MAX_RESULTS,
     PROBE_PER_PROVIDER_TIMEOUT_MS,
 };
+use eggsearch::meta::provider_diagnostics::ProviderHealthStatus;
 use eggsearch::meta::MetadataSearchAdapter;
 
 fn mock_state(engines: Vec<MockEngine>) -> Arc<ServerState> {
@@ -37,7 +38,7 @@ fn probe_budget_constants_are_bounded() {
 }
 
 #[tokio::test]
-async fn probe_success_records_health() {
+async fn probe_success_reports_outcome_without_writing_health() {
     let adapter = mock_adapter(vec![MockEngine::success(
         "duckduckgo",
         vec![MockResult::new(
@@ -66,8 +67,11 @@ async fn probe_success_records_health() {
     let view = adapter.health().health_view("duckduckgo");
     assert_eq!(
         view.status,
-        eggsearch::meta::provider_diagnostics::ProviderHealthStatus::Healthy
+        ProviderHealthStatus::Unknown,
+        "a probe outcome must not write routing health"
     );
+    assert_eq!(view.consecutive_failures, 0);
+    assert!(!adapter.health().is_in_cooldown("duckduckgo"));
 }
 
 #[tokio::test]
@@ -234,13 +238,13 @@ async fn probe_panic_is_contained() {
 }
 
 #[tokio::test]
-async fn probe_failures_update_cooldown() {
+async fn probe_failures_never_enter_cooldown() {
     let adapter = mock_adapter(vec![MockEngine::failure(
         "duckduckgo",
         MockFailure::HttpStatus(429),
     )]);
     for _ in 0..3 {
-        let _ = probe_providers(
+        let summary = probe_providers(
             &adapter,
             ProviderProbeRequest {
                 providers: vec!["duckduckgo".to_string()],
@@ -249,8 +253,98 @@ async fn probe_failures_update_cooldown() {
             },
         )
         .await;
+        assert_eq!(summary.failed, 1);
     }
-    assert!(adapter.health().is_in_cooldown("duckduckgo"));
+    assert!(
+        !adapter.health().is_in_cooldown("duckduckgo"),
+        "diagnostic traffic must not start a routing cooldown"
+    );
+    let view = adapter.health().health_view("duckduckgo");
+    assert_eq!(view.status, ProviderHealthStatus::Unknown);
+    assert_eq!(view.consecutive_failures, 0);
+}
+
+#[tokio::test]
+async fn probe_accepts_an_engine_slower_than_the_old_five_second_constant() {
+    let adapter = mock_adapter(vec![MockEngine::slow(
+        "duckduckgo",
+        Duration::from_secs(6),
+        vec![MockResult::new(
+            "Hit",
+            "https://example.com/hit",
+            "duckduckgo",
+        )],
+    )]);
+    let summary = probe_providers(
+        &adapter,
+        ProviderProbeRequest {
+            providers: vec!["duckduckgo".to_string()],
+            timeout_per_provider_ms: Some(8_000),
+            max_results: None,
+        },
+    )
+    .await;
+    assert_eq!(summary.started, 1);
+    assert_eq!(summary.succeeded, 1);
+    assert_eq!(summary.failed, 0);
+    assert!(summary.outcomes[0].success);
+}
+
+#[tokio::test]
+async fn provider_status_probe_uses_the_configured_search_budget() {
+    let sink: Arc<Mutex<Option<std::time::Duration>>> = Arc::new(Mutex::new(None));
+    let engine = MockEngine::record_timeout("duckduckgo", sink.clone());
+    let mut cfg = AppConfig::default();
+    cfg.search.timeout_ms = 3_210;
+    let adapter =
+        MetadataSearchAdapter::from_engines(vec![Arc::new(engine)], Duration::from_secs(5));
+    let state = Arc::new(ServerState::with_adapter(cfg, Arc::new(adapter)));
+    run_provider_status_async(
+        state,
+        ProviderStatusArgs {
+            probe: true,
+            recipe_detail: None,
+        },
+    )
+    .await
+    .expect("probe status");
+    let observed = sink.lock().unwrap().expect("timeout recorded");
+    assert_eq!(observed, Duration::from_millis(3_210));
+}
+
+#[tokio::test]
+async fn three_probe_timeouts_keep_default_routing_on_the_provider() {
+    use eggsearch::meta::provider_diagnostics::resolve_provider_routing;
+    let adapter = mock_adapter(vec![MockEngine::failure(
+        "duckduckgo",
+        MockFailure::Timeout,
+    )]);
+    for _ in 0..3 {
+        let _ = probe_providers(
+            &adapter,
+            ProviderProbeRequest {
+                providers: vec!["duckduckgo".to_string()],
+                timeout_per_provider_ms: Some(20),
+                max_results: None,
+            },
+        )
+        .await;
+    }
+    assert!(!adapter.health().is_in_cooldown("duckduckgo"));
+    let mut cfg = AppConfig::default();
+    cfg.search.default_providers = vec!["duckduckgo".to_string()];
+    let decision = resolve_provider_routing(
+        &[],
+        None,
+        adapter.provider_ids(),
+        &cfg,
+        adapter.health(),
+        true,
+        None,
+    )
+    .expect("default routing");
+    assert_eq!(decision.selected_providers, vec!["duckduckgo".to_string()]);
+    assert!(decision.skipped_providers.is_empty());
 }
 
 #[tokio::test]

@@ -1102,6 +1102,115 @@ fn synthetic_browser_outcome(
 }
 
 #[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn auto_render_escalates_a_short_javascript_gate_once() {
+    use crate::mcp::state::MockBrowserRequest;
+    use httpmock::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = MockServer::start();
+    let gate = fetch_fixture("js_gate.html");
+    let page = server.mock(|when, then| {
+        when.method(GET).path("/gated");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(gate);
+    });
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = synthetic_browser_state(Arc::new(move |request: MockBrowserRequest| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Ok(synthetic_browser_outcome(&request.url, None))
+    }));
+    let mut args = screenshot_web_args(&server.url("/gated"), Some(false));
+    args.render = Some("auto".to_string());
+
+    let result = run_web_fetch(state, args).await.expect("auto render");
+    assert_eq!(result["transport"], "browser");
+    assert_eq!(result["browser_escalated"], true);
+    assert_eq!(page.hits(), 1, "the HTTP gate is fetched once");
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "auto escalates once");
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn auto_render_keeps_a_long_javascript_mention_on_the_http_path() {
+    use crate::mcp::state::MockBrowserRequest;
+    use httpmock::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = MockServer::start();
+    let guide = fetch_fixture("js_gate_negative.html");
+    server.mock(|when, then| {
+        when.method(GET).path("/guide");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(guide);
+    });
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = synthetic_browser_state(Arc::new(move |request: MockBrowserRequest| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Ok(synthetic_browser_outcome(&request.url, None))
+    }));
+    let mut args = screenshot_web_args(&server.url("/guide"), Some(false));
+    args.render = Some("auto".to_string());
+
+    let result = run_web_fetch(state, args).await.expect("http result");
+    assert_eq!(result["transport"], "http");
+    assert_eq!(result["browser_escalated"], false);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+#[tokio::test]
+async fn http_only_never_escalates_a_short_javascript_gate() {
+    use crate::mcp::state::MockBrowserRequest;
+    use httpmock::prelude::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let server = MockServer::start();
+    let gate = fetch_fixture("js_gate.html");
+    server.mock(|when, then| {
+        when.method(GET).path("/gated");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(gate);
+    });
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let state = synthetic_browser_state(Arc::new(move |request: MockBrowserRequest| {
+        seen.fetch_add(1, Ordering::SeqCst);
+        Ok(synthetic_browser_outcome(&request.url, None))
+    }));
+    let mut args = screenshot_web_args(&server.url("/gated"), Some(false));
+    args.render = Some("http_only".to_string());
+
+    let result = run_web_fetch(state, args).await.expect("http only");
+    assert_eq!(result["transport"], "http");
+    assert_eq!(result["browser_escalated"], false);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(
+        result["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("headless browser")),
+        "http_only must return the gate document it received: {result}"
+    );
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
+fn fetch_fixture(name: &str) -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/fetch")
+        .join(name);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+}
+
+#[cfg(all(feature = "mock", feature = "browser"))]
 fn synthetic_browser_state(
     browser_fetch_override: crate::mcp::state::BrowserFetchOverride,
 ) -> Arc<ServerState> {

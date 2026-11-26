@@ -64,11 +64,12 @@ impl MetadataSearchAdapter {
         // Record failures
         for (index, (id, err)) in raw_failures.iter().enumerate() {
             let class = classify(err);
-            self.health.record_failure(
+            self.health.record_failure_with_retry_after(
                 id,
                 class.into(),
                 &err.to_string(),
                 failure_latencies_ms[index],
+                err.retry_after(),
             );
             responded.insert(id.as_str());
         }

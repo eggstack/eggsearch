@@ -61,6 +61,12 @@ Challenge solving is on by default and can add time to a search. If you disable 
 difficulty, attempt, and timeout limits are configurable. See [Capabilities and Optional
 Features](features.md#bounded-challenge-solving) for limits and restrictions.
 
+On a cold process, a challenged provider may need one extra attempt: a solve that completes but
+whose replay misses the request deadline still caches the pass cookie, and the next call replays
+without solving again. The solve itself never runs past the request deadline; its ceiling is
+`min([search.challenge].timeout_ms, request timeout)`. `provider_status(probe = true)` is the
+supported way to warm the cookie using the configured search budget.
+
 ### Yahoo (default)
 
 - ID: `yahoo`
@@ -752,7 +758,7 @@ If a provider listed in `default_providers` is disabled or lacks a valid API key
 | `credential_not_configured` | Credential not configured | Credential entry exists but is not fully configured | Incomplete `[search.api.<id>]` section | Complete the API config section | No |
 | `credential_env_missing` | Credential environment variable not set | `api_key_env` is set but the env var is not present at runtime | Environment variable not exported in the shell | Export the env var or add it to your shell profile | No |
 | `credential_invalid` | Credential invalid (empty) | Environment variable is set but empty | Env var exported with empty value | Set the env var to a valid value | No |
-| `cooldown_active` | Cooldown active | Provider is temporarily suppressed after repeated failures | 3+ consecutive failures (rate limit, timeout, network error) | Wait for cooldown to expire (15–60s depending on failure class) | **Yes**: auto-recovers |
+| `cooldown_active` | Cooldown active | Provider is temporarily suppressed after repeated failures | 3+ consecutive search failures (rate limit, timeout, network error), or a valid `Retry-After` on a `429` | Wait for cooldown to expire (15–300s depending on failure class and header) | **Yes**: auto-recovers |
 | `not_built` | Not built | Provider was excluded at compile time | Feature-gated or compiled out of the binary | Rebuild with the required feature flag | No |
 | `unknown` | Unknown | Catch-all for unrecognized skip conditions | Edge case or internal error | Run `eggsearch doctor` for details | No |
 
@@ -775,10 +781,12 @@ After 3 consecutive failures (`COOLDOWN_THRESHOLD = 3`), a provider enters coold
 
 | Failure Class | Cooldown Duration | Recovery Trigger |
 |---------------|-------------------|------------------|
-| Rate limited | 60 seconds | Single successful query |
+| Rate limited | 60 seconds, or the clamped `Retry-After` hint | Single successful query |
 | Timeout | 15 seconds | Single successful query |
 | Transport / HTTP error | 30 seconds | Single successful query |
 | Other | 30 seconds | Single successful query |
+
+A rate-limited response (`429`) that carries a valid `Retry-After` header starts a cooldown immediately, matching the header without waiting for the threshold. The shared fetch parser accepts delta-seconds or an HTTP date and clamps the value to 300 seconds; an absent or malformed header keeps the 60-second class default and the 3-failure threshold.
 
 A single successful query immediately clears cooldown, resets the failure counter, and restores the provider to `Healthy`.
 
@@ -808,8 +816,9 @@ One shared probe service (`src/meta/probe.rs`) backs all diagnostics:
 - MCP `provider_status` with `{"probe": true}`: returns a typed `probe` section with the same outcomes
 - `make live-smoke` / `cargo test --features live-smoke --test corpus_runner -- --ignored`: existing opt-in live checks
 - `make live-mcp-smoke`: end-to-end MCP check against built-in keyless default providers, with Cargo-default PDF/browser support enabled and no mock engine feature
+- `make live-release-smoke`: the same end-to-end MCP check on an optimized build, for challenge-solver and proof-of-work measurements
 
-Probe policy: narrowest `test`/1-result request, 5s per-provider deadline, 20s aggregate deadline, max 4 concurrent probes, 256-char bounded sanitized messages. Failures update advisory health state but never override explicit provider selection. Missing credentials/config yield skipped outcomes with stable `skip_code` (never a misleading network failure). Credentials and raw upstream bodies are never echoed. Routine `make check` stays network-free; live probes run only when explicitly requested.
+Probe policy: narrowest `test`/1-result request, per-provider deadline derived from `[search].timeout_ms` (a bare request without a configured budget falls back to 5s), 20s aggregate deadline, max 4 concurrent probes, 256-char bounded sanitized messages. A probe reports success, failure class, and latency only: it never writes routing health, so diagnostic traffic cannot degrade a provider, raise `consecutive_failures`, or start a cooldown. Probes never override explicit provider selection. Missing credentials/config yield skipped outcomes with stable `skip_code` (never a misleading network failure). Credentials and raw upstream bodies are never echoed. Routine `make check` stays network-free; live probes run only when explicitly requested.
 
 ## Troubleshooting
 
@@ -820,7 +829,7 @@ Probe policy: narrowest `test`/1-result request, 5s per-provider deadline, 20s a
 | SearXNG unavailable | Missing `base_url` or both flags not set | Set `base_url` in `[search.searxng]` and enable in `[search.providers]` | `provider_status` → check `skip_code: missing_searxng_config` |
 | Gitea/GitLab provider fails | Missing `base_url` | Set `base_url` in the `[search.api.<provider>]` section | `provider_status` → check `skip_code: missing_base_url` |
 | Profile degraded warning | A profile provider is unavailable | Configure the missing provider or accept fallback to defaults | `provider_status` → check `skip_code` and `health_view` |
-| Provider in cooldown | 3+ consecutive failures | Wait for cooldown to expire (15–60s) or fix the underlying issue | `provider_status` → check `skip_code: cooldown_active` and `health_view.status` |
+| Provider in cooldown | 3+ consecutive search failures, or a valid `Retry-After` on a `429` | Wait for cooldown to expire (15–300s) or fix the underlying issue | `provider_status` → check `skip_code: cooldown_active` and `health_view.status` |
 | Credential env var missing | Env var not exported in shell | Export the env var or add to shell profile | `provider_status` → check `skip_code: credential_env_missing` |
 | All providers fail | Network issue or all providers in cooldown | Check network connectivity; wait for cooldown expiry | `provider_status` → check `health` for all providers |
 | Provider built with wrong features | `skip_code: not_built` | Rebuild with the required feature flag | `cargo build --features <feature>` |

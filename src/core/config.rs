@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::error::{CoreError, CoreResult};
 use crate::core::provider::{API_PROVIDER_IDS, KNOWN_PROVIDER_IDS};
+use search_defaults::{
+    default_default_providers, default_provider_map, default_search_max_query_chars,
+    default_search_max_results, default_search_mode, default_search_results_cap,
+    default_search_timeout_ms,
+};
 
 /// Returns `true` when the named credential environment variable is set to
 /// a non-empty value.
@@ -186,21 +191,26 @@ const PDF_MAX_DECOMPRESSED_BYTES_LIMIT: usize = 1_073_741_824;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchSection {
     /// Server mode: `off` or `live`. Defaults to `live`.
+    #[serde(default = "default_search_mode")]
     pub mode: Mode,
     /// Default number of results for `web_search` when not specified.
-    #[serde(alias = "max_results")]
+    #[serde(alias = "max_results", default = "default_search_max_results")]
     pub default_max_results: usize,
     /// Hard cap on `max_results` from clients.
+    #[serde(default = "default_search_results_cap")]
     pub max_results_cap: usize,
     /// Maximum accepted query length in characters.
+    #[serde(default = "default_search_max_query_chars")]
     pub max_query_chars: usize,
     /// Default per-request timeout in milliseconds.
+    #[serde(default = "default_search_timeout_ms")]
     pub timeout_ms: u64,
     /// Default providers to query when none are specified.
+    #[serde(default = "default_default_providers")]
     pub default_providers: Vec<String>,
     /// Per-provider enable/disable flags. Keys are provider ids
     /// (`duckduckgo`, `brave`, `startpage`, `yahoo`, `mojeek`, `searxng`).
-    #[serde(default)]
+    #[serde(default = "default_provider_map")]
     pub providers: std::collections::BTreeMap<String, bool>,
     /// Optional SearXNG upstream configuration. Only consulted when
     /// the `searxng` provider is also enabled in `providers`.
@@ -269,32 +279,14 @@ pub struct SearchSection {
 
 impl Default for SearchSection {
     fn default() -> Self {
-        let mut providers = std::collections::BTreeMap::new();
-        providers.insert("duckduckgo".to_string(), true);
-        providers.insert("brave".to_string(), true);
-        providers.insert("startpage".to_string(), true);
-        providers.insert("yahoo".to_string(), true);
-        providers.insert("mojeek".to_string(), false);
-        providers.insert("searxng".to_string(), false);
-        providers.insert("osv".to_string(), true);
-        providers.insert("firecrawl_developer".to_string(), false);
-        providers.insert("wikipedia".to_string(), false);
-        providers.insert("arxiv".to_string(), false);
-        providers.insert("pubmed".to_string(), false);
-        providers.insert("hn_algolia".to_string(), false);
-        providers.insert("github_repositories".to_string(), false);
         Self {
-            mode: Mode::default(),
-            default_max_results: 10,
-            max_results_cap: 50,
-            max_query_chars: 512,
-            timeout_ms: 8000,
-            default_providers: vec![
-                "duckduckgo".to_string(),
-                "brave".to_string(),
-                "yahoo".to_string(),
-            ],
-            providers,
+            mode: default_search_mode(),
+            default_max_results: default_search_max_results(),
+            max_results_cap: default_search_results_cap(),
+            max_query_chars: default_search_max_query_chars(),
+            timeout_ms: default_search_timeout_ms(),
+            default_providers: default_default_providers(),
+            providers: default_provider_map(),
             searxng: SearxngConfig::default(),
             api: std::collections::BTreeMap::new(),
             live: LiveConfig::default(),
@@ -2039,6 +2031,7 @@ pub fn default_config_path() -> PathBuf {
 mod challenge;
 mod mcp;
 mod routing;
+mod search_defaults;
 mod snapshot;
 
 #[cfg(test)]

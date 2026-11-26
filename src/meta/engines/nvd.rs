@@ -198,6 +198,12 @@ async fn fetch_json(
         .map_err(|e| super::map_request_error(ENGINE, e))?;
     let status = resp.status();
     if !status.is_success() {
+        if status.as_u16() == 429 {
+            return Err(EngineError::RateLimited {
+                engine: ENGINE,
+                retry_after_ms: super::retry_after_ms(&resp),
+            });
+        }
         return Err(EngineError::BadStatus {
             engine: ENGINE,
             status: status.as_u16(),
@@ -447,6 +453,52 @@ fn truncate(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_429_carries_the_retry_after_hint() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/cve");
+            then.status(429).header("retry-after", "7").body("");
+        });
+        let client = super::super::build_http_client(None).expect("client");
+        let error = fetch_json(&client, None, &server.url("/cve"), Duration::from_secs(5))
+            .await
+            .expect_err("429 is a rate limit");
+        match error {
+            EngineError::RateLimited { retry_after_ms, .. } => {
+                assert_eq!(retry_after_ms, Some(7_000));
+                assert_eq!(error.retry_after(), Some(Duration::from_secs(7)));
+            }
+            other => panic!("expected RateLimited, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_malformed_retry_after_keeps_the_rate_limit_without_a_hint() {
+        use httpmock::prelude::*;
+
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/cve");
+            then.status(429)
+                .header("retry-after", "not-a-date")
+                .body("");
+        });
+        let client = super::super::build_http_client(None).expect("client");
+        let error = fetch_json(&client, None, &server.url("/cve"), Duration::from_secs(5))
+            .await
+            .expect_err("429 is a rate limit");
+        match error {
+            EngineError::RateLimited { retry_after_ms, .. } => {
+                assert_eq!(retry_after_ms, None);
+                assert_eq!(error.retry_after(), None);
+            }
+            other => panic!("expected RateLimited, got {other:?}"),
+        }
+    }
 
     #[test]
     fn test_parse_cpe() {

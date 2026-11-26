@@ -334,6 +334,13 @@ fn build_payload_without_probe(
     payload
 }
 
+fn probe_request(state: &ServerState) -> crate::meta::probe::ProviderProbeRequest {
+    crate::meta::probe::ProviderProbeRequest {
+        timeout_per_provider_ms: Some(state.config.search.timeout_ms.max(1)),
+        ..Default::default()
+    }
+}
+
 fn insert_probe(payload: &mut serde_json::Value, probe: serde_json::Value) {
     if let serde_json::Value::Object(map) = payload {
         map.insert("probe".to_string(), probe);
@@ -371,7 +378,7 @@ pub fn run_provider_status(
         .map_err(|e| ToolError::internal(format!("probe runtime failed: {e}")))?;
     let summary = rt.block_on(crate::meta::probe::probe_providers(
         &state.adapter,
-        crate::meta::probe::ProviderProbeRequest::default(),
+        probe_request(&state),
     ));
     insert_probe(
         &mut payload,
@@ -400,11 +407,7 @@ pub async fn run_provider_status_async(
         );
         return Ok(payload);
     }
-    let summary = crate::meta::probe::probe_providers(
-        &state.adapter,
-        crate::meta::probe::ProviderProbeRequest::default(),
-    )
-    .await;
+    let summary = crate::meta::probe::probe_providers(&state.adapter, probe_request(&state)).await;
     insert_probe(
         &mut payload,
         serde_json::to_value(&summary).map_err(|e| ToolError::internal(e.to_string()))?,

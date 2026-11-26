@@ -64,6 +64,7 @@ impl MockResult {
 pub enum MockFailure {
     Timeout,
     HttpStatus(u16),
+    RateLimited(Option<u64>),
     Parse,
     Blocked,
     Network,
@@ -75,6 +76,10 @@ impl MockFailure {
         match self {
             MockFailure::Timeout => EngineError::Timeout { engine },
             MockFailure::HttpStatus(status) => EngineError::BadStatus { engine, status },
+            MockFailure::RateLimited(retry_after_ms) => EngineError::RateLimited {
+                engine,
+                retry_after_ms,
+            },
             MockFailure::Parse => EngineError::ParseFailed {
                 engine,
                 reason: "mock parse failure".to_string(),
@@ -98,6 +103,7 @@ pub struct MockEngine {
     results: Vec<SearchResult>,
     failure: Option<MockFailure>,
     hang: bool,
+    delay: Option<Duration>,
     timeout_sink: Option<Arc<Mutex<Option<Duration>>>>,
 }
 
@@ -120,6 +126,7 @@ impl MockEngine {
             results: rs,
             failure: None,
             hang: false,
+            delay: None,
             timeout_sink: None,
         }
     }
@@ -130,6 +137,7 @@ impl MockEngine {
             results: Vec::new(),
             failure: Some(failure),
             hang: false,
+            delay: None,
             timeout_sink: None,
         }
     }
@@ -140,6 +148,30 @@ impl MockEngine {
             results: Vec::new(),
             failure: None,
             hang: true,
+            delay: None,
+            timeout_sink: None,
+        }
+    }
+
+    pub fn slow(name: &'static str, delay: Duration, results: Vec<MockResult>) -> Self {
+        let rs = results
+            .into_iter()
+            .map(|r| SearchResult {
+                title: r.title,
+                url: r.url,
+                snippet: r.snippet,
+                source_engine: r.source_engine,
+                metadata: Default::default(),
+                excerpts: r.excerpts,
+                published_at: r.published_at,
+            })
+            .collect();
+        Self {
+            name,
+            results: rs,
+            failure: None,
+            hang: false,
+            delay: Some(delay),
             timeout_sink: None,
         }
     }
@@ -150,6 +182,7 @@ impl MockEngine {
             results: Vec::new(),
             failure: None,
             hang: false,
+            delay: None,
             timeout_sink: Some(sink),
         }
     }
@@ -174,6 +207,9 @@ impl SearchEngine for MockEngine {
             if self.hang {
                 pending::<()>().await;
                 unreachable!("pending future resolved")
+            }
+            if let Some(delay) = self.delay {
+                tokio::time::sleep(delay).await;
             }
             match self.failure {
                 Some(f) => Err(f.to_engine_error(self.name)),

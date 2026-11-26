@@ -25,6 +25,17 @@ impl FetchDisposition {
 /// Rendered text below this length never overrides an interstitial status.
 const RENDERED_CONTENT_MIN_CHARS: usize = 200;
 
+/// Longest page that may be classified by an explicit gate instruction.
+const JAVASCRIPT_GATE_MAX_CHARS: usize = 200;
+
+/// Instructions a short page uses when it needs scripting to render.
+const JAVASCRIPT_GATE_MARKERS: [&str; 4] = [
+    "enable javascript",
+    "javascript is required",
+    "requires javascript",
+    "use a headless browser",
+];
+
 pub fn classify_response(
     status: u16,
     content_type: Option<&str>,
@@ -118,6 +129,14 @@ fn is_noninteractive_verification(title_lower: &str, body: &str) -> bool {
 
 fn is_javascript_shell(_title_lower: &str, text_len: usize, body: &str) -> bool {
     let body_lower = body.to_lowercase();
+
+    if text_len < JAVASCRIPT_GATE_MAX_CHARS
+        && JAVASCRIPT_GATE_MARKERS
+            .iter()
+            .any(|marker| body_lower.contains(marker))
+    {
+        return true;
+    }
 
     if text_len < 50
         && (body_lower.contains("<div id=\"root\"")
@@ -398,6 +417,46 @@ mod tests {
         assert_eq!(
             classify_response(200, Some("text/html"), Some("App"), 10, body.as_bytes()),
             FetchDisposition::JavascriptShell
+        );
+    }
+
+    #[test]
+    fn a_short_gate_instruction_is_a_javascript_shell() {
+        let body = br#"<html><head><title>JavaScript required</title></head><body><p>Either use a headless browser or enable JavaScript to continue.</p></body></html>"#;
+        assert_eq!(
+            classify_response(
+                200,
+                Some("text/html"),
+                Some("JavaScript required"),
+                66,
+                body
+            ),
+            FetchDisposition::JavascriptShell
+        );
+    }
+
+    #[test]
+    fn a_long_page_that_mentions_javascript_stays_useful() {
+        let text = "This guide explains how JavaScript runs in the browser. ".repeat(8);
+        let body = format!("<html><body><p>{text}</p></body></html>");
+        assert_eq!(
+            classify_response(
+                200,
+                Some("text/html"),
+                Some("Guide"),
+                text.chars().count(),
+                body.as_bytes()
+            ),
+            FetchDisposition::UsefulContent
+        );
+    }
+
+    #[test]
+    fn an_interactive_challenge_keeps_precedence_over_a_gate_instruction() {
+        let body = br#"<html><body><div class="cf-turnstile"></div><p>Enable JavaScript to continue.</p></body></html>"#;
+        assert_eq!(
+            classify_response(200, Some("text/html"), None, 32, body),
+            FetchDisposition::InteractiveChallenge
         );
     }
 

@@ -175,6 +175,34 @@ fn seeded_drift_reports_parse_failed() {
                     case.provider,
                     case.drift_hint
                 );
+                assert!(
+                    reason.contains("title=") && reason.contains("digest="),
+                    "{} drift reason must carry a bounded fingerprint, got: {reason}",
+                    case.provider
+                );
+                let digest = reason
+                    .split("digest=")
+                    .nth(1)
+                    .and_then(|rest| rest.split(']').next())
+                    .expect("digest segment");
+                assert_eq!(digest.len(), 16, "{} digest width: {reason}", case.provider);
+                assert!(
+                    digest.chars().all(|c| c.is_ascii_hexdigit()),
+                    "{} digest must be hex: {reason}",
+                    case.provider
+                );
+                let repeated = parse_html(case.provider, &drifted, 10)
+                    .expect_err("the same drift must fail identically");
+                match repeated {
+                    EngineError::ParseFailed { reason: again, .. } => {
+                        assert_eq!(
+                            reason, again,
+                            "{} fingerprint must be deterministic",
+                            case.provider
+                        );
+                    }
+                    other => panic!("{} repeated drift: {other:?}", case.provider),
+                }
             }
             other => panic!(
                 "{} drifted results.html must yield ParseFailed, got: {other:?}",

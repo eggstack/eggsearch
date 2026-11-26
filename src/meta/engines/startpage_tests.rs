@@ -1731,3 +1731,6 @@ async fn sha256_challenge_solves_and_replays_once() {
     assert_eq!(replay_mock.hits(), 1);
     assert_eq!(ledger_stats().last_candidates, 43);
 }
+
+#[path = "startpage_solve_tests.rs"]
+mod solve_tests;

@@ -291,7 +291,10 @@ fn collect_warnings(cfg: &AppConfig) -> Vec<String> {
 async fn probe_providers(state: &ServerState) -> Result<()> {
     let summary = eggsearch::meta::probe::probe_providers(
         &state.adapter,
-        eggsearch::meta::probe::ProviderProbeRequest::default(),
+        eggsearch::meta::probe::ProviderProbeRequest {
+            timeout_per_provider_ms: Some(state.config.search.timeout_ms.max(1)),
+            ..Default::default()
+        },
     )
     .await;
     for outcome in &summary.outcomes {

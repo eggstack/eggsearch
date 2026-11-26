@@ -19,7 +19,7 @@ workspace backend (`src/meta/local_backend.rs`), not an engine file.
 | `request.rs` | `EngineSearchRequest` — provider-neutral structured request; `RepoScope` (`owner`/`repo`, never reparsed from free text) |
 | `models.rs` | `SearchResult`, `ResultMetadata` (issue/release/advisory/code-search merge), `AggregatedResult`, `EngineSearchBatch` / `EngineRetrievalMetadata` / `ScopeIndexStatus` |
 | `normalizer.rs` | URL canonicalization: fragment strip, tracking-param strip, query-param sort, locale-prefix strip, index-file strip, trailing-slash trim, scheme/host lowercase |
-| `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `ParseFailed`, `Blocked`, `NetworkError`, `Unsupported` |
+| `error.rs` | `EngineError`: `Timeout`, `Http`, `BadStatus`, `RateLimited`, `ParseFailed`, `Blocked`, `NetworkError`, `Unsupported` |
 | `test_harness.rs` | `mock`-gated `parse_html(provider_id, html, max_results)` used by the captured-fixture conformance suite; absent from default builds |
 | `kev.rs` | Shared `KevClient`: fetches and caches the CISA Known Exploited Vulnerabilities catalog (used by the `cisa_kev` engine and by `ServerState` for KEV enrichment) |
 | `<provider>.rs` × 43 | One upstream mapping each: request shaping, bounded read, response parse, `SearchResult` construction |
@@ -174,13 +174,18 @@ four-outcome decision has exactly one implementation. Text markers are matched a
 text with `<script>` and `<style>` content excluded, so a locale bundle cannot masquerade as an
 empty-state marker. Ordering: parsed rows win; then a blocked marker; then an empty marker; then
 `ParseFailed` with a reason that names the container (`missing` versus `produced no parseable
-results`).
+results`) and appends a bounded fingerprint: the document `<title>` (sanitized, at most 80
+characters) and a 16-hex digest of the canonical node tree. The digest walks elements in document
+order with attributes sorted by name, so it is stable across parses even though the HTML serializer
+is not; no page body text enters the message.
 
 A challenge page can arrive with a non-success status: Brave answers its proof-of-work wall with
 HTTP 429 while serving the challenge document. The body is therefore read for every status and run
 through the same blocked markers, so the outcome is `Blocked` with the status named in the reason,
-never `rate_limited` from the bare status. A non-success body that matches no marker keeps
-`BadStatus`.
+never a bare rate limit. A non-success body that matches no marker keeps `BadStatus`; a `429` with
+no marker becomes `RateLimited`, carrying the parsed `Retry-After` hint when the upstream sent one.
+The engine-side cooldown uses that hint immediately (clamped to 300 s) and otherwise falls back to
+the 60-second class default after the consecutive-failure threshold.
 
 ### Browser-rendered access
 
@@ -402,6 +407,13 @@ Implementation:
 - Solving is attempted at most once per search request per provider. A solved request proceeds
   through the normal parser and `finalize_scrape()`; a solved but unparseable page is still
   `ParseFailed`, not `Blocked` and not empty.
+- Cold-start contract: the pass cookie is written to the process-local cache before the replay
+  request is awaited, so a solve that completes but whose replay misses the request deadline still
+  leaves a warm cookie for the next call. That next call replays without a second solve. The solve
+  itself never runs past the request deadline: its wall-clock ceiling is
+  `min([search.challenge].timeout_ms, request timeout)`. Operators should expect at most one cold
+  attempt per challenged provider; after the probe-budget fix, `provider_status(probe = true)` is
+  the supported way to warm the cookie without a user-visible search.
 - Determinism: fixed constants for any client-chosen field the upstream does not verify (for
   example ALTCHA's `solution.time`), so a recorded challenge always produces the same answer.
 - Tests: synthetic challenge fixtures with a known solution and a known-bad answer, budget

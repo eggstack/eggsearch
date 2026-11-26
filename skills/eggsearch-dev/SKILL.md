@@ -38,6 +38,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `egress` | Optional listener-free HTTP/SOCKS proxy-chain route beneath eggfetch (provider upstreams only, source-build opt-in) | Egress routing tests |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
 | `live-mcp-smoke` | Real MCP-protocol smoke against built-in keyless defaults; retains default `pdf`/`browser`, does not enable `mock` | Manual only |
+| `live-release-smoke` (make target) | The same ignored MCP smoke built with `--release`; the only valid measurement of challenge-solver and proof-of-work timing | Manual only |
 **Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
 
 ## Test Locations
@@ -60,7 +61,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, excerpt economy) |
 | `tests/forge_adapter.rs` | None | Forge adapter unit tests |
 | `tests/dispatch_fault_injection.rs` | `mock` | Provider failure/timeout/concurrency |
-| `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure/cooldown, descriptor source-of-truth) |
+| `tests/provider_probe_conformance.rs` | `mock` | Shared probe service conformance (success/skip/failure, probe-health isolation, search-budget derivation, descriptor source-of-truth) |
 | `tests/engine_parse_conformance.rs` | `mock` | Captured-fixture three-outcome contract for the five HTML scrapers plus seeded-drift `parse_error` |
 | `tests/extract_fetch_contract.rs` | `mock` (partial) | Excerpts, focus ranking, fetch cache controls, markdown-first negotiation and fallback |
 | `tests/tool_surface_evaluation.rs` | None | 43-case tool-selection corpus (`tests/fixtures/tool_surface/cases.json`): top-1/recall@3/MRR, byte budgets, fingerprint (`make eval-tool-surface`) |

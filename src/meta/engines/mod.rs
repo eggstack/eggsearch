@@ -903,6 +903,13 @@ const DEFAULT_USER_AGENT: &str =
      Chrome/124.0.0.0 Safari/537.36";
 
 /// Stream response bytes under a hard cap, returning a parse error on overflow.
+/// `Retry-After` hint in milliseconds, clamped by the shared fetch parser.
+pub(crate) fn retry_after_ms(response: &eggfetch_core::Response) -> Option<u64> {
+    let value = response.headers().get("retry-after")?.to_str().ok()?;
+    crate::fetch::origin::parse_retry_after(value)
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+}
+
 pub async fn read_bounded_body(
     mut response: eggfetch_core::Response,
     engine: &'static str,
@@ -1082,7 +1089,66 @@ pub(crate) fn finalize_scrape(
     } else {
         format!("result container '{}' missing", shape.result_container)
     };
-    Err(EngineError::ParseFailed { engine, reason })
+    Err(EngineError::ParseFailed {
+        engine,
+        reason: format!(
+            "{reason} [title={} digest={:016x}]",
+            title_fingerprint(document),
+            body_digest(document)
+        ),
+    })
+}
+
+fn title_fingerprint(document: &scraper::Html) -> String {
+    let Ok(selector) = scraper::Selector::parse("title") else {
+        return "untitled".to_string();
+    };
+    let Some(element) = document.select(&selector).next() else {
+        return "untitled".to_string();
+    };
+    let raw: String = element.text().collect();
+    let cleaned: String = raw.chars().filter(|c| !c.is_control()).collect();
+    let trimmed = cleaned.trim();
+    if trimmed.is_empty() {
+        return "untitled".to_string();
+    }
+    let bounded: String = trimmed.chars().take(80).collect();
+    bounded.replace(['[', ']', '"'], "'")
+}
+
+fn body_digest(document: &scraper::Html) -> u64 {
+    let mut hasher = crate::core::identity::FnvHasher::new();
+    for node in document.tree.nodes() {
+        match node.value() {
+            scraper::node::Node::Element(element) => {
+                hasher.write(b"E");
+                hasher.write(element.name().as_bytes());
+                let mut attributes: Vec<(&str, &str)> = element.attrs().collect();
+                attributes.sort_unstable();
+                for (name, value) in attributes {
+                    hasher.write(b"|");
+                    hasher.write(name.as_bytes());
+                    hasher.write(b"=");
+                    hasher.write(value.as_bytes());
+                }
+            }
+            scraper::node::Node::Text(text) => {
+                hasher.write(b"T");
+                hasher.write(text.text.as_bytes());
+            }
+            scraper::node::Node::Comment(comment) => {
+                hasher.write(b"C");
+                hasher.write(comment.comment.as_bytes());
+            }
+            scraper::node::Node::Doctype(doctype) => {
+                hasher.write(b"D");
+                hasher.write(doctype.name.as_bytes());
+            }
+            _ => {}
+        }
+        hasher.write(b"\n");
+    }
+    hasher.finish()
 }
 
 /// Parse a CSS selector, mapping invalid syntax to
@@ -1242,9 +1308,73 @@ mod tests {
                 assert_eq!(engine, "test");
                 assert!(reason.contains("div.result"), "reason: {reason}");
                 assert!(reason.contains("missing"), "reason: {reason}");
+                assert!(reason.contains("title="), "reason: {reason}");
+                assert!(reason.contains("digest="), "reason: {reason}");
             }
             other => panic!("expected ParseFailed, got {other:?}"),
         }
+    }
+
+    fn parse_failure_reason(html: &str) -> String {
+        let document = scraper::Html::parse_document(html);
+        match finalize_scrape("test", &document, &SHAPE, Vec::new()) {
+            Err(EngineError::ParseFailed { reason, .. }) => reason,
+            other => panic!("expected ParseFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_failure_fingerprint_is_stable_and_bounded() {
+        let html =
+            "<html><head><title>Drifted page</title></head><body><p>changed</p></body></html>";
+        let first = parse_failure_reason(html);
+        let second = parse_failure_reason(html);
+        assert_eq!(first, second, "the fingerprint must be deterministic");
+        assert!(first.contains("title=Drifted page"), "reason: {first}");
+        let digest = first
+            .split("digest=")
+            .nth(1)
+            .expect("digest present")
+            .split(']')
+            .next()
+            .expect("digest bounded");
+        assert_eq!(digest.len(), 16, "reason: {first}");
+        assert!(
+            digest.chars().all(|c| c.is_ascii_hexdigit()),
+            "reason: {first}"
+        );
+        assert!(first.chars().count() < 300, "reason: {first}");
+    }
+
+    #[test]
+    fn parse_failure_fingerprint_differs_for_different_bodies() {
+        let first = parse_failure_reason(
+            "<html><head><title>One</title></head><body><p>changed</p></body></html>",
+        );
+        let second = parse_failure_reason(
+            "<html><head><title>Two</title></head><body><p>also changed</p></body></html>",
+        );
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn parse_failure_fingerprint_strips_control_characters_and_bounds_the_title() {
+        let long_title = "x".repeat(200);
+        let html = format!(
+            "<html><head><title>bad{}{}{long_title}</title></head><body><p>x</p></body></html>",
+            '\u{0}', '\u{1}'
+        );
+        let reason = parse_failure_reason(&html);
+        assert!(!reason.contains('\u{0}'), "reason: {reason}");
+        assert!(!reason.contains('\u{1}'), "reason: {reason}");
+        let title = reason
+            .split("title=")
+            .nth(1)
+            .expect("title present")
+            .split(" digest=")
+            .next()
+            .expect("title bounded");
+        assert_eq!(title.chars().count(), 80, "reason: {reason}");
     }
 
     #[test]

@@ -56,6 +56,15 @@ pub struct RepoMapArgs {
     pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
 }
 
+fn clear_generic_native_tree_notice(response: &mut crate::core::repo_map::RepoMapResponse) {
+    response
+        .warnings
+        .retain(|warning| !warning.message.contains("no_native_tree_provider"));
+    response
+        .structured_warnings
+        .retain(|warning| warning.code != crate::core::warning::WarningCode::NoNativeTreeProvider);
+}
+
 fn build_forge_tree_config(
     state: &ServerState,
     host: crate::core::code_metadata::CodeHost,
@@ -197,6 +206,7 @@ pub async fn run_repo_map_with_host_scope(
                 }
                 Err(_e) => {
                     let mut fallback = crate::meta::repo_mapper::build_fallback_response(&req);
+                    clear_generic_native_tree_notice(&mut fallback);
                     let warning_code = if _e.contains("rate_limited") {
                         crate::core::warning::WarningCode::ForgeRateLimited
                     } else if _e.contains("authentication_required") {
@@ -217,10 +227,10 @@ pub async fn run_repo_map_with_host_scope(
                         format!("forge tree adapter failed: {_e}")
                     };
                     fallback
-                        .structured_warnings
-                        .push(crate::core::warning::AgentWarning::new(
-                            warning_code,
-                            message,
+                        .warnings
+                        .push(crate::core::result::SearchWarning::new(
+                            "_system",
+                            format!("{}: {message}", warning_code.as_str()),
                         ));
                     if deadline_exceeded {
                         fallback.telemetry = Some(crate::core::repo_map::RepoMapTelemetry {
@@ -331,9 +341,10 @@ pub async fn run_repo_map_with_host_scope(
 
     // Fallback subqueries are intentionally not generated because no
     // fallback discovery is performed without a native tree provider
-    // or a matching local checkout. The single `no_native_tree_provider`
-    // warning added by `build_fallback_response` is the authoritative
-    // signal for this degraded mode.
+    // or a matching local checkout. `build_fallback_response` adds the
+    // generic `no_native_tree_provider` notice for the no-host and
+    // unsupported-host paths; a concrete forge failure replaces it with
+    // one specific warning so a single failure has a single explanation.
 
     // Populate structured warnings from accumulated string warnings
     let mut structured_warnings = std::mem::take(&mut response.structured_warnings);

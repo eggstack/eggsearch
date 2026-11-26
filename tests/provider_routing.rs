@@ -2805,6 +2805,31 @@ async fn explicit_provider_failure_surfaces_upstream_failed_not_internal() {
     );
 }
 
+#[cfg(feature = "mock")]
+#[tokio::test]
+async fn a_retry_after_rate_limit_starts_a_matching_cooldown() {
+    let engines = vec![MockEngine::failure(
+        "mock_a",
+        MockFailure::RateLimited(Some(7_000)),
+    )];
+    let state = state_with_engines(test_cfg(), engines, Duration::from_secs(5));
+    let health = std::sync::Arc::clone(state.adapter.health());
+    let _ = run_web_search(state, args_for(&["mock_a"], "rust")).await;
+    assert!(health.is_in_cooldown("mock_a"));
+    let snapshot = health.snapshot("mock_a", true, true);
+    assert_eq!(
+        snapshot.recent_failure_class.as_deref(),
+        Some("rate_limited")
+    );
+    let remaining = snapshot
+        .cooldown_until
+        .expect("cooldown deadline")
+        .trim_end_matches('s')
+        .parse::<u64>()
+        .expect("seconds");
+    assert!((6..=7).contains(&remaining), "got: {remaining}s");
+}
+
 // ---------------------------------------------------------------------------
 // Plan 003 §3 — explicit-provider rejection classification.
 //

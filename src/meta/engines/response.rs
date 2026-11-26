@@ -17,6 +17,7 @@ pub(crate) fn classify_search_failure(
     body: &str,
     shape: &ScrapeShape,
     raw_markers: &[&'static str],
+    retry_after_ms: Option<u64>,
 ) -> EngineError {
     let document = scraper::Html::parse_document(body);
     let mut rendered: Option<String> = None;
@@ -43,6 +44,12 @@ pub(crate) fn classify_search_failure(
             };
         }
     }
+    if status == 429 {
+        return EngineError::RateLimited {
+            engine,
+            retry_after_ms,
+        };
+    }
     EngineError::BadStatus { engine, status }
 }
 
@@ -56,6 +63,7 @@ pub(crate) async fn read_search_body(
     raw_markers: &[&'static str],
 ) -> Result<String, EngineError> {
     let status = resp.status().as_u16();
+    let retry_after_ms = super::retry_after_ms(&resp);
     let bytes = read_bounded_body(resp, engine, max_bytes).await?;
     let body = String::from_utf8_lossy(&bytes).into_owned();
     if (200..300).contains(&status) {
@@ -67,6 +75,7 @@ pub(crate) async fn read_search_body(
             &body,
             shape,
             raw_markers,
+            retry_after_ms,
         ))
     }
 }

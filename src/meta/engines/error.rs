@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -14,6 +16,12 @@ pub enum EngineError {
 
     #[error("engine '{engine}' returned status {status}")]
     BadStatus { engine: &'static str, status: u16 },
+
+    #[error("engine '{engine}' rate limited")]
+    RateLimited {
+        engine: &'static str,
+        retry_after_ms: Option<u64>,
+    },
 
     #[error("engine '{engine}' parse failed: {reason}")]
     ParseFailed {
@@ -40,6 +48,18 @@ pub enum EngineError {
     },
 }
 
+impl EngineError {
+    /// `Retry-After` hint carried by a rate-limited response, when present.
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::RateLimited { retry_after_ms, .. } => retry_after_ms
+                .map(Duration::from_millis)
+                .filter(|d| !d.is_zero()),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,6 +79,21 @@ mod tests {
             status: 429,
         };
         assert_eq!(err.to_string(), "engine 'brave' returned status 429");
+    }
+
+    #[test]
+    fn rate_limited_message_carries_the_hint() {
+        let err = EngineError::RateLimited {
+            engine: "nvd",
+            retry_after_ms: Some(7_000),
+        };
+        assert_eq!(err.to_string(), "engine 'nvd' rate limited");
+        assert_eq!(err.retry_after(), Some(Duration::from_millis(7_000)));
+        let absent = EngineError::RateLimited {
+            engine: "nvd",
+            retry_after_ms: None,
+        };
+        assert_eq!(absent.retry_after(), None);
     }
 
     #[test]

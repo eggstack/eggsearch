@@ -45,7 +45,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `snapshot_change` | Persistent `new`/`same`/`changed`/`removed` comparison, content privacy, brief projection, disabled and corrupt-store degradation, and caller-key validation |
 | `documents` | Bounded container-document extraction, deterministic part order, the four outcome kinds, and feature-off parity |
 | `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |
-| `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, cooldown interaction, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
+| `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, probe-health isolation (no consecutive-failure or cooldown write), search-budget derivation and override, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
 | `research_workflow` | Multi-source research discovery end to end |
 | `knowledge_delta_brief` | Cutoff-aware brief: comparison labeling, unknown cutoff, provider failure, and live-versus-index modes |
@@ -140,7 +140,10 @@ Network tests are never part of the default gate. `live-smoke` implies `mock`; t
 cargo test --locked --features live-smoke --test corpus_runner -- --ignored
 cargo test --locked --all-features --test tool_surface_live -- --ignored
 make live-mcp-smoke
+make live-release-smoke
 ```
+
+`make live-mcp-smoke` is the wiring check and may run on a debug build. `make live-release-smoke` runs the same ignored MCP test with `--release`; challenge-solver and proof-of-work timings are only meaningful there, because a debug build makes CPU-bound solving orders of magnitude slower and distorts every deadline observation. Do not use debug timings to judge whether a challenged provider fits the search budget.
 
 `tool_surface_live` additionally supports a manual multi-model comparison entry point gated by `EGGSEARCH_EVAL_MODEL`. It keeps the Layer 3 report contract in CI and holds exactly one ignored comparison test for operator-driven runs. Native forge smoke suites follow the same pattern and require operator-provided credentials plus fixture configuration; they are maintainer-only diagnostics, never release evidence.
 

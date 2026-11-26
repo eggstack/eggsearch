@@ -44,6 +44,7 @@ pub(crate) fn classify(err: &EngineError) -> ErrorClass {
     use EngineError::*;
     match err {
         Timeout { .. } => ErrorClass::Timeout,
+        RateLimited { .. } => ErrorClass::RateLimited,
         BadStatus { status, .. } if *status == 429 => ErrorClass::RateLimited,
         BadStatus { .. } => ErrorClass::HttpStatus,
         ParseFailed { .. } => ErrorClass::ParseError,

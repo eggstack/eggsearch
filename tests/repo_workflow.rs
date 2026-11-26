@@ -1175,13 +1175,24 @@ async fn repo_map_with_local_checkout() {
 /// Helper: create a temp git repo with a remote URL for local matching tests.
 
 #[tokio::test]
-async fn repo_map_fallback_mode_warns_no_native_provider() {
-    let state = state_with_default();
+async fn repo_map_unrecognized_forge_failure_reports_one_generic_notice() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/repos/test-owner/test-repo");
+        then.json_body(serde_json::json!({"default_branch": "main"}));
+    });
+    server.mock(|when, then| {
+        when.method(GET)
+            .path("/repos/test-owner/test-repo/git/trees/main");
+        then.status(500).body("boom");
+    });
+    let state = repo_map_state_with_github_base(server.base_url());
     let args = RepoMapArgs {
         host: Some("github".to_string()),
         owner: "test-owner".to_string(),
         repo: "test-repo".to_string(),
-        ref_name: None,
+        ref_name: Some("main".to_string()),
         commit_sha: None,
         max_entries: None,
         max_depth: None,
@@ -1199,17 +1210,69 @@ async fn repo_map_fallback_mode_warns_no_native_provider() {
         .expect("repo_map should succeed");
 
     assert_eq!(v["mode"], "fallback_search", "should be in fallback mode");
-
-    let warnings = v["warnings"].as_array().expect("warnings is array");
-    let has_native_warning = warnings.iter().any(|w| {
-        w["message"]
-            .as_str()
-            .map(|s| s.contains("no_native_tree_provider"))
-            .unwrap_or(false)
-    });
+    let warnings = v["structured_warnings"]
+        .as_array()
+        .expect("structured warnings is array");
+    let generic: Vec<&serde_json::Value> = warnings
+        .iter()
+        .filter(|w| w["code"] == "no_native_tree_provider")
+        .collect();
+    assert_eq!(
+        generic.len(),
+        1,
+        "one failure must produce one explanation: {warnings:?}"
+    );
     assert!(
-        has_native_warning,
-        "should warn about no native tree provider: {warnings:?}"
+        generic[0]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("forge tree adapter failed")
+                && message.contains("provider_unavailable")),
+        "the retained notice must name the specific failure: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn repo_map_explicit_host_404_omits_the_generic_notice() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/repos/test-owner/test-repo");
+        then.status(404).body("not found");
+    });
+    let state = repo_map_state_with_github_base(server.base_url());
+    let v = run_repo_map(
+        state,
+        RepoMapArgs {
+            host: Some("github".to_string()),
+            owner: "test-owner".to_string(),
+            repo: "test-repo".to_string(),
+            ref_name: None,
+            commit_sha: None,
+            max_entries: None,
+            max_depth: None,
+            include_files: None,
+            include_directories: None,
+            include_ci: None,
+            include_security: None,
+            timeout_ms: None,
+            providers: vec![],
+            response_detail: None,
+        },
+    )
+    .await
+    .expect("a failed forge lookup still returns a fallback map");
+    let warnings = v["structured_warnings"]
+        .as_array()
+        .expect("structured warnings");
+    assert!(
+        warnings.iter().any(|w| w["code"] == "repo_ref_not_found"),
+        "a 404 must be reported as a missing ref: {v}"
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w["code"] == "no_native_tree_provider"),
+        "a specific failure must not also carry the generic notice: {v}"
     );
 }
 
@@ -5038,14 +5101,25 @@ async fn repo_map_names_the_inferred_host_when_the_forge_lookup_fails() {
     .expect("a failed forge lookup still returns a fallback map");
     assert_eq!(v["host"], "github", "{v}");
     assert_eq!(v["mode"], "fallback_search", "{v}");
-    let guidance = v["structured_warnings"]
+    let warnings = v["structured_warnings"]
         .as_array()
-        .expect("structured warnings")
+        .expect("structured warnings");
+    let guidance = warnings
         .iter()
         .filter_map(|warning| warning["message"].as_str())
         .any(|message| message.contains("host was not supplied"));
     assert!(
         guidance,
         "a failed inferred host must say it was inferred: {v}"
+    );
+    assert!(
+        warnings.iter().any(|w| w["code"] == "repo_ref_not_found"),
+        "the specific failure code must survive inference guidance: {v}"
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w["code"] == "no_native_tree_provider"),
+        "inference guidance replaces the generic notice: {v}"
     );
 }

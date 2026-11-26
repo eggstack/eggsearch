@@ -225,6 +225,8 @@ impl ProviderHealthEntry {
 const RATE_LIMIT_COOLDOWN: Duration = Duration::from_secs(60);
 const TIMEOUT_COOLDOWN: Duration = Duration::from_secs(15);
 const TRANSPORT_COOLDOWN: Duration = Duration::from_secs(30);
+/// Upper bound on a cooldown derived from a `Retry-After` header.
+const MAX_RETRY_AFTER_COOLDOWN: Duration = Duration::from_secs(300);
 /// Number of consecutive failures before entering cooldown.
 const COOLDOWN_THRESHOLD: u32 = 3;
 
@@ -282,6 +284,23 @@ impl ProviderHealthRegistry {
         message: &str,
         latency_ms: u64,
     ) {
+        self.record_failure_with_retry_after(provider_id, failure_class, message, latency_ms, None);
+    }
+
+    /// Record a failed provider call, honoring an upstream `Retry-After` hint.
+    ///
+    /// A positive hint on a rate-limited failure starts the cooldown
+    /// immediately instead of waiting for the consecutive-failure threshold.
+    /// Hints are clamped to 300 seconds; an absent or zero hint keeps the
+    /// class default and the threshold.
+    pub fn record_failure_with_retry_after(
+        &self,
+        provider_id: &str,
+        failure_class: FailureClass,
+        message: &str,
+        latency_ms: u64,
+        retry_after: Option<Duration>,
+    ) {
         let now = Instant::now();
         let bounded = bound_error_message(message);
         let mut entries = self.lock_entries();
@@ -295,6 +314,22 @@ impl ProviderHealthRegistry {
         entry.consecutive_failures += 1;
         if failure_class == FailureClass::ParseError {
             entry.last_parse_shape = Some(ParseShape::Shifted);
+        }
+
+        let hinted = (failure_class == FailureClass::RateLimited)
+            .then_some(retry_after)
+            .flatten()
+            .filter(|duration| !duration.is_zero())
+            .map(|duration| duration.min(MAX_RETRY_AFTER_COOLDOWN));
+        if let Some(duration) = hinted {
+            let deadline = now + duration;
+            entry.cooldown_until = Some(
+                entry
+                    .cooldown_until
+                    .map_or(deadline, |existing| existing.max(deadline)),
+            );
+            entry.cooldown_reason = Some("rate limited".to_string());
+            return;
         }
 
         // Enter cooldown after threshold consecutive failures. An
@@ -972,6 +1007,77 @@ mod tests {
 
         registry.record_failure("brave", FailureClass::RateLimited, "429", 100);
         assert!(registry.is_in_cooldown("brave"));
+    }
+
+    #[test]
+    fn retry_after_hint_starts_a_matching_cooldown_immediately() {
+        let registry = ProviderHealthRegistry::new();
+        registry.record_failure_with_retry_after(
+            "nvd",
+            FailureClass::RateLimited,
+            "429",
+            10,
+            Some(Duration::from_secs(7)),
+        );
+        assert!(registry.is_in_cooldown("nvd"));
+        let entries = registry.entries.lock().unwrap();
+        let remaining = entries
+            .get("nvd")
+            .and_then(|entry| entry.cooldown_until)
+            .expect("cooldown deadline")
+            .saturating_duration_since(Instant::now());
+        assert!(
+            remaining > Duration::from_secs(6) && remaining <= Duration::from_secs(7),
+            "cooldown must match the header: {remaining:?}"
+        );
+    }
+
+    #[test]
+    fn retry_after_hint_is_clamped_and_rate_limit_scoped() {
+        let registry = ProviderHealthRegistry::new();
+        registry.record_failure_with_retry_after(
+            "nvd",
+            FailureClass::RateLimited,
+            "429",
+            10,
+            Some(Duration::from_secs(10_000)),
+        );
+        let entries = registry.entries.lock().unwrap();
+        let remaining = entries
+            .get("nvd")
+            .and_then(|entry| entry.cooldown_until)
+            .expect("cooldown deadline")
+            .saturating_duration_since(Instant::now());
+        assert!(
+            remaining <= Duration::from_secs(300) && remaining > Duration::from_secs(299),
+            "cooldown must be clamped: {remaining:?}"
+        );
+        drop(entries);
+
+        let registry = ProviderHealthRegistry::new();
+        registry.record_failure_with_retry_after(
+            "nvd",
+            FailureClass::Timeout,
+            "timeout",
+            10,
+            Some(Duration::from_secs(7)),
+        );
+        assert!(!registry.is_in_cooldown("nvd"));
+    }
+
+    #[test]
+    fn zero_retry_after_hint_keeps_the_threshold() {
+        let registry = ProviderHealthRegistry::new();
+        registry.record_failure_with_retry_after(
+            "nvd",
+            FailureClass::RateLimited,
+            "429",
+            10,
+            Some(Duration::ZERO),
+        );
+        assert!(!registry.is_in_cooldown("nvd"));
+        let snapshot = registry.snapshot("nvd", true, true);
+        assert_eq!(snapshot.consecutive_failures, 1);
     }
 
     #[test]

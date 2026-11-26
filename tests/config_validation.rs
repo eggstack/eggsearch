@@ -517,6 +517,7 @@ fn round_trip_preserves_all_fields() {
         parsed.search.default_providers,
         cfg.search.default_providers
     );
+    assert_eq!(parsed.search.providers, cfg.search.providers);
     assert_eq!(parsed.search.sanitize_output, cfg.search.sanitize_output);
     assert_eq!(parsed.fetch.enabled, cfg.fetch.enabled);
     assert_eq!(parsed.fetch.timeout_ms, cfg.fetch.timeout_ms);
@@ -1488,4 +1489,59 @@ fn validate_rejects_unknown_browser_policy() {
     cfg.fetch.browser.policy = "sometimes".to_string();
     let err = cfg.validate().unwrap_err();
     assert!(err.to_string().contains("browser.policy"));
+}
+
+#[test]
+fn search_section_with_only_timeout_keeps_built_in_providers() {
+    let toml = r#"
+[search]
+timeout_ms = 12000
+"#;
+    let cfg: AppConfig = toml::from_str(toml).expect("partial search section parses");
+    assert_eq!(cfg.search.timeout_ms, 12000);
+    assert_eq!(cfg.search.mode, Mode::Live);
+    assert_eq!(cfg.search.default_max_results, 10);
+    assert_eq!(cfg.search.max_results_cap, 50);
+    assert_eq!(cfg.search.max_query_chars, 512);
+    assert_eq!(
+        cfg.search.default_providers,
+        vec!["duckduckgo", "brave", "yahoo"]
+    );
+    assert_eq!(cfg.search.providers.get("duckduckgo"), Some(&true));
+    assert_eq!(cfg.search.providers.get("startpage"), Some(&true));
+    assert_eq!(cfg.search.providers.get("mojeek"), Some(&false));
+    cfg.validate().expect("inherited defaults validate");
+}
+
+#[test]
+fn routing_table_alone_parses_with_search_defaults() {
+    let toml = r#"
+[search.routing]
+intent_mode = "apply"
+max_extra_providers = 1
+"#;
+    let cfg: AppConfig = toml::from_str(toml).expect("routing alone parses");
+    assert_eq!(
+        cfg.search.default_providers,
+        vec!["duckduckgo", "brave", "yahoo"]
+    );
+    cfg.validate().expect("routing alone validates");
+}
+
+#[test]
+fn explicit_empty_provider_table_is_not_repopulated() {
+    let toml = r#"
+[search.providers]
+"#;
+    let cfg: AppConfig = toml::from_str(toml).expect("explicit empty table parses");
+    assert!(
+        cfg.search.providers.is_empty(),
+        "an explicitly present empty provider table must stay empty"
+    );
+    let err = cfg.validate().unwrap_err();
+    let message = err.to_string();
+    assert!(
+        message.contains("no traditional providers") || message.contains("no API providers"),
+        "got: {message}"
+    );
 }

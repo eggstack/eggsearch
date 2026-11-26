@@ -448,6 +448,10 @@ pub(crate) async fn dispatch_parallel(
                                         RetrievalAttemptOutcome::TimedOut,
                                         Some("timeout".to_string()),
                                     ),
+                                    EngineError::RateLimited { .. } => (
+                                        RetrievalAttemptOutcome::RateLimited,
+                                        Some("rate_limited".to_string()),
+                                    ),
                                     EngineError::BadStatus { status, .. } if *status == 429 => (
                                         RetrievalAttemptOutcome::RateLimited,
                                         Some("rate_limited".to_string()),

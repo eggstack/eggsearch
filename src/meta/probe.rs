@@ -13,13 +13,17 @@ use crate::core::provider::{ProviderSkipCode, KNOWN_PROVIDER_IDS};
 use crate::meta::adapter::{classify, ErrorClass, MetadataSearchAdapter};
 use crate::meta::engines::error::EngineError;
 use crate::meta::engines::EngineSearchRequest;
-use crate::meta::provider_diagnostics::{bound_error_message, FailureClass};
+use crate::meta::provider_diagnostics::bound_error_message;
 
 /// Narrowest valid probe query proving transport/auth/parser viability.
 pub const PROBE_QUERY: &str = "test";
 /// Number of results demanded per probe; never consumes large sets.
 pub const PROBE_MAX_RESULTS: usize = 1;
-/// Per-provider probe deadline in milliseconds.
+/// Fallback per-provider probe deadline in milliseconds.
+///
+/// Callers that know the configured search budget pass it through
+/// [`ProviderProbeRequest::timeout_per_provider_ms`]; this fallback applies only
+/// to bare requests from tests and ad hoc callers.
 pub const PROBE_PER_PROVIDER_TIMEOUT_MS: u64 = 5_000;
 /// Aggregate deadline for the whole probe batch in milliseconds.
 pub const PROBE_AGGREGATE_TIMEOUT_MS: u64 = 20_000;
@@ -136,6 +140,7 @@ fn skipped_outcome(
 fn http_status_for(err: &EngineError) -> Option<u16> {
     match err {
         EngineError::BadStatus { status, .. } => Some(*status),
+        EngineError::RateLimited { .. } => Some(429),
         _ => None,
     }
 }
@@ -143,8 +148,9 @@ fn http_status_for(err: &EngineError) -> Option<u16> {
 /// Probe routable providers with bounded concurrency and deadlines.
 ///
 /// Non-routable providers yield skipped outcomes with stable skip codes
-/// rather than network failures. Attempted probes record advisory health
-/// state but never change explicit provider selection semantics.
+/// rather than network failures. Attempted probes report success, failure
+/// class, and latency only: they never write routing health, so diagnostic
+/// traffic cannot degrade a provider or start a cooldown.
 pub async fn probe_providers(
     adapter: &MetadataSearchAdapter,
     request: ProviderProbeRequest,
@@ -237,7 +243,6 @@ pub async fn probe_providers(
     let mut join_set = tokio::task::JoinSet::new();
     for (id, engine) in to_probe.clone() {
         let sem = semaphore.clone();
-        let health = adapter.health().clone();
         let per_timeout = Duration::from_millis(per_provider_ms);
         join_set.spawn(async move {
             let _permit = sem.acquire_owned().await.map_err(|_| id.clone())?;
@@ -250,49 +255,32 @@ pub async fn probe_providers(
             .await;
             let latency_ms = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
             let probe_outcome = match outcome {
-                Err(_) => {
-                    health.record_failure(
-                        &id,
-                        FailureClass::Timeout,
-                        "provider timed out",
-                        latency_ms,
-                    );
-                    ProviderProbeOutcome {
-                        provider_id: id.clone(),
-                        attempted: true,
-                        routable: true,
-                        success: false,
-                        failure_class: Some(ErrorClass::Timeout.as_str().to_string()),
-                        latency_ms: Some(latency_ms),
-                        http_status: None,
-                        skip_code: None,
-                        message: bound_probe_message("provider timed out"),
-                    }
-                }
-                Ok(Err(_panic)) => {
-                    health.record_failure(
-                        &id,
-                        FailureClass::Panic,
-                        "task panicked during dispatch",
-                        latency_ms,
-                    );
-                    ProviderProbeOutcome {
-                        provider_id: id.clone(),
-                        attempted: true,
-                        routable: true,
-                        success: false,
-                        failure_class: Some(ErrorClass::Panic.as_str().to_string()),
-                        latency_ms: Some(latency_ms),
-                        http_status: None,
-                        skip_code: None,
-                        message: bound_probe_message("task panicked during dispatch"),
-                    }
-                }
+                Err(_) => ProviderProbeOutcome {
+                    provider_id: id.clone(),
+                    attempted: true,
+                    routable: true,
+                    success: false,
+                    failure_class: Some(ErrorClass::Timeout.as_str().to_string()),
+                    latency_ms: Some(latency_ms),
+                    http_status: None,
+                    skip_code: None,
+                    message: bound_probe_message("provider timed out"),
+                },
+                Ok(Err(_panic)) => ProviderProbeOutcome {
+                    provider_id: id.clone(),
+                    attempted: true,
+                    routable: true,
+                    success: false,
+                    failure_class: Some(ErrorClass::Panic.as_str().to_string()),
+                    latency_ms: Some(latency_ms),
+                    http_status: None,
+                    skip_code: None,
+                    message: bound_probe_message("task panicked during dispatch"),
+                },
                 Ok(Ok(Err(e))) => {
                     let class = classify(&e);
                     let http_status = http_status_for(&e);
                     let msg = e.to_string();
-                    health.record_failure(&id, class.into(), &msg, latency_ms);
                     ProviderProbeOutcome {
                         provider_id: id.clone(),
                         attempted: true,
@@ -305,20 +293,17 @@ pub async fn probe_providers(
                         message: bound_probe_message(&msg),
                     }
                 }
-                Ok(Ok(Ok(results))) => {
-                    health.record_success(&id, latency_ms, results.len());
-                    ProviderProbeOutcome {
-                        provider_id: id.clone(),
-                        attempted: true,
-                        routable: true,
-                        success: true,
-                        failure_class: None,
-                        latency_ms: Some(latency_ms),
-                        http_status: None,
-                        skip_code: None,
-                        message: bound_probe_message(&format!("ok ({} result(s))", results.len())),
-                    }
-                }
+                Ok(Ok(Ok(results))) => ProviderProbeOutcome {
+                    provider_id: id.clone(),
+                    attempted: true,
+                    routable: true,
+                    success: true,
+                    failure_class: None,
+                    latency_ms: Some(latency_ms),
+                    http_status: None,
+                    skip_code: None,
+                    message: bound_probe_message(&format!("ok ({} result(s))", results.len())),
+                },
             };
             Ok::<ProviderProbeOutcome, String>(probe_outcome)
         });
@@ -354,12 +339,6 @@ pub async fn probe_providers(
     }
 
     for id in pending_ids {
-        adapter.health().record_failure(
-            &id,
-            FailureClass::Timeout,
-            "aggregate probe deadline exceeded",
-            PROBE_AGGREGATE_TIMEOUT_MS,
-        );
         probed.push(ProviderProbeOutcome {
             provider_id: id,
             attempted: true,

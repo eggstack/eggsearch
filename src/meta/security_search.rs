@@ -239,6 +239,10 @@ fn native_advisory_attempt_with_duration(
 fn native_error_outcome(error: &EngineError) -> (RetrievalAttemptOutcome, String) {
     match error {
         EngineError::Timeout { .. } => (RetrievalAttemptOutcome::TimedOut, "timeout".to_string()),
+        EngineError::RateLimited { .. } => (
+            RetrievalAttemptOutcome::RateLimited,
+            "rate_limited".to_string(),
+        ),
         EngineError::BadStatus { status: 429, .. } => (
             RetrievalAttemptOutcome::RateLimited,
             "rate_limited".to_string(),
