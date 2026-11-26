@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M048 closed; M049 active; M050–M052 closed)
+Status: active (M001–M048 closed; M049 active; M050–M052 closed; M053 ready)
 Planning baseline: `4de20a0f0d748b89147829a51384e385a5bee388` (origin/main, 2026-11-24 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -146,6 +146,7 @@ M036 ──> M039 fetch emitted-payload budget (corrective)
 M037 ──> M040 local content-aware candidate generation (corrective)
 M037 + M040 ──> M043 local repo-search empty-result determinism (corrective; registered by the 2026-11-20 hosted qualification)
 ADR-0022 §3 + M051 (closed) ──> M052 agent-facing contract ergonomics (closed; independent)
+M052 (closed) + ADR-0022 §3 ──> M053 executable follow-up pointer binding correctives (ready; corrective)
 ADR-0019 ──> puzzle-class and identity milestones not yet registered
 M014 acceptance reconciliation ──> M030 expiry-safety criterion (closed; path 1 accepted)
 ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M020 offset addressing and cursor retirement ──> M021 non-HTML document-scoped addressable text
@@ -204,6 +205,7 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M050 — repository tool live-surface corrective | invariant (corrective to M029, M042) | `plans/implementation/agentic-retrieval-integrity/050-repo-tool-live-surface-corrective.md` | hard M029 (closed); interface M042 (closed) | A live sweep of the twelve callable MCP names found that `repo_fetch` reported upstream failures as JSON-RPC internal errors, `repo_map` ignored its documented optional `host` and returned an empty map, and the `repo_map` finalizer discarded the specific forge-failure warning; all three close without changing the tool inventory, aliases, arguments, or error codes |
 | M051 — live-surface reliability and robustness correctives | correctness (corrective program) | `plans/implementation/agentic-retrieval-integrity/051-live-surface-reliability-correctives.md` | interface M049 (active); interface M050 (closed) | A release-binary review of the areas M050 deliberately left open yields eight bounded packages: probe budget and health isolation, cold challenge-solve contract, `Retry-After` cooldowns, short JavaScript-gate escalation, parse-failure fingerprints, the `repo_map` generic-notice conflict, field-level `[search]` defaults, and a release-mode live target; no tool, argument, provider, or default-set change |
 | M052 — agent-facing contract ergonomics | correctness (ergonomics corrective) | `plans/implementation/agentic-retrieval-integrity/052-agent-facing-contract-ergonomics.md` | no hard dependency; interface ADR-0022 §3; interface M051 (closed) | One goal spelling set is accepted by `repo_search`, `research_search`, and `security_search`; every tool that suggests a follow-up emits `next_actions` whose templates carry the values the response already knows; the advertised `probe` description matches the implementation; exactly one authorised fingerprint re-pin. No tool, alias, argument, provider, or default-set change |
+| M053 — executable follow-up pointer binding correctives | invariant (corrective to M052) | `plans/implementation/agentic-retrieval-integrity/053-executable-follow-up-pointer-binding-correctives.md` | interface M052 (closed); interface ADR-0022 §3 (accepted) | Package-only applicability actions carry package/ecosystem and optional known version without an empty query; single-source repo fetch actions bind that source card's known `CodeMetadata.path`; no tool, alias, argument, schema, provider, or default-set change |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -405,6 +407,7 @@ exposed M011's mandatory-`redir` defect.
   33,850 → 33,983 bytes) for the `repo_map` field and the corrected `probe`
   description. No tool, alias, argument, provider, or default-set change. Evidence:
   `plans/closure/agentic-retrieval-integrity/052-status.md`.
+- M053 is `ready` as a new corrective plan for the two P2 pointer-binding findings recorded in the M052 closure audit; M052 remains closed and no implementation is included in the plan registration. See `plans/implementation/agentic-retrieval-integrity/053-executable-follow-up-pointer-binding-correctives.md`.
 - M049 remains `active`: work package 1 is implemented, but the canonical gate is outstanding. Keep
   its classification corrective scoped to the registered keyless behavior and do not infer a new
   paid-provider, credential, or default-enable task. Evidence and acceptance gates:
