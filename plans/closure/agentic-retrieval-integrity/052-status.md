@@ -3,7 +3,7 @@
 Milestone: M052
 Status: closed
 Date: 2026-11-26
-Candidate: the working tree applied to `f501a81` (commit separate)
+Candidate: commit `02c4163` (based on `f501a81`)
 Plan: `plans/implementation/agentic-retrieval-integrity/052-agent-facing-contract-ergonomics.md`
 Roadmap: `plans/subsystems/agentic-retrieval-integrity-roadmap.md`
 
@@ -144,16 +144,47 @@ Test inventory: 6,669 all-features and 6,604 mock-feature tests, up 17 from
    the caller has already collected; the response cannot supply them, so the
    stop rule applies and they stay placeholders.
 
-## Not verified
+## Post-commit validation (2026-11-26)
 
-- No release-binary live run for this milestone. The pointer capture used the
-  debug binary, which is sufficient for payload shape; no timing claim is made.
-- No live `security_search` or `research_search` capture. Their seams are the
-  same helper and are covered by the binding unit tests.
+Candidate `02c4163` passed the release-mode MCP smoke on Rust 1.89 with all
+non-mock optional features enabled (`pdf`, `browser`, `documents`, and
+`egress`). The live smoke additionally enabled `live-mcp-smoke` and
+asserted that `mock` was not enabled:
+
+```bash
+RUSTUP_TOOLCHAIN=1.89.0 cargo test --release --locked --no-default-features \
+  --features pdf,browser,documents,egress,live-mcp-smoke \
+  --test mcp_http live_canonical_tools_and_aliases_work_over_mcp_http \
+  -- --ignored --nocapture
+```
+
+Result: 1 passed in 90.21 seconds. It called all nine advertised tools and all
+three callable aliases; its live search requests used the default keyless
+providers (`brave`, `duckduckgo`, `yahoo`). It also passed PDF extraction and
+browser rendering.
+
+The adversarial and optional-feature suites also passed without `mock`:
+
+```bash
+RUSTUP_TOOLCHAIN=1.89.0 cargo test --locked --no-default-features \
+  --features pdf,browser,documents,egress \
+  --test adversarial_corpus --test documents --test egress_routing \
+  --test egress_qualify_contract --test proxy_route_feasibility --test mcp_http
+```
+
+Result: 107 passed across six suites (28 adversarial corpus, 8 documents, 10
+egress qualification, 35 egress routing, 14 MCP HTTP, and 12 proxy feasibility).
+
+## Remaining not verified
+
+- The release smoke called `security_search` and `research_search` with
+  representative live inputs, but did not submit `goal: "security_review"` to
+  those two tools. The earlier live capture submitted that spelling to
+  `repo_search`; cross-tool parsing equivalence is covered by tests.
 - The plan's `tests/mcp_tools.rs` web-search case is not a separate integration
   test: the single-candidate and multi-candidate URL rules are covered by the
   `core/workflow.rs` binding unit tests, and the live capture shows the real
-  bound URL and the retained placeholder. The `goal` equivalence case is covered
+  bound URL and retained placeholder. The `goal` equivalence case is covered
   by `security_and_security_review_resolve_identically` in `canonical.rs`.
-- A live 429, a live challenge wall, and other network-conditional states are
-  outside this milestone's surface.
+- Live 429, challenge-wall, and other network-conditional states were not
+  exercised.

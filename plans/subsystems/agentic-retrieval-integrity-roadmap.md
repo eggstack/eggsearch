@@ -398,9 +398,9 @@ exposed M011's mandatory-`redir` defect.
   the tool inventory, aliases, argument set, default provider set, or the pinned
   MCP schema surface. Evidence:
   `plans/closure/agentic-retrieval-integrity/051-status.md`.
-- M052 is `closed` on the working tree applied to `f501a81`: one `goal` vocabulary
-  across the three search tools, `next_actions` on every tool that suggests a
-  follow-up, follow-up templates that carry the values the response already knows,
+- M052 is `closed` on commit `02c4163`: one `goal` vocabulary across the three
+  search tools, `next_actions` on every tool that suggests a follow-up, follow-up
+  templates that carry the values the response already knows,
   and one advertised-fingerprint re-pin (`3fa97faac725dc97` → `678e2a042ab5b39b`,
   33,850 → 33,983 bytes) for the `repo_map` field and the corrected `probe`
   description. No tool, alias, argument, provider, or default-set change. Evidence:
