@@ -2284,9 +2284,7 @@ fn map_proxy_send_error(error: eggfetch_core::Error, timeout_ms: u64) -> FetchEr
 
 fn map_redirect_validation_error(error: FetchError) -> FetchError {
     match error {
-        FetchError::PrivateNetworkBlocked(reason) => {
-            FetchError::RedirectTargetBlocked(format!("private network: {reason}"))
-        }
+        FetchError::PrivateNetworkBlocked(reason) => FetchError::RedirectTargetBlocked(reason),
         FetchError::EmbeddedCredentialsBlocked(reason) => {
             FetchError::RedirectTargetBlocked(format!("credentials: {reason}"))
         }

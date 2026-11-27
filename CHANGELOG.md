@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `knowledge_brief` rejects near-miss cutoff fields (`cutoff`, `knowledge_cutoff`, `cutoff_date`) with a repairable `invalid_semantic_value` naming `cutoff_override` and its four required subfields, instead of silently dropping them and reporting `no_cutoff_resolved`.
 - `knowledge_brief` warns `knowledge_brief_cutoff_unverifiable_no_timestamp_providers` when a cutoff resolves but no selected provider advertises `result_timestamps`, so undated coverage names its cause.
 - Reserved non-resolvable hostnames (`.invalid`, `.test`, `.localhost`) fail closed pre-DNS with `reserved hostname can never resolve` instead of reading as a private-network policy block; private-network rejections are unchanged.
+- `knowledge_brief` treats a present-but-null `cutoff`, `knowledge_cutoff`, or `cutoff_date` as an omitted field instead of rejecting it as a near-miss, so a serializer that emits an unset optional member as JSON null no longer fails the call. Every non-null near-miss value is still rejected with the same repair hint.
+- Browser interception applies the reserved-hostname classifier before DNS, so `.invalid`, `.test`, and `.localhost` names fail closed in the render path too. Trailing-dot fully-qualified names classify exactly like their canonical spelling in both the fetch validator and the browser path, and both paths share one classifier rather than separate suffix lists.
+- A blocked redirect preserves the validator's reason verbatim under `redirect_target_blocked`, so a reserved or private target no longer reports as `private network: …`; the embedded-credentials arm keeps its `credentials: ` prefix.
 
 ### Added
 

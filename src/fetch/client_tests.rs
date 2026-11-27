@@ -1083,6 +1083,95 @@ fn append_bounded_drops_invalid_lead_in_truncation_tail() {
 }
 
 #[test]
+fn redirect_reserved_hostname_keeps_the_validator_reason() {
+    let error = map_redirect_validation_error(crate::fetch::FetchError::PrivateNetworkBlocked(
+        "reserved hostname can never resolve: never-resolves.invalid".into(),
+    ));
+    assert!(matches!(
+        error.kind(),
+        crate::fetch::FetchErrorKind::RedirectTargetBlocked
+    ));
+    match error {
+        crate::fetch::FetchError::RedirectTargetBlocked(reason) => assert_eq!(
+            reason,
+            "reserved hostname can never resolve: never-resolves.invalid"
+        ),
+        other => panic!("expected redirect-target-blocked, got {other:?}"),
+    }
+}
+
+#[test]
+fn redirect_private_hostname_keeps_the_validator_reason() {
+    let error = map_redirect_validation_error(crate::fetch::FetchError::PrivateNetworkBlocked(
+        "private network access is disabled: service.internal".into(),
+    ));
+    assert!(matches!(
+        error.kind(),
+        crate::fetch::FetchErrorKind::RedirectTargetBlocked
+    ));
+    match error {
+        crate::fetch::FetchError::RedirectTargetBlocked(reason) => {
+            assert_eq!(
+                reason,
+                "private network access is disabled: service.internal"
+            )
+        }
+        other => panic!("expected redirect-target-blocked, got {other:?}"),
+    }
+}
+
+#[test]
+fn redirect_credentials_still_carry_their_prefix() {
+    let error =
+        map_redirect_validation_error(crate::fetch::FetchError::EmbeddedCredentialsBlocked(
+            "URL contains embedded credentials: evil.com".into(),
+        ));
+    assert!(matches!(
+        error.kind(),
+        crate::fetch::FetchErrorKind::RedirectTargetBlocked
+    ));
+    match error {
+        crate::fetch::FetchError::RedirectTargetBlocked(reason) => assert_eq!(
+            reason,
+            "credentials: URL contains embedded credentials: evil.com"
+        ),
+        other => panic!("expected redirect-target-blocked, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn fetch_redirect_to_reserved_hostname_reports_the_reserved_reason() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/start");
+        then.status(302)
+            .header("location", "http://never-resolves.invalid/");
+    });
+
+    let limits = FetchLimits {
+        allow_localhost: true,
+        ..Default::default()
+    };
+    let client = FetchClient::new(limits, "eggsearch/test".to_string(), false).expect("client");
+    let error = client
+        .fetch(&server.url("/start"), None, ExtractMode::Text, false, None)
+        .await
+        .expect_err("reserved redirect target must be blocked");
+
+    assert!(matches!(
+        error.kind(),
+        crate::fetch::FetchErrorKind::RedirectTargetBlocked
+    ));
+    match error {
+        crate::fetch::FetchError::RedirectTargetBlocked(reason) => assert_eq!(
+            reason,
+            "reserved hostname can never resolve: never-resolves.invalid"
+        ),
+        other => panic!("expected redirect-target-blocked, got {other:?}"),
+    }
+}
+
+#[test]
 fn redirect_dns_errors_are_not_policy_blocks() {
     let error = FetchError::NetworkError("DNS resolution failed".into());
     assert!(matches!(

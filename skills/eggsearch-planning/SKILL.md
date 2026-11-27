@@ -57,6 +57,7 @@ Use exactly these terms, from `plans/registry.md`:
 `proposed` · `ready` · `active` · `blocked` · `closing` · `closed` · `conditionally closed` · `superseded` · `archived`
 
 - `closed` requires the acceptance criteria exercised **against the exact candidate** plus the closure record, roadmap status, and registry entry updated in the same closure commit.
+- `closed` also requires every cited live-trial observation to be retained under a named path outside the repository with its probe identifiers enumerated; an observation that was not retained is written as unverified, never cited as evidence (`plans/003-planning-process.md` §2.5).
 - `conditionally closed` names the one outstanding condition explicitly. It is not a softer `closed`.
 - A commit message saying a plan is closed is not closure evidence.
 - A roadmap must not mark a capability complete solely because its infrastructure milestone landed.

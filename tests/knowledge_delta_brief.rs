@@ -86,6 +86,66 @@ async fn cutoff_near_miss_fields_return_repairable_cutoff_override_error() {
     assert_eq!(valid.cutoff_override.unwrap().date, "2024-06-01");
 }
 
+#[tokio::test]
+async fn null_cutoff_fields_are_treated_as_absent() {
+    for field in ["cutoff", "knowledge_cutoff", "cutoff_date"] {
+        let mut raw = serde_json::json!({"topic": "widget-runtime"});
+        raw[field] = serde_json::Value::Null;
+        let args = serde_json::from_value::<KnowledgeBriefArgs>(raw)
+            .expect("a present null must deserialize");
+        assert!(args.cutoff_field_near_miss.is_none());
+        if let Err(error) = run_knowledge_brief(state(Vec::new(), AppConfig::default()), args).await
+        {
+            assert_ne!(
+                error.code().as_str(),
+                "invalid_semantic_value",
+                "{field}: null must not produce a near-miss rejection"
+            );
+        }
+    }
+}
+
+#[test]
+fn null_cutoff_with_override_applies_the_override() {
+    let args = serde_json::from_value::<KnowledgeBriefArgs>(serde_json::json!({
+        "topic": "widget-runtime",
+        "cutoff": null,
+        "cutoff_override": {
+            "date": "2024-06-01",
+            "precision": "day",
+            "source": "caller",
+            "reason": "test cutoff"
+        }
+    }))
+    .expect("null cutoff alongside a valid override");
+    assert!(args.cutoff_field_near_miss.is_none());
+    let cutoff = args.cutoff_override.expect("override retained");
+    assert_eq!(cutoff.date, "2024-06-01");
+    assert!(parse_caller_override(&cutoff).is_ok());
+}
+
+#[tokio::test]
+async fn non_null_cutoff_near_misses_still_fail_closed() {
+    for value in [
+        serde_json::json!("2024"),
+        serde_json::json!(""),
+        serde_json::json!(2024),
+        serde_json::json!([]),
+        serde_json::json!({}),
+    ] {
+        let raw = serde_json::json!({"topic": "widget-runtime", "cutoff": value});
+        let args = serde_json::from_value::<KnowledgeBriefArgs>(raw).expect("MCP args");
+        let error = run_knowledge_brief(state(Vec::new(), AppConfig::default()), args)
+            .await
+            .expect_err("non-null near-miss must fail closed");
+        assert_eq!(error.code().as_str(), "invalid_semantic_value");
+        let result = map_tool_result(Err(error)).expect("repairable MCP tool error");
+        let payload = result.structured_content.expect("error payload");
+        assert!(payload["message"].as_str().unwrap().contains("cutoff"));
+        assert_eq!(payload["repair"]["field"], "cutoff_override");
+    }
+}
+
 fn meta_query(refresh: &str, cutoff: &str, retain: bool, related_topics: bool) -> BriefQuery {
     BriefQuery {
         topic: "widget-runtime".into(),

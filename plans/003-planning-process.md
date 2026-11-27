@@ -84,6 +84,12 @@ limitations, unresolved findings classified by severity, and recommendation:
 closed, conditionally closed, corrective pass required, or blocked. A commit
 message saying a plan is closed is not sufficient closure evidence.
 
+Live-trial evidence cited by a closure record MUST be retained under a named path
+outside the repository with the probe identifiers enumerated, and only that path,
+the identifiers, and the date appear in the record. An observation that was not
+retained MUST be written as unverified rather than cited as evidence. Repository
+hygiene rules forbid tracked transcripts.
+
 ### 2.6 Archive records
 
 Completed, superseded, or abandoned interim plans SHOULD move under

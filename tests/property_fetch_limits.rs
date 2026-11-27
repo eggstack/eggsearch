@@ -160,6 +160,41 @@ proptest! {
     }
 }
 
+const DOCUMENTED_SSRF_SUFFIXES: [&str; 10] = [
+    ".invalid",
+    ".test",
+    ".localhost",
+    ".internal",
+    ".private",
+    ".local",
+    ".corp",
+    ".lan",
+    ".home",
+    ".home.arpa",
+];
+
+proptest! {
+    #[test]
+    fn validate_url_rejects_documented_ssrf_suffixes_with_a_terminal_dot(
+        label in "[a-z][a-z0-9]{2,10}",
+        suffix in 0usize..DOCUMENTED_SSRF_SUFFIXES.len()
+    ) {
+        let limits = FetchLimits::default();
+        let host = format!("{label}{}", DOCUMENTED_SSRF_SUFFIXES[suffix]);
+        let canonical = validate_url(&format!("http://{host}/"), &limits).unwrap_err();
+        let dotted = validate_url(&format!("http://{host}./"), &limits).unwrap_err();
+        prop_assert!(matches!(
+            &canonical,
+            eggsearch::fetch::types::FetchError::PrivateNetworkBlocked(_)
+        ));
+        prop_assert!(matches!(
+            &dotted,
+            eggsearch::fetch::types::FetchError::PrivateNetworkBlocked(_)
+        ));
+        prop_assert_eq!(canonical.to_string(), dotted.to_string());
+    }
+}
+
 #[cfg(feature = "pdf")]
 mod pdf_decompression {
     use eggsearch::fetch::pdf::extract_pdf_text;

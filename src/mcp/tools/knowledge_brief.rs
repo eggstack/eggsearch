@@ -79,7 +79,7 @@ impl<'de> Deserialize<'de> for KnowledgeBriefArgs {
         let value = serde_json::Value::deserialize(deserializer)?;
         let cutoff_field_near_miss = ["cutoff", "knowledge_cutoff", "cutoff_date"]
             .into_iter()
-            .find(|field| value.get(*field).is_some())
+            .find(|field| value.get(*field).is_some_and(|value| !value.is_null()))
             .map(|field| field.to_string());
         let wire = serde_json::from_value::<KnowledgeBriefArgsWire>(value)
             .map_err(<D::Error as serde::de::Error>::custom)?;

@@ -4,7 +4,9 @@ use std::time::Duration;
 use tokio::time::timeout;
 use url::Url;
 
-use crate::fetch::limits::{classify_ip, is_allowed_by_policy};
+use crate::fetch::limits::{
+    blocked_hostname, classify_ip, is_allowed_by_policy, normalize_hostname,
+};
 
 const DNS_RESOLUTION_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -92,21 +94,14 @@ pub async fn is_request_allowed_with_dns(url_str: &str) -> Result<(), PolicyViol
 }
 
 fn is_private_host(host: &str) -> bool {
-    let lower = host.to_lowercase();
-    let stripped = lower.trim_start_matches('[').trim_end_matches(']');
-    if stripped == "localhost"
-        || stripped.ends_with(".localhost")
-        || stripped == "127.0.0.1"
-        || stripped == "::1"
-        || stripped == "0.0.0.0"
-        || stripped == "metadata.google.internal"
-        || stripped == "169.254.169.254"
-        || crate::fetch::limits::is_private_hostname(stripped)
-    {
-        return true;
-    }
-
-    false
+    let host = normalize_hostname(host);
+    host == "localhost"
+        || host == "127.0.0.1"
+        || host == "::1"
+        || host == "0.0.0.0"
+        || host == "metadata.google.internal"
+        || host == "169.254.169.254"
+        || blocked_hostname(&host).is_some()
 }
 
 fn is_private_ip(ip: IpAddr) -> bool {
@@ -188,6 +183,41 @@ mod tests {
             assert_eq!(
                 is_request_allowed(&format!("http://{host}/")),
                 Err(PolicyViolation::PrivateNetworkTarget)
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_reserved_hostname_suffixes() {
+        for host in [
+            "service.invalid",
+            "service.invalid.",
+            "service.test",
+            "service.test.",
+            "service.localhost",
+            "service.localhost.",
+        ] {
+            assert_eq!(
+                is_request_allowed(&format!("http://{host}/")),
+                Err(PolicyViolation::PrivateNetworkTarget),
+                "{host} should be denied"
+            );
+        }
+    }
+
+    #[test]
+    fn blocks_trailing_dot_hostnames_like_their_canonical_forms() {
+        for host in [
+            "localhost.",
+            "service.internal.",
+            "service.private.",
+            "service.local.",
+            "host-gateway.",
+        ] {
+            assert_eq!(
+                is_request_allowed(&format!("http://{host}/")),
+                Err(PolicyViolation::PrivateNetworkTarget),
+                "{host} should be denied"
             );
         }
     }

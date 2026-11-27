@@ -271,11 +271,11 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
     }
 
     if let Some(host_str) = url.host_str() {
-        let host_lower = host_str.to_lowercase();
-        if host_lower == "localhost" {
+        let host_normalized = normalize_hostname(host_str);
+        if host_normalized == "localhost" {
             if !limits.allow_localhost {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "localhost access is disabled: {host_str}"
+                    "localhost access is disabled: {host_normalized}"
                 )));
             }
         } else {
@@ -297,8 +297,7 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                         "address not allowed by policy: {ip}"
                     )));
                 }
-            } else if let Some(error) =
-                hostname_block_error(&host_lower, host_str, limits.allow_private_network)
+            } else if let Some(error) = hostname_block_error(host_str, limits.allow_private_network)
             {
                 return Err(error);
             }
@@ -352,11 +351,11 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
 
     // 3. Localhost / literal private-IP checks
     if let Some(host_str) = url.host_str() {
-        let host_lower = host_str.to_lowercase();
-        if host_lower == "localhost" {
+        let host_normalized = normalize_hostname(host_str);
+        if host_normalized == "localhost" {
             if !limits.allow_localhost {
                 return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "localhost access is disabled: {host_str}"
+                    "localhost access is disabled: {host_normalized}"
                 )));
             }
         } else {
@@ -378,8 +377,7 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
                         "address not allowed by policy: {ip}"
                     )));
                 }
-            } else if let Some(error) =
-                hostname_block_error(&host_lower, host_str, limits.allow_private_network)
+            } else if let Some(error) = hostname_block_error(host_str, limits.allow_private_network)
             {
                 return Err(error);
             }
@@ -441,31 +439,54 @@ fn is_blocked_address(addr: SocketAddr, limits: &FetchLimits) -> bool {
     !is_allowed_by_policy(class, limits.allow_localhost, limits.allow_private_network)
 }
 
-fn hostname_block_error(
-    host_lower: &str,
-    host_str: &str,
-    allow_private_network: bool,
-) -> Option<FetchError> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HostBlock {
+    Reserved,
+    Private,
+}
+
+pub(crate) fn normalize_hostname(host: &str) -> String {
+    let lower = host.to_lowercase();
+    let stripped = lower
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(&lower);
+    stripped.strip_suffix('.').unwrap_or(stripped).to_string()
+}
+
+pub(crate) fn blocked_hostname(host: &str) -> Option<HostBlock> {
+    let host = normalize_hostname(host);
+    if is_reserved_hostname(&host) {
+        Some(HostBlock::Reserved)
+    } else if is_private_hostname(&host) {
+        Some(HostBlock::Private)
+    } else {
+        None
+    }
+}
+
+fn hostname_block_error(host: &str, allow_private_network: bool) -> Option<FetchError> {
     if allow_private_network {
         return None;
     }
 
-    let message = if is_reserved_hostname(host_lower) {
-        format!("reserved hostname can never resolve: {host_str}")
-    } else if is_private_hostname(host_lower) {
-        format!("private network access is disabled: {host_str}")
-    } else {
-        return None;
-    };
-
-    Some(FetchError::PrivateNetworkBlocked(message))
+    let host = normalize_hostname(host);
+    match blocked_hostname(&host) {
+        Some(HostBlock::Reserved) => Some(FetchError::PrivateNetworkBlocked(format!(
+            "reserved hostname can never resolve: {host}"
+        ))),
+        Some(HostBlock::Private) => Some(FetchError::PrivateNetworkBlocked(format!(
+            "private network access is disabled: {host}"
+        ))),
+        None => None,
+    }
 }
 
 fn is_reserved_hostname(host: &str) -> bool {
     host.ends_with(".invalid") || host.ends_with(".test") || host.ends_with(".localhost")
 }
 
-pub(crate) fn is_private_hostname(host: &str) -> bool {
+fn is_private_hostname(host: &str) -> bool {
     if host == "host-gateway"
         || host == "host.docker.internal"
         || host == "metadata.google.internal"
@@ -610,6 +631,64 @@ mod tests {
         assert!(validate_url("http://never-resolves.invalid/", &allow_private).is_ok());
     }
 
+    fn hostname_block_message<T: std::fmt::Debug>(result: Result<T, FetchError>) -> String {
+        match result {
+            Err(FetchError::PrivateNetworkBlocked(message)) => message,
+            other => panic!("expected a private-network rejection, got {other:?}"),
+        }
+    }
+
+    fn hostname_spellings(host: &str) -> [String; 4] {
+        [
+            host.to_string(),
+            format!("{host}."),
+            host.to_uppercase(),
+            format!("{}.", host.to_uppercase()),
+        ]
+    }
+
+    #[test]
+    fn validate_url_classifies_hostname_spellings_identically() {
+        let limits = FetchLimits::default();
+        for (host, expected) in [
+            (
+                "foo.invalid",
+                "reserved hostname can never resolve: foo.invalid",
+            ),
+            ("foo.test", "reserved hostname can never resolve: foo.test"),
+            (
+                "foo.localhost",
+                "reserved hostname can never resolve: foo.localhost",
+            ),
+            (
+                "service.internal",
+                "private network access is disabled: service.internal",
+            ),
+            (
+                "service.local",
+                "private network access is disabled: service.local",
+            ),
+            (
+                "service.corp",
+                "private network access is disabled: service.corp",
+            ),
+            ("localhost", "localhost access is disabled: localhost"),
+            (
+                "host-gateway",
+                "private network access is disabled: host-gateway",
+            ),
+        ] {
+            for spelling in hostname_spellings(host) {
+                let url = format!("http://{spelling}/");
+                assert_eq!(
+                    hostname_block_message(validate_url(&url, &limits)),
+                    expected,
+                    "unexpected message for {url}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn validate_url_rejects_embedded_credentials() {
         let limits = FetchLimits::default();
@@ -729,6 +808,49 @@ mod tests {
                 other => {
                     panic!("expected a pre-DNS private-network rejection for {url}, got {other:?}")
                 }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_classifies_hostname_spellings_identically() {
+        let limits = FetchLimits::default();
+        for (host, expected) in [
+            (
+                "foo.invalid",
+                "reserved hostname can never resolve: foo.invalid",
+            ),
+            ("foo.test", "reserved hostname can never resolve: foo.test"),
+            (
+                "foo.localhost",
+                "reserved hostname can never resolve: foo.localhost",
+            ),
+            (
+                "service.internal",
+                "private network access is disabled: service.internal",
+            ),
+            (
+                "service.local",
+                "private network access is disabled: service.local",
+            ),
+            (
+                "service.corp",
+                "private network access is disabled: service.corp",
+            ),
+            ("localhost", "localhost access is disabled: localhost"),
+            (
+                "host-gateway",
+                "private network access is disabled: host-gateway",
+            ),
+        ] {
+            for spelling in hostname_spellings(host) {
+                let url = Url::parse(&format!("http://{spelling}/")).unwrap();
+                let result = validate_fetch_target_with_resolved_addrs(&url, &limits).await;
+                assert_eq!(
+                    hostname_block_message(result),
+                    expected,
+                    "unexpected message for {url}"
+                );
             }
         }
     }

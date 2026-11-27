@@ -242,7 +242,7 @@ re-specified with the window; nothing is stored server-side.
 
 `web_fetch` also accepts `start_index` for `offset`, `max_length` for
 `max_chars`, and `question` or `prompt` for `focus` as wire compatibility
-aliases; see the [tool matrix](tool-matrix.md#compatibility-aliases). Aliases
+aliases; see the [tool matrix](tool-matrix.md#legacy-call-compatibility-and-web-field-aliases). Aliases
 do not change the window rules below.
 
 Ranges are half-open `[from, to)` in Unicode scalar values and clamp rather

@@ -231,7 +231,7 @@ Two consequences worth stating:
 most recent classified outcome: `ok` when rows were returned, `empty` on success-with-zero-results,
 `shifted` on a structural parse failure. The field is omitted for providers with no observation, so
 operators see drift without reading logs. For keyless-results degradation triage, see the
-[keyless-tier degradation runbook](../docs/provider-setup.md#keyless-tier-degradation).
+[keyless-tier degradation runbook](../docs/provider-setup.md#keyless-tier-degradation-runbook).
 
 Requirements for any change to an HTML parser:
 

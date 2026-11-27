@@ -6,8 +6,8 @@ Inventory of all hardening and regression test suites.
 
 | Feature Combo | Tests | Ignored |
 |--------------|-------|---------|
-| `--all-features` | 6669 | 30 |
-| `--features mock` | 6604 | 6 |
+| `--all-features` | 6711 | 30 |
+| `--features mock` | 6647 | 6 |
 
 Ignored tests are live-network smoke tests (`corpus_runner`, `mcp_http` via `live-mcp-smoke` or `live-release-smoke`, `browser_live_smoke`, `native_forge_smoke`, `retrieval_quality`), the PDF fidelity recorder (`pdf_fidelity`), plus the opt-in live-model comparison (`tool_surface_live`) — they run only via explicit opt-in targets. `make live-release-smoke` builds the same `mcp_http` smoke with `--release`; challenge-solver and proof-of-work timings are only meaningful there.
 
@@ -224,7 +224,7 @@ baseline (72906 per-tool serialized definition bytes, 1614 instruction bytes, 43
 post-consolidation v0.3.9 figure was 73037 definition bytes before `repo_map`
 stopped advertising `providers`). Re-run with `make eval-tool-surface`.
 
-## Documentation Contract Tests (5 suites)
+## Documentation Contract Tests (6 suites)
 
 | Suite | Focus |
 |-------|-------|
@@ -233,6 +233,7 @@ stopped advertising `providers`). Re-run with `make eval-tool-surface`.
 | `docs_tool_names` | Tool name validation (code-derived from `src/mcp/server.rs`) |
 | `docs_safety_vocabulary` | Safety vocabulary validation |
 | `docs_keyless_contract` | Keyless-core runtime contract |
+| `docs_links` | In-repository Markdown fragment resolution against GitHub-style heading slugs |
 
 ## Repository Hygiene
 

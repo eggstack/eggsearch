@@ -1,6 +1,6 @@
 # Testing
 
-**Location:** `tests/` (94 `*.rs` suites), `src/**/tests` (module unit tests), `bindings/python/tests/`, `benches/perf.rs`, `fuzz/fuzz_targets/` (23 targets)
+**Location:** `tests/` (96 `*.rs` suites), `src/**/tests` (module unit tests), `bindings/python/tests/`, `benches/perf.rs`, `fuzz/fuzz_targets/` (23 targets)
 **Purpose:** Behavioral contracts first, property tests for pure functions, fault injection for dispatch, corpus regression for multi-step workflows, fuzz for adversarial input, Criterion for characterization.
 
 Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in `skills/eggsearch-dev/SKILL.md` and the table below is the placement authority. This document explains how the layers fit together and which commands are canonical.
@@ -9,7 +9,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 
 ## Suite count and layout
 
-`tests/*.rs` holds 94 suites; treat `docs/test-inventory.md` as the count source of truth. Layout:
+`tests/*.rs` holds 96 suites; treat `docs/test-inventory.md` as the count source of truth. Layout:
 
 | Location | Purpose |
 |----------|---------|
@@ -200,10 +200,10 @@ cargo test --locked --all-features --test adversarial_corpus
 
 ## Documentation contract tests
 
-`tests/docs_tool_names.rs` derives from `src/mcp/server.rs` and `tests/docs_provider_inventory.rs` derives from `KNOWN_PROVIDER_IDS`. Never invent tool-like or provider names in prose; keep docs in agreement with the code. `static_guards` enforces module ownership fail-closed. `docs_config_snippets`, `docs_safety_vocabulary`, and `docs_keyless_contract` pin the remaining doc promises.
+`tests/docs_tool_names.rs` derives from `src/mcp/server.rs` and `tests/docs_provider_inventory.rs` derives from `KNOWN_PROVIDER_IDS`. Never invent tool-like or provider names in prose; keep docs in agreement with the code. `static_guards` enforces module ownership fail-closed. `docs_config_snippets`, `docs_safety_vocabulary`, and `docs_keyless_contract` pin the remaining doc promises, and `docs_links` resolves every in-repository Markdown fragment against GitHub-style heading slugs.
 
 ```bash
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test static_guards
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test docs_links --test static_guards
 ```
 
 ---

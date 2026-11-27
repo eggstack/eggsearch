@@ -79,7 +79,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/mcp_http.rs` | `all-features`; live test via `live-mcp-smoke` | Loopback Streamable HTTP lifecycle, bounds, identity, shutdown, plus ignored real-provider MCP smoke exercising default PDF/browser features without `mock` |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
-This table is representative, not exhaustive — 94 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
+This table is representative, not exhaustive — 96 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
 
 ## Running Specific Suites
 
@@ -98,7 +98,7 @@ cargo test --locked --features mock --test fetch_proxy_route
 cargo test --locked --features mock --test site_map
 cargo test --locked --all-features --test documents
 cargo test --locked --features mock --test snapshot_change
-cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test static_guards
+cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test docs_links --test static_guards
 ```
 
 For the persistent MCP transport:
