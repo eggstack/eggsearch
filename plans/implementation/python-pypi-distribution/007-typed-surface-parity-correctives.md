@@ -1,6 +1,6 @@
 # M007 — Python Typed-Surface Parity Correctives
 
-Status: active
+Status: closed
 Date: 2026-11-27
 Subsystem: Python PyPI distribution and prebuilt SBC wheels
 Milestone class: invariant (corrective to the typed binding surface qualified by M006)
