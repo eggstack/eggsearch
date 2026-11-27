@@ -80,7 +80,7 @@ async fn focus_projection_causes_no_additional_fetch() {
     let mut args = fetch_args(server.url("/article"));
     args.focus = Some("tokio runtime scheduler".to_string());
     let v = run_web_fetch(state, args).await.expect("focus fetch works");
-    assert_eq!(mock.hits(), 1, "focus must not cause extra URL fetches");
+    assert_eq!(mock.calls(), 1, "focus must not cause extra URL fetches");
     assert_eq!(v["status"], 200);
     let focus = &v["focus"];
     assert!(focus.is_object(), "focus selection must be present");
@@ -250,7 +250,7 @@ async fn cache_default_preserves_fresh_hit() {
         .await
         .expect("second fetch works");
     assert_eq!(second["cache_status"], "hit");
-    assert_eq!(mock.hits(), 1, "fresh hit must not refetch");
+    assert_eq!(mock.calls(), 1, "fresh hit must not refetch");
 }
 
 #[tokio::test]
@@ -268,7 +268,7 @@ async fn cache_bypass_skips_read_but_keeps_policy() {
     run_web_fetch(state.clone(), fetch_args(server.url("/page")))
         .await
         .expect("prime works");
-    assert_eq!(mock.hits(), 1);
+    assert_eq!(mock.calls(), 1);
     mock.delete();
     let v2 = server.mock(|when, then| {
         when.method(GET).path("/page");
@@ -287,7 +287,7 @@ async fn cache_bypass_skips_read_but_keeps_policy() {
         v["text"].as_str().unwrap_or("").contains("version two"),
         "bypass must serve fresh content, not the cached entry"
     );
-    assert_eq!(v2.hits(), 1);
+    assert_eq!(v2.calls(), 1);
     let mut blocked = fetch_args("http://127.0.0.1:9/blocked".to_string());
     blocked.cache_policy = Some(eggsearch::core::fetch::FetchCachePolicy::Bypass);
     let denied = AppConfig::default();
@@ -321,7 +321,7 @@ async fn cache_refresh_revalidates_with_validators() {
     run_web_fetch(state.clone(), fetch_args(server.url("/doc")))
         .await
         .expect("prime works");
-    assert_eq!(prime.hits(), 1);
+    assert_eq!(prime.calls(), 1);
     prime.delete();
     let conditional = server.mock(|when, then| {
         when.method(GET)
@@ -336,7 +336,7 @@ async fn cache_refresh_revalidates_with_validators() {
     let v = run_web_fetch(state, args).await.expect("refresh works");
     assert_eq!(v["cache_status"], "revalidated");
     assert_eq!(
-        conditional.hits(),
+        conditional.calls(),
         1,
         "refresh must revalidate conditionally"
     );
@@ -363,7 +363,7 @@ async fn cache_max_age_forces_revalidation_of_fresh_entry() {
         .await
         .expect("strict max-age fetch works");
     assert_ne!(v["cache_status"], "hit", "max-age=0 must not report fresh");
-    assert_eq!(mock.hits(), 2, "stricter max-age must refetch");
+    assert_eq!(mock.calls(), 2, "stricter max-age must refetch");
     let v = run_web_fetch(state, fetch_args(server.url("/fresh")))
         .await
         .expect("default fetch works");
@@ -390,7 +390,7 @@ async fn cache_max_age_cannot_override_no_store() {
     args.max_cache_age_seconds = Some(3600);
     let second = run_web_fetch(state, args).await.expect("second works");
     assert_ne!(second["cache_status"], "hit");
-    assert_eq!(mock.hits(), 2, "no-store must never be served from cache");
+    assert_eq!(mock.calls(), 2, "no-store must never be served from cache");
 }
 
 #[tokio::test]
@@ -446,14 +446,14 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
     assert_eq!(v["results"][0]["ok"], true);
     let v = run(vec![item(None)]).await.expect("batch hit works");
     assert_eq!(v["results"][0]["response"]["cache_status"], "hit");
-    assert_eq!(mock.hits(), 1);
+    assert_eq!(mock.calls(), 1);
     let v = run(vec![item(Some(
         eggsearch::core::fetch::FetchCachePolicy::Bypass,
     ))])
     .await
     .expect("batch bypass works");
     assert_eq!(v["results"][0]["response"]["cache_status"], "bypassed");
-    assert_eq!(mock.hits(), 2);
+    assert_eq!(mock.calls(), 2);
     let bad = eggsearch::core::batch_fetch::BatchFetchItem::Web {
         url: server.url("/b"),
         extract_mode: None,
@@ -481,7 +481,7 @@ async fn batch_item_cache_controls_are_explicit_and_bounded() {
         "oversized batch max-age must be rejected during preflight: {error:?}"
     );
     assert_eq!(
-        mock.hits(),
+        mock.calls(),
         2,
         "invalid items must not trigger another fetch"
     );
@@ -633,7 +633,7 @@ async fn markdown_policy_header_is_sent_for_html_targets() {
         .await
         .expect("negotiated fetch works");
 
-    mock.assert_hits(1);
+    mock.assert_calls(1);
     assert_eq!(v["representation"], "markdown");
     assert_eq!(v["attempt_count"], 1);
     assert!(v["text"]
@@ -667,9 +667,9 @@ async fn non_html_targets_keep_the_html_policy() {
         .await
         .expect("json fetch works");
 
-    data.assert_hits(1);
+    data.assert_calls(1);
     assert_eq!(
-        markdown_accept.hits(),
+        markdown_accept.calls(),
         0,
         "a .json target must never send the markdown policy"
     );
@@ -704,9 +704,9 @@ async fn metadata_only_keeps_the_html_policy() {
         .await
         .expect("metadata fetch works");
 
-    html.assert_hits(1);
+    html.assert_calls(1);
     assert_eq!(
-        markdown_accept.hits(),
+        markdown_accept.calls(),
         0,
         "metadata_only must never negotiate away the HTML head"
     );
@@ -741,9 +741,9 @@ async fn ignored_markdown_preference_does_not_trigger_a_second_request() {
         .await
         .expect("fetch works");
 
-    ignoring.assert_hits(1);
+    ignoring.assert_calls(1);
     assert_eq!(
-        html_policy.hits(),
+        html_policy.calls(),
         0,
         "an origin that ignored the header already served a usable representation"
     );
@@ -780,8 +780,8 @@ async fn markdown_fallback_on_406_uses_one_extra_request() {
         .await
         .expect("fallback returns usable content");
 
-    rejecting.assert_hits(1);
-    fallback.assert_hits(1);
+    rejecting.assert_calls(1);
+    fallback.assert_calls(1);
     assert_eq!(v["attempt_count"], 2);
     assert_eq!(v["status"], 200);
     assert_eq!(v["representation"], "html");
@@ -818,8 +818,8 @@ async fn markdown_fallback_on_empty_body_uses_the_html_representation() {
         .await
         .expect("empty markdown falls back");
 
-    empty.assert_hits(1);
-    fallback.assert_hits(1);
+    empty.assert_calls(1);
+    fallback.assert_calls(1);
     assert_eq!(v["attempt_count"], 2);
     assert!(v["text"].as_str().unwrap_or("").contains("recovered body"));
 }
@@ -890,8 +890,8 @@ async fn markdown_and_html_policy_cache_entries_stay_isolated() {
         .expect("markdown fetch works");
     assert_eq!(first["cache_status"], "miss");
     assert_eq!(first["representation"], "markdown");
-    assert_eq!(markdown.hits(), 1);
-    assert_eq!(html.hits(), 0);
+    assert_eq!(markdown.calls(), 1);
+    assert_eq!(html.calls(), 0);
 
     let metadata_args = || {
         let mut args = fetch_args(server.url("/isolated"));
@@ -902,12 +902,12 @@ async fn markdown_and_html_policy_cache_entries_stay_isolated() {
         .await
         .expect("html policy fetch works");
     assert_eq!(
-        html.hits(),
+        html.calls(),
         1,
         "the html key must not reuse the markdown entry"
     );
     assert_eq!(
-        markdown.hits(),
+        markdown.calls(),
         1,
         "the html request must not repeat the markdown request"
     );
@@ -923,13 +923,13 @@ async fn markdown_and_html_policy_cache_entries_stay_isolated() {
         .await
         .expect("html policy cache hit");
     assert_eq!(metadata_again["cache_status"], "hit");
-    assert_eq!(html.hits(), 1, "the html key caches under its own policy");
+    assert_eq!(html.calls(), 1, "the html key caches under its own policy");
 
     let markdown_again = run_web_fetch(state, fetch_args(server.url("/isolated")))
         .await
         .expect("markdown cache hit");
     assert_eq!(markdown_again["cache_status"], "hit");
-    assert_eq!(markdown.hits(), 1);
+    assert_eq!(markdown.calls(), 1);
     assert_eq!(
         markdown_again["representation"], "markdown",
         "an html body must never be served for the markdown key"
@@ -988,9 +988,9 @@ async fn conditional_revalidation_replays_the_markdown_policy() {
         .await
         .expect("revalidation works");
 
-    conditional.assert_hits(1);
+    conditional.assert_calls(1);
     assert_eq!(
-        wrong_policy.hits(),
+        wrong_policy.calls(),
         0,
         "revalidation must replay the policy that produced the entry"
     );
@@ -1004,7 +1004,7 @@ async fn conditional_revalidation_replays_the_markdown_policy() {
         .await
         .expect("html policy fetch after revalidation works");
     assert_eq!(
-        wrong_policy.hits(),
+        wrong_policy.calls(),
         1,
         "the html key must fetch its own representation after a 304 refresh"
     );

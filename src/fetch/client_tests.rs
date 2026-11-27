@@ -1159,7 +1159,7 @@ async fn replay_cookie_is_sent_on_the_first_hop_only() {
         .expect("redirect chain follows");
 
     assert_eq!(response.status, 200);
-    assert_eq!(start.hits(), 1);
-    assert_eq!(final_ok.hits(), 1);
-    assert_eq!(leaked.hits(), 0);
+    assert_eq!(start.calls(), 1);
+    assert_eq!(final_ok.calls(), 1);
+    assert_eq!(leaked.calls(), 0);
 }

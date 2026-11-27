@@ -20,10 +20,6 @@ reviewed by the date recorded for it.
 
 | Advisory | Dependency path and context | Reason | Review by |
 |---|---|---|---|
-| RUSTSEC-2025-0052 | `eggsearch` dev dependency -> `httpmock` -> `async-std`; tests only | `httpmock` is used by deterministic integration tests and has no compatible replacement already in the tree. No production binary includes this path. | 2026-11-27 |
-| RUSTSEC-2025-0057 | `eggsearch` -> `scraper` -> `selectors` -> `fxhash`; default runtime | `scraper` owns this transitive dependency. Replacing the parser or maintaining a fork would enlarge this bounded hardening change; track scraper upstream and review an upgrade path by the stated date. | 2026-11-27 |
-| RUSTSEC-2026-0192 | `eggsearch` optional `pdf` feature -> `lopdf` -> `ttf-parser`; absent from published `v0.4.4` binaries, enabled by default in current source builds | Removing `lopdf` would remove supported PDF extraction, and no patched `ttf-parser` release exists. Track the upstream `ttf-parser` issue and review the dependency path by the stated date. | 2026-11-27 |
-| RUSTSEC-2026-0441 | `eggsearch` dev dependency -> `httpmock` -> `async-std` -> `pin-utils`; tests only | The upstream repository was archived after 0.1.1 and no safe upgrade exists. `pin-utils` is reached only through the test-only `httpmock` harness, so no shipped binary includes this path. Track `httpmock`/`async-std` for a replacement and review by the stated date. | 2026-12-31 |
 | RUSTSEC-2026-0543 | `eggsearch` direct dependency and `rmcp` -> `chrono`, `schemars` -> `chrono`; every feature graph | chrono is unmaintained upstream and the advisory states no safe upgrade exists. The pinned MCP and schema stack still requires it, so no local dependency change removes the path. Track `rmcp`/`schemars` for a chrono-free release and review by the stated date. | 2026-12-31 |
 
 The waiver guard in `packaging/check-dependency-policy.py` requires every
@@ -45,3 +41,9 @@ mechanism. Do not add wildcard or crate-wide ignores.
   MCP 2026-07-28 behaviour are unchanged.
 - The yanked `async-executor 1.14.0` dev-dependency lock entry was replaced by
   `1.14.1`.
+- `httpmock` is upgraded to `0.8.3`; its replacement of `async-std` removes the
+  test-only `RUSTSEC-2025-0052` and `RUSTSEC-2026-0441` paths.
+- `scraper` is upgraded to `0.27.0`, removing the `fxhash` path for
+  `RUSTSEC-2025-0057`.
+- `lopdf` is upgraded to `0.45.0`; its font embedding feature uses `skrifa`,
+  removing the `ttf-parser` path for `RUSTSEC-2026-0192`.

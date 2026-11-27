@@ -393,7 +393,7 @@ async fn zero_results_returns_empty_without_request() {
         .await
         .unwrap_or_else(|error| panic!("{engine}: {error}"));
         assert!(results.is_empty(), "{engine} zero results");
-        mock.assert_hits(0);
+        mock.assert_calls(0);
     }
 }
 

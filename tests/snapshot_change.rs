@@ -222,7 +222,7 @@ async fn oversized_caller_key_is_rejected_before_any_fetch() {
         .error_payload()
         .to_string()
         .contains("invalid_snapshot_key"));
-    mock.assert_hits(0);
+    mock.assert_calls(0);
     assert!(!path.exists());
 }
 

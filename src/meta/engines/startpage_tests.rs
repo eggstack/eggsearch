@@ -122,12 +122,11 @@ const CSS_LOAD_CHALLENGE_PATH: &str =
     "/.within.website/x/cmd/anubis/ext/css-load/01a1cc17-0000-7000-8000-000000000000";
 
 fn cookie_header(request: &httpmock::prelude::HttpMockRequest) -> Option<String> {
-    request.headers.as_ref().and_then(|headers| {
-        headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("cookie"))
-            .map(|(_, value)| value.clone())
-    })
+    request
+        .headers()
+        .get("cookie")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
 }
 
 fn no_cookie_header(request: &httpmock::prelude::HttpMockRequest) -> bool {
@@ -197,7 +196,7 @@ async fn disabled_challenge_keeps_blocked_with_one_request() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header("set-cookie", "sp_pow=pow-1; Path=/")
@@ -231,8 +230,8 @@ async fn disabled_challenge_keeps_blocked_with_one_request() {
             ..
         }
     ));
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
     let rendered = err.to_string();
     assert!(!rendered.contains("pow-1"), "got: {rendered}");
     assert!(!rendered.contains("unexpected"), "got: {rendered}");
@@ -251,7 +250,7 @@ async fn enabled_challenge_solves_and_replays_once() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header(
@@ -272,7 +271,7 @@ async fn enabled_challenge_solves_and_replays_once() {
             .query_param("nonce", "185")
             .query_param("redir", "/search?q=rust")
             .query_param("elapsedTime", "1")
-            .matches(challenge_cookie_header);
+            .is_true(challenge_cookie_header);
         then.status(302)
             .header("location", "/search?q=rust")
             .header(
@@ -303,9 +302,9 @@ async fn enabled_challenge_solves_and_replays_once() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].url, "https://example.com");
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE).as_deref(),
         Some("spchal-auth=pass-cookie-123")
@@ -339,7 +338,7 @@ async fn prefixed_challenge_solves_under_the_published_prefix() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(page);
@@ -373,9 +372,9 @@ async fn prefixed_challenge_solves_under_the_published_prefix() {
     .expect("prefixed challenge solves");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
 }
 
 #[tokio::test]
@@ -391,7 +390,7 @@ async fn slow_method_solves_through_the_fast_path() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(page);
@@ -429,9 +428,9 @@ async fn slow_method_solves_through_the_fast_path() {
     .expect("slow challenge solves");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
 }
 
 #[tokio::test]
@@ -472,8 +471,8 @@ async fn spent_challenge_is_blocked_without_a_submission() {
             .contains("challenge not solved: already spent"),
         "got: {err}"
     );
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(
@@ -528,8 +527,8 @@ async fn projection_breach_is_blocked_without_a_submission() {
         ),
         "got: {err}"
     );
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(
@@ -553,7 +552,7 @@ async fn metarefresh_challenge_solves_and_replays_once() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(METAREFRESH_CHALLENGE_PAGE);
@@ -588,9 +587,9 @@ async fn metarefresh_challenge_solves_and_replays_once() {
     .expect("metarefresh challenge solves");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(submit_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(submit_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
 }
 
 #[tokio::test]
@@ -634,8 +633,8 @@ async fn metarefresh_wait_beyond_budget_is_blocked_without_a_submission() {
             .contains("challenge not solved: wall clock exhausted"),
         "got: {err}"
     );
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(submit_mock.hits(), 0);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(submit_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(
@@ -681,8 +680,8 @@ async fn disabled_metarefresh_keeps_blocked_with_one_request() {
     .expect_err("challenge page blocks");
 
     assert!(matches!(err, EngineError::Blocked { .. }));
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(submit_mock.hits(), 0);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(submit_mock.calls(), 0);
 }
 
 #[tokio::test]
@@ -726,8 +725,8 @@ async fn cached_pass_cookie_is_sent_proactively() {
     .expect("cached cookie search returns rows");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(solves_delta(&before, &after), (0, 0, 0));
@@ -748,7 +747,7 @@ async fn above_ceiling_is_blocked_naming_both_values() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header("set-cookie", "sp_pow=pow-1; Path=/")
@@ -784,8 +783,8 @@ async fn above_ceiling_is_blocked_naming_both_values() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(solves_delta(&before, &after), (1, 0, 0));
@@ -829,8 +828,8 @@ async fn unknown_method_is_blocked_without_solving() {
 
     let rendered = err.to_string();
     assert!(rendered.contains("unsupported scheme"), "got: {rendered}");
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(
@@ -853,7 +852,7 @@ async fn rejected_pass_cookie_blocks_without_leaking_it() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header("set-cookie", "sp_pow=pow-1; Path=/")
@@ -896,9 +895,9 @@ async fn rejected_pass_cookie_blocks_without_leaking_it() {
     assert!(rendered.contains("pass cookie rejected"), "got: {rendered}");
     assert!(!rendered.contains("rejected-cookie-789"), "got: {rendered}");
     assert!(!rendered.contains("pow-1"), "got: {rendered}");
-    assert_eq!(first_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(first_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE),
         None,
@@ -926,7 +925,7 @@ async fn solved_page_that_does_not_parse_stays_parse_failed() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header("set-cookie", "sp_pow=pow-1; Path=/")
@@ -968,9 +967,9 @@ async fn solved_page_that_does_not_parse_stays_parse_failed() {
         ),
         "unexpected error: {err:?}"
     );
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
 }
 
 fn payload_page(payload: &str) -> String {
@@ -1140,8 +1139,8 @@ async fn malformed_challenge_parameters_are_recorded() {
             .contains("challenge not solved: malformed parameters"),
         "got: {err}"
     );
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(
@@ -1165,7 +1164,7 @@ async fn missing_pass_cookie_is_recorded() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(CHALLENGE_PAGE);
@@ -1193,8 +1192,8 @@ async fn missing_pass_cookie_is_recorded() {
             .contains("challenge not solved: pass cookie absent"),
         "got: {err}"
     );
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
     assert_eq!(pass_cookie_cache().get(ENGINE), None);
 
     let after = ledger_stats();
@@ -1249,8 +1248,8 @@ async fn exhausted_attempts_are_recorded() {
             .contains("challenge not solved: attempts exhausted"),
         "got: {err}"
     );
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 0);
 
     let after = ledger_stats();
     assert_eq!(
@@ -1297,8 +1296,8 @@ async fn rejected_verification_is_recorded_as_a_refusal() {
         "got: {rendered}"
     );
     assert!(!rendered.contains("rejected-cookie"), "got: {rendered}");
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
 
     let after = ledger_stats();
     assert_eq!(
@@ -1320,7 +1319,7 @@ async fn pass_cookie_max_age_zero_leaves_no_entry() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(CHALLENGE_PAGE);
@@ -1358,9 +1357,9 @@ async fn pass_cookie_max_age_zero_leaves_no_entry() {
             .contains("challenge not solved: pass cookie rejected"),
         "got: {err}"
     );
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 0);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 0);
     assert_eq!(
         pass_cookie_cache().get(ENGINE),
         None,
@@ -1380,7 +1379,7 @@ async fn pass_cookie_max_age_beyond_the_ceiling_is_stored() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(CHALLENGE_PAGE);
@@ -1414,9 +1413,9 @@ async fn pass_cookie_max_age_beyond_the_ceiling_is_stored() {
     .expect("a long-lived cookie answers this search");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE).as_deref(),
         Some("spchal-auth=pass-cookie-123"),
@@ -1437,7 +1436,7 @@ async fn zero_cookie_ttl_solves_on_every_search() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(CHALLENGE_PAGE);
@@ -1478,9 +1477,9 @@ async fn zero_cookie_ttl_solves_on_every_search() {
         assert_eq!(results.len(), 1);
     }
 
-    assert_eq!(challenge_page_mock.hits(), 2);
-    assert_eq!(pass_mock.hits(), 2);
-    assert_eq!(replay_mock.hits(), 2);
+    assert_eq!(challenge_page_mock.calls(), 2);
+    assert_eq!(pass_mock.calls(), 2);
+    assert_eq!(replay_mock.calls(), 2);
     assert_eq!(pass_cookie_cache().get(ENGINE), None);
 
     let after = ledger_stats();
@@ -1505,7 +1504,7 @@ async fn disabled_solver_never_requests_a_css_load_extension() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(page);
@@ -1542,9 +1541,9 @@ async fn disabled_solver_never_requests_a_css_load_extension() {
             ..
         }
     ));
-    assert_eq!(search_mock.hits(), 1);
-    assert_eq!(extension_mock.hits(), 0);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(search_mock.calls(), 1);
+    assert_eq!(extension_mock.calls(), 0);
+    assert_eq!(pass_mock.calls(), 0);
 }
 
 #[tokio::test]
@@ -1563,7 +1562,7 @@ async fn css_load_challenge_fetches_the_extension_then_replays() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(page);
@@ -1608,10 +1607,10 @@ async fn css_load_challenge_fetches_the_extension_then_replays() {
     .expect("css-load challenge solves");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(extension_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(extension_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE).as_deref(),
         Some("spchal-auth=css-pass")
@@ -1632,7 +1631,7 @@ async fn metarefresh_challenge_without_a_meta_tag_solves() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(page);
@@ -1667,9 +1666,9 @@ async fn metarefresh_challenge_without_a_meta_tag_solves() {
     .expect("a header-only metarefresh challenge solves");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(submit_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(submit_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
 }
 
 #[tokio::test]
@@ -1686,7 +1685,7 @@ async fn sha256_challenge_solves_and_replays_once() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(page);
@@ -1726,9 +1725,9 @@ async fn sha256_challenge_solves_and_replays_once() {
     .expect("sha256 challenge solves");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
-    assert_eq!(replay_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
+    assert_eq!(replay_mock.calls(), 1);
     assert_eq!(ledger_stats().last_candidates, 43);
 }
 

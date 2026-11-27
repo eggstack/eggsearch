@@ -1005,13 +1005,13 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].title, "N");
         news_mock.assert();
-        assert_eq!(web_mock.hits(), 0);
+        assert_eq!(web_mock.calls(), 0);
 
         let web_req = simple_req("election", 5);
         search(&client, "k", Some(&web_base), &web_req)
             .await
             .expect("web search should succeed");
-        assert!(web_mock.hits() >= 1);
+        assert!(web_mock.calls() >= 1);
     }
 
     #[tokio::test]
@@ -1058,7 +1058,7 @@ mod tests {
             .expect("search should succeed");
         without_mock.assert();
         assert_eq!(
-            snippet_probe.hits(),
+            snippet_probe.calls(),
             0,
             "extra_snippets must not be sent without excerpt demand"
         );

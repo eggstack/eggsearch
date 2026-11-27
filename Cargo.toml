@@ -70,8 +70,8 @@ eggress-uri = { version = "=1.0.12", default-features = false, optional = true }
 eggress-core = { version = "=1.0.12", default-features = false, optional = true }
 eggfetch-core = { version = "0.2.2", default-features = false, features = ["standard-http1", "advanced-routing", "redirects", "tls-rustls", "json", "compression-gzip", "compression-brotli", "proxy"] }
 semver = "1"
-scraper = "0.20"
-ego-tree = "0.6.2"
+scraper = "0.27"
+ego-tree = "0.11"
 urlencoding = "2"
 regex = "1"
 rusqlite = { version = "0.41.0", features = ["bundled"] }
@@ -79,7 +79,7 @@ toml = "0.8"
 quick-xml = { version = "0.41", default-features = false }
 dirs = "5"
 pulldown-cmark = "0.12"
-lopdf = { version = "0.42", optional = true, default-features = false }
+lopdf = { version = "0.45", optional = true, default-features = false }
 zip = { version = "=9.8.1", optional = true, default-features = false, features = ["deflate-flate2"] }
 calamine = { version = "0.38", optional = true, default-features = false, features = ["dates"] }
 flate2 = { version = "1", optional = true, default-features = false, features = ["rust_backend"] }
@@ -97,7 +97,7 @@ tempfile = "3"
 
 [dev-dependencies]
 pretty_assertions = "1"
-httpmock = "0.7"
+httpmock = "0.8"
 criterion = { version = "0.5", default-features = false }
 proptest = { version = "1", default-features = false, features = ["std"] }
 flate2 = "1"

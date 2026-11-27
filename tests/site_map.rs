@@ -117,12 +117,12 @@ async fn site_discovery_is_deterministic_and_never_fetches_discovered_urls() {
     assert_eq!(map["counts"]["link"], 2);
     assert_eq!(map["counts"]["sitemap"], 2);
     assert!(!map["truncated"].as_bool().unwrap());
-    assert_eq!(robots.hits(), 2);
-    assert_eq!(sitemap.hits(), 2);
-    assert_eq!(page.hits(), 2);
-    assert_eq!(discovered_a.hits(), 0);
-    assert_eq!(discovered_c.hits(), 0);
-    assert_eq!(discovered_z.hits(), 0);
+    assert_eq!(robots.calls(), 2);
+    assert_eq!(sitemap.calls(), 2);
+    assert_eq!(page.calls(), 2);
+    assert_eq!(discovered_a.calls(), 0);
+    assert_eq!(discovered_c.calls(), 0);
+    assert_eq!(discovered_z.calls(), 0);
 }
 
 #[tokio::test]
@@ -161,11 +161,11 @@ async fn site_discovery_follows_one_sitemap_index_level_and_fallbacks() {
     assert_eq!(map["sitemap_index_used"], true);
     assert_eq!(map["robots_sitemaps"], 0);
     assert_eq!(map["urls"][0]["url"], format!("{base}/child-target"));
-    assert_eq!(robots.hits(), 1);
-    assert_eq!(index.hits(), 1);
-    assert_eq!(alternate.hits(), 1);
-    assert_eq!(child.hits(), 1);
-    assert_eq!(target.hits(), 0);
+    assert_eq!(robots.calls(), 1);
+    assert_eq!(index.calls(), 1);
+    assert_eq!(alternate.calls(), 1);
+    assert_eq!(child.calls(), 1);
+    assert_eq!(target.calls(), 0);
 }
 
 #[tokio::test]
@@ -206,11 +206,11 @@ async fn site_discovery_does_not_recurse_into_a_child_index() {
     let map = site_map(&response);
     assert_eq!(map["sitemap_index_used"], true);
     assert_eq!(map["truncated"], true);
-    assert_eq!(robots.hits(), 1);
-    assert_eq!(index.hits(), 1);
-    assert_eq!(alternate.hits(), 1);
-    assert_eq!(child_index.hits(), 1);
-    assert_eq!(grandchild.hits(), 0);
+    assert_eq!(robots.calls(), 1);
+    assert_eq!(index.calls(), 1);
+    assert_eq!(alternate.calls(), 1);
+    assert_eq!(child_index.calls(), 1);
+    assert_eq!(grandchild.calls(), 0);
 }
 
 #[tokio::test]
@@ -257,11 +257,11 @@ async fn site_discovery_rejects_cross_origin_targets_and_malformed_xml() {
     let map = site_map(&response);
     assert_eq!(map["counts"]["cross_origin_skipped"], 2);
     assert_eq!(map["counts"]["total"], 0);
-    assert_eq!(robots.hits(), 1);
-    assert_eq!(sitemap.hits(), 1);
-    assert_eq!(external_sitemap.hits(), 0);
-    assert_eq!(external_page.hits(), 0);
-    assert_eq!(entry.hits(), 0);
+    assert_eq!(robots.calls(), 1);
+    assert_eq!(sitemap.calls(), 1);
+    assert_eq!(external_sitemap.calls(), 0);
+    assert_eq!(external_page.calls(), 0);
+    assert_eq!(entry.calls(), 0);
 
     let malformed_server = MockServer::start();
     let malformed_base = origin(&malformed_server);
@@ -306,7 +306,7 @@ async fn site_discovery_refuses_gzip_and_reports_url_limit_and_xml_depth_truncat
         .as_str()
         .unwrap()
         .contains("site_map_gzip_unsupported"));
-    assert_eq!(gzip.hits(), 0);
+    assert_eq!(gzip.calls(), 0);
 
     let limit_server = MockServer::start();
     let limit_base = origin(&limit_server);
@@ -389,7 +389,7 @@ async fn site_discovery_query_drop_collapses_duplicate_urls() {
     assert_eq!(map["urls"].as_array().unwrap().len(), 1);
     assert_eq!(map["urls"][0]["url"], format!("{base}/duplicate"));
     assert_eq!(map["counts"]["duplicates"], 1);
-    assert_eq!(target.hits(), 0);
+    assert_eq!(target.calls(), 0);
 }
 
 #[tokio::test]
@@ -422,7 +422,7 @@ async fn site_discovery_refuses_a_cross_origin_sitemap_redirect() {
         .as_str()
         .unwrap()
         .contains("site_map_cross_origin_redirect"));
-    assert_eq!(robots.hits(), 1);
-    assert_eq!(redirect.hits(), 1);
-    assert_eq!(crossed.hits(), 0);
+    assert_eq!(robots.calls(), 1);
+    assert_eq!(redirect.calls(), 1);
+    assert_eq!(crossed.calls(), 0);
 }

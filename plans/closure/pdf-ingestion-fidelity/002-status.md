@@ -15,7 +15,7 @@ Implementation candidate: the uncommitted worktree on that baseline. No closure 
 PDF extraction now has a committed corpus, deterministic metrics, and a negative control that proves the
 lane can detect the failure shapes it exists to catch. The production extractor is unchanged.
 
-`tests/fixtures/pdf/corpus.json` is the manifest: schema version 1, corpus revision `pdf-fidelity-v1`, a
+`tests/fixtures/pdf/corpus.json` is the manifest: schema version 1, corpus revision `pdf-fidelity-v2`, a
 `fixture_policy` string, a byte budget, and one entry per case carrying `id`, `document_class`,
 `source_type`, `license`, `provenance`, `expected_outcome`, `construction`, and annotations. Every
 committed PDF is synthetic; the manifest records the construction recipe and the SHA-256.
@@ -29,11 +29,11 @@ committed PDF is synthetic; the manifest records the construction recipe and the
 | `clean_text` | `clean_text/single_column_notes.pdf` | 1,466 | `46bb02055720afad` |
 | `image_only` | `image_only/scanned_placeholder.pdf` | 774 | `fe6287e8af04d99f` |
 | `encrypted` | `encrypted/locked_placeholder.pdf` | 903 | `7a3ee3d80ae0bb36` |
-| `malformed` | `malformed/broken_xref.pdf` | 701 | `0175cfebfba998af` |
+| `malformed` | `malformed/truncated_catalog.pdf` | 48 | `61029db198252a58` |
 | `cid_corrupt` | `cid_corrupt/garbled_codes.pdf` | 1,011 | `f6574c816f79b203` |
 | `outline_heavy` | `outline_heavy/nested_outline.pdf` | 5,660 | `1ec28842f4170377` |
 
-Total 15,890 bytes against a 3 MiB corpus budget and a 1 MiB per-case budget, both asserted by the suite.
+Total 15,237 bytes against a 3 MiB corpus budget and a 1 MiB per-case budget, both asserted by the suite.
 
 ## Metrics and negative control
 

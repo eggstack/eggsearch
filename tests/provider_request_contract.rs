@@ -945,7 +945,7 @@ async fn arxiv_request_response_and_pacing_contract() {
     .await
     .expect("second arxiv search");
     let elapsed = started.elapsed();
-    mock.assert_hits(2);
+    mock.assert_calls(2);
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].url, "https://arxiv.org/abs/2401.00001");
     assert_eq!(first[0].source_engine, "arxiv");
@@ -1030,8 +1030,8 @@ async fn pubmed_runs_one_esearch_and_one_esummary() {
     )
     .await
     .expect("pubmed search");
-    esearch.assert_hits(1);
-    esummary.assert_hits(1);
+    esearch.assert_calls(1);
+    esummary.assert_calls(1);
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].url, "https://pubmed.ncbi.nlm.nih.gov/31357002/");
     assert_eq!(
@@ -1096,12 +1096,7 @@ async fn github_repositories_routes_keyless_and_optional_token() {
             .path("/search/repositories")
             .query_param("q", "rust web")
             .query_param("per_page", "2")
-            .matches(|req| match &req.headers {
-                None => true,
-                Some(headers) => !headers
-                    .iter()
-                    .any(|(name, _)| name.eq_ignore_ascii_case("authorization")),
-            });
+            .is_true(|req| !req.headers().contains_key("authorization"));
         then.status(200)
             .header("content-type", "application/json")
             .body(
@@ -1223,15 +1218,11 @@ impl CapturedWire {
 
 fn capture(req: &httpmock::prelude::HttpMockRequest) -> CapturedWire {
     CapturedWire {
-        method: req.method.clone(),
-        path: req.path.clone(),
-        query: req.query_params.clone().unwrap_or_default(),
-        headers: req.headers.clone().unwrap_or_default(),
-        body: req
-            .body
-            .as_ref()
-            .map(|body| String::from_utf8_lossy(body).into_owned())
-            .unwrap_or_default(),
+        method: req.method_str().to_owned(),
+        path: req.uri().path().to_owned(),
+        query: req.query_params(),
+        headers: req.headers_vec().clone(),
+        body: String::from_utf8_lossy(req.body_ref()).into_owned(),
     }
 }
 
@@ -1335,7 +1326,7 @@ async fn serpapi_wire_contract_pins_google_and_asks_for_no_extras() {
             .path("/search")
             .query_param("engine", "google")
             .query_param("api_key", SERPAPI_KEY)
-            .matches(record_serpapi);
+            .is_true(record_serpapi);
         then.status(200)
             .header("content-type", "application/json")
             .body(SERPAPI_BODY);
@@ -1415,7 +1406,7 @@ async fn serpapi_quota_auth_and_oversized_responses_stay_provider_scoped() {
         !err.to_string().contains(SERPAPI_KEY),
         "the credential must never reach diagnostics: {err}"
     );
-    quota.assert_hits(1);
+    quota.assert_calls(1);
 
     let auth_server = MockServer::start();
     let auth_endpoint = format!("{}/search", auth_server.url(""));
@@ -1478,7 +1469,7 @@ async fn kagi_wire_contract_uses_post_v1_bearer_and_the_search_workflow() {
         when.method(POST)
             .path("/search")
             .header("authorization", format!("Bearer {KAGI_KEY}"))
-            .matches(record_kagi);
+            .is_true(record_kagi);
         then.status(200)
             .header("content-type", "application/json")
             .body(KAGI_BODY);
@@ -1564,7 +1555,7 @@ async fn kagi_quota_is_terminal_and_never_retried() {
         "the credential must never reach diagnostics: {err}"
     );
     // Kagi's terms forbid circumventing rate limits: one attempt only.
-    quota.assert_hits(1);
+    quota.assert_calls(1);
 }
 
 #[tokio::test]

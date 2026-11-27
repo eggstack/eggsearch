@@ -261,7 +261,7 @@ async fn relative_freshness_sends_utc_start_without_end() {
     let mock = server.mock(|when, then| {
         when.method(POST)
             .path("/search")
-            .body_contains("startPublishedDate");
+            .body_includes("startPublishedDate");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
@@ -269,7 +269,7 @@ async fn relative_freshness_sends_utc_start_without_end() {
     let end_probe = server.mock(|when, then| {
         when.method(POST)
             .path("/search")
-            .body_contains("endPublishedDate");
+            .body_includes("endPublishedDate");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
@@ -282,7 +282,7 @@ async fn relative_freshness_sends_utc_start_without_end() {
         .expect("ok");
     mock.assert();
     assert_eq!(
-        end_probe.hits(),
+        end_probe.calls(),
         0,
         "relative freshness must omit endPublishedDate"
     );
@@ -391,7 +391,7 @@ async fn highlights_absent_without_demand_then_bounded() {
     let with_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/search")
-            .body_contains("highlights");
+            .body_includes("highlights");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
@@ -403,7 +403,7 @@ async fn highlights_absent_without_demand_then_bounded() {
             .body(r#"{"results": []}"#);
     });
     let highlight_probe = server.mock(|when, then| {
-        when.method(POST).path("/plain").body_contains("highlights");
+        when.method(POST).path("/plain").body_includes("highlights");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);
@@ -421,7 +421,7 @@ async fn highlights_absent_without_demand_then_bounded() {
         .expect("ok");
     plain_mock.assert();
     assert_eq!(
-        highlight_probe.hits(),
+        highlight_probe.calls(),
         0,
         "highlights must not be requested without excerpt demand"
     );

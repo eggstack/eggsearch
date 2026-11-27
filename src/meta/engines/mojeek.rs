@@ -393,11 +393,7 @@ mod tests {
     const UNSOLVABLE_CHALLENGE: &str = r#"{"parameters":{"algorithm":"PBKDF2/SHA-256","cost":100,"keyLength":32,"keyPrefix":"0000000000000000ffffffffffffffff","nonce":"0102030405060708","salt":"0a0b0c0d0e0f1011","keySignature":"00","expiresAt":1794425890},"signature":"00"}"#;
 
     fn no_cookie_header(request: &httpmock::prelude::HttpMockRequest) -> bool {
-        !request.headers.as_ref().is_some_and(|headers| {
-            headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("cookie"))
-        })
+        !request.headers().contains_key("cookie")
     }
 
     fn test_client() -> Client {
@@ -417,7 +413,7 @@ mod tests {
             when.method(GET)
                 .path("/search")
                 .query_param("q", "rust")
-                .matches(no_cookie_header);
+                .is_true(no_cookie_header);
             then.status(200)
                 .header("content-type", "text/html")
                 .body(CHALLENGE_PAGE);
@@ -455,9 +451,9 @@ mod tests {
                 ..
             }
         ));
-        assert_eq!(search_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 0);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(search_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 0);
+        assert_eq!(verify_mock.calls(), 0);
         let rendered = err.to_string();
         assert!(!rendered.contains("leaked-cookie-value"), "got: {rendered}");
 
@@ -489,7 +485,7 @@ mod tests {
             when.method(GET)
                 .path("/search")
                 .query_param("q", "rust")
-                .matches(no_cookie_header);
+                .is_true(no_cookie_header);
             then.status(200)
                 .header("content-type", "text/html")
                 .body(CHALLENGE_PAGE);
@@ -526,10 +522,10 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].url, "https://example.com");
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 1);
-        assert_eq!(replay_mock.hits(), 1);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 1);
+        assert_eq!(replay_mock.calls(), 1);
         assert_eq!(
             pass_cookie_cache().get("mojeek").as_deref(),
             Some("chllg=pass-cookie-123")
@@ -586,8 +582,8 @@ mod tests {
         .expect("cached cookie search returns rows");
 
         assert_eq!(results.len(), 1);
-        assert_eq!(search_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(search_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 0);
 
         let after = ledger_stats();
         assert_eq!(solves_delta(&before, &after), (0, 0, 0));
@@ -649,9 +645,9 @@ mod tests {
         assert!(rendered.contains("attempts exhausted"), "got: {rendered}");
         assert!(!rendered.contains("leaked-cookie-value"), "got: {rendered}");
         assert!(!rendered.contains("never-used"), "got: {rendered}");
-        assert_eq!(search_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(search_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 0);
 
         let after = ledger_stats();
         assert_eq!(
@@ -679,7 +675,7 @@ mod tests {
                 .body(CHALLENGE_PAGE);
         });
         let challenge_page_mock = server.mock(|when, then| {
-            when.method(GET).path("/search").matches(no_cookie_header);
+            when.method(GET).path("/search").is_true(no_cookie_header);
             then.status(200)
                 .header("content-type", "text/html")
                 .body(CHALLENGE_PAGE);
@@ -717,10 +713,10 @@ mod tests {
         let rendered = err.to_string();
         assert!(rendered.contains("pass cookie rejected"), "got: {rendered}");
         assert!(!rendered.contains("rejected-cookie-789"), "got: {rendered}");
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 1);
-        assert_eq!(replay_mock.hits(), 1);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 1);
+        assert_eq!(replay_mock.calls(), 1);
         assert_eq!(
             pass_cookie_cache().get("mojeek"),
             None,
@@ -789,9 +785,9 @@ mod tests {
                 .contains("challenge not solved: unsupported scheme"),
             "got: {err}"
         );
-        assert_eq!(search_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(search_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 0);
 
         let after = ledger_stats();
         assert_eq!(
@@ -846,9 +842,9 @@ mod tests {
                 .contains("challenge not solved: malformed parameters"),
             "got: {err}"
         );
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 0);
 
         let after = ledger_stats();
         assert_eq!(
@@ -907,9 +903,9 @@ mod tests {
                 .contains("challenge not solved: pass cookie absent"),
             "got: {err}"
         );
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 1);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 1);
 
         let after = ledger_stats();
         assert_eq!(
@@ -967,9 +963,9 @@ mod tests {
             "got: {rendered}"
         );
         assert!(!rendered.contains("rejected-cookie"), "got: {rendered}");
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 1);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 1);
         assert_eq!(pass_cookie_cache().get("mojeek"), None);
 
         let after = ledger_stats();
@@ -1027,9 +1023,9 @@ mod tests {
                 .contains("challenge not solved: wall clock exhausted"),
             "got: {err}"
         );
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 0);
 
         let after = ledger_stats();
         assert_eq!(
@@ -1084,8 +1080,8 @@ mod tests {
             ),
             "unexpected error: {err:?}"
         );
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
 
         let after = ledger_stats();
         assert_eq!(solves_delta(&before, &after), (1, 0, 1));
@@ -1104,7 +1100,7 @@ mod tests {
             when.method(GET)
                 .path("/search")
                 .query_param("q", "rust")
-                .matches(no_cookie_header);
+                .is_true(no_cookie_header);
             then.status(200)
                 .header("content-type", "text/html")
                 .body(CHALLENGE_PAGE);
@@ -1148,10 +1144,10 @@ mod tests {
         .expect("a zero-lifetime cookie still answers this search");
 
         assert_eq!(results.len(), 1);
-        assert_eq!(challenge_page_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 1);
-        assert_eq!(verify_mock.hits(), 1);
-        assert_eq!(replay_mock.hits(), 1);
+        assert_eq!(challenge_page_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 1);
+        assert_eq!(verify_mock.calls(), 1);
+        assert_eq!(replay_mock.calls(), 1);
         assert_eq!(
             pass_cookie_cache().get("mojeek"),
             None,
@@ -1215,9 +1211,9 @@ mod tests {
             }
             other => panic!("expected Blocked, got {other:?}"),
         }
-        assert_eq!(search_mock.hits(), 1);
-        assert_eq!(challenge_mock.hits(), 0);
-        assert_eq!(verify_mock.hits(), 0);
+        assert_eq!(search_mock.calls(), 1);
+        assert_eq!(challenge_mock.calls(), 0);
+        assert_eq!(verify_mock.calls(), 0);
 
         let after = ledger_stats();
         assert_eq!(solves_delta(&before, &after), (0, 0, 0));
@@ -1257,6 +1253,6 @@ mod tests {
             ),
             "unexpected error: {err:?}"
         );
-        assert_eq!(search_mock.hits(), 1);
+        assert_eq!(search_mock.calls(), 1);
     }
 }

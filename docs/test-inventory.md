@@ -33,7 +33,7 @@ Ignored tests are live-network smoke tests (`corpus_runner`, `mcp_http` via `liv
 | `knowledge_delta_quality` | `mock` | Frozen 88-case discovery corpus (`docs/knowledge-delta-evaluation.md`): direct-live, indexed-lexical, and indexed-expansion variants measured for expectation rate, gold recall, false temporal claims, duplicate yield, span coverage, payload budget, and deterministic replay |
 | `security_workflow` | `mock` (mostly) | Advisory retrieval, applicability assessment, safety handling, default identifier routing through an enabled native advisory provider, conditional availability/severity warnings, and the bounded advisory summary |
 | `dependency_fixtures` | None | Realistic minimized lockfile fixtures per ecosystem/version (`tests/fixtures/dependency_evidence/`) |
-| `pdf_fidelity` | `pdf` | Committed synthetic PDF corpus (8 cases, one per document class, 15,890 bytes): line-shape floors/ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification and image counts, running-head repetition, outline count/depth; 116 baseline assertions and 15 recorded ADR-0008 target statuses; join-lines-and-strip-spaces negative control over 25 metric groups; 16 tests plus 1 ignored opt-in recorder into `target/pdf-corpus/`, including one that pins document-scoped chunks against window-bounded legacy text |
+| `pdf_fidelity` | `pdf` | Committed synthetic PDF corpus (8 cases, one per document class, 15,237 bytes): line-shape floors/ceilings, intact required words including U+FB00–FB06 ligature tokens, table-row adjacency, ordered passages, per-page classification and image counts, running-head repetition, outline count/depth; 116 baseline assertions and 15 recorded ADR-0008 target statuses; join-lines-and-strip-spaces negative control over 25 metric groups; 16 tests plus 1 ignored opt-in recorder into `target/pdf-corpus/`, including one that pins document-scoped chunks against window-bounded legacy text |
 | `evidence_contract` | `mock` (mostly) | Batch fetch isolation, evidence packaging, bundle handoff shape |
 | `corpus_runner` | `mock` | Multi-step workflow regression (`tests/corpus/scenarios/`) |
 | `config_validation` | None | Config rules and validation, including `[search]` search-cache TTL/entry bounds, field-level `[search]` defaults for partial tables, and the explicit-empty-provider-table rule |
@@ -63,10 +63,10 @@ Placement authority is the table in `architecture/testing.md`.
 | `clean_text` | `clean_text/single_column_notes.pdf` | 1,466 |
 | `image_only` | `image_only/scanned_placeholder.pdf` | 774 |
 | `encrypted` | `encrypted/locked_placeholder.pdf` | 903 |
-| `malformed` | `malformed/broken_xref.pdf` | 701 |
+| `malformed` | `malformed/truncated_catalog.pdf` | 48 |
 | `cid_corrupt` | `cid_corrupt/garbled_codes.pdf` | 1,011 |
 | `outline_heavy` | `outline_heavy/nested_outline.pdf` | 5,660 |
-| **Total** | **8 cases** | **15,890** |
+| **Total** | **8 cases** | **15,237** |
 
 Every case is generated synthetically by this repository; no third-party document bytes are committed. `corpus.json` records the licence, page count, SHA-256, expected outcome, and a construction recipe per case. The suite asserts 116 baseline annotations and 15 recorded ADR-0008 target statuses (an improvement forces a manifest update), and the join-lines-and-strip-spaces negative control must be rejected by 25 declared metric groups, with the two-column case covering all five metric families plus running heads. Corpus budget: 3 MiB total and 1 MiB per case, asserted by the suite.
 

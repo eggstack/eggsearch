@@ -280,7 +280,7 @@ async fn browser_launch_failure_is_named_and_does_not_repeat_http() {
         .to_string()
         .contains("container sandbox rejected Chrome launch"));
     assert_eq!(browser_calls.load(Ordering::SeqCst), 1);
-    mock.assert_hits(1);
+    mock.assert_calls(1);
 
     let explicit = run_web_fetch(
         state,
@@ -301,5 +301,5 @@ async fn browser_launch_failure_is_named_and_does_not_repeat_http() {
         .to_string()
         .contains("browser launch failed: container sandbox rejected Chrome launch"));
     assert_eq!(browser_calls.load(Ordering::SeqCst), 2);
-    mock.assert_hits(1);
+    mock.assert_calls(1);
 }

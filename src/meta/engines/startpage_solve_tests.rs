@@ -13,7 +13,7 @@ async fn a_solve_that_outlives_the_replay_budget_still_caches_the_cookie() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header(
@@ -34,7 +34,7 @@ async fn a_solve_that_outlives_the_replay_budget_still_caches_the_cookie() {
             .query_param("nonce", "185")
             .query_param("redir", "/search?q=rust")
             .query_param("elapsedTime", "1")
-            .matches(challenge_cookie_header);
+            .is_true(challenge_cookie_header);
         then.status(302)
             .header("location", "/search?q=rust")
             .header(
@@ -66,8 +66,8 @@ async fn a_solve_that_outlives_the_replay_budget_still_caches_the_cookie() {
         first.is_err(),
         "the replay must miss the short request budget: {first:?}"
     );
-    assert_eq!(challenge_page_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
+    assert_eq!(challenge_page_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
     assert_eq!(
         pass_cookie_cache().get(ENGINE).as_deref(),
         Some("spchal-auth=pass-cookie-123"),
@@ -87,16 +87,16 @@ async fn a_solve_that_outlives_the_replay_budget_still_caches_the_cookie() {
     assert_eq!(second.len(), 1);
     assert_eq!(second[0].url, "https://example.com");
     assert_eq!(
-        challenge_page_mock.hits(),
+        challenge_page_mock.calls(),
         1,
         "the cached replay must not fetch the wall"
     );
     assert_eq!(
-        pass_mock.hits(),
+        pass_mock.calls(),
         1,
         "the cached replay must not solve twice"
     );
-    assert_eq!(replay_mock.hits(), 2);
+    assert_eq!(replay_mock.calls(), 2);
 }
 
 #[tokio::test]
@@ -125,7 +125,7 @@ async fn a_warm_cookie_keeps_the_first_attempt_inside_budget() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .body(CHALLENGE_PAGE);
@@ -147,9 +147,9 @@ async fn a_warm_cookie_keeps_the_first_attempt_inside_budget() {
     .expect("a warm cookie fits the short budget");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(replay_mock.hits(), 1);
-    assert_eq!(wall_mock.hits(), 0);
-    assert_eq!(pass_mock.hits(), 0);
+    assert_eq!(replay_mock.calls(), 1);
+    assert_eq!(wall_mock.calls(), 0);
+    assert_eq!(pass_mock.calls(), 0);
 }
 
 #[tokio::test]
@@ -164,7 +164,7 @@ async fn a_solve_never_runs_past_the_request_budget() {
         when.method(GET)
             .path("/search")
             .query_param("q", "rust")
-            .matches(no_cookie_header);
+            .is_true(no_cookie_header);
         then.status(200)
             .header("content-type", "text/html")
             .header("set-cookie", "sp_pow=pow-1; Max-Age=300; HttpOnly; Path=/")
@@ -203,8 +203,8 @@ async fn a_solve_never_runs_past_the_request_budget() {
         "the solve must stop at the request budget, took {:?}",
         started.elapsed()
     );
-    assert_eq!(wall_mock.hits(), 1);
-    assert_eq!(pass_mock.hits(), 1);
+    assert_eq!(wall_mock.calls(), 1);
+    assert_eq!(pass_mock.calls(), 1);
     assert!(
         pass_cookie_cache().get(ENGINE).is_none(),
         "a solve that never completed must not cache a cookie"

@@ -781,14 +781,14 @@ mod tests {
             .await
             .expect("cli fetch solves the challenge");
 
-        assert_eq!(wall.hits(), 1, "the wall is fetched once");
+        assert_eq!(wall.calls(), 1, "the wall is fetched once");
         assert_eq!(
-            pass.hits(),
+            pass.calls(),
             1,
             "the cli must attempt the published challenge"
         );
         assert_eq!(
-            replay.hits(),
+            replay.calls(),
             1,
             "the cli must replay with the issued cookie"
         );
@@ -823,9 +823,9 @@ mod tests {
             .await
             .expect("cli fetch returns the marked wall");
 
-        assert_eq!(wall.hits(), 1);
+        assert_eq!(wall.calls(), 1);
         assert_eq!(
-            pass.hits(),
+            pass.calls(),
             0,
             "a disabled solver must not attempt the challenge"
         );
@@ -891,15 +891,15 @@ mod tests {
             .await
             .expect("cli fetch solves the challenge");
 
-        assert_eq!(wall.hits(), 1, "the wall is fetched once");
+        assert_eq!(wall.calls(), 1, "the wall is fetched once");
         assert_eq!(
-            challenge.hits(),
+            challenge.calls(),
             1,
             "the published challenge is fetched once"
         );
-        assert_eq!(verify.hits(), 1, "the solution is verified once");
+        assert_eq!(verify.calls(), 1, "the solution is verified once");
         assert_eq!(
-            replay.hits(),
+            replay.calls(),
             1,
             "the cli must replay with the issued cookie"
         );
@@ -941,13 +941,13 @@ mod tests {
             .await
             .expect("cli fetch returns the marked wall");
 
-        assert_eq!(wall.hits(), 1);
+        assert_eq!(wall.calls(), 1);
         assert_eq!(
-            challenge.hits(),
+            challenge.calls(),
             0,
             "a disabled solver must not fetch the published challenge"
         );
-        assert_eq!(verify.hits(), 0);
+        assert_eq!(verify.calls(), 0);
         assert!(response.manual_interaction_required);
         let payload = json_payload(&response);
         assert_eq!(payload["manual_interaction_required"], true);

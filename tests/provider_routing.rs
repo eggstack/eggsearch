@@ -752,7 +752,7 @@ async fn web_fetch_github_blob_calls_raw_endpoint() {
     // The fetch will fail because raw.githubusercontent.com doesn't
     // resolve to our mock server, but we can verify the tool runs.
     assert!(result.is_err() || result.is_ok());
-    mock.assert_hits(0); // raw.githubusercontent.com is not our mock
+    mock.assert_calls(0); // raw.githubusercontent.com is not our mock
 }
 
 #[test]
@@ -3220,7 +3220,7 @@ async fn journey_serpapi_explicit_search_with_configured_credential() {
     let v = run_web_search(state, args_for(&["serpapi"], "rust axum"))
         .await
         .expect("explicit serpapi search succeeds");
-    mock.assert_hits(1);
+    mock.assert_calls(1);
 
     assert_eq!(v["providers_queried"], serde_json::json!(["serpapi"]));
     let results = v["results"].as_array().expect("results array");
@@ -3262,7 +3262,7 @@ async fn journey_kagi_explicit_search_with_configured_credential() {
     let v = run_web_search(state, args_for(&["kagi"], "small web"))
         .await
         .expect("explicit kagi search succeeds");
-    mock.assert_hits(1);
+    mock.assert_calls(1);
 
     assert_eq!(v["providers_queried"], serde_json::json!(["kagi"]));
     let results = v["results"].as_array().expect("results array");

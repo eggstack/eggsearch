@@ -390,7 +390,7 @@ async fn batch_fetch_shares_cache_with_web_fetch() {
     let item = &results[0];
     assert!(item["ok"].as_bool().unwrap_or(false));
 
-    mock.assert_hits(1);
+    mock.assert_calls(1);
 }
 
 #[tokio::test]

@@ -2266,7 +2266,7 @@ async fn test_redirect_from_public_to_loopback_rejected() {
     );
 
     mock_redirect.assert();
-    mock_target.assert_hits(0);
+    mock_target.assert_calls(0);
 }
 
 #[tokio::test]
@@ -2329,7 +2329,7 @@ async fn test_same_origin_redirect_rejected() {
     assert_eq!(resp.status().as_u16(), 301);
 
     mock_redirect.assert();
-    mock_new.assert_hits(0);
+    mock_new.assert_calls(0);
 }
 
 // ===========================================================================
@@ -3088,7 +3088,7 @@ fn budget_fallback_skipped_when_exhausted() {
             || err.contains("content_length_too_large"),
         "expected budget exhaustion, got: {err}"
     );
-    mock_contents.assert_hits(0);
+    mock_contents.assert_calls(0);
 }
 
 #[test]

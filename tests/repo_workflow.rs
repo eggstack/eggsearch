@@ -2402,7 +2402,7 @@ async fn repo_fetch_prefer_local_uses_linked_worktree_without_remote_fetch() {
     assert!(response["text"]
         .as_str()
         .is_some_and(|text| text.contains("local worktree")));
-    assert_eq!(remote.hits(), 0);
+    assert_eq!(remote.calls(), 0);
 }
 
 #[cfg(feature = "mock")]
@@ -2452,7 +2452,7 @@ async fn repo_fetch_prefer_local_reports_skip_and_returns_remote_result() {
     assert!(response["text"]
         .as_str()
         .is_some_and(|text| text.contains("remote_fallback_value")));
-    assert_eq!(remote.hits(), 1);
+    assert_eq!(remote.calls(), 1);
     assert!(response["warnings"].as_array().is_some_and(|warnings| {
         warnings.iter().any(|warning| {
             warning.as_str().is_some_and(|message| {
@@ -2505,7 +2505,7 @@ async fn repo_fetch_prefer_local_names_the_skip_reason_when_the_remote_fails() {
     .await
     .expect_err("a failed remote fetch must surface as an error");
 
-    assert_eq!(remote.hits(), 1);
+    assert_eq!(remote.calls(), 1);
     assert!(
         error.to_string().contains("prefer_local_skipped")
             && error.to_string().contains("no matching local repository"),
@@ -4765,14 +4765,14 @@ async fn repo_fetch_remote_solves_a_published_anubis_challenge() {
     .await
     .expect("repo_fetch should solve the challenge");
 
-    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(wall.calls(), 1, "the wall is fetched once");
     assert_eq!(
-        pass.hits(),
+        pass.calls(),
         1,
         "repo_fetch must attempt the published challenge"
     );
     assert_eq!(
-        replay.hits(),
+        replay.calls(),
         1,
         "repo_fetch must replay with the issued cookie"
     );
@@ -4869,15 +4869,15 @@ async fn repo_fetch_remote_solves_a_published_altcha_challenge() {
     .await
     .expect("repo_fetch should solve the challenge");
 
-    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(wall.calls(), 1, "the wall is fetched once");
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         1,
         "the published challenge is fetched once"
     );
-    assert_eq!(verify.hits(), 1, "the solution is verified once");
+    assert_eq!(verify.calls(), 1, "the solution is verified once");
     assert_eq!(
-        replay.hits(),
+        replay.calls(),
         1,
         "repo_fetch must replay with the issued cookie"
     );

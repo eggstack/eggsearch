@@ -362,14 +362,14 @@ async fn batch_inherits_the_fetch_side_anubis_solve() {
         .await
         .expect("batch works");
 
-    assert_eq!(wall.hits(), 1, "the wall is fetched once");
+    assert_eq!(wall.calls(), 1, "the wall is fetched once");
     assert_eq!(
-        pass.hits(),
+        pass.calls(),
         1,
         "the batch path must attempt the published challenge"
     );
     assert_eq!(
-        replay.hits(),
+        replay.calls(),
         1,
         "the batch path must replay with the issued cookie"
     );
@@ -501,7 +501,7 @@ async fn batch_prevalidates_target_options_before_fetching_any_item() {
     .await
     .expect_err("invalid render must fail batch prevalidation");
     assert!(error.to_string().contains("render policy"));
-    assert_eq!(mock.hits(), 0);
+    assert_eq!(mock.calls(), 0);
 
     let invalid_repo = BatchFetchItem::Repo {
         host: Some("github".to_string()),
@@ -534,7 +534,7 @@ async fn batch_prevalidates_target_options_before_fetching_any_item() {
     .await
     .expect_err("invalid repo selector must fail batch prevalidation");
     assert!(error.to_string().contains("symbol_kind"));
-    assert_eq!(mock.hits(), 0);
+    assert_eq!(mock.calls(), 0);
 }
 
 #[tokio::test]
@@ -580,7 +580,7 @@ async fn batch_prevalidates_selectors_and_cache_only_render_before_io() {
         error.error_payload()["data"]["code"],
         "cache_only_render_conflict"
     );
-    mock.assert_hits(0);
+    mock.assert_calls(0);
 }
 
 #[tokio::test]
@@ -817,7 +817,7 @@ async fn batch_focus_with_cache_hit() {
         .expect("focused hit works");
     assert_eq!(v["results"][0]["response"]["cache_status"], "hit");
     assert!(v["results"][0]["response"]["focus"].is_object());
-    assert_eq!(mock.hits(), 1, "focus must not cause extra fetch");
+    assert_eq!(mock.calls(), 1, "focus must not cause extra fetch");
     assert_eq!(v["telemetry"]["cache_hits"], 1);
     assert_eq!(v["telemetry"]["focused_items"], 1);
 }
@@ -1102,7 +1102,7 @@ async fn batch_web_target_options_match_web_fetch() {
     ] {
         assert_eq!(direct[key], batched[key], "field {key} differs");
     }
-    assert_eq!(mock.hits(), 2);
+    assert_eq!(mock.calls(), 2);
 }
 
 #[cfg(feature = "pdf")]
@@ -1181,7 +1181,7 @@ async fn batch_pdf_page_options_do_not_cross_derived_cache_entries() {
         .iter()
         .all(|block| block["page"] == 2));
     assert_eq!(page_two_response["cache_status"], "hit");
-    assert_eq!(mock.hits(), 1, "raw PDF bytes should be reused");
+    assert_eq!(mock.calls(), 1, "raw PDF bytes should be reused");
 }
 
 #[cfg(feature = "pdf")]
@@ -1215,7 +1215,7 @@ async fn batch_pdf_invalid_page_syntax_fails_before_any_fetch() {
         .await
         .expect_err("invalid PDF page syntax must fail preflight");
     assert!(error.to_string().contains("item 0"));
-    assert_eq!(mock.hits(), 0);
+    assert_eq!(mock.calls(), 0);
 }
 
 #[cfg(feature = "pdf")]
@@ -1789,7 +1789,7 @@ async fn batch_web_budget_uses_projected_payload_and_drops_structure_before_text
     let standard_batch = run_batch_fetch(localhost_state(), standard_args)
         .await
         .expect("standard batch");
-    page.assert_hits(2);
+    page.assert_calls(2);
     let standard_result = &standard_batch["results"][0];
     assert_eq!(standard_result["ok"], true);
     assert_eq!(standard_result["response"]["text"], original["text"]);
@@ -1890,8 +1890,8 @@ async fn brief_batch_budget_waits_for_final_projection() {
         .await
         .expect("brief batch");
 
-    first.assert_hits(1);
-    second.assert_hits(1);
+    first.assert_calls(1);
+    second.assert_calls(1);
     assert!(
         result["total_payload_chars"].as_u64().unwrap() <= 512,
         "{result}"

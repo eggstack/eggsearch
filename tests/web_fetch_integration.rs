@@ -3253,7 +3253,7 @@ async fn web_fetch_invalid_selector_fails_before_io() {
     let payload = error.error_payload();
     assert_eq!(payload["data"]["code"], "invalid_selector");
     assert_eq!(payload["data"]["index"], 0);
-    mock.assert_hits(0);
+    mock.assert_calls(0);
 }
 
 #[tokio::test]
@@ -3295,7 +3295,7 @@ async fn web_fetch_scoping_attributes_and_cache_only_partitioning() {
     assert_eq!(values.len(), 2);
     assert_eq!(values[0]["value"], "/one");
     assert_eq!(values[1]["value"], "/three");
-    initial.assert_hits(1);
+    initial.assert_calls(1);
     initial.delete();
 
     let no_network = server.mock(|when, then| {
@@ -3373,7 +3373,7 @@ async fn web_fetch_scoping_attributes_and_cache_only_partitioning() {
         conflict.error_payload()["data"]["code"],
         "cache_only_render_conflict"
     );
-    no_network.assert_hits(0);
+    no_network.assert_calls(0);
 }
 
 #[tokio::test]
@@ -5168,9 +5168,9 @@ async fn web_fetch_solves_a_published_anubis_challenge_and_returns_the_document(
         0,
         "a solved fetch carries no challenge warning"
     );
-    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
-    assert_eq!(pass.hits(), 1, "the published challenge is answered once");
-    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+    assert_eq!(wall.calls(), 1, "the challenge page is requested once");
+    assert_eq!(pass.calls(), 1, "the published challenge is answered once");
+    assert_eq!(replay.calls(), 1, "exactly one cookie-bearing replay");
 }
 
 #[tokio::test]
@@ -5185,9 +5185,9 @@ async fn web_fetch_with_solving_disabled_marks_the_anubis_challenge() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1, "one request is made");
-    assert_eq!(pass.hits(), 0, "solving is not attempted");
-    assert_eq!(replay.hits(), 0, "no replay is issued");
+    assert_eq!(wall.calls(), 1, "one request is made");
+    assert_eq!(pass.calls(), 0, "solving is not attempted");
+    assert_eq!(replay.calls(), 0, "no replay is issued");
 }
 
 #[tokio::test]
@@ -5209,9 +5209,9 @@ async fn web_fetch_keeps_the_mark_when_the_solve_budget_refuses() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
-    assert_eq!(pass.hits(), 0, "a refusal stops before the pass request");
-    assert_eq!(replay.hits(), 0, "a refusal issues no replay");
+    assert_eq!(wall.calls(), 1);
+    assert_eq!(pass.calls(), 0, "a refusal stops before the pass request");
+    assert_eq!(replay.calls(), 0, "a refusal issues no replay");
 }
 
 #[tokio::test]
@@ -5226,9 +5226,9 @@ async fn web_fetch_keeps_the_mark_when_the_replay_is_still_challenged() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
-    assert_eq!(pass.hits(), 1, "the call solves exactly once");
-    assert_eq!(replay.hits(), 1, "the call replays exactly once");
+    assert_eq!(wall.calls(), 1);
+    assert_eq!(pass.calls(), 1, "the call solves exactly once");
+    assert_eq!(replay.calls(), 1, "the call replays exactly once");
 }
 
 #[tokio::test]
@@ -5280,10 +5280,10 @@ async fn web_fetch_replays_a_default_anubis_pass_cookie() {
         0,
         "a solved fetch carries no challenge warning"
     );
-    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
-    assert_eq!(pass.hits(), 1, "the pass-challenge is answered once");
+    assert_eq!(wall.calls(), 1, "the challenge page is requested once");
+    assert_eq!(pass.calls(), 1, "the pass-challenge is answered once");
     assert_eq!(
-        replay.hits(),
+        replay.calls(),
         1,
         "the joined default-name pairs are replayed once"
     );
@@ -5314,9 +5314,9 @@ async fn web_fetch_default_anubis_payload_carries_no_cookie_material() {
             "cookie material {canary} must not reach the payload: {serialized}"
         );
     }
-    assert_eq!(pass.hits(), 1, "the pass-challenge is answered once");
+    assert_eq!(pass.calls(), 1, "the pass-challenge is answered once");
     assert_eq!(
-        replay.hits(),
+        replay.calls(),
         1,
         "the joined default-name pairs are replayed once"
     );
@@ -5405,14 +5405,14 @@ async fn web_fetch_solves_a_published_altcha_challenge_and_returns_the_document(
         0,
         "a solved fetch carries no challenge warning"
     );
-    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(wall.calls(), 1, "the challenge page is requested once");
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         1,
         "the published challenge is fetched once"
     );
-    assert_eq!(verify.hits(), 1, "the solution is verified once");
-    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+    assert_eq!(verify.calls(), 1, "the solution is verified once");
+    assert_eq!(replay.calls(), 1, "exactly one cookie-bearing replay");
 }
 
 #[tokio::test]
@@ -5432,14 +5432,14 @@ async fn web_fetch_marks_the_altcha_challenge_when_solving_is_disabled() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
+    assert_eq!(wall.calls(), 1);
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         0,
         "a disabled solver must not fetch the published challenge"
     );
-    assert_eq!(verify.hits(), 0);
-    assert_eq!(replay.hits(), 0);
+    assert_eq!(verify.calls(), 0);
+    assert_eq!(replay.calls(), 0);
 }
 
 #[tokio::test]
@@ -5459,18 +5459,18 @@ async fn web_fetch_refuses_a_cross_origin_altcha_endpoint() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
+    assert_eq!(wall.calls(), 1);
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         0,
         "a cross-origin endpoint must never be requested"
     );
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         0,
         "a refused endpoint issues no verification request"
     );
-    assert_eq!(replay.hits(), 0);
+    assert_eq!(replay.calls(), 0);
 }
 
 #[tokio::test]
@@ -5490,18 +5490,18 @@ async fn web_fetch_refuses_a_malformed_altcha_payload() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
+    assert_eq!(wall.calls(), 1);
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         1,
         "the published challenge is fetched once"
     );
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         0,
         "a malformed payload must be refused before any solve"
     );
-    assert_eq!(replay.hits(), 0);
+    assert_eq!(replay.calls(), 0);
 }
 
 #[tokio::test]
@@ -5528,14 +5528,14 @@ async fn web_fetch_keeps_the_mark_when_the_altcha_budget_refuses() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
-    assert_eq!(challenge.hits(), 1);
+    assert_eq!(wall.calls(), 1);
+    assert_eq!(challenge.calls(), 1);
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         0,
         "a refusal stops before the verification request"
     );
-    assert_eq!(replay.hits(), 0, "a refusal issues no replay");
+    assert_eq!(replay.calls(), 0, "a refusal issues no replay");
 }
 
 #[tokio::test]
@@ -5555,14 +5555,14 @@ async fn web_fetch_refuses_an_unsupported_altcha_algorithm() {
 
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1);
-    assert_eq!(challenge.hits(), 1);
+    assert_eq!(wall.calls(), 1);
+    assert_eq!(challenge.calls(), 1);
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         0,
         "an unsupported algorithm must be refused before any submission"
     );
-    assert_eq!(replay.hits(), 0);
+    assert_eq!(replay.calls(), 0);
 }
 
 #[tokio::test]
@@ -5591,8 +5591,8 @@ async fn web_fetch_solved_altcha_payload_carries_no_cookie_material() {
             "challenge material {canary} must not reach the payload: {serialized}"
         );
     }
-    assert_eq!(verify.hits(), 1, "the solution is verified once");
-    assert_eq!(replay.hits(), 1, "exactly one cookie-bearing replay");
+    assert_eq!(verify.calls(), 1, "the solution is verified once");
+    assert_eq!(replay.calls(), 1, "exactly one cookie-bearing replay");
 }
 
 fn altcha_wall_with_cookie<'a>(
@@ -5712,17 +5712,17 @@ async fn web_fetch_reuses_a_pass_cookie_for_a_second_challenge_to_the_same_origi
         );
     }
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         1,
         "the second fetch replays the stored pair set and solves nothing"
     );
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         1,
         "the published challenge is fetched once"
     );
-    assert_eq!(wall.hits(), 2, "each fetch meets the wall once");
-    assert_eq!(replay.hits(), 2, "each fetch replays once");
+    assert_eq!(wall.calls(), 2, "each fetch meets the wall once");
+    assert_eq!(replay.calls(), 2, "each fetch replays once");
 
     let serialized = serde_json::to_string(&second).expect("payload is serializable");
     for canary in [ALTCHA_PASS_COOKIE, "chllg"] {
@@ -5759,12 +5759,12 @@ async fn web_fetch_reuses_an_anubis_pass_cookie_for_the_same_origin() {
     }
 
     assert_eq!(
-        pass.hits(),
+        pass.calls(),
         1,
         "the second fetch replays the stored pair set and solves nothing"
     );
-    assert_eq!(wall.hits(), 2, "each fetch meets the wall once");
-    assert_eq!(replay.hits(), 2, "each fetch replays once");
+    assert_eq!(wall.calls(), 2, "each fetch meets the wall once");
+    assert_eq!(replay.calls(), 2, "each fetch replays once");
 }
 
 #[tokio::test]
@@ -5798,17 +5798,17 @@ async fn web_fetch_solves_again_after_the_published_lifetime_expires() {
         .unwrap_or_default()
         .contains("Rust programming language"));
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         2,
         "an expired pair set is solved again, never replayed"
     );
     assert_eq!(
-        challenge.hits(),
+        challenge.calls(),
         2,
         "the published challenge is fetched twice"
     );
-    assert_eq!(wall.hits(), 2);
-    assert_eq!(replay.hits(), 2);
+    assert_eq!(wall.calls(), 2);
+    assert_eq!(replay.calls(), 2);
 }
 
 #[tokio::test]
@@ -5835,13 +5835,13 @@ async fn web_fetch_solves_again_when_the_published_lifetime_is_malformed() {
     }
 
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         2,
         "a malformed lifetime stores nothing and reuses nothing"
     );
-    assert_eq!(challenge.hits(), 2);
-    assert_eq!(wall.hits(), 2);
-    assert_eq!(replay.hits(), 2);
+    assert_eq!(challenge.calls(), 2);
+    assert_eq!(wall.calls(), 2);
+    assert_eq!(replay.calls(), 2);
 }
 
 #[tokio::test]
@@ -5904,14 +5904,18 @@ async fn web_fetch_recovers_in_call_when_the_upstream_rejects_the_stored_pair_se
         "a recovered fetch carries no challenge warning"
     );
     assert_eq!(
-        reject_stale.hits(),
+        reject_stale.calls(),
         1,
         "the refused pair set is presented exactly once"
     );
-    assert_eq!(serve_fresh.hits(), 1, "the fresh pair set is replayed once");
-    assert_eq!(challenge.hits(), 1, "the recovery solves exactly once");
-    assert_eq!(verify.hits(), 1, "the recovery verifies exactly once");
-    assert_eq!(wall.hits(), 1, "the fetch meets the wall once");
+    assert_eq!(
+        serve_fresh.calls(),
+        1,
+        "the fresh pair set is replayed once"
+    );
+    assert_eq!(challenge.calls(), 1, "the recovery solves exactly once");
+    assert_eq!(verify.calls(), 1, "the recovery verifies exactly once");
+    assert_eq!(wall.calls(), 1, "the fetch meets the wall once");
 
     let second = run_web_fetch(state, challenge_fetch_args(url.clone()))
         .await
@@ -5924,17 +5928,17 @@ async fn web_fetch_recovers_in_call_when_the_upstream_rejects_the_stored_pair_se
         "the fresh pair set is reused by the next fetch: {second:?}"
     );
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         1,
         "the fresh pair set is reused, so the next fetch solves nothing"
     );
     assert_eq!(
-        serve_fresh.hits(),
+        serve_fresh.calls(),
         2,
         "the fresh pair set is replayed again"
     );
     assert_eq!(
-        reject_stale.hits(),
+        reject_stale.calls(),
         1,
         "the refused pair set is never presented again"
     );
@@ -5968,7 +5972,7 @@ async fn web_fetch_keeps_the_original_response_when_the_recovery_fails() {
         .as_str()
         .unwrap_or_default()
         .contains("Rust programming language"));
-    assert_eq!(verify.hits(), 1);
+    assert_eq!(verify.calls(), 1);
 
     replay.delete();
 
@@ -5981,13 +5985,13 @@ async fn web_fetch_keeps_the_original_response_when_the_recovery_fails() {
         "a failed recovery leaves the original marking unchanged"
     );
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         2,
         "the refused pair set is re-solved in the same call"
     );
-    assert_eq!(challenge.hits(), 2, "the recovery solves exactly once");
+    assert_eq!(challenge.calls(), 2, "the recovery solves exactly once");
     assert_eq!(
-        wall.hits(),
+        wall.calls(),
         4,
         "the second fetch meets the wall, its refused replay meets it again, and the recovery's replay meets it again"
     );
@@ -6024,13 +6028,13 @@ async fn web_fetch_keeps_the_original_response_when_the_recovery_fails() {
         "the next fetch starts cold and solves again: {third:?}"
     );
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         3,
         "the evicted pair set is solved again on the next fetch"
     );
-    assert_eq!(challenge.hits(), 3);
-    assert_eq!(replay_again.hits(), 1);
-    assert_eq!(wall_again.hits(), 1);
+    assert_eq!(challenge.calls(), 3);
+    assert_eq!(replay_again.calls(), 1);
+    assert_eq!(wall_again.calls(), 1);
 }
 
 #[tokio::test]
@@ -6075,14 +6079,14 @@ async fn web_fetch_does_not_reuse_a_stored_pair_set_when_solving_is_disabled() {
         .expect("challenge page fetch succeeds");
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);
-    assert_eq!(wall.hits(), 1, "the fetch meets the wall once");
+    assert_eq!(wall.calls(), 1, "the fetch meets the wall once");
     assert_eq!(
-        reject_stale.hits(),
+        reject_stale.calls(),
         0,
         "a disabled opt-in never presents the stored pair set"
     );
-    assert_eq!(challenge.hits(), 0, "a disabled opt-in solves nothing");
-    assert_eq!(verify.hits(), 0, "a disabled opt-in verifies nothing");
+    assert_eq!(challenge.calls(), 0, "a disabled opt-in solves nothing");
+    assert_eq!(verify.calls(), 0, "a disabled opt-in verifies nothing");
     assert_eq!(
         stored_fetch_pass_cookie(&url).as_deref(),
         Some("chllg=stale-pass"),
@@ -6138,14 +6142,14 @@ async fn web_fetch_never_replays_a_pass_cookie_to_another_origin() {
         "the second origin solves for itself: {second:?}"
     );
     assert_eq!(
-        leak.hits(),
+        leak.calls(),
         0,
         "the first origin's pair set must never reach the second origin"
     );
-    assert_eq!(first_replay.hits(), 1);
-    assert_eq!(first_verify.hits(), 1);
-    assert_eq!(second_replay.hits(), 1);
-    assert_eq!(second_verify.hits(), 1);
+    assert_eq!(first_replay.calls(), 1);
+    assert_eq!(first_verify.calls(), 1);
+    assert_eq!(second_replay.calls(), 1);
+    assert_eq!(second_verify.calls(), 1);
 }
 
 #[tokio::test]
@@ -6178,13 +6182,13 @@ async fn web_fetch_solves_again_when_the_reuse_ceiling_is_zero() {
     }
 
     assert_eq!(
-        verify.hits(),
+        verify.calls(),
         2,
         "a zero reuse ceiling stores nothing and reuses nothing"
     );
-    assert_eq!(challenge.hits(), 2);
-    assert_eq!(wall.hits(), 2);
-    assert_eq!(replay.hits(), 2);
+    assert_eq!(challenge.calls(), 2);
+    assert_eq!(wall.calls(), 2);
+    assert_eq!(replay.calls(), 2);
 }
 
 #[tokio::test]
@@ -6231,13 +6235,13 @@ async fn web_fetch_replays_a_header_only_metarefresh_challenge() {
         "the replay document must be returned: {value:?}"
     );
     assert_eq!(challenge_warning_count(&value), 0);
-    assert_eq!(wall.hits(), 1, "the challenge page is requested once");
+    assert_eq!(wall.calls(), 1, "the challenge page is requested once");
     assert_eq!(
-        pass.hits(),
+        pass.calls(),
         1,
         "the synthesized pass-challenge URL is submitted once"
     );
-    assert_eq!(replay.hits(), 1, "one cookie-bearing replay");
+    assert_eq!(replay.calls(), 1, "one cookie-bearing replay");
 }
 
 #[cfg(feature = "browser")]
@@ -6381,9 +6385,9 @@ async fn web_fetch_auto_solves_a_wall_before_escalating_to_the_browser() {
     assert_eq!(value["manual_interaction_required"], false);
     assert_eq!(challenge_warning_count(&value), 0);
     assert_eq!(value["browser_escalated"], false);
-    assert_eq!(wall.hits(), 1, "the wall is requested once");
-    assert_eq!(pass.hits(), 1, "the published challenge is answered once");
-    assert_eq!(replay.hits(), 1, "the solved request is replayed once");
+    assert_eq!(wall.calls(), 1, "the wall is requested once");
+    assert_eq!(pass.calls(), 1, "the published challenge is answered once");
+    assert_eq!(replay.calls(), 1, "the solved request is replayed once");
     assert_eq!(
         calls.load(Ordering::SeqCst),
         0,
@@ -6432,8 +6436,8 @@ async fn web_fetch_auto_returns_an_unresolved_wall_marked_not_as_a_document() {
             .contains("anubis"),
         "the warning names the family: {challenge:?}"
     );
-    assert_eq!(wall.hits(), 1);
-    assert_eq!(pass.hits(), 0, "a disabled solver answers nothing");
+    assert_eq!(wall.calls(), 1);
+    assert_eq!(pass.calls(), 0, "a disabled solver answers nothing");
 }
 
 #[cfg(all(feature = "mock", feature = "browser"))]
@@ -6597,7 +6601,7 @@ async fn web_fetch_auto_returns_the_marked_wall_when_the_deadline_leaves_no_rend
         .await
         .expect("the marked wall is returned inside the deadline");
 
-    assert_eq!(wall.hits(), 1);
+    assert_eq!(wall.calls(), 1);
     assert_eq!(value["browser_escalated"], false);
     assert_eq!(value["manual_interaction_required"], true);
     assert_eq!(challenge_warning_count(&value), 1);

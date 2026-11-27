@@ -215,8 +215,8 @@ async fn keyless_request_omits_authorization_header() {
     )
     .await
     .expect("keyless succeeds");
-    assert_eq!(authed.hits(), 0);
-    assert!(plain.hits() >= 1);
+    assert_eq!(authed.calls(), 0);
+    assert!(plain.calls() >= 1);
 }
 
 #[cfg(feature = "mock")]
@@ -227,7 +227,7 @@ async fn owner_repo_scope_maps_to_repos_filter() {
     let mock = server.mock(|when, then| {
         when.method(POST)
             .path("/developer")
-            .body_contains("tokio-rs/axum");
+            .body_includes("tokio-rs/axum");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
@@ -254,7 +254,7 @@ async fn issue_intent_restricts_types() {
     let mock = server.mock(|when, then| {
         when.method(POST)
             .path("/developer")
-            .body_contains("pull_request");
+            .body_includes("pull_request");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
@@ -278,7 +278,7 @@ async fn issue_intent_restricts_types() {
             .body(r#"{"success": true, "results": []}"#);
     });
     let doc_probe = server.mock(|when, then| {
-        when.method(POST).path("/no-doc").body_contains("\"doc\"");
+        when.method(POST).path("/no-doc").body_includes("\"doc\"");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"success": true, "results": []}"#);
@@ -293,9 +293,9 @@ async fn issue_intent_restricts_types() {
     )
     .await
     .expect("second succeeds");
-    assert!(any_mock.hits() >= 1);
+    assert!(any_mock.calls() >= 1);
     assert_eq!(
-        doc_probe.hits(),
+        doc_probe.calls(),
         0,
         "issue intent must not request doc type"
     );

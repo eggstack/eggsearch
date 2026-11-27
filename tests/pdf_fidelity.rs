@@ -762,7 +762,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 fn pdf_fidelity_corpus_manifest_is_valid() {
     let corpus = load_corpus();
     assert_eq!(corpus.schema_version, 1);
-    assert_eq!(corpus.corpus_revision, "pdf-fidelity-v1");
+    assert_eq!(corpus.corpus_revision, "pdf-fidelity-v2");
     assert!(corpus.fixture_policy.contains("synthetic"));
     assert!(corpus.fixture_policy.contains("third-party"));
     assert!(corpus.byte_budget.total <= TOTAL_BYTE_BUDGET);

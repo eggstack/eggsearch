@@ -1129,7 +1129,7 @@ async fn auto_render_escalates_a_short_javascript_gate_once() {
     let result = run_web_fetch(state, args).await.expect("auto render");
     assert_eq!(result["transport"], "browser");
     assert_eq!(result["browser_escalated"], true);
-    assert_eq!(page.hits(), 1, "the HTTP gate is fetched once");
+    assert_eq!(page.calls(), 1, "the HTTP gate is fetched once");
     assert_eq!(calls.load(Ordering::SeqCst), 1, "auto escalates once");
 }
 

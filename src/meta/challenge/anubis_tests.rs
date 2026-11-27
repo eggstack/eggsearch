@@ -260,7 +260,7 @@ async fn ceiling_breach_is_blocked_before_any_hashing() {
     }
     assert!(!err.to_string().contains("leaked-value"), "got: {err}");
     assert_eq!(budget.attempts_used(), 0);
-    assert_eq!(any.hits(), 0);
+    assert_eq!(any.calls(), 0);
 }
 
 #[test]
@@ -301,7 +301,7 @@ async fn unknown_method_is_refused_without_a_request() {
         }
     );
     assert_eq!(budget.attempts_used(), 0);
-    assert_eq!(any.hits(), 0);
+    assert_eq!(any.calls(), 0);
 }
 
 #[test]
@@ -550,7 +550,7 @@ async fn projection_breach_blocks_with_zero_requests() {
         other => panic!("unexpected error: {other:?}"),
     }
     assert_eq!(budget.attempts_used(), 0);
-    assert_eq!(any.hits(), 0);
+    assert_eq!(any.calls(), 0);
 }
 
 #[test]
@@ -754,7 +754,7 @@ async fn metarefresh_above_ceiling_is_blocked_without_a_request() {
         other => panic!("unexpected error: {other:?}"),
     }
     assert_eq!(budget.attempts_used(), 0);
-    assert_eq!(any.hits(), 0);
+    assert_eq!(any.calls(), 0);
 }
 
 #[tokio::test]
@@ -793,7 +793,7 @@ async fn metarefresh_submits_the_published_echo_once() {
             lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
-    assert_eq!(submit_mock.hits(), 1);
+    assert_eq!(submit_mock.calls(), 1);
     assert_eq!(budget.attempts_used(), 0);
 }
 
@@ -894,7 +894,7 @@ async fn preact_waits_then_submits_the_digest() {
         "minimum elapsed time was not honoured: {:?}",
         started.elapsed()
     );
-    assert_eq!(submit.hits(), 1);
+    assert_eq!(submit.calls(), 1);
 
     let stats = crate::meta::challenge::solve_ledger()
         .snapshot()
@@ -947,7 +947,7 @@ async fn preact_wait_never_exceeds_the_timeout() {
         "wait exceeded the budget: {:?}",
         started.elapsed()
     );
-    assert_eq!(submit.hits(), 0);
+    assert_eq!(submit.calls(), 0);
 }
 
 #[test]
@@ -1080,7 +1080,7 @@ async fn pass_response_with_a_default_anubis_name_solves_without_configuration()
             lifetime: cookie::PublishedLifetime::MaxAge(300),
         }
     );
-    assert_eq!(pass.hits(), 1);
+    assert_eq!(pass.calls(), 1);
 }
 
 #[tokio::test]
@@ -1118,7 +1118,7 @@ async fn pass_response_with_a_dynamic_suffix_name_solves() {
             lifetime: cookie::PublishedLifetime::MaxAge(90),
         }
     );
-    assert_eq!(pass.hits(), 1);
+    assert_eq!(pass.calls(), 1);
 }
 
 #[tokio::test]
@@ -1153,7 +1153,7 @@ async fn pass_response_with_only_a_deletion_cookie_is_refused() {
             bound: BOUND_MISSING_COOKIE
         }
     );
-    assert_eq!(missing.hits(), 1);
+    assert_eq!(missing.calls(), 1);
 }
 
 #[tokio::test]
@@ -1192,7 +1192,7 @@ async fn pass_response_with_only_a_past_expiry_is_rejected() {
             bound: BOUND_COOKIE_REJECTED
         }
     );
-    assert_eq!(rejected.hits(), 1);
+    assert_eq!(rejected.calls(), 1);
 }
 
 #[tokio::test]
@@ -1234,7 +1234,7 @@ async fn metarefresh_header_only_page_submits_once_and_solves() {
             lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
-    assert_eq!(submit.hits(), 1);
+    assert_eq!(submit.calls(), 1);
     assert_eq!(budget.attempts_used(), 0);
 }
 
@@ -1299,7 +1299,7 @@ async fn unsupported_extensions_are_refused_before_any_request() {
         other => panic!("unexpected error: {other:?}"),
     }
     assert_eq!(budget.attempts_used(), 0);
-    assert_eq!(any.hits(), 0);
+    assert_eq!(any.calls(), 0);
 
     let before_count = before.providers.get(PROVIDER).map_or(0, |stats| {
         stats.refusals.count(RefusalReason::UnsupportedScheme)
@@ -1381,9 +1381,9 @@ async fn css_load_extension_is_fetched_once_before_the_pass_request() {
             lifetime: cookie::PublishedLifetime::Unstated,
         }
     );
-    assert_eq!(extension.hits(), 1);
-    assert_eq!(pass.hits(), 1);
-    assert_eq!(leak.hits(), 0, "no cookie reaches the extension request");
+    assert_eq!(extension.calls(), 1);
+    assert_eq!(pass.calls(), 1);
+    assert_eq!(leak.calls(), 0, "no cookie reaches the extension request");
 }
 
 #[tokio::test]
@@ -1428,8 +1428,8 @@ async fn an_unsatisfied_css_load_extension_blocks_before_the_pass_request() {
         }
         other => panic!("unexpected error: {other:?}"),
     }
-    assert_eq!(extension.hits(), 1);
-    assert_eq!(pass.hits(), 0);
+    assert_eq!(extension.calls(), 1);
+    assert_eq!(pass.calls(), 0);
     assert_eq!(budget.attempts_used(), 0);
 }
 
@@ -1466,7 +1466,7 @@ async fn an_unsafe_challenge_id_blocks_before_the_extension_request() {
             bound: BOUND_MALFORMED
         }
     );
-    assert_eq!(any.hits(), 0);
+    assert_eq!(any.calls(), 0);
     assert_eq!(budget.attempts_used(), 0);
 }
 
@@ -1641,7 +1641,11 @@ async fn sha256_submits_the_nonce_and_hex_digest_once() {
             lifetime: cookie::PublishedLifetime::MaxAge(60),
         }
     );
-    assert_eq!(submit.hits(), 1);
+    assert_eq!(submit.calls(), 1);
     assert_eq!(budget.attempts_used(), 43);
-    assert_eq!(leak.hits(), 0, "the submission carries no challenge cookie");
+    assert_eq!(
+        leak.calls(),
+        0,
+        "the submission carries no challenge cookie"
+    );
 }

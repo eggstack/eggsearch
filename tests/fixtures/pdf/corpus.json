@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "corpus_revision": "pdf-fidelity-v1",
+  "corpus_revision": "pdf-fidelity-v2",
   "fixture_policy": "Every committed PDF is generated synthetically by this repository from the per-case construction recipe; no third-party document bytes are committed. Real documents named in this workstream (arXiv 1706.03762 and RFC 9110) are measured only by the ignored opt-in recorder into target/pdf-corpus/ and are never committed, following the plan's uncommittable-source substitution.",
   "byte_budget": {
     "total": 3145728,
@@ -328,12 +328,12 @@
       "provenance": {
         "url": null,
         "retrieved": "2026-11-11",
-        "sha256": "0175cfebfba998af077e8b6fe58a7f2570835a4e0850cd72b7b4266cb46da6bd",
+        "sha256": "61029db198252a58f5c08cda0da084e16585b2ec1cbbe0d18870cb1c71dbba09",
         "pages": 1
       },
-      "construction": "One-page PDF, 1.7, with valid objects but a deliberately malformed cross-reference table: the xref entries are replaced by offsets 9 repeated for six entries and startxref is 999999, which is beyond the file. Parsing fails at the cross-reference table before any page is read. No timestamps.",
-      "file": "malformed/broken_xref.pdf",
-      "bytes": 701,
+      "construction": "Truncated one-page PDF, 1.7. A Catalog object starts, but the dictionary and object are cut off at end of file; no page tree, cross-reference table, or trailer is complete, so parsing fails before any page is read. No timestamps.",
+      "file": "malformed/truncated_catalog.pdf",
+      "bytes": 48,
       "expected_outcome": "structural_break",
       "expected_error": "pdf_parse_error"
     },

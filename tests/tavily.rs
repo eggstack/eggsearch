@@ -260,7 +260,7 @@ async fn forbidden_response_fields_never_requested() {
         when.method(POST).path("/probe");
         then.status(200).body("{}");
     });
-    assert_eq!(hits.hits(), 0);
+    assert_eq!(hits.calls(), 0);
 }
 
 #[cfg(feature = "mock")]
@@ -542,7 +542,7 @@ async fn chunks_bounded_and_converted_to_excerpts() {
     let with_mock = server.mock(|when, then| {
         when.method(POST)
             .path("/search")
-            .body_contains("chunks_per_source");
+            .body_includes("chunks_per_source");
         then.status(200)
             .header("content-type", "application/json")
             .body(r#"{"results": []}"#);

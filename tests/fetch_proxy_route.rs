@@ -99,7 +99,7 @@ async fn proxy_no_proxy_route_is_reported_for_fetch_and_batch_items() {
         batch["results"][0]["response"]["route"]["reason"],
         "no_proxy"
     );
-    assert_eq!(mock.hits(), 1);
+    assert_eq!(mock.calls(), 1);
 }
 
 #[tokio::test]
@@ -157,7 +157,7 @@ async fn proxy_required_http_targets_fail_before_any_direct_request() {
     .await
     .expect_err("plaintext target cannot carry the pin through a forward proxy");
     assert_eq!(payload_error_code(&error), "proxy_target_unsupported");
-    assert_eq!(mock.hits(), 0);
+    assert_eq!(mock.calls(), 0);
 }
 
 #[tokio::test]
