@@ -22,6 +22,7 @@ from eggsearch import (
     FetchResponse,
     FetchSnapshotRequest,
     RepoFetchItem,
+    SiteFetchItem,
     SnapshotCompare,
     WebFetchItem,
     tool_names,
@@ -239,10 +240,12 @@ def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
     assert FetchResponse is eggsearch_types.FetchResponse
     assert RepoFetchItem is eggsearch_types.RepoFetchItem
     assert WebFetchItem is eggsearch_types.WebFetchItem
-    assert set(typing.get_args(FetchItem)) == {WebFetchItem, RepoFetchItem}
+    assert SiteFetchItem is eggsearch_types.SiteFetchItem
+    assert set(typing.get_args(FetchItem)) == {WebFetchItem, RepoFetchItem, SiteFetchItem}
 
     web_fields = typing.get_type_hints(WebFetchItem, include_extras=True)
     repo_fields = typing.get_type_hints(RepoFetchItem, include_extras=True)
+    site_fields = typing.get_type_hints(SiteFetchItem, include_extras=True)
     request_fields = typing.get_type_hints(FetchRequest, include_extras=True)
 
     assert web_fields["type"] == typing.Required[typing.Literal["web"]]
@@ -291,6 +294,15 @@ def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
     }
     assert web_fields["url"] == typing.Required[str]
     assert repo_fields["owner"] == typing.Required[str]
+    assert site_fields["type"] == typing.Required[typing.Literal["site"]]
+    assert set(site_fields) == {
+        "type",
+        "url",
+        "limit",
+        "include_subdomains",
+        "link_discovery",
+        "normalize_query",
+    }
     assert repo_fields["repo"] == typing.Required[str]
     assert repo_fields["path"] == typing.Required[str]
     assert request_fields["items"] == typing.Required[FetchItem | list[FetchItem]]

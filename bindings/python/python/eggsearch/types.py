@@ -332,6 +332,7 @@ class FetchRequest(TypedDict, total=False):
 class ProviderStatusRequest(TypedDict, total=False):
     probe: bool
     recipe_detail: Literal["none", "summary", "full"] | None
+    response_detail: ResponseDetail | None
 
 
 class RepoSearchRequest(TypedDict, total=False):
