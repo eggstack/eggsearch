@@ -431,6 +431,24 @@ async fn web_fetch_localhost_and_private_network_literals_return_error() {
             "got: {err}"
         );
     }
+
+    let res = run_web_fetch(
+        state,
+        WebFetchArgs {
+            include_selectors: None,
+            exclude_selectors: None,
+            attributes: None,
+            url: "http://never-resolves.invalid/".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    let err = res.expect_err("expected reserved-hostname rejection");
+    assert!(
+        err.to_string()
+            .contains("reserved hostname can never resolve: never-resolves.invalid"),
+        "got: {err}"
+    );
 }
 
 #[tokio::test]

@@ -16,7 +16,7 @@ use crate::meta::knowledge_delta::{
 
 pub(super) const COMPACT_FIELDS: &[&str] = &[];
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Debug, Default, Serialize, schemars::JsonSchema)]
 pub struct KnowledgeBriefArgs {
     /// Topic passed through unchanged as the first subquery.
     pub topic: String,
@@ -44,6 +44,58 @@ pub struct KnowledgeBriefArgs {
     /// Language hint passed through to search.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    #[doc(hidden)]
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub cutoff_field_near_miss: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct KnowledgeBriefArgsWire {
+    topic: String,
+    #[serde(default)]
+    model_id: Option<String>,
+    #[serde(default)]
+    cutoff_override: Option<CutoffOverrideInput>,
+    #[serde(default)]
+    max_items: Option<usize>,
+    #[serde(default)]
+    max_chars: Option<usize>,
+    #[serde(default)]
+    refresh: Option<String>,
+    #[serde(default)]
+    retain: bool,
+    #[serde(default)]
+    related_topics: bool,
+    #[serde(default)]
+    language: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for KnowledgeBriefArgs {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let cutoff_field_near_miss = ["cutoff", "knowledge_cutoff", "cutoff_date"]
+            .into_iter()
+            .find(|field| value.get(*field).is_some())
+            .map(|field| field.to_string());
+        let wire = serde_json::from_value::<KnowledgeBriefArgsWire>(value)
+            .map_err(<D::Error as serde::de::Error>::custom)?;
+        Ok(Self {
+            topic: wire.topic,
+            model_id: wire.model_id,
+            cutoff_override: wire.cutoff_override,
+            max_items: wire.max_items,
+            max_chars: wire.max_chars,
+            refresh: wire.refresh,
+            retain: wire.retain,
+            related_topics: wire.related_topics,
+            language: wire.language,
+            cutoff_field_near_miss,
+        })
+    }
 }
 
 struct BriefToolFetcher {
@@ -155,6 +207,13 @@ pub async fn run_knowledge_brief(
     state: Arc<ServerState>,
     args: KnowledgeBriefArgs,
 ) -> Result<serde_json::Value, ToolError> {
+    if let Some(field) = args.cutoff_field_near_miss.as_deref() {
+        return Err(ToolError::invalid_semantic_value(
+            "cutoff_override",
+            field,
+            &["date", "precision", "source", "reason"],
+        ));
+    }
     let refresh = parse_refresh(args.refresh.as_deref()).map_err(input_error)?;
     if refresh.searches_live() && matches!(live_allowed(state.config.search.mode), Policy::Deny) {
         return Err(ToolError::Validation(live_search_denied_message(

@@ -540,8 +540,8 @@ These are never automated.
 
 The response includes:
 
-- `transport`: `"http"` or `"browser"`
-- `browser_escalated`: whether auto mode escalated
+- `transport`: `"http"` or `"browser"`; names the pipeline that produced the response, not the fallback that engaged
+- `browser_escalated`: whether auto mode escalated; alone records whether `auto` fell back after HTTP
 - `browser_profile`: display name when a persistent profile was used
 
 Fresh raw cache entries can satisfy a new extraction mode, link setting, character bound, or PDF page selection without another network request.

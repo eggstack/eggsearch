@@ -297,10 +297,10 @@ pub fn validate_url(url_str: &str, limits: &FetchLimits) -> Result<Url, FetchErr
                         "address not allowed by policy: {ip}"
                     )));
                 }
-            } else if is_private_hostname(&host_lower) && !limits.allow_private_network {
-                return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "private network access is disabled: {host_str}"
-                )));
+            } else if let Some(error) =
+                hostname_block_error(&host_lower, host_str, limits.allow_private_network)
+            {
+                return Err(error);
             }
         }
     }
@@ -378,10 +378,10 @@ pub(crate) async fn validate_fetch_target_with_resolved_addrs(
                         "address not allowed by policy: {ip}"
                     )));
                 }
-            } else if is_private_hostname(&host_lower) && !limits.allow_private_network {
-                return Err(FetchError::PrivateNetworkBlocked(format!(
-                    "private network access is disabled: {host_str}"
-                )));
+            } else if let Some(error) =
+                hostname_block_error(&host_lower, host_str, limits.allow_private_network)
+            {
+                return Err(error);
             }
         }
     }
@@ -441,6 +441,30 @@ fn is_blocked_address(addr: SocketAddr, limits: &FetchLimits) -> bool {
     !is_allowed_by_policy(class, limits.allow_localhost, limits.allow_private_network)
 }
 
+fn hostname_block_error(
+    host_lower: &str,
+    host_str: &str,
+    allow_private_network: bool,
+) -> Option<FetchError> {
+    if allow_private_network {
+        return None;
+    }
+
+    let message = if is_reserved_hostname(host_lower) {
+        format!("reserved hostname can never resolve: {host_str}")
+    } else if is_private_hostname(host_lower) {
+        format!("private network access is disabled: {host_str}")
+    } else {
+        return None;
+    };
+
+    Some(FetchError::PrivateNetworkBlocked(message))
+}
+
+fn is_reserved_hostname(host: &str) -> bool {
+    host.ends_with(".invalid") || host.ends_with(".test") || host.ends_with(".localhost")
+}
+
 pub(crate) fn is_private_hostname(host: &str) -> bool {
     if host == "host-gateway"
         || host == "host.docker.internal"
@@ -456,9 +480,6 @@ pub(crate) fn is_private_hostname(host: &str) -> bool {
         || host.ends_with(".lan")
         || host.ends_with(".home")
         || host.ends_with(".home.arpa")
-        || host.ends_with(".invalid")
-        || host.ends_with(".test")
-        || host.ends_with(".localhost")
 }
 
 fn ipv4_mapped_from_v6(v6: Ipv6Addr) -> Option<Ipv4Addr> {
@@ -534,6 +555,62 @@ mod tests {
     }
 
     #[test]
+    fn validate_url_distinguishes_reserved_and_private_hostnames() {
+        let limits = FetchLimits::default();
+        for (url, expected) in [
+            (
+                "http://never-resolves.invalid/",
+                "reserved hostname can never resolve: never-resolves.invalid",
+            ),
+            (
+                "http://never-resolves.test/",
+                "reserved hostname can never resolve: never-resolves.test",
+            ),
+            (
+                "http://never-resolves.localhost/",
+                "reserved hostname can never resolve: never-resolves.localhost",
+            ),
+            (
+                "http://service.internal/",
+                "private network access is disabled: service.internal",
+            ),
+            (
+                "http://service.local/",
+                "private network access is disabled: service.local",
+            ),
+            (
+                "http://host-gateway/",
+                "private network access is disabled: host-gateway",
+            ),
+            (
+                "http://metadata.google/",
+                "private network access is disabled: metadata.google",
+            ),
+            (
+                "http://localhost/",
+                "localhost access is disabled: localhost",
+            ),
+            (
+                "http://127.0.0.1/",
+                "address not allowed by policy: 127.0.0.1",
+            ),
+        ] {
+            match validate_url(url, &limits) {
+                Err(FetchError::PrivateNetworkBlocked(message)) => {
+                    assert_eq!(message, expected, "unexpected message for {url}");
+                }
+                other => panic!("expected a private-network rejection for {url}, got {other:?}"),
+            }
+        }
+
+        let allow_private = FetchLimits {
+            allow_private_network: true,
+            ..Default::default()
+        };
+        assert!(validate_url("http://never-resolves.invalid/", &allow_private).is_ok());
+    }
+
+    #[test]
     fn validate_url_rejects_embedded_credentials() {
         let limits = FetchLimits::default();
         let result = validate_url("http://user:pass@example.com/", &limits);
@@ -601,6 +678,59 @@ mod tests {
             matches!(result, Err(FetchError::PrivateNetworkBlocked(_))),
             "expected link-local block, got: {result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn validate_fetch_target_distinguishes_reserved_and_private_hostnames_before_dns() {
+        let limits = FetchLimits::default();
+        for (url, expected) in [
+            (
+                "http://never-resolves.invalid/",
+                "reserved hostname can never resolve: never-resolves.invalid",
+            ),
+            (
+                "http://never-resolves.test/",
+                "reserved hostname can never resolve: never-resolves.test",
+            ),
+            (
+                "http://never-resolves.localhost/",
+                "reserved hostname can never resolve: never-resolves.localhost",
+            ),
+            (
+                "http://service.internal/",
+                "private network access is disabled: service.internal",
+            ),
+            (
+                "http://service.local/",
+                "private network access is disabled: service.local",
+            ),
+            (
+                "http://host-gateway/",
+                "private network access is disabled: host-gateway",
+            ),
+            (
+                "http://metadata.google/",
+                "private network access is disabled: metadata.google",
+            ),
+            (
+                "http://localhost/",
+                "localhost access is disabled: localhost",
+            ),
+            (
+                "http://127.0.0.1/",
+                "address not allowed by policy: 127.0.0.1",
+            ),
+        ] {
+            let url = Url::parse(url).unwrap();
+            match validate_fetch_target_with_resolved_addrs(&url, &limits).await {
+                Err(FetchError::PrivateNetworkBlocked(message)) => {
+                    assert_eq!(message, expected, "unexpected message for {url}");
+                }
+                other => {
+                    panic!("expected a pre-DNS private-network rejection for {url}, got {other:?}")
+                }
+            }
+        }
     }
 
     #[tokio::test]

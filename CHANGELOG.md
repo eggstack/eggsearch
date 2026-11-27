@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `provider_status.recipe_detail` advertises the `summary` default its behaviour already applied.
 - Stdio log hygiene: the default filter directive targets `chromiumoxide::handler`, where the websocket warning is actually emitted, and it is appended to `RUST_LOG` instead of being replaced, so a host that sets `RUST_LOG` no longer loses the suppression.
 - Wire hygiene: sentinel frames no longer wrap a body in extra blank lines, a source card's `score` is published to four decimals, `completion_confidence` is published as its exact `f32` rather than the widened `f64` expansion, and a timestamp keeps its source precision instead of gaining a nanosecond tail.
+- `knowledge_brief` rejects near-miss cutoff fields (`cutoff`, `knowledge_cutoff`, `cutoff_date`) with a repairable `invalid_semantic_value` naming `cutoff_override` and its four required subfields, instead of silently dropping them and reporting `no_cutoff_resolved`.
+- `knowledge_brief` warns `knowledge_brief_cutoff_unverifiable_no_timestamp_providers` when a cutoff resolves but no selected provider advertises `result_timestamps`, so undated coverage names its cause.
+- Reserved non-resolvable hostnames (`.invalid`, `.test`, `.localhost`) fail closed pre-DNS with `reserved hostname can never resolve` instead of reading as a private-network policy block; private-network rejections are unchanged.
 
 ### Added
 

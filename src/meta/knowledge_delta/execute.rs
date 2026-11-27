@@ -209,6 +209,11 @@ pub async fn run_knowledge_brief(
         })
         .cloned()
         .collect();
+    if let Some(warning) =
+        cutoff_unverifiable_warning(cutoff.as_ref(), &timestamp_capable_providers)
+    {
+        warnings.push(warning);
+    }
     let fetch_candidates = deltas.len();
     let mut fetch_invoked = false;
     let mut fetch_attempted = 0usize;
@@ -550,6 +555,25 @@ fn empty_state_reason(
     } else {
         EmptyStateReason::AllSourcesAtOrBeforeCutoff
     }
+}
+
+fn cutoff_unverifiable_warning(
+    cutoff: Option<&ResolvedCutoff>,
+    timestamp_capable_providers: &[String],
+) -> Option<String> {
+    let cutoff = cutoff?;
+    if !timestamp_capable_providers.is_empty() {
+        return None;
+    }
+    let date = cutoff
+        .date
+        .normalized()
+        .unwrap_or_else(|| cutoff.date.year.to_string());
+    Some(format!(
+        "knowledge_brief_cutoff_unverifiable_no_timestamp_providers: cutoff resolved to {date} (precision: {}, origin: {}) but no selected provider advertises result_timestamps, so the dated comparison is unverified",
+        cutoff.date.precision.as_str(),
+        cutoff.origin.as_str()
+    ))
 }
 
 fn empty_state_warning(reason: EmptyStateReason, index_status: &str) -> String {
@@ -984,5 +1008,33 @@ mod next_action_tests {
         let actions = next_actions(&[delta()], "   ");
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].tool, "fetch");
+    }
+}
+
+#[cfg(test)]
+mod cutoff_warning_tests {
+    use super::*;
+
+    fn cutoff() -> ResolvedCutoff {
+        ResolvedCutoff {
+            date: parse_calendar_date("2024-06-01", DatePrecision::Day).expect("date"),
+            source: "test".into(),
+            source_url: None,
+            verified_at: None,
+            origin: crate::core::knowledge_delta::CutoffOrigin::CallerOverride,
+            reason: Some("unit test".into()),
+        }
+    }
+
+    #[test]
+    fn warns_only_for_a_resolved_cutoff_without_timestamp_capable_providers() {
+        let cutoff = cutoff();
+        let warning = cutoff_unverifiable_warning(Some(&cutoff), &[]).expect("warning");
+        assert_eq!(
+            warning,
+            "knowledge_brief_cutoff_unverifiable_no_timestamp_providers: cutoff resolved to 2024-06-01 (precision: day, origin: caller_override) but no selected provider advertises result_timestamps, so the dated comparison is unverified"
+        );
+        assert!(cutoff_unverifiable_warning(None, &[]).is_none());
+        assert!(cutoff_unverifiable_warning(Some(&cutoff), &["hn_algolia".into()]).is_none());
     }
 }

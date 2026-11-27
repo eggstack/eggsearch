@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M048 closed; M049 active; M050–M052 closed; M053 ready; M054 active (partial); M055 active (partial))
+Status: active (M001–M048 closed; M049 active; M050–M052 closed; M053 ready; M054 active (partial); M055 active (partial); M056 closed)
 Planning baseline: `4de20a0f0d748b89147829a51384e385a5bee388` (origin/main, 2026-11-24 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -428,6 +428,8 @@ exposed M011's mandatory-`redir` defect.
   the payload/schema/error programme; M055 owns extraction completeness and render-path
   status. See
   `plans/implementation/agentic-retrieval-integrity/055-fetch-extraction-completeness-correctives.md`.
+- M056 is `closed` (closure: `plans/closure/agentic-retrieval-integrity/056-status.md`): live-surface diagnostic-honesty correctives from the 2026-11-27 live trial (near-miss cutoff repair hint, timestamp-provider warning, `transport` field wording, reserved-hostname error distinction, keyless degradation runbook). Evidence and acceptance gates:
+  `plans/implementation/agentic-retrieval-integrity/056-live-surface-diagnostic-honesty-correctives.md`.
 - M049 remains `active`: work package 1 is implemented, but the canonical gate is outstanding. Keep
   its classification corrective scoped to the registered keyless behavior and do not infer a new
   paid-provider, credential, or default-enable task. Evidence and acceptance gates:

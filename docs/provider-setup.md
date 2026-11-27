@@ -21,6 +21,24 @@ All credentialed providers are disabled or non-routable unless explicitly config
 
 These providers require no API key and parse public search-result HTML. Like SearXNG, eggsearch is a metasearch system: it queries independent upstream engines and combines their results rather than maintaining a web index. HTML is an upstream format, not a stable API, so markup changes, rate limits, and challenge pages can cause provider-specific failures. eggsearch distinguishes those failures from a confirmed empty result. `provider_status` exposes `parse_shape` (`ok`, `empty`, `shifted`) for observed HTML providers. Respect each upstream's terms and rate limits. Challenge solving is on by default and limited to bounded computational proof-of-work; set `[search.challenge].enabled = false` to disable it. Interactive CAPTCHAs, third-party solvers, proxy rotation, and user-agent spoofing are not supported. See [Capabilities and Optional Features](features.md#bounded-challenge-solving).
 
+### Keyless-tier degradation runbook
+
+1. Run `provider_status` with `{"probe": true}` for a bounded live check. Probes do not
+   change health. Read `health_views.<id>.consecutive_failures`, `cooldown_until`,
+   and `parse_shape`; inspect
+   `challenge_solver.providers.<id>.refusals["wall clock exhausted"]` for solver bounds.
+
+2. If markup drifted, refresh the redacted fixtures under
+   `tests/fixtures/engines/<provider>/`; `tests/engine_parse_conformance.rs` checks their
+   conformance. Run `cargo test --locked --features mock --test engine_parse_conformance`.
+
+3. Tune solver bounds only from `make live-release-smoke` timing, never debug-build timing.
+   Raise `[search.challenge].timeout_ms` only as needed, up to 30000; raise
+   `max_difficulty` only with a matching `max_attempts` increase.
+
+Do not add an API fallback for HTML scrapers (ADR-0006), or interactive CAPTCHA, OCR,
+or solving-service automation (ADR-0009).
+
 The SearXNG provider below is different: it calls a SearXNG instance's JSON API, not its HTML page.
 
 ### DuckDuckGo (default)

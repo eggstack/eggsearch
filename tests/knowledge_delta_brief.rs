@@ -8,7 +8,7 @@ use eggsearch::core::config::AppConfig;
 use eggsearch::core::knowledge_delta::{parse_caller_override, parse_refresh, CutoffOverrideInput};
 use eggsearch::mcp::projection::{project_with_limits, ProjectionLimits, ResponseDetail};
 use eggsearch::mcp::state::ServerState;
-use eggsearch::mcp::tools::{run_knowledge_brief, KnowledgeBriefArgs};
+use eggsearch::mcp::tools::{map_tool_result, run_knowledge_brief, KnowledgeBriefArgs};
 use eggsearch::meta::adapter::MetadataSearchAdapter;
 use eggsearch::meta::knowledge_delta::{
     run_knowledge_brief as run_meta_brief, BriefQuery, BriefRun, EvidenceFetchFuture,
@@ -49,6 +49,41 @@ fn brief(topic: &str, cutoff: Option<CutoffOverrideInput>) -> KnowledgeBriefArgs
         cutoff_override: cutoff,
         ..KnowledgeBriefArgs::default()
     }
+}
+
+#[tokio::test]
+async fn cutoff_near_miss_fields_return_repairable_cutoff_override_error() {
+    for field in ["cutoff", "knowledge_cutoff", "cutoff_date"] {
+        let mut raw = serde_json::json!({"topic": "widget-runtime"});
+        raw[field] = serde_json::json!("2024-06-01");
+        let args = serde_json::from_value::<KnowledgeBriefArgs>(raw).expect("MCP args");
+        let error = run_knowledge_brief(state(Vec::new(), AppConfig::default()), args)
+            .await
+            .expect_err("near-miss cutoff field must fail closed");
+        assert_eq!(error.code().as_str(), "invalid_semantic_value");
+        let result = map_tool_result(Err(error)).expect("repairable MCP tool error");
+        assert_eq!(result.is_error, Some(true));
+        let payload = result.structured_content.expect("error payload");
+        assert_eq!(payload["code"], "invalid_semantic_value");
+        assert!(payload["message"].as_str().unwrap().contains(field));
+        assert_eq!(payload["repair"]["field"], "cutoff_override");
+        assert_eq!(
+            payload["repair"]["accepted"],
+            serde_json::json!(["date", "precision", "source", "reason"])
+        );
+    }
+
+    let valid = serde_json::from_value::<KnowledgeBriefArgs>(serde_json::json!({
+        "topic": "widget-runtime",
+        "cutoff_override": {
+            "date": "2024-06-01",
+            "precision": "day",
+            "source": "caller",
+            "reason": "test cutoff"
+        }
+    }))
+    .expect("valid cutoff_override remains accepted");
+    assert_eq!(valid.cutoff_override.unwrap().date, "2024-06-01");
 }
 
 fn meta_query(refresh: &str, cutoff: &str, retain: bool, related_topics: bool) -> BriefQuery {
@@ -190,6 +225,14 @@ async fn after_cutoff_publication_is_emitted_and_labeled() {
     assert_eq!(
         value["coverage"]["timestamp_capable_providers"],
         serde_json::json!(["hn_algolia"])
+    );
+    assert!(
+        !value["warnings"].as_array().unwrap().iter().any(|warning| {
+            warning
+                .as_str()
+                .unwrap_or_default()
+                .starts_with("knowledge_brief_cutoff_unverifiable_no_timestamp_providers:")
+        })
     );
     assert_eq!(value["coverage"]["empty_state_reason"], "deltas_emitted");
     let catalog_as_of = eggsearch::meta::knowledge_delta::BUNDLED_CUTOFF_SNAPSHOT
@@ -433,6 +476,47 @@ async fn undated_default_provider_reports_date_reason_and_capability() {
             .unwrap_or_default()
             .starts_with("knowledge_brief_no_dated_sources:")
     }));
+}
+
+#[tokio::test]
+async fn resolved_cutoff_without_timestamp_provider_warns_in_mcp_response() {
+    let value = run_knowledge_brief(
+        state(
+            vec![MockEngine::success(
+                "duckduckgo",
+                vec![undated("https://example.com/undated")],
+            )],
+            AppConfig::default(),
+        ),
+        KnowledgeBriefArgs {
+            topic: "widget-runtime".into(),
+            model_id: Some("gpt-6-luna".into()),
+            ..KnowledgeBriefArgs::default()
+        },
+    )
+    .await
+    .expect("mock-backed brief with a resolving model");
+    assert_eq!(value["model_resolution"]["status"], "resolved");
+    assert!(value["coverage"]["timestamp_capable_providers"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let response = map_tool_result(Ok(value)).expect("successful MCP response");
+    assert_eq!(response.is_error, Some(false));
+    let payload = response.structured_content.expect("structured response");
+    let warning = payload["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .find(|warning| {
+            warning.starts_with("knowledge_brief_cutoff_unverifiable_no_timestamp_providers:")
+        })
+        .expect("cutoff unverifiability warning");
+    assert!(warning.contains(payload["model_resolution"]["cutoff_date"].as_str().unwrap()));
+    assert!(warning.contains(payload["model_resolution"]["precision"].as_str().unwrap()));
+    assert!(warning.contains(payload["model_resolution"]["origin"].as_str().unwrap()));
+    assert!(warning.contains("the dated comparison is unverified"));
 }
 
 #[tokio::test]
