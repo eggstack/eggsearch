@@ -177,6 +177,9 @@ pub(super) const FETCH_WARNING_PREFIXES: &[(&str, WarningCode)] = &[
         WarningCode::FetchContentTruncated,
     ),
     ("fetch_links_truncated", WarningCode::FetchLinksTruncated),
+    ("selector_no_blocks", WarningCode::SelectorNoBlocks),
+    ("extraction_sparse", WarningCode::ExtractionSparse),
+    ("render_suspected", WarningCode::RenderSuspected),
     (
         "batch_item_count_truncated",
         WarningCode::FetchContentTruncated,

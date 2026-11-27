@@ -2993,6 +2993,7 @@ mod live_smoke {
             eggsearch::mcp::tools::ProviderStatusArgs {
                 probe: true,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .await

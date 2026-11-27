@@ -19,7 +19,10 @@ pub struct RenderedBlocks {
 /// Elements whose content is always skipped.
 const SKIP_TAGS: &[&str] = &[
     "script", "style", "noscript", "svg", "nav", "footer", "header", "form", "aside", "template",
+    "xmp",
 ];
+const MAX_DOM_TEXT_CHARS: usize = 100_000;
+const SPARSE_EXTRACTION_THRESHOLD: f64 = 0.05;
 
 /// Maximum recursion depth for HTML tree walks. Adversarial markup
 /// with extreme nesting must not overflow the stack.
@@ -110,20 +113,23 @@ fn render_blocks_inner(
         }
         let all = Selector::parse("*").expect("universal CSS selector is valid");
         for element in document.select(&all) {
-            if matched.roots.contains(&element.id()) {
-                walk_node(
-                    element,
-                    &mut blocks,
-                    &mut outline,
-                    base_url,
-                    &mut warnings,
-                    markdown,
-                    WalkOptions {
-                        depth: 0,
-                        matches: matches.as_ref(),
-                    },
-                );
+            if !matched.roots.contains(&element.id())
+                || has_matched_ancestor(element, &matched.roots)
+            {
+                continue;
             }
+            walk_node(
+                element,
+                &mut blocks,
+                &mut outline,
+                base_url,
+                &mut warnings,
+                markdown,
+                WalkOptions {
+                    depth: 0,
+                    matches: matches.as_ref(),
+                },
+            );
         }
     } else {
         let root = select_content_root(&document);
@@ -141,7 +147,30 @@ fn render_blocks_inner(
         );
     }
 
+    let rendered_text_chars: usize = blocks.iter().map(|block| block.text.chars().count()).sum();
+    let selector_scoped = scope.is_some_and(|scope| scope.has_includes());
+    let dom_text_chars = if selector_scoped {
+        0
+    } else {
+        bounded_dom_text_chars(select_content_root(&document), matches.as_ref())
+    };
     let block_truncated = truncate_blocks_at_budget(&mut blocks, max_chars);
+    let selector_no_text =
+        selector_scoped && matched_roots.is_some_and(|roots| roots > 0) && rendered_text_chars == 0;
+    if selector_no_text {
+        warnings.push(format!(
+            "selector_no_blocks: matched_roots={}",
+            matched_roots.unwrap_or_default()
+        ));
+    }
+    if !selector_scoped && !block_truncated && dom_text_chars > 0 {
+        let extraction_ratio = rendered_text_chars as f64 / dom_text_chars as f64;
+        if extraction_ratio < SPARSE_EXTRACTION_THRESHOLD {
+            warnings.push(format!(
+                "extraction_sparse: text_chars={rendered_text_chars} dom_text_chars={dom_text_chars} ratio={extraction_ratio:.3}"
+            ));
+        }
+    }
 
     // After truncation, prune outline entries whose `block_index`
     // points beyond the retained block list. Heading blocks that
@@ -365,13 +394,96 @@ fn walk_element(
     if depth >= super::super::MAX_TREE_WALK_DEPTH || is_excluded(&element, matches) {
         return;
     }
+    let mut text_run = String::new();
     for child in element.children() {
+        if let Some(text) = child.value().as_text() {
+            text_run.push_str(text);
+            continue;
+        }
         let Some(child_elem) = ElementRef::wrap(child) else {
             continue;
         };
+        push_paragraph_text(&text_run, blocks);
+        text_run.clear();
         walk_node(
             child_elem, blocks, outline, base_url, warnings, markdown, options,
         );
+    }
+    push_paragraph_text(&text_run, blocks);
+}
+
+fn push_paragraph_text(text: &str, blocks: &mut Vec<RenderedBlock>) {
+    let text = crate::core::sanitize::normalize_whitespace(text)
+        .trim()
+        .to_string();
+    if !text.is_empty() {
+        blocks.push(RenderedBlock {
+            kind: BlockKind::Paragraph,
+            text,
+            level: None,
+            anchor: None,
+            language: None,
+            line_start: None,
+            line_end: None,
+            page: None,
+        });
+    }
+}
+
+fn bounded_dom_text_chars(
+    root: ElementRef<'_>,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
+) -> usize {
+    let mut text = String::new();
+    let mut collected_chars = 0;
+    collect_dom_text_bounded(*root, &mut text, &mut collected_chars, matches, 0);
+    crate::core::sanitize::normalize_whitespace(&text)
+        .chars()
+        .count()
+}
+
+fn has_matched_ancestor(
+    element: ElementRef<'_>,
+    roots: &std::collections::HashSet<ego_tree::NodeId>,
+) -> bool {
+    let mut current = *element;
+    while let Some(parent) = current.parent() {
+        if roots.contains(&parent.id()) {
+            return true;
+        }
+        current = parent;
+    }
+    false
+}
+
+fn collect_dom_text_bounded(
+    node: NodeRef<'_, scraper::Node>,
+    text: &mut String,
+    collected_chars: &mut usize,
+    matches: Option<&crate::fetch::scope::SelectorMatches>,
+    depth: usize,
+) {
+    if depth >= super::super::MAX_TREE_WALK_DEPTH || *collected_chars >= MAX_DOM_TEXT_CHARS {
+        return;
+    }
+    if let Some(value) = node.value().as_text() {
+        for ch in value.chars() {
+            if *collected_chars >= MAX_DOM_TEXT_CHARS {
+                break;
+            }
+            text.push(ch);
+            *collected_chars += 1;
+        }
+    } else if let Some(element) = ElementRef::wrap(node) {
+        if should_skip(&element) || is_excluded(&element, matches) {
+            return;
+        }
+        for child in node.children() {
+            if *collected_chars >= MAX_DOM_TEXT_CHARS {
+                break;
+            }
+            collect_dom_text_bounded(child, text, collected_chars, matches, depth + 1);
+        }
     }
 }
 

@@ -54,6 +54,7 @@ fn e3_no_keys_provider_status_succeeds() {
         eggsearch::mcp::tools::ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     );
     assert!(result.is_ok(), "provider_status failed: {:?}", result.err());
@@ -69,6 +70,7 @@ fn e5_provider_status_reports_browser_lifecycle_counters() {
         eggsearch::mcp::tools::ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("provider_status succeeds");
@@ -151,6 +153,7 @@ fn e9_no_credential_values_in_serialized_status() {
         eggsearch::mcp::tools::ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .unwrap();

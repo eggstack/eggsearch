@@ -6,7 +6,7 @@ use crate::mcp::state::ServerState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-pub(super) const COMPACT_FIELDS: &[&str] = &["probe"];
+pub(super) const COMPACT_FIELDS: &[&str] = &["probe", "recipe_detail", "response_detail"];
 
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProviderStatusArgs {
@@ -25,7 +25,77 @@ pub struct ProviderStatusArgs {
     /// `summary` (default): compact summaries with id, title, goal, support, step_tools.
     /// `full`: full recipe objects with steps, fallbacks, trust_notes.
     #[serde(default)]
+    #[schemars(default = "default_recipe_detail")]
     pub recipe_detail: Option<crate::core::workflow::RecipeDetail>,
+    #[serde(default)]
+    pub response_detail: Option<crate::mcp::projection::ResponseDetail>,
+}
+
+fn default_recipe_detail() -> Option<crate::core::workflow::RecipeDetail> {
+    Some(crate::core::workflow::RecipeDetail::Summary)
+}
+
+fn project_response(
+    mut payload: serde_json::Value,
+    response_detail: Option<crate::mcp::projection::ResponseDetail>,
+) -> serde_json::Value {
+    let Some(detail) = response_detail else {
+        return payload;
+    };
+    if matches!(
+        detail,
+        crate::mcp::projection::ResponseDetail::Brief
+            | crate::mcp::projection::ResponseDetail::Compact
+    ) {
+        if let Some(providers) = payload
+            .get_mut("providers")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            for provider in providers {
+                let routable = provider
+                    .get("routable")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false);
+                if let Some(object) = provider.as_object_mut() {
+                    object.retain(|key, _| {
+                        matches!(key.as_str(), "id" | "routable")
+                            || (!routable && key == "skip_code")
+                    });
+                }
+            }
+        }
+        if let Some(solver) = payload
+            .get_mut("challenge_solver")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            if let Some(providers) = solver.remove("providers") {
+                let tracked = providers.as_object().map_or(0, serde_json::Map::len);
+                solver.insert("providers_tracked".to_string(), tracked.into());
+            }
+        }
+        let label = if matches!(detail, crate::mcp::projection::ResponseDetail::Compact) {
+            "compact"
+        } else {
+            "brief"
+        };
+        if let Some(object) = payload.as_object_mut() {
+            for key in [
+                "fetch_proxy",
+                "code_hosts",
+                "health",
+                "health_views",
+                "mcp_advertisement",
+                "quality_metadata",
+                "workflow_recipes",
+                "search_cache",
+            ] {
+                object.remove(key);
+            }
+            object.insert("response_detail".to_string(), serde_json::json!(label));
+        }
+        return payload;
+    }
+    crate::mcp::projection::project_with_budget("provider_status", payload, detail, 5_000)
 }
 
 fn patched_descriptors(state: &ServerState) -> Vec<ProviderDescriptor> {
@@ -367,7 +437,7 @@ pub fn run_provider_status(
                 "implemented": true,
             }),
         );
-        return Ok(payload);
+        return Ok(project_response(payload, args.response_detail));
     }
     if tokio::runtime::Handle::try_current().is_ok() {
         return Err(ToolError::internal(
@@ -386,7 +456,7 @@ pub fn run_provider_status(
         &mut payload,
         serde_json::to_value(&summary).map_err(|e| ToolError::internal(e.to_string()))?,
     );
-    Ok(payload)
+    Ok(project_response(payload, args.response_detail))
 }
 
 /// Run the `provider_status` tool with optional live probes.
@@ -407,14 +477,14 @@ pub async fn run_provider_status_async(
                 "implemented": true,
             }),
         );
-        return Ok(payload);
+        return Ok(project_response(payload, args.response_detail));
     }
     let summary = crate::meta::probe::probe_providers(&state.adapter, probe_request(&state)).await;
     insert_probe(
         &mut payload,
         serde_json::to_value(&summary).map_err(|e| ToolError::internal(e.to_string()))?,
     );
-    Ok(payload)
+    Ok(project_response(payload, args.response_detail))
 }
 
 fn build_code_hosts_summary(descriptors: &[ProviderDescriptor]) -> Vec<serde_json::Value> {

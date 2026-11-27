@@ -272,7 +272,7 @@ eggsearch integrate [--json] [--executable PATH] <codegg|zed|codex|claude|cursor
 (`browser` feature only): headed manual login for one persistent
 profile.
 
-- Requires `[fetch.browser].persistent_profiles_enabled`; otherwise
+- Requires `[fetch.browser.persistent_profiles].enabled`; otherwise
   bails before creating state.
 - Validates the origin strictly: must parse, must be `http`/`https`,
   must have a host, must not embed credentials.
@@ -325,7 +325,7 @@ stays `startup install/uninstall`, `restart`, and `update`.
   commands). There is no third config path.
 - Every policy denial names the config key that fixes it
   (`[search].mode`, `[search].providers`, `[fetch].enabled`,
-  `[fetch.browser].persistent_profiles_enabled`).
+  `[fetch.browser.persistent_profiles].enabled`).
 - Human output is the default; `--json` selects pretty JSON and is
   accepted by `search`, `fetch`, `providers`, `startup status`, and
   `integrate`. `doctor` always prints its JSON status block first

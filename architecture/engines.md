@@ -152,6 +152,8 @@ Keyless HTML scraping is a first-class product capability, not a fallback awaiti
 maintenance cost of the design. Five engines parse HTML: `brave`, `duckduckgo`, `mojeek`,
 `startpage`, `yahoo`. `searxng` is a JSON API and is not part of this contract.
 
+The HTML block extractor emits two extraction-coverage warnings: `extraction_sparse` means rendered text is a small fraction of the scoped document text, and its payload carries `text_chars`, `dom_text_chars`, and `ratio`; `selector_no_blocks` means an include selector matched nodes but produced no text. `extraction_sparse` is evaluated only for unscoped extraction, because an include selector legitimately returns a fraction of the page.
+
 Every HTML parser MUST distinguish four outcomes, because the retrieval ledger treats them
 differently:
 

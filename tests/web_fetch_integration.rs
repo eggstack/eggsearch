@@ -4483,6 +4483,210 @@ fn long_html_server(body_chars: usize) -> httpmock::MockServer {
     server
 }
 
+const FIXTURE_HTML: &str = r#"<!DOCTYPE html><html><body><main><p>PARA_ALPHA</p><ul><li>ITEM_DELTA</li></ul><div class="card"><span class="card-title">CARD_BRAVO</span><span>CARD_CHARLIE</span></div><table><tr><td>CELL_ECHO</td><td>CELL_FOXTROT</td></tr></table><div class="empty"></div></main><aside><p>ASIDE_OMEGA</p></aside></body></html>"#;
+
+#[tokio::test]
+async fn extraction_keeps_container_and_inline_body_text_exactly_once() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(FIXTURE_HTML);
+    });
+    let state = state_with_localhost();
+    let value = run_web_fetch(
+        state,
+        WebFetchArgs {
+            url: server.url("/article"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("a complete page returns");
+    let text = value["text"].as_str().expect("extracted text");
+    for marker in [
+        "PARA_ALPHA",
+        "ITEM_DELTA",
+        "CARD_BRAVO",
+        "CARD_CHARLIE",
+        "CELL_ECHO",
+        "CELL_FOXTROT",
+    ] {
+        assert_eq!(
+            text.matches(marker).count(),
+            1,
+            "{marker} must be emitted exactly once: {text}"
+        );
+    }
+    assert!(
+        !text.contains("ASIDE_OMEGA"),
+        "aside content is skipped when main is selected: {text}"
+    );
+    let warnings = value["warnings"].as_array().cloned().unwrap_or_default();
+    assert!(
+        !warnings.iter().any(|warning| warning
+            .as_str()
+            .is_some_and(|message| message.starts_with("extraction_sparse"))),
+        "a complete extraction must not report sparseness: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn include_selectors_of_any_element_type_return_their_text() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(FIXTURE_HTML);
+    });
+    for (selector, expected) in [
+        (".card-title", "CARD_BRAVO"),
+        (".card", "CARD_CHARLIE"),
+        ("li", "ITEM_DELTA"),
+        ("p", "PARA_ALPHA"),
+    ] {
+        let value = run_web_fetch(
+            state_with_localhost(),
+            WebFetchArgs {
+                url: server.url("/article"),
+                include_selectors: Some(vec![selector.to_string()]),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("selector fetch returns");
+        let text = value["text"].as_str().unwrap_or_default();
+        assert!(
+            text.contains(expected),
+            "selector {selector} must return its text, got: {text}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_selector_matching_an_empty_element_reports_no_blocks() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(FIXTURE_HTML);
+    });
+    let value = run_web_fetch(
+        state_with_localhost(),
+        WebFetchArgs {
+            url: server.url("/article"),
+            include_selectors: Some(vec![".empty".to_string()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("selector fetch returns");
+    let warnings = value["warnings"].as_array().cloned().unwrap_or_default();
+    assert!(
+        warnings.iter().any(|warning| warning
+            .as_str()
+            .is_some_and(|message| message.contains("selector_no_blocks"))),
+        "a matched-but-empty selector must be reported: {warnings:?}"
+    );
+}
+
+#[tokio::test]
+async fn selector_scoped_extraction_is_not_reported_as_sparse() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    let padding = "PAD ".repeat(1_000);
+    let body = format!(
+        "<!DOCTYPE html><html><body><main><p>{padding}</p><span class=\"tiny\">TINY_MARKER</span></main></body></html>"
+    );
+    server.mock(move |when, then| {
+        when.method(GET).path("/large");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(body);
+    });
+    let value = run_web_fetch(
+        state_with_localhost(),
+        WebFetchArgs {
+            url: server.url("/large"),
+            include_selectors: Some(vec![".tiny".to_string()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("selector fetch returns");
+    let text = value["text"].as_str().unwrap_or_default();
+    assert!(
+        text.contains("TINY_MARKER"),
+        "the selector must still return its text: {text}"
+    );
+    let warnings = value["warnings"].as_array().cloned().unwrap_or_default();
+    for code in ["extraction_sparse", "selector_no_blocks"] {
+        assert!(
+            !warnings.iter().any(|warning| warning
+                .as_str()
+                .is_some_and(|message| message.starts_with(code))),
+            "{code} must not fire for a deliberate selector scope: {warnings:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn nested_include_selectors_emit_text_once() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/article");
+        then.status(200)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(FIXTURE_HTML);
+    });
+    let value = run_web_fetch(
+        state_with_localhost(),
+        WebFetchArgs {
+            url: server.url("/article"),
+            include_selectors: Some(vec![".card".to_string(), ".card-title".to_string()]),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("selector fetch returns");
+    let text = value["text"].as_str().unwrap_or_default();
+    assert_eq!(
+        text.matches("CARD_BRAVO").count(),
+        1,
+        "a selector root nested inside another must not be emitted twice: {text}"
+    );
+    assert_eq!(text.matches("CARD_CHARLIE").count(), 1, "{text}");
+}
+
+#[tokio::test]
+async fn csv_fetch_reports_the_document_representation() {
+    use httpmock::prelude::*;
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/table.csv");
+        then.status(200)
+            .header("content-type", "text/csv")
+            .body("a,b\n1,2\n");
+    });
+    let value = run_web_fetch(
+        state_with_localhost(),
+        WebFetchArgs {
+            url: server.url("/table.csv"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("csv fetch returns");
+    assert_eq!(value["representation"], "document");
+}
+
 fn fetch_args_for(url: String) -> WebFetchArgs {
     WebFetchArgs {
         offset: None,
@@ -6311,6 +6515,7 @@ async fn web_fetch_auto_counts_a_wall_the_browser_completed() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("provider status builds");

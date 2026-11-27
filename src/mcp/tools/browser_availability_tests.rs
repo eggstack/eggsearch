@@ -158,6 +158,7 @@ async fn browser_absent_mcp_search_fetch_and_status_degrade() {
         super::provider_status::ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("provider status remains available without Chrome");

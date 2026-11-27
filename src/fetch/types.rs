@@ -43,7 +43,7 @@ pub enum FetchError {
     Timeout(u64),
 
     /// HTTP error status.
-    #[error("HTTP error: {0} {1}")]
+    #[error("HTTP error: {0}{}", http_status_detail(.1))]
     HttpStatus(u16, String),
 
     /// Content too large.
@@ -204,6 +204,14 @@ pub enum FetchError {
     /// Unknown error.
     #[error("{0}")]
     Unknown(String),
+}
+
+fn http_status_detail(detail: &str) -> String {
+    if detail.is_empty() {
+        String::new()
+    } else {
+        format!(" {detail}")
+    }
 }
 
 /// Kind of fetch error for MCP error mapping.

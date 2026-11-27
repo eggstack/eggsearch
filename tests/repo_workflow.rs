@@ -1331,6 +1331,7 @@ async fn repo_map_tool_in_server_surface() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");

@@ -140,7 +140,7 @@ pub fn is_known_tool(name: &str) -> bool {
 pub static ALL_CONTRACTS: &[ToolContract] = &[
     ToolContract {
         name: "build_evidence_bundle",
-        description: "Package already-selected search and fetch evidence for handoff. Pass prior tool output verbatim in `sources` and `fetches`; nested metadata is accepted but not re-advertised. Does not search, fetch, or summarize.",
+        description: "Package selected evidence for handoff; pass prior output in `sources` or `fetches` (at least one required). Does not search, fetch, or summarize.",
         purpose: "deterministic evidence packaging for handoff",
         use_when: "evidence is already gathered and must be handed off without summarization",
         not_for: "search, fetch, synthesis, or summarization",
@@ -209,7 +209,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "provider_status",
-        description: "Report configured providers, capabilities, and recipes for diagnostics. Use only when availability is in question; not a normal first research step.",
+        description: "Report routable providers by default; request diagnostic detail for the full capability matrix. Use only when availability is in question; it is not a normal first research step.",
         purpose: "diagnostic provider and capability report",
         use_when: "provider availability itself is relevant or troubleshooting is required",
         not_for: "ordinary research discovery or as a normal first step",
@@ -226,7 +226,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "repo_map",
-        description: "Describe a repository layout without file contents. Use to orient before `repo_search` with `owner`, `repo`; not a substitute for search or fetch.",
+        description: "Describe a repository layout without file contents. Requires forge identity via `owner` and `repo`; a matching local checkout may enrich the result.",
         purpose: "repository structure discovery without contents",
         use_when: "repository layout is unknown and must be understood before searching",
         not_for: "file contents, code search, or advisory lookup",
@@ -251,7 +251,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "repo_search",
-        description: "Discover evidence for a repository across source, docs, issues, releases, and package metadata. Use for codebase investigation; use `fetch` with a repo item only after a concrete file/span is known.",
+        description: "Discover repository evidence across source, docs, issues, releases, and packages. A `symbol` requires a non-empty `query` or a repository locator (`owner` and `repo`).",
         purpose: "structured repository evidence discovery",
         use_when: "investigating a specific codebase, package, or repository",
         not_for: "fetching a known file span or general web lookup",
@@ -302,7 +302,7 @@ pub static ALL_CONTRACTS: &[ToolContract] = &[
     },
     ToolContract {
         name: "security_search",
-        description: "Find vulnerability and advisory evidence with applicability context. Use for CVE/GHSA/advisory questions with `query`; for general background use `web_search`.",
+        description: "Find vulnerability and advisory evidence. Requires at least one of `query`, `package`, `cve_id`, `ghsa_id`, `osv_id`, or `rustsec_id`; use `web_search` for background.",
         purpose: "vulnerability and advisory evidence discovery",
         use_when: "assessing CVEs, advisories, or package security posture",
         not_for: "general web lookup or runtime exploitability analysis",

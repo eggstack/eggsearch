@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `fetch` under `brief` — and therefore under the `compact` schema-profile default — could clip an oversized item out of existence: a single item larger than the brief budget returned `results: []`, `returned_count: 0`, `omitted_count: 0`, and no warning while `fetched` was 1. Brief now clips text down to a usable floor and keeps the record; an omission that does happen is counted and named in `warnings` within the same budget. Projecting an already-projected value no longer resets `omitted_count`, and `chars_returned` / `total_chars_returned` describe the text actually returned. An omission also emits a typed `fetch_content_truncated` entry in `structured_warnings` when it fits, and 512 characters are reserved for the notice before any record is removed, so the omission warning itself is never dropped to satisfy the budget.
+- HTML extraction emits body copy that is not inside a block element. A container such as `div class="card"` holding `span`s now produces paragraph blocks, so a page that renders its body copy in `div`/`span` no longer returns headings and sidebar text only. `include_selectors` roots of any element type (`span`, `a`, `li`, `div`) return their text, and a selector that matches but yields no text reports `selector_no_blocks` instead of reading as success. `extraction_sparse` is evaluated only for unscoped extraction, so an include selector that returns a deliberate fraction of the page is not reported as a structural break.
+- The browser transport classifies the captured final status before extraction, so a non-2xx page is a failed item carrying the same `http_status` error shape the HTTP transport produces, instead of `ok: true` with the error document's text. A challenge that resolves to content keeps precedence and still returns its document.
+- Fetch failures are classified by cause. A capability miss (`pdf_not_compiled_in`, `pdf_disabled`, `document_disabled`, browser unavailable) and a caller error (`pdf_page_out_of_range`, `pdf_page_spec_invalid`, `pdf_page_cap_exceeded`, an invalid or unsupported URL) no longer carry the `upstream_failed` code; genuine upstream failures still do. A container document on a build without `documents` names the rebuild in its hint, and an HTTP status error no longer repeats itself as `HTTP error: 404 HTTP 404`.
+- `provider_status` gained a `response_detail` switch. `brief` and `compact` return a bounded view (the per-provider capability matrix collapses to id and routability, `health` is omitted, challenge-solver providers are counted) asserted under 6,000 characters; the default payload is unchanged so the diagnostic contract still holds. `response_detail: "compact"` is labelled `compact`, not `brief`.
+- `provider_status.recipe_detail` advertises the `summary` default its behaviour already applied.
+- Stdio log hygiene: the default filter directive targets `chromiumoxide::handler`, where the websocket warning is actually emitted, and it is appended to `RUST_LOG` instead of being replaced, so a host that sets `RUST_LOG` no longer loses the suppression.
+- Wire hygiene: sentinel frames no longer wrap a body in extra blank lines, a source card's `score` is published to four decimals, `completion_confidence` is published as its exact `f32` rather than the widened `f64` expansion, and a timestamp keeps its source precision instead of gaining a nanosecond tail.
+
+### Added
+
+- `WebFetchResponse.representation` distinguishes `pdf_text` and `document` alongside `html` and `markdown`, so a caller can tell extracted PDF text or container-document text from HTML. CSV reports `document` as well.
+- The `extraction_sparse` and `selector_no_blocks` warning codes report a reduced extraction instead of leaving it to read as success.
+
 ### Changed
+
+- The advertised `tools/list` surface is re-pinned: full+full fingerprint `678e2a042ab5b39b` (33,983 bytes) becomes `d7968115e378f708` (34,226 bytes, +243), and the compact profile becomes `4922171e414dc480` (22,405 bytes). The growth is the three selector-honest descriptions that now state the accepted forms for `repo_search`, `repo_map`, and `security_search`, plus the corrected `provider_status` disclaimer; `fetch.items` gained a description too. A byte reduction was not achieved. Hosts cache by fingerprint plus server version, so refresh the cached surface.
 
 - `repo_map` now publishes `next_actions` alongside `suggested_fetches`. Each entry is an executable `fetch` call carrying the repo item the suggestion already resolved, so a caller never reconstructs a locator, and `suggested_fetches` stays populated as a typed convenience.
 - The advertised `tools/list` fingerprint is re-pinned from `3fa97faac725dc97` (33,850 bytes) to `678e2a042ab5b39b` (33,983 bytes) for the `repo_map` follow-up field and the corrected `provider_status` `probe` description. Hosts cache by fingerprint plus server version, so refresh the cached surface.

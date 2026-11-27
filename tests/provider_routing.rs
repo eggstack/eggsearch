@@ -80,6 +80,7 @@ fn provider_status_returns_configured_providers() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -105,6 +106,7 @@ fn provider_status_payload_shape_is_stable() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -134,6 +136,7 @@ fn provider_status_includes_server_capabilities() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -192,6 +195,7 @@ async fn provider_status_with_mixed_enabled_disabled() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -273,6 +277,7 @@ async fn provider_status_routability_reflects_config() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -307,6 +312,7 @@ fn provider_status_includes_github_code() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -326,6 +332,7 @@ fn provider_status_github_code_descriptor_shape() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1036,6 +1043,7 @@ fn provider_status_includes_repo_map_and_repo_fetch_capabilities() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1056,6 +1064,7 @@ fn provider_status_tool_capabilities_repo_fetch() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1089,6 +1098,7 @@ async fn provider_status_repo_fetch_includes_symbol_capabilities() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1124,6 +1134,7 @@ async fn provider_status_repo_search_includes_supported_hosts() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1155,6 +1166,7 @@ async fn provider_status_repo_map_tool_capabilities() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1184,6 +1196,7 @@ fn provider_status_recipe_shape_is_stable() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::Full),
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1230,6 +1243,7 @@ fn provider_status_recipe_support_shape() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1256,6 +1270,7 @@ fn provider_status_recipe_next_action_rules_are_valid() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::Full),
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1291,6 +1306,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1333,6 +1349,7 @@ fn challenge_solver_block_reports_the_shared_ledger() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1451,6 +1468,7 @@ fn provider_status_includes_skip_code_field() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1487,6 +1505,7 @@ fn provider_status_disabled_provider_has_disabled_by_user_skip_code() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1520,6 +1539,7 @@ fn provider_status_routable_provider_has_null_skip_code() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1544,6 +1564,7 @@ fn provider_status_caps_reflect_search_mode_off() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1567,6 +1588,7 @@ fn provider_status_caps_reflect_fetch_disabled() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1586,6 +1608,7 @@ fn provider_status_tool_caps_supported_hosts_match_code_host_aliases() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1626,6 +1649,7 @@ fn provider_status_includes_workflow_recipes() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1663,6 +1687,7 @@ fn provider_status_recipe_detail_none_omits_workflow_recipes() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::None),
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1681,6 +1706,7 @@ fn workflow_recipe_no_crawling_step() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::Full),
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1711,6 +1737,7 @@ fn workflow_recipe_steps_use_real_tools() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::Full),
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -1746,6 +1773,69 @@ mod provider_status {
     use super::*;
 
     #[test]
+    fn provider_status_brief_payload_stays_inside_the_agent_budget() {
+        let state = state_with_default();
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+                response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Brief),
+            },
+        )
+        .expect("ok");
+        let bytes = serde_json::to_string(&v).unwrap().len();
+        let mut sizes: Vec<(String, usize)> = v
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(key, value)| (key.clone(), serde_json::to_string(value).unwrap().len()))
+            .collect();
+        sizes.sort_by_key(|(_, size)| std::cmp::Reverse(*size));
+        let count = v["providers"].as_array().map_or(0, Vec::len);
+        let sample = v["providers"]
+            .as_array()
+            .and_then(|providers| providers.first())
+            .map(|first| first.to_string())
+            .unwrap_or_default();
+        let breakdown = sizes
+            .iter()
+            .map(|(key, size)| format!("{key}={size}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let breakdown = format!("{breakdown} count={count} sample={sample}");
+        assert!(
+            bytes <= 6_000,
+            "provider_status default payload is {bytes} bytes: {breakdown}"
+        );
+        assert!(
+            !v["tool_capabilities"].is_null(),
+            "the capability report must stay in the default payload"
+        );
+        assert!(
+            v.get("challenge_solver").is_some(),
+            "challenge solver telemetry must stay in the default payload"
+        );
+        assert_eq!(v["response_detail"], "brief");
+    }
+
+    #[test]
+    fn provider_status_compact_payload_is_labelled_compact() {
+        let state = state_with_default();
+        let v = run_provider_status(
+            state,
+            ProviderStatusArgs {
+                probe: false,
+                recipe_detail: None,
+                response_detail: Some(eggsearch::mcp::projection::ResponseDetail::Compact),
+            },
+        )
+        .expect("ok");
+        assert_eq!(v["response_detail"], "compact");
+        assert!(serde_json::to_string(&v).unwrap().len() <= 6_000);
+    }
+
+    #[test]
     fn all_known_providers_represented() {
         let state = state_with_default();
         let v = run_provider_status(
@@ -1753,6 +1843,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -1780,6 +1871,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -1812,6 +1904,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -1836,6 +1929,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -1871,6 +1965,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2011,6 +2106,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2037,6 +2133,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2059,6 +2156,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2097,6 +2195,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2188,6 +2287,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2212,6 +2312,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2238,6 +2339,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2262,6 +2364,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2286,6 +2389,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2309,6 +2413,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2332,6 +2437,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2355,6 +2461,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2426,6 +2533,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: true,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2481,6 +2589,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2499,6 +2608,7 @@ mod provider_status {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -2597,6 +2707,7 @@ fn provider_status_credentialed_providers_are_opt_in_and_unconfigured_by_default
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -2651,6 +2762,7 @@ fn provider_status_credentialed_providers_report_configured_once_a_key_resolves(
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("ok");
@@ -3707,6 +3819,7 @@ fn provider_status_discloses_the_routing_table_and_mode() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");

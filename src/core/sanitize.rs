@@ -342,8 +342,16 @@ pub fn frame(s: &str, field: &str, id: &str) -> String {
     out.push_str(" id=");
     out.push_str(&id);
     out.push_str(">>>\n");
-    out.push_str(&escape_frame_body(s));
-    out.push_str("\n<<<END>>>");
+    let body = escape_frame_body(s);
+    if body.is_empty() {
+        out.push('\n');
+    } else {
+        out.push_str(&body);
+        if !body.ends_with('\n') {
+            out.push('\n');
+        }
+    }
+    out.push_str("<<<END>>>");
     out
 }
 

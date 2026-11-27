@@ -103,7 +103,7 @@ impl std::fmt::Display for ProfileError {
                 write!(
                     f,
                     "persistent browser profiles are disabled; \
-                     enable [fetch.browser].persistent_profiles_enabled"
+                     enable [fetch.browser.persistent_profiles].enabled"
                 )
             }
             Self::ProfileLimitReached => {

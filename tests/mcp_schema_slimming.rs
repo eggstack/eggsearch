@@ -312,11 +312,11 @@ fn fetch_schema_stays_within_the_measured_full_profile_budget() {
         .and_then(serde_json::Value::as_object)
         .map_or(0, serde_json::Map::len);
     assert!(
-        definition_bytes <= 11_312,
+        definition_bytes <= 11_427,
         "fetch definition is {definition_bytes} bytes"
     );
     assert!(
-        input_schema_bytes <= 10_341,
+        input_schema_bytes <= 10_456,
         "fetch input schema is {input_schema_bytes} bytes"
     );
     assert!(defs <= 15, "fetch schema has {defs} definitions");

@@ -88,18 +88,22 @@ pub(crate) struct FetchWebItem {
     #[allow(missing_docs)]
     snapshot: Option<crate::core::fetch::FetchSnapshotRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(not(feature = "pdf"), schemars(skip))]
     #[schemars(description = "PDF-specific fetch options.")]
     pdf: Option<crate::core::fetch::PdfFetchOptions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(not(feature = "browser"), schemars(skip))]
     #[schemars(
         with = "Option<crate::core::fetch::RenderPolicy>",
         description = "Render policy: http_only, auto, or browser."
     )]
     render: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(not(feature = "browser"), schemars(skip))]
     #[schemars(description = "Named browser profile for persistent session reuse.")]
     browser_profile: Option<String>,
     #[serde(default, skip_serializing_if = "is_none_or_false")]
+    #[cfg_attr(not(feature = "browser"), schemars(skip))]
     #[schemars(description = "Include a bounded viewport screenshot as MCP image content.")]
     include_screenshot: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -308,6 +312,9 @@ pub(super) const COMPACT_FIELDS: &[&str] = &[
 
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub(crate) struct FetchArgs {
+    #[schemars(
+        description = "One fetch item object or a non-empty array of items. Every item has type `web`, `repo`, or `site`."
+    )]
     pub items: FetchItems,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_items: Option<usize>,

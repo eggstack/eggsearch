@@ -304,6 +304,7 @@ async fn provider_status_probe_uses_the_configured_search_budget() {
         ProviderStatusArgs {
             probe: true,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .await
@@ -425,6 +426,7 @@ async fn provider_status_probe_true_uses_shared_service() {
         ProviderStatusArgs {
             probe: true,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .await
@@ -443,6 +445,7 @@ fn provider_status_probe_false_is_cheap_and_network_free() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");

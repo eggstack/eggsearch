@@ -1,6 +1,6 @@
 # Agentic Retrieval Integrity and Context Economy Roadmap
 
-Status: active (M001–M048 closed; M049 active; M050–M052 closed; M053 ready)
+Status: active (M001–M048 closed; M049 active; M050–M052 closed; M053 ready; M054 active (partial); M055 active (partial))
 Planning baseline: `4de20a0f0d748b89147829a51384e385a5bee388` (origin/main, 2026-11-24 UTC)
 
 References: `plans/000-long-term-specification.md` §1, 3, 5, 7, 8; `plans/001-terminology-and-domain-model.md` §1–5; `plans/002-long-term-roadmap.md`; `plans/003-planning-process.md`; accepted ADR-0001, ADR-0006, ADR-0016.
@@ -206,6 +206,8 @@ ADR-0011 fetch document addressing ──> M019 fetch document budget ──> M0
 | M051 — live-surface reliability and robustness correctives | correctness (corrective program) | `plans/implementation/agentic-retrieval-integrity/051-live-surface-reliability-correctives.md` | interface M049 (active); interface M050 (closed) | A release-binary review of the areas M050 deliberately left open yields eight bounded packages: probe budget and health isolation, cold challenge-solve contract, `Retry-After` cooldowns, short JavaScript-gate escalation, parse-failure fingerprints, the `repo_map` generic-notice conflict, field-level `[search]` defaults, and a release-mode live target; no tool, argument, provider, or default-set change |
 | M052 — agent-facing contract ergonomics | correctness (ergonomics corrective) | `plans/implementation/agentic-retrieval-integrity/052-agent-facing-contract-ergonomics.md` | no hard dependency; interface ADR-0022 §3; interface M051 (closed) | One goal spelling set is accepted by `repo_search`, `research_search`, and `security_search`; every tool that suggests a follow-up emits `next_actions` whose templates carry the values the response already knows; the advertised `probe` description matches the implementation; exactly one authorised fingerprint re-pin. No tool, alias, argument, provider, or default-set change |
 | M053 — executable follow-up pointer binding correctives | invariant (corrective to M052) | `plans/implementation/agentic-retrieval-integrity/053-executable-follow-up-pointer-binding-correctives.md` | interface M052 (closed); interface ADR-0022 §3 (accepted) | Package-only applicability actions carry package/ecosystem and optional known version without an empty query; single-source repo fetch actions bind that source card's known `CodeMetadata.path`; no tool, alias, argument, schema, provider, or default-set change |
+| M054 — agent-facing payload economy and brief-projection correctives | invariant (corrective program) | `plans/implementation/agentic-retrieval-integrity/054-agent-facing-payload-economy-correctives.md` | interface M052 (closed); interface M039 (closed); interface M042 (closed) | A release-binary live trial found that `fetch` under `brief` — and therefore under the `compact` schema-profile default — returns zero items with no warning, that one item is emitted as up to 4.1× copies of the same content, and that default-detail search responses reach 40–65 KB. Nine bounded packages; exactly one advertised-fingerprint re-pin authorised by WP3; the same trial exercised PDF extraction, browser rendering with screenshots, and every non-default build variant; no tool, alias, provider, or default-provider-set change |
+| M055 — fetch extraction completeness and render-path status correctives | invariant (corrective program) | `plans/implementation/agentic-retrieval-integrity/055-fetch-extraction-completeness-correctives.md` | interface M054 (proposed); interface M039 (closed); interface M042 (closed) | A deterministic fixture and live pages show that extraction keeps only block-level content, so `div`/`span` body copy is dropped silently (`quotes.toscrape.com`: 10 quote blocks, 115 returned chars); `include_selectors` matched 25 anchors on `lobste.rs` and returned 0 chars; and browser transport returns a 404 page as `ok: true`. Five bounded packages; no tool, argument, provider, or default-set change |
 
 M001–M005 are closed at `c9912fc0e4824c4ec6b1231be2057fb4cd0ba8ab` (baseline `cd81f4d`). Each closure record in
 `plans/closure/agentic-retrieval-integrity/` records the implementation evidence, and the closure
@@ -408,6 +410,24 @@ exposed M011's mandatory-`redir` defect.
   description. No tool, alias, argument, provider, or default-set change. Evidence:
   `plans/closure/agentic-retrieval-integrity/052-status.md`.
 - M053 is `ready` as a new corrective plan for the two P2 pointer-binding findings recorded in the M052 closure audit; M052 remains closed and no implementation is included in the plan registration. See `plans/implementation/agentic-retrieval-integrity/053-executable-follow-up-pointer-binding-correctives.md`.
+- M054 is `active` (partial implementation) from the 2026-11-26 live stdio trial on `b04e996` (release build 0.4.5): a
+  single `fetch` item larger than `brief_max_chars` is dropped silently, so the `compact`
+  schema profile returns no fetched content for any item above that budget; default-detail search responses are
+  40–65 KB; and one `fetch` item is emitted as up to 4.1× copies of its readable text.
+  The plan authorises no implementation; findings outside the MCP contract (trust
+  classification, local snippet actionability, browser process cleanup, and PDF ligature
+  normalisation) are recorded in its appendix for separate registration. The trial's
+  second pass added PDF and browser-rendered fetches and every non-default build variant,
+  which produced F9–F14 and WP8. See
+  `plans/implementation/agentic-retrieval-integrity/054-agent-facing-payload-economy-correctives.md`.
+- M055 is `active` (partial implementation) from the same 2026-11-26 trial, second pass: default extraction keeps
+  only block-level content, so body copy rendered in `div`/`span` disappears silently
+  (a deterministic fixture loses its card text and `quotes.toscrape.com` returns 115 chars
+  for a page with 10 quote blocks); `include_selectors` matched 25 `lobste.rs` anchors and
+  returned 0 chars; and browser transport returns a 404 page as `ok: true`. M054 remains
+  the payload/schema/error programme; M055 owns extraction completeness and render-path
+  status. See
+  `plans/implementation/agentic-retrieval-integrity/055-fetch-extraction-completeness-correctives.md`.
 - M049 remains `active`: work package 1 is implemented, but the canonical gate is outstanding. Keep
   its classification corrective scoped to the registered keyless behavior and do not infer a new
   paid-provider, credential, or default-enable task. Evidence and acceptance gates:

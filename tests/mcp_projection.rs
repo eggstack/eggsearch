@@ -1786,3 +1786,130 @@ fn addressed_research_search_keeps_group_window_under_brief_and_compact() {
         }
     }
 }
+
+fn fetch_item(index: usize, text_chars: usize) -> Value {
+    let text = "x".repeat(text_chars);
+    json!({
+        "index": index,
+        "ok": true,
+        "item_type": "web",
+        "label": format!("https://example.com/{index}"),
+        "chars_returned": text_chars,
+        "payload_chars": text_chars,
+        "truncated": false,
+        "response": {
+            "url": format!("https://example.com/{index}"),
+            "final_url": format!("https://example.com/{index}"),
+            "status": 200,
+            "fetched": true,
+            "truncated": false,
+            "trust": "external_untrusted",
+            "text": text,
+            "chars_returned": text_chars,
+            "representation": "html"
+        }
+    })
+}
+
+fn fetch_envelope(items: Vec<Value>) -> Value {
+    let total: usize = items
+        .iter()
+        .map(|item| item["chars_returned"].as_u64().unwrap_or(0) as usize)
+        .sum();
+    json!({
+        "results": items,
+        "fetched": 1,
+        "failed": 0,
+        "warnings": [],
+        "structured_warnings": [],
+        "total_chars_returned": total,
+        "total_payload_chars": total,
+        "telemetry": {"items_requested": 1, "items_completed": 1, "items_failed": 0}
+    })
+}
+
+#[test]
+fn brief_clips_an_oversized_item_instead_of_dropping_it() {
+    let payload = fetch_envelope(vec![fetch_item(0, 20_000)]);
+    let brief = project("fetch", payload, ResponseDetail::Brief);
+    let results = brief["results"]
+        .as_array()
+        .expect("results must stay an array");
+    assert_eq!(
+        results.len(),
+        1,
+        "a successful item must survive brief: {brief}"
+    );
+    assert_eq!(brief["returned_count"], 1);
+    assert_eq!(brief["omitted_count"], 0);
+    assert_eq!(brief["output_truncated"], true);
+    let text = results[0]["response"]["text"].as_str().expect("text");
+    let chars = text.chars().count();
+    assert!(chars < 20_000, "brief must clip the oversized text");
+    assert!(chars <= 8_000, "brief must honour its own budget");
+    assert_eq!(
+        results[0]["chars_returned"].as_u64().unwrap_or(0) as usize,
+        chars,
+        "chars_returned must describe the text actually returned"
+    );
+    assert_eq!(
+        brief["total_chars_returned"].as_u64().unwrap_or(0) as usize,
+        chars
+    );
+}
+
+#[test]
+fn brief_reports_omissions_with_a_warning_and_an_exact_count() {
+    let items: Vec<Value> = (0..40).map(|index| fetch_item(index, 2_000)).collect();
+    let brief = project("fetch", fetch_envelope(items), ResponseDetail::Brief);
+    let retained = brief["results"].as_array().map_or(0, Vec::len);
+    let omitted = brief["omitted_count"].as_u64().expect("omitted count");
+    assert!(retained < 40, "the budget must force omissions: {brief}");
+    assert_eq!(
+        omitted as usize,
+        40 - retained,
+        "omitted_count must account for every dropped item"
+    );
+    let warnings = brief["warnings"].as_array().expect("warnings array");
+    assert!(
+        warnings.iter().any(|warning| warning
+            .as_str()
+            .is_some_and(|text| text.contains("brief budget"))),
+        "an omission must be named in warnings: {brief}"
+    );
+    let structured = brief["structured_warnings"]
+        .as_array()
+        .expect("structured warnings array");
+    assert!(
+        structured
+            .iter()
+            .any(|warning| warning["code"] == "fetch_content_truncated"),
+        "the omission must also be a typed warning: {brief}"
+    );
+    let serialized = serde_json::to_string(&brief).expect("brief serializes");
+    assert!(
+        serialized.chars().count() <= 8_000,
+        "the omission warning must stay inside the brief budget: {} chars",
+        serialized.chars().count()
+    );
+}
+
+#[test]
+fn brief_survives_reprojection_without_resetting_its_omission_count() {
+    let pre = json!({
+        "results": [],
+        "fetched": 0,
+        "failed": 3,
+        "omitted_count": 3,
+        "output_truncated": true,
+        "warnings": [],
+        "structured_warnings": [],
+        "total_chars_returned": 0
+    });
+    let brief = project("fetch", pre, ResponseDetail::Brief);
+    assert_eq!(
+        brief["omitted_count"], 3,
+        "a prior omission count must survive re-projection: {brief}"
+    );
+    assert_eq!(brief["output_truncated"], true);
+}

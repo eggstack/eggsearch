@@ -557,7 +557,7 @@ impl FetchClient {
         }
 
         if !(200..300).contains(&status) {
-            return Err(FetchError::HttpStatus(status, format!("HTTP {status}")));
+            return Err(FetchError::HttpStatus(status, String::new()));
         }
 
         let mut kind = classify_content_type(content_type.as_deref(), &final_url, false);
@@ -958,7 +958,7 @@ impl FetchClient {
                     chunks: Vec::new(),
                 };
                 warnings.push(WebFetchResponse::untrusted_warning());
-                let representation = representation_of(content_type.as_deref(), kind);
+                let representation = Some(FetchRepresentation::Document);
                 return Ok(WebFetchResponse {
                     url: url_str.to_string(),
                     final_url: final_url.clone(),
@@ -1043,7 +1043,7 @@ impl FetchClient {
             return Err(FetchError::PdfDisabled);
         }
 
-        let representation = representation_of(content_type.as_deref(), kind);
+        let mut representation = representation_of(content_type.as_deref(), kind);
         let markdown_tokens = parse_token_header(&cache_headers, "x-markdown-tokens");
         let original_tokens = parse_token_header(&cache_headers, "x-original-tokens");
 
@@ -1657,7 +1657,10 @@ impl FetchClient {
 
                 let rendered = match detected.kind {
                     DocumentKind::Notebook => render::notebook::render_notebook(t, document_chars),
-                    DocumentKind::Csv => render::csv::render_csv(t, document_chars),
+                    DocumentKind::Csv => {
+                        representation = Some(FetchRepresentation::Document);
+                        render::csv::render_csv(t, document_chars)
+                    }
                     DocumentKind::Xml | DocumentKind::Rst | DocumentKind::AsciiDoc => {
                         render::code::render_plaintext(t, document_chars)
                     }

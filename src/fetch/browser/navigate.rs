@@ -45,6 +45,7 @@ pub enum BrowserFetchError {
     Timeout,
     PageClosed,
     InteractiveChallenge(ManualInteractionRequired),
+    HttpStatus(u16),
 }
 
 impl std::fmt::Display for BrowserFetchError {
@@ -61,6 +62,7 @@ impl std::fmt::Display for BrowserFetchError {
             Self::InteractiveChallenge(r) => {
                 write!(f, "interactive challenge at {}: {}", r.origin, r.message)
             }
+            Self::HttpStatus(status) => write!(f, "HTTP error: {status}"),
         }
     }
 }
@@ -417,6 +419,14 @@ async fn navigate_and_extract(
     let challenge_completed = entered_wall
         && matches!(sample.disposition, FetchDisposition::UsefulContent)
         && sample.family.is_none();
+
+    if !challenge_completed
+        && sample.family.is_none()
+        && !sample.disposition.is_script_wall()
+        && !(200..300).contains(&response_status)
+    {
+        return Err(BrowserFetchError::HttpStatus(response_status));
+    }
 
     let title = sample.title;
     let classification = sample.disposition;

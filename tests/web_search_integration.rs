@@ -2415,6 +2415,7 @@ mod search_result_cache {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         }
     }
 

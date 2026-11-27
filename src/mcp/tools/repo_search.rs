@@ -254,6 +254,11 @@ pub async fn run_repo_search_with_host_scope(
         exact_error_config: Some(state.config.search.exact_error.clone()),
     };
 
+    if req.query.trim().is_empty() && req.resolved_repo_locator().is_none() {
+        return Err(ToolError::Validation(
+            "invalid query: repo_search requires a non-empty query or a repository locator with both owner and repo; symbol alone is not a selector".to_string(),
+        ));
+    }
     if let Err(e) = req.validate(state.config.search.max_query_chars) {
         return Err(ToolError::Validation(format!("invalid query: {e}")));
     }

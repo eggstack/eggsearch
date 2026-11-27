@@ -416,14 +416,31 @@ async fn main() -> Result<()> {
     }
 }
 
+const CHROMIUMOXIDE_WS_FILTER: &str = "chromiumoxide::handler=error";
+
+fn default_filter_directive(level: &str) -> String {
+    format!("{level},{CHROMIUMOXIDE_WS_FILTER}")
+}
+
+fn filter_directive(rust_log: Option<&str>, level: &str) -> String {
+    match rust_log.map(str::trim) {
+        Some(value) if !value.is_empty() => format!("{value},{CHROMIUMOXIDE_WS_FILTER}"),
+        _ => default_filter_directive(level),
+    }
+}
+
 fn init_tracing(verbose: u8) {
     let level = match verbose {
         0 => "info",
         1 => "debug",
         _ => "trace",
     };
+    let filter = tracing_subscriber::EnvFilter::new(filter_directive(
+        std::env::var("RUST_LOG").ok().as_deref(),
+        level,
+    ));
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new(level))
+        .with_env_filter(filter)
         .with_target(false)
         .with_writer(std::io::stderr)
         .try_init();
@@ -432,6 +449,27 @@ fn init_tracing(verbose: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_filter_suppresses_the_chromiumoxide_handler_warnings() {
+        assert_eq!(
+            default_filter_directive("info"),
+            "info,chromiumoxide::handler=error"
+        );
+        assert_eq!(
+            filter_directive(None, "debug"),
+            "debug,chromiumoxide::handler=error"
+        );
+        assert_eq!(
+            filter_directive(Some("info"), "debug"),
+            "info,chromiumoxide::handler=error"
+        );
+        assert_eq!(
+            filter_directive(Some("   "), "debug"),
+            "debug,chromiumoxide::handler=error"
+        );
+        assert!(!default_filter_directive("info").contains("eggsearch=off"));
+    }
 
     #[test]
     fn mcp_serve_defaults_are_stable() {

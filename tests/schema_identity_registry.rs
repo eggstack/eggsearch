@@ -606,6 +606,7 @@ fn provider_status_args_roundtrip() {
     let args = ProviderStatusArgs {
         probe: false,
         recipe_detail: None,
+        response_detail: None,
     };
     let json = serde_json::to_value(&args).unwrap();
     assert!(json.get("probe").is_some());

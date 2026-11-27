@@ -23,17 +23,88 @@ pub(crate) fn parse_render_request(raw: Option<&str>) -> Result<RenderRequest, T
     }
 }
 
+#[cfg(feature = "browser")]
+pub(crate) fn browser_fetch_tool_error(
+    error: crate::fetch::browser::BrowserFetchError,
+    used_profile_name: Option<&str>,
+) -> ToolError {
+    use crate::fetch::browser::BrowserFetchError;
+    match error {
+        BrowserFetchError::InteractiveChallenge(required) => {
+            let next_action = match used_profile_name {
+                Some(name) => {
+                    format!(
+                        "eggsearch browser-login {} --profile {name}",
+                        required.origin
+                    )
+                }
+                None => format!(
+                    "eggsearch browser-login {} --profile <name>",
+                    required.origin
+                ),
+            };
+            super::common::browser_manual_interaction_error(
+                &required.origin,
+                &required.message,
+                used_profile_name,
+                Some(&next_action),
+            )
+        }
+        BrowserFetchError::LaunchFailed(reason) => {
+            super::common::browser_unavailable_error(&format!("browser launch failed: {reason}"))
+        }
+        BrowserFetchError::HttpStatus(status) => {
+            ToolError::upstream_failed(format!("http_status: HTTP error: {status}"))
+        }
+        other => ToolError::internal(format!("browser_fetch_failed: {other}")),
+    }
+}
+
 pub(crate) fn fetch_tool_error(error: crate::fetch::FetchError) -> ToolError {
+    use crate::fetch::FetchErrorKind;
     let code = error.error_code();
-    let message = format!("{code}: {error}");
+    let mut message = format!("{code}: {error}");
+    if code == "unsupported_content_type"
+        && !cfg!(feature = "documents")
+        && ["wordprocessingml", "spreadsheetml"]
+            .iter()
+            .any(|marker| message.contains(marker))
+    {
+        message.push_str(
+            "; DOCX/XLSX extraction is not compiled into this build; rebuild with --features documents (see docs/features.md)",
+        );
+    }
     if code.starts_with("proxy_") {
-        ToolError::execution_with_data(
+        return ToolError::execution_with_data(
             ToolErrorCode::UpstreamFailed,
             message,
             serde_json::json!({"code": code}),
-        )
-    } else {
-        ToolError::upstream_failed(message)
+        );
+    }
+    let mapped = match error.kind() {
+        FetchErrorKind::PdfNotCompiledIn
+        | FetchErrorKind::PdfDisabled
+        | FetchErrorKind::DocumentDisabled
+        | FetchErrorKind::BrowserNotCompiledIn
+        | FetchErrorKind::BrowserDisabled
+        | FetchErrorKind::BrowserNotFound
+        | FetchErrorKind::BrowserLaunchFailed
+        | FetchErrorKind::PdfOcrUnavailable => ToolErrorCode::CapabilityUnavailable,
+        FetchErrorKind::PdfPageSpecInvalid
+        | FetchErrorKind::PdfPageOutOfRange
+        | FetchErrorKind::PdfPageCapExceeded
+        | FetchErrorKind::InvalidUrl
+        | FetchErrorKind::UnsupportedScheme => ToolErrorCode::InvalidSemanticValue,
+        FetchErrorKind::PrivateNetworkBlocked
+        | FetchErrorKind::RedirectTargetBlocked
+        | FetchErrorKind::ProxyRouteUnconfigured
+        | FetchErrorKind::ProxySchemeUnsupported => ToolErrorCode::PolicyDenied,
+        FetchErrorKind::BrowserInteractiveChallenge => ToolErrorCode::ManualInteractionRequired,
+        _ => ToolErrorCode::UpstreamFailed,
+    };
+    match mapped {
+        ToolErrorCode::UpstreamFailed => ToolError::upstream_failed(message),
+        other => ToolError::execution_with_data(other, message, serde_json::json!({"code": code})),
     }
 }
 
@@ -167,7 +238,7 @@ pub(crate) fn validate_batch_route_options(
             let mgr = state.profile_manager.as_ref().ok_or_else(|| {
                 ToolError::Validation(
                     "browser profiles are not enabled; \
-                     set [fetch.browser].persistent_profiles_enabled = true"
+                     set [fetch.browser.persistent_profiles].enabled = true"
                         .to_string(),
                 )
             })?;
@@ -176,11 +247,20 @@ pub(crate) fn validate_batch_route_options(
             let request_origin = format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
             mgr.resolve_for_origin(profile_name, &request_origin)
                 .map_err(|error| match error {
-                    crate::fetch::browser::ProfileError::ProfileNotFound(message) => {
-                        ToolError::Validation(format!("browser_profile: {message}"))
+                    crate::fetch::browser::ProfileError::ProfileNotFound(_) => {
+                        let command = format!("eggsearch browser-login {request_origin} --profile {profile_name}");
+                        ToolError::execution_with_repair(
+                            ToolErrorCode::ManualInteractionRequired,
+                            format!("browser_profile: {profile_name}; run `{command}`"),
+                            RepairHint::new(
+                                Some("browser_profile"),
+                                &["an existing or new persistent browser profile"],
+                                Some(&command),
+                            ),
+                        )
                     }
                     crate::fetch::browser::ProfileError::ProfilesDisabled => {
-                        ToolError::Validation("browser profiles are not enabled".to_string())
+                        ToolError::Validation("browser profiles are not enabled; set [fetch.browser.persistent_profiles].enabled = true".to_string())
                     }
                     other => ToolError::internal(format!("browser_profile: {other}")),
                 })?;
@@ -188,4 +268,65 @@ pub(crate) fn validate_batch_route_options(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fetch::FetchError;
+
+    #[test]
+    fn capability_misses_are_not_reported_as_upstream_failures() {
+        assert_eq!(
+            fetch_tool_error(FetchError::PdfNotCompiledIn).code(),
+            ToolErrorCode::CapabilityUnavailable
+        );
+        assert_eq!(
+            fetch_tool_error(FetchError::PdfDisabled).code(),
+            ToolErrorCode::CapabilityUnavailable
+        );
+        assert_eq!(
+            fetch_tool_error(FetchError::DocumentDisabled).code(),
+            ToolErrorCode::CapabilityUnavailable
+        );
+    }
+
+    #[test]
+    fn genuine_upstream_failures_keep_the_upstream_code() {
+        assert_eq!(
+            fetch_tool_error(FetchError::HttpStatus(503, String::new())).code(),
+            ToolErrorCode::UpstreamFailed
+        );
+    }
+
+    #[test]
+    fn http_status_text_is_not_duplicated() {
+        let message = fetch_tool_error(FetchError::HttpStatus(404, String::new())).to_string();
+        assert_eq!(message, "http_status: HTTP error: 404");
+        assert_eq!(message.matches("404").count(), 1);
+    }
+
+    #[cfg(not(feature = "documents"))]
+    #[test]
+    fn a_container_document_without_the_feature_names_the_rebuild() {
+        let message = fetch_tool_error(FetchError::UnsupportedContentType(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document".to_string(),
+        ))
+        .to_string();
+        assert!(
+            message.contains("--features documents"),
+            "the hint must name the rebuild: {message}"
+        );
+    }
+
+    #[cfg(feature = "browser")]
+    #[test]
+    fn browser_status_failures_keep_the_http_transport_shape() {
+        let error = browser_fetch_tool_error(
+            crate::fetch::browser::BrowserFetchError::HttpStatus(404),
+            None,
+        );
+        assert_eq!(error.code(), ToolErrorCode::UpstreamFailed);
+        assert_eq!(error.to_string(), "http_status: HTTP error: 404");
+    }
 }

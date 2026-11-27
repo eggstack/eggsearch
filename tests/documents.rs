@@ -69,6 +69,7 @@ async fn capability_report_is_honest_without_the_feature() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("provider status");

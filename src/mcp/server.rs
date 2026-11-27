@@ -216,15 +216,15 @@ fn apply_compact_profile(mut tools: Vec<rmcp::model::Tool>) -> Vec<rmcp::model::
 fn compact_description(name: &str) -> Option<&'static str> {
     Some(match name {
         "web_search" => "Search the public web for sources; use fetch to inspect a result.",
-        "provider_status" => "Check configured provider availability and diagnostics.",
-        "repo_search" => "Search repository code, documentation, issues, and releases.",
+        "provider_status" => "Report routable providers by default; request diagnostic detail for the full capability matrix. Use only when availability is in question; it is not a normal first research step.",
+        "repo_search" => "Discover repository evidence across source, docs, issues, releases, and packages. A `symbol` requires a non-empty `query` or a repository locator (`owner` and `repo`).",
         "fetch" => "Fetch one or more selected web or repository targets with bounded results; do not search or crawl.",
-        "security_search" => "Find vulnerability evidence and assess package applicability.",
+        "security_search" => "Find vulnerability and advisory evidence. Requires at least one of `query`, `package`, `cve_id`, `ghsa_id`, `osv_id`, or `rustsec_id`; use `web_search` for background.",
         "research_search" => "Gather grouped evidence for complex research questions.",
 
-        "repo_map" => "Describe a repository layout before searching or fetching files.",
+        "repo_map" => "Describe a repository layout without file contents. Requires forge identity via `owner` and `repo`; a matching local checkout may enrich the result.",
         "build_evidence_bundle" => {
-            "Package already selected search and fetch evidence for handoff."
+            "Package selected evidence for handoff; pass prior output in `sources` or `fetches` (at least one required). Does not search, fetch, or summarize."
         }
         _ => return None,
     })

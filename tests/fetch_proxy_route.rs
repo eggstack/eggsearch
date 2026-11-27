@@ -265,6 +265,7 @@ fn provider_status_reports_proxy_summary_without_environment_names() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::None),
+            response_detail: None,
         },
     )
     .expect("provider status succeeds without credentials");
@@ -281,6 +282,7 @@ fn provider_status_reports_proxy_summary_without_environment_names() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: Some(RecipeDetail::None),
+            response_detail: None,
         },
     )
     .expect("provider status succeeds with credentials");

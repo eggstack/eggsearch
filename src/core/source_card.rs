@@ -281,7 +281,13 @@ pub fn parse_result_timestamp(raw: &str) -> Option<String> {
         return None;
     }
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(trimmed) {
-        return Some(dt.with_timezone(&chrono::Utc).to_rfc3339());
+        let utc = dt.with_timezone(&chrono::Utc);
+        let format = if utc.timestamp_subsec_nanos() % 1_000_000 == 0 {
+            chrono::SecondsFormat::AutoSi
+        } else {
+            chrono::SecondsFormat::Millis
+        };
+        return Some(utc.to_rfc3339_opts(format, false));
     }
     if let Ok(date) = chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
         let dt = date.and_hms_opt(0, 0, 0)?.and_utc();
@@ -426,7 +432,11 @@ pub struct SourceCard {
     #[serde(default)]
     pub providers: Vec<String>,
     /// Optional aggregate score (e.g. RRF). Higher is more relevant.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_score"
+    )]
     pub score: Option<f64>,
     /// Trust label; for live web results this is `external_untrusted`.
     pub trust: TrustLevel,
@@ -452,6 +462,16 @@ pub struct SourceCard {
     /// to fetch more evidence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<crate::core::quality::ResultQuality>,
+}
+
+fn serialize_score<S>(score: &Option<f64>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match score {
+        Some(value) => serializer.serialize_some(&((value * 10_000.0).round() / 10_000.0)),
+        None => serializer.serialize_none(),
+    }
 }
 
 fn is_default_metadata(m: &SourceMetadata) -> bool {

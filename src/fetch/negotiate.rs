@@ -70,7 +70,7 @@ pub(crate) fn representation_of(
     kind: ContentKind,
 ) -> Option<FetchRepresentation> {
     if kind.is_pdf {
-        return None;
+        return Some(FetchRepresentation::PdfText);
     }
     if detect::is_markdown_content_type(content_type.unwrap_or("")) {
         return Some(FetchRepresentation::Markdown);

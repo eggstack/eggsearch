@@ -855,3 +855,186 @@ fn orchestration_fetch_disposition_escalation_decision() {
     assert!(!should_escalate(&FetchDisposition::ServerError));
     assert!(!should_escalate(&FetchDisposition::Unsupported));
 }
+
+#[cfg(feature = "mock")]
+struct BrowserStderrChild(std::process::Child);
+
+#[cfg(feature = "mock")]
+impl Drop for BrowserStderrChild {
+    fn drop(&mut self) {
+        if self.0.try_wait().ok().flatten().is_none() {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+}
+
+#[cfg(feature = "mock")]
+fn send_stdio_message(writer: &mut impl std::io::Write, value: &serde_json::Value) {
+    writeln!(writer, "{value}").unwrap();
+    writer.flush().unwrap();
+}
+
+#[cfg(feature = "mock")]
+fn receive_stdio_response(
+    receiver: &std::sync::mpsc::Receiver<serde_json::Value>,
+    id: u64,
+) -> serde_json::Value {
+    loop {
+        let response = receiver
+            .recv_timeout(std::time::Duration::from_secs(90))
+            .unwrap_or_else(|error| panic!("waiting for MCP response {id} failed: {error}"));
+        if response.get("id") == Some(&serde_json::json!(id)) {
+            return response;
+        }
+    }
+}
+
+#[cfg(feature = "mock")]
+#[test]
+fn stdio_browser_render_stderr_is_bounded_by_default() {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let browser = match discover_browser(None) {
+        BrowserDiscoveryState::Available(browser) => browser,
+        _ => {
+            eprintln!("Chrome/Chromium unavailable; skipping live browser stderr measurement");
+            return;
+        }
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let config_path = temp.path().join("eggsearch.toml");
+    let executable = serde_json::to_string(&browser.path.to_string_lossy()).unwrap();
+    std::fs::write(
+        &config_path,
+        format!(
+            "[search]\nmode = 'off'\n[fetch]\nenabled = true\ntimeout_ms = 60000\nmax_bytes = 2000000\nmax_chars_default = 2000\nmax_chars_cap = 50000\nallow_localhost = true\n[fetch.browser]\nenabled = true\npolicy = 'browser'\nexecutable = {executable}\nstartup_timeout_ms = 45000\nnavigation_timeout_ms = 45000\npost_load_wait_ms = 0\n"
+        ),
+    )
+    .unwrap();
+
+    let mut server = BrowserStderrChild(
+        Command::new(env!("CARGO_BIN_EXE_eggsearch"))
+            .arg("--config")
+            .arg(&config_path)
+            .args(["mcp", "stdio"])
+            .env_remove("RUST_LOG")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn eggsearch MCP stdio server"),
+    );
+    let mut stdin = server.0.stdin.take().unwrap();
+    let stdout = server.0.stdout.take().unwrap();
+    let stderr = server.0.stderr.take().unwrap();
+    let (stdout_sender, stdout_receiver) = std::sync::mpsc::channel();
+    let stdout_thread = std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match std::io::BufRead::read_line(&mut reader, &mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let message: serde_json::Value = serde_json::from_str(&line)
+                        .unwrap_or_else(|error| panic!("invalid MCP stdout: {error}: {line}"));
+                    if stdout_sender.send(message).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => panic!("read MCP stdout failed: {error}"),
+            }
+        }
+    });
+    let stderr_thread = std::thread::spawn(move || {
+        let mut stderr = stderr;
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+
+    send_stdio_message(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "wp7-stderr-test", "version": "0.0.0"}
+            }
+        }),
+    );
+    let initialize = receive_stdio_response(&stdout_receiver, 1);
+    assert!(initialize.get("error").is_none(), "{initialize}");
+    send_stdio_message(
+        &mut stdin,
+        &serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+    );
+    send_stdio_message(
+        &mut stdin,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "web_fetch",
+                "arguments": {
+                    "url": "https://93.184.216.34/eggsearch-browser-render-fixture",
+                    "render": "browser",
+                    "max_chars": 2000,
+                    "cache_policy": "bypass"
+                }
+            }
+        }),
+    );
+    let rendered = receive_stdio_response(&stdout_receiver, 2);
+    assert!(rendered.get("error").is_none(), "{rendered}");
+    assert_eq!(rendered["result"]["isError"], false, "{rendered}");
+    assert!(
+        rendered.to_string().contains("browser-render-marker"),
+        "{rendered}"
+    );
+    drop(stdin);
+
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = server.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "MCP stdio server did not exit after stdin closed"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let stderr = stderr_thread.join().unwrap();
+    stdout_thread.join().unwrap();
+    let stderr_text = String::from_utf8_lossy(&stderr);
+    let stderr_lines = stderr_text.lines().count();
+    assert!(
+        status.success(),
+        "server exited with {status}: {stderr_text}"
+    );
+    println!(
+        "browser render stderr: {stderr_lines} lines / {} bytes",
+        stderr.len()
+    );
+    assert!(
+        !stderr_text.contains("WS Invalid message"),
+        "chromiumoxide websocket warnings leaked to stderr: {stderr_text}"
+    );
+    assert!(
+        stderr_lines < 20,
+        "browser render emitted {stderr_lines} stderr lines: {stderr_text}"
+    );
+    assert!(
+        stderr.len() < 4096,
+        "browser render emitted {} stderr bytes: {stderr_text}",
+        stderr.len()
+    );
+}

@@ -20,7 +20,7 @@ use crate::core::source_card::SourceKind;
 
 /// Build an evidence bundle from a request. Pure function — no I/O.
 pub fn build_evidence_bundle(request: EvidenceBundleRequest) -> EvidenceBundle {
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
 
     // Clamp caps to server-enforced bounds
     let max_sources = request

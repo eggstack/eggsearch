@@ -317,6 +317,10 @@ pub enum FetchRepresentation {
     Markdown,
     /// An HTML body (`text/html` or `application/xhtml+xml`).
     Html,
+    /// Text extracted from a PDF document.
+    PdfText,
+    /// Content extracted from a container document such as DOCX, XLSX, or CSV.
+    Document,
 }
 
 /// Cache policy for a fetch request.
@@ -392,8 +396,10 @@ pub struct WebFetchResponse {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
     /// Representation the origin served: `markdown` when the body is
-    /// Markdown, `html` when it is HTML. Omitted when the body is another
-    /// format (PDF, JSON, plain text) or was rendered by the browser.
+    /// Markdown, `html` when it is HTML or browser-rendered HTML, `pdf_text`
+    /// when the text was extracted from a PDF, and `document` when it came
+    /// from a container document such as DOCX, XLSX, or CSV. Omitted for
+    /// plain text and other formats.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub representation: Option<FetchRepresentation>,
     /// HTTP status code.

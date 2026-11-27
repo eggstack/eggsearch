@@ -13,6 +13,8 @@ pub enum ResponseDetail {
 }
 
 pub const DEFAULT_BRIEF_MAX_CHARS: usize = 8_000;
+const MIN_BRIEF_TEXT_CHARS: usize = 512;
+const BRIEF_NOTICE_RESERVE: usize = 512;
 
 impl ResponseDetail {
     pub fn as_str(self) -> &'static str {
@@ -222,14 +224,31 @@ fn project_brief(
         .and_then(|key| projected.get(key))
         .and_then(serde_json::Value::as_array)
         .map_or(0, Vec::len);
-    let mut clipped = false;
+    let inherited_omitted = projected
+        .get("omitted_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as usize;
+    let mut clipped = projected
+        .get("output_truncated")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
     let mut omitted = 0usize;
+    let mut omitted_labels: Vec<String> = Vec::new();
     let mut per_text_limit = max_chars;
     loop {
         clipped |= clip_brief_strings(&mut projected, per_text_limit);
+        if brief_serialized_chars(&projected) > max_chars && per_text_limit > MIN_BRIEF_TEXT_CHARS {
+            per_text_limit = (per_text_limit / 2).max(MIN_BRIEF_TEXT_CHARS);
+            continue;
+        }
+        let removal_target = if brief_serialized_chars(&projected) > max_chars {
+            max_chars.saturating_sub(BRIEF_NOTICE_RESERVE)
+        } else {
+            max_chars
+        };
         loop {
             let size = brief_serialized_chars(&projected);
-            if size <= max_chars {
+            if size <= removal_target {
                 break;
             }
             let Some(key) = primary_key else {
@@ -312,8 +331,20 @@ fn project_brief(
                 }
                 break;
             };
+            let label = values[index]
+                .get("label")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| values[index].get("url").and_then(serde_json::Value::as_str))
+                .or_else(|| {
+                    values[index]
+                        .get("title")
+                        .and_then(serde_json::Value::as_str)
+                })
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("item {index}"));
             values.remove(index);
             omitted += 1;
+            omitted_labels.push(label);
         }
         let retained_count = primary_key
             .and_then(|key| projected.get(key))
@@ -331,6 +362,38 @@ fn project_brief(
             break;
         }
         per_text_limit = (per_text_limit / 2).min(per_text_limit.saturating_sub(1));
+    }
+    if !omitted_labels.is_empty() {
+        let headroom = max_chars.saturating_sub(brief_serialized_chars(&projected));
+        let first = omitted_labels
+            .first()
+            .map(|label| label.chars().take(64).collect::<String>())
+            .unwrap_or_default();
+        let message = if headroom >= 160 {
+            Some(format!(
+                "brief budget {max_chars} chars omitted {} item(s) after clipping; first: {first}",
+                omitted_labels.len()
+            ))
+        } else if headroom >= 48 {
+            Some(format!(
+                "brief budget {max_chars} omitted {}",
+                omitted_labels.len()
+            ))
+        } else {
+            None
+        };
+        if let Some(mut message) = message {
+            let cap = headroom.saturating_sub(8);
+            if message.chars().count() > cap {
+                message = message.chars().take(cap).collect();
+            }
+            if !message.is_empty() {
+                push_brief_warning(&mut projected, message, max_chars);
+            }
+        }
+    }
+    if matches!(tool, "fetch" | "batch_fetch") {
+        recompute_brief_fetch_chars(&mut projected);
     }
     for optional in [
         "next_actions",
@@ -369,7 +432,7 @@ fn project_brief(
         object.insert("returned_count".into(), retained_count.into());
         object.insert(
             "omitted_count".into(),
-            (omitted.max(original_count.saturating_sub(retained_count))).into(),
+            (inherited_omitted + omitted.max(original_count.saturating_sub(retained_count))).into(),
         );
         object.insert(
             "output_truncated".into(),
@@ -487,6 +550,90 @@ fn record_failed_batch_member(value: &mut serde_json::Value, index: u64) {
             indices.sort_by_key(|value| value.as_u64().unwrap_or(u64::MAX));
         }
     }
+}
+
+fn push_brief_warning(value: &mut serde_json::Value, message: String, max_chars: usize) {
+    let warning = crate::core::warning::AgentWarning::new(
+        crate::core::warning::WarningCode::FetchContentTruncated,
+        message.clone(),
+    );
+    let structured = serde_json::to_value(&warning).ok();
+    {
+        let Some(object) = value.as_object_mut() else {
+            return;
+        };
+        let Some(warnings) = object
+            .get_mut("warnings")
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            return;
+        };
+        warnings.push(serde_json::Value::String(message));
+    }
+    if brief_serialized_chars(value) > max_chars {
+        if let Some(warnings) = value
+            .get_mut("warnings")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            warnings.pop();
+        }
+        return;
+    }
+    let Some(entry) = structured else {
+        return;
+    };
+    let cost = serde_json::to_string(&entry)
+        .map(|encoded| encoded.chars().count().saturating_add(1))
+        .unwrap_or(usize::MAX);
+    if brief_serialized_chars(value)
+        .saturating_add(cost)
+        .saturating_add(1)
+        > max_chars
+    {
+        return;
+    }
+    if let Some(structured_warnings) = value
+        .get_mut("structured_warnings")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        structured_warnings.push(entry);
+    }
+}
+
+fn recompute_brief_fetch_chars(value: &mut serde_json::Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    let mut total = 0usize;
+    if let Some(results) = object
+        .get_mut("results")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for result in results.iter_mut() {
+            let Some(item) = result.as_object_mut() else {
+                continue;
+            };
+            let statement_chars = item
+                .get("response")
+                .and_then(|response| response.get("text"))
+                .and_then(serde_json::Value::as_str)
+                .map(|text| text.chars().count());
+            match statement_chars {
+                Some(chars) => {
+                    item.insert("chars_returned".into(), chars.into());
+                    total = total.saturating_add(chars);
+                }
+                None => {
+                    let existing = item
+                        .get("chars_returned")
+                        .and_then(serde_json::Value::as_u64)
+                        .unwrap_or(0) as usize;
+                    total = total.saturating_add(existing);
+                }
+            }
+        }
+    }
+    object.insert("total_chars_returned".into(), total.into());
 }
 
 fn brief_serialized_chars(value: &serde_json::Value) -> usize {

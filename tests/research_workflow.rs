@@ -2685,6 +2685,7 @@ async fn repo_fetch_tool_in_server_capabilities() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("provider_status should succeed");
@@ -3471,6 +3472,7 @@ fn provider_status_local_workspace_not_enabled_by_default() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -3507,6 +3509,7 @@ fn provider_status_local_workspace_enabled_when_configured() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -5355,6 +5358,7 @@ fn provider_status_includes_tool_capabilities() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -5429,6 +5433,7 @@ fn provider_status_tool_capabilities_local_enabled() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");
@@ -6948,6 +6953,7 @@ fn batch_fetch_provider_status_capability() {
         ProviderStatusArgs {
             probe: false,
             recipe_detail: None,
+            response_detail: None,
         },
     )
     .expect("ok");

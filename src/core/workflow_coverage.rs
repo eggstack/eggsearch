@@ -203,6 +203,7 @@ pub struct WorkflowCoverageResult {
     /// Overall coverage status.
     pub status: CoverageStatus,
     /// Confidence in completeness from 0.0 to 1.0.
+    #[serde(serialize_with = "serialize_confidence")]
     pub completion_confidence: f32,
     /// Human-readable reasons for the status.
     pub reasons: Vec<String>,
@@ -719,6 +720,13 @@ pub fn compute_coverage(
         next_actions,
         resolution_source: None,
     }
+}
+
+fn serialize_confidence<S>(value: &f32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_f32(*value)
 }
 
 #[cfg(test)]

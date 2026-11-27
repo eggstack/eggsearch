@@ -47,6 +47,7 @@ pub struct WebFetchArgs {
     pub attributes: Option<Vec<crate::core::fetch::FetchAttributeRequest>>,
     /// PDF-specific options. Only applies when fetching a PDF document.
     #[serde(default)]
+    #[cfg_attr(not(feature = "pdf"), schemars(skip))]
     pub pdf: Option<crate::core::fetch::PdfFetchOptions>,
     /// Cache policy: "default" (use cache), "bypass" (skip read),
     /// "refresh" (revalidate even if fresh), or "cache_only" (read stored derived data only).
@@ -76,6 +77,7 @@ pub struct WebFetchArgs {
     /// Controls whether fetch may escalate to headless browser rendering
     /// for JavaScript-heavy pages. Requires the `browser` feature.
     #[serde(default)]
+    #[cfg_attr(not(feature = "browser"), schemars(skip))]
     pub render: Option<String>,
     /// Named browser profile for persistent session reuse. When set,
     /// the fetch uses a profile-scoped Chrome context with persisted
@@ -84,7 +86,9 @@ pub struct WebFetchArgs {
     /// (`eggsearch browser-login`). Omit for ephemeral browser context.
     /// Requires the `browser` feature.
     #[serde(default)]
+    #[cfg_attr(not(feature = "browser"), schemars(skip))]
     pub browser_profile: Option<String>,
+    #[cfg_attr(not(feature = "browser"), schemars(skip))]
     #[schemars(
         description = "Include a bounded viewport screenshot of an HTTP(S) webpage as MCP image content."
     )]
@@ -435,7 +439,7 @@ async fn run_web_fetch_inner(
             let mgr = state.profile_manager.as_ref().ok_or_else(|| {
                 ToolError::Validation(
                     "browser profiles are not enabled; \
-                     set [fetch.browser].persistent_profiles_enabled = true"
+                     set [fetch.browser.persistent_profiles].enabled = true"
                         .to_string(),
                 )
             })?;
@@ -445,11 +449,20 @@ async fn run_web_fetch_inner(
             let meta = mgr
                 .resolve_for_origin(profile_name, &request_origin)
                 .map_err(|e| match e {
-                    crate::fetch::browser::ProfileError::ProfileNotFound(msg) => {
-                        ToolError::Validation(format!("browser_profile: {msg}"))
+                    crate::fetch::browser::ProfileError::ProfileNotFound(_) => {
+                        let command = format!("eggsearch browser-login {request_origin} --profile {profile_name}");
+                        ToolError::execution_with_repair(
+                            ToolErrorCode::ManualInteractionRequired,
+                            format!("browser_profile: {profile_name}; run `{command}`"),
+                            RepairHint::new(
+                                Some("browser_profile"),
+                                &["an existing or new persistent browser profile"],
+                                Some(&command),
+                            ),
+                        )
                     }
                     crate::fetch::browser::ProfileError::ProfilesDisabled => {
-                        ToolError::Validation("browser profiles are not enabled".to_string())
+                        ToolError::Validation("browser profiles are not enabled; set [fetch.browser.persistent_profiles].enabled = true".to_string())
                     }
                     other => ToolError::internal(format!("browser_profile: {other}")),
                 })?;
@@ -852,34 +865,11 @@ async fn run_web_fetch_inner(
                         response = Some(resp);
                         true
                     }
-                    Ok(Err(crate::fetch::browser::BrowserFetchError::InteractiveChallenge(
-                        mir,
-                    ))) => {
-                        let next_action = used_profile_name
-                            .as_deref()
-                            .map(|pn| {
-                                format!("eggsearch browser-login {} --profile {}", mir.origin, pn)
-                            })
-                            .or_else(|| {
-                                Some(format!(
-                                    "eggsearch browser-login {} --profile <name>",
-                                    mir.origin
-                                ))
-                            });
-                        return Err(browser_manual_interaction_error(
-                            &mir.origin,
-                            &mir.message,
+                    Ok(Err(error)) => {
+                        return Err(super::web_fetch_options::browser_fetch_tool_error(
+                            error,
                             used_profile_name.as_deref(),
-                            next_action.as_deref(),
                         ));
-                    }
-                    Ok(Err(crate::fetch::browser::BrowserFetchError::LaunchFailed(reason))) => {
-                        return Err(browser_unavailable_error(&format!(
-                            "browser launch failed: {reason}"
-                        )));
-                    }
-                    Ok(Err(e)) => {
-                        return Err(ToolError::internal(format!("browser_fetch_failed: {e}")));
                     }
                     Err(_) => {
                         return Err(ToolError::internal(
@@ -1306,9 +1296,7 @@ async fn run_web_fetch_inner(
                 include_links,
                 args.pdf.as_ref(),
             )
-            .map_err(|error| {
-                ToolError::upstream_failed(format!("{}: {error}", error.error_code()))
-            })?
+            .map_err(super::web_fetch_options::fetch_tool_error)?
     };
 
     let snapshot_change = if let Some(request) = snapshot_request {

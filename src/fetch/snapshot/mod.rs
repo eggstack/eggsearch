@@ -70,6 +70,8 @@ pub(crate) async fn compare_response(
     let representation_class = match response.representation {
         Some(crate::core::fetch::FetchRepresentation::Html) => "html",
         Some(crate::core::fetch::FetchRepresentation::Markdown) => "markdown",
+        Some(crate::core::fetch::FetchRepresentation::PdfText) => "pdf_text",
+        Some(crate::core::fetch::FetchRepresentation::Document) => "document",
         None => "other",
     };
     let identity = SnapshotIdentity {

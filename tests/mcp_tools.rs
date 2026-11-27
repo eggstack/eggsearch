@@ -283,6 +283,7 @@ fn provider_status_pdf_capabilities_track_feature_and_config() {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("provider status");
@@ -318,6 +319,7 @@ fn provider_status_documents_capabilities_track_feature_and_config() {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("provider status");
@@ -362,6 +364,7 @@ fn provider_status_reports_active_mcp_advertisement() {
             ProviderStatusArgs {
                 probe: false,
                 recipe_detail: None,
+                response_detail: None,
             },
         )
         .expect("provider status");

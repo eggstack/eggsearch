@@ -116,6 +116,12 @@ pub enum WarningCode {
     FetchChallengePage,
     /// Escalation was warranted but no usable browser rendering capability exists.
     BrowserUnavailable,
+    /// An include selector matched nodes but produced no text blocks.
+    SelectorNoBlocks,
+    /// Rendered text is a small fraction of the document text, so extraction may be incomplete.
+    ExtractionSparse,
+    /// The page looks like it needs browser rendering but the request did not ask for it.
+    RenderSuspected,
 
     // --- PDF Quality ---
     /// A PDF page has sparse or low-quality extracted text.
@@ -270,6 +276,9 @@ impl WarningCode {
             Self::FetchWarning => "fetch_warning",
             Self::FetchChallengePage => "fetch_challenge_page",
             Self::BrowserUnavailable => "browser_unavailable",
+            Self::SelectorNoBlocks => "selector_no_blocks",
+            Self::ExtractionSparse => "extraction_sparse",
+            Self::RenderSuspected => "render_suspected",
             Self::PdfPageSparseText => "pdf_page_sparse_text",
             Self::PdfPageCidCorrupt => "pdf_page_cid_corrupt",
             Self::PdfPageLikelyScanned => "pdf_page_likely_scanned",
@@ -365,6 +374,9 @@ impl WarningCode {
             | Self::FetchWarning
             | Self::FetchChallengePage
             | Self::BrowserUnavailable
+            | Self::SelectorNoBlocks
+            | Self::ExtractionSparse
+            | Self::RenderSuspected
             | Self::PdfPageSparseText
             | Self::PdfPageCidCorrupt
             | Self::PdfPageLikelyScanned
@@ -525,6 +537,13 @@ impl WarningCode {
             Self::BrowserUnavailable => Some(
                 "Browser escalation was needed but rendering is unavailable; check provider_status.browser_capabilities.reason.",
             ),
+            Self::SelectorNoBlocks => {
+                Some("Choose a selector with text or target a non-empty descendant.")
+            }
+            Self::ExtractionSparse => {
+                Some("Inspect the page with include_selectors targeting the content container.")
+            }
+            Self::RenderSuspected => Some("Retry with render: \"browser\"."),
             Self::PdfPageSparseText => {
                 Some("Page has sparse text; content may be incomplete or degraded.")
             }
@@ -1387,6 +1406,22 @@ mod tests {
             agent_warnings[2].code,
             WarningCode::PromptInjectionMarkerDetected
         );
+    }
+
+    #[test]
+    fn convert_fetch_extraction_warnings_maps_to_typed_codes() {
+        let warnings = vec![
+            "selector_no_blocks: matched_roots=1".to_string(),
+            "extraction_sparse: text_chars=20 dom_text_chars=1000 ratio=0.020".to_string(),
+            "render_suspected: retry with render: \"browser\"".to_string(),
+        ];
+        let converted = convert_fetch_warnings(&warnings);
+        assert_eq!(converted[0].code, WarningCode::SelectorNoBlocks);
+        assert_eq!(converted[1].code, WarningCode::ExtractionSparse);
+        assert_eq!(converted[2].code, WarningCode::RenderSuspected);
+        assert!(converted
+            .iter()
+            .all(|warning| warning.recommended_action.is_some()));
     }
 
     #[test]
