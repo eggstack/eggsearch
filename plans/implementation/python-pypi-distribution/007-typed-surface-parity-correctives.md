@@ -22,6 +22,7 @@ schemas, workflows, and versions are correct and are not reopened.
 | F1 `provider_status` advertises `response_detail`, but `ProviderStatusRequest` omits it. | Hosted `Python native qualification` run `46067192070` on `699f909`, job `Rebuild and smoke extracted sdist`: `AssertionError: provider_status request type is missing schema properties: ['response_detail']`. The canonical schema properties are `probe`, `recipe_detail`, and `response_detail`. |
 | F2 `fetch` advertises `web`, `repo`, and `site` items, but the item test still asserts only `{WebFetchItem, RepoFetchItem}`. | Same run and job: `Extra items in the left set: SiteFetchItem`. The canonical `fetch` schema names all three item types and carries the `SiteQueryNormalization` definition. |
 | F3 `SiteFetchItem` exists in `eggsearch.types`, but `eggsearch/__init__.py` does not re-export it, so importing it from the package fails. | Follow-up hosted run `46069918230` on `3a9d649`, job `Rebuild and smoke extracted sdist`: `ImportError: cannot import name 'SiteFetchItem' from 'eggsearch'`. The package exports `WebFetchItem` and `RepoFetchItem`, so the site class is the only missing item export. |
+| F4 The `WebFetchItem` field assertion omits `attributes`, `include_selectors`, and `exclude_selectors`, which the Python type and the canonical `FetchWebItem` definition both carry. | Hosted run `46071404018` on `ec54c73`, job `Emulated ARMv7 installed-wheel smoke`: `AssertionError: assert {'attributes'... 'focus', ...} == {'browser_pro..._chunks', ...}` at the web field-set assertion. |
 
 All 26 failing jobs in that run report the same two assertions (each: 2 failed, 26 passed).
 The other three main workflows on the same commit succeeded.
@@ -41,10 +42,14 @@ fast-forwarding `main` across Rust tool-surface changes.
   `ProviderStatusRequest`.
 - WP2 Restore the item union and its export: re-export `SiteFetchItem` from `eggsearch`, assert
   it in `FetchItem`, and assert its exact field set (`type`, `url`, `limit`, `include_subdomains`,
-  `link_discovery`, `normalize_query`) against the Rust site variant.
+  `link_discovery`, `normalize_query`) against the Rust site variant, and refresh the stale
+  web-item field set.
 - WP3 Prove locally before pushing: compare every `REQUEST_TYPES` entry against the canonical
   `tools/list` schemas from `mcp stdio` (the same data `tool_contracts()` returns), then confirm
   the hosted run.
+- WP4 Add a schema-derived guard: `test_fetch_item_field_sets_match_canonical_rust_schema`
+  compares each Python item type against the canonical `FetchItem` union definitions, so a future
+  field change fails on parity rather than on a hand-maintained list.
 
 ## Acceptance
 

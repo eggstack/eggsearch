@@ -253,8 +253,11 @@ def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
     assert set(web_fields) == {
         "type",
         "url",
+        "attributes",
         "extract_mode",
         "include_links",
+        "include_selectors",
+        "exclude_selectors",
         "max_chars",
         "cache_policy",
         "max_cache_age_seconds",
@@ -316,6 +319,38 @@ def test_fetch_item_types_are_tagged_and_cover_batch_item_fields():
         "limit",
         "response_detail",
     } <= set(request_fields)
+
+def test_fetch_item_field_sets_match_canonical_rust_schema():
+    contracts = AsyncEggsearch().tool_contracts()
+    schemas = {
+        contract["name"]: contract["input_schema"]
+        for contract in contracts["tools"]
+    }
+    definitions = schemas["fetch"]["$defs"]
+    schema_items = {}
+    for variant in definitions["FetchItem"]["oneOf"]:
+        tag = variant.get("properties", {}).get("type", {}).get("const")
+        if tag is None:
+            continue
+        properties = set(variant.get("properties", {}))
+        reference = variant.get("$ref")
+        if reference:
+            properties |= set(definitions[reference.rsplit("/", 1)[-1]].get("properties", {}))
+        schema_items[tag] = properties
+
+    python_items = {
+        "web": WebFetchItem,
+        "repo": RepoFetchItem,
+        "site": SiteFetchItem,
+    }
+    assert set(schema_items) == set(python_items)
+    for tag, item_type in python_items.items():
+        actual = set(typing.get_type_hints(item_type, include_extras=True))
+        assert actual == schema_items[tag], (
+            tag,
+            f"python-only={sorted(actual - schema_items[tag])}",
+            f"schema-only={sorted(schema_items[tag] - actual)}",
+        )
 
 
 def test_typed_requests_cover_canonical_rust_input_schemas():
