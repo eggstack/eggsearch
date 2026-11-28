@@ -1,6 +1,6 @@
 # Web Acquisition M008 — Container-Document Default Enablement — Status
 
-Status: conditionally closed
+Status: closed
 Date: 2026-11-26
 Milestone: M008 — Container-Document Default Enablement
 Milestone class: capability
@@ -87,7 +87,8 @@ difference is the feature plus the M007 corrections in the same compilation grap
 The wheel cost is 2.20–2.73% per target, consistent with the +2.34% measured on the
 host binary. No wheel approaches the 20 MB review figure, so the plan's written-reason
 requirement is not triggered on the wheel side; that requirement still applies to the
-seven release assets, three of which already exceed it.
+seven release assets, which the measured candidate in the size section shows exceeding it on
+all seven targets.
 
 ## Capability report on a default build
 
@@ -132,19 +133,47 @@ so the delta is the feature's cost and nothing else:
 | `--no-default-features --features pdf,browser` (the pre-flip artifact shape) | 29,370,512 | 28.01 | — |
 | `--no-default-features --features pdf,browser,documents` (the new default) | 30,058,304 | 28.67 | +687,792 bytes (+2.34%, +0.66 MiB) |
 
-The published `v0.4.4` assets are 17,960,304 bytes (`aarch64-apple-darwin`),
-21,655,040 (`aarch64-pc-windows-msvc`), 18,524,080
-(`aarch64-unknown-linux-gnu`), 17,710,392 (`armv7-unknown-linux-gnueabihf`),
-19,779,368 (`x86_64-apple-darwin`), 25,869,312 (`x86_64-pc-windows-msvc`), and
-21,457,240 (`x86_64-unknown-linux-gnu`). The local pre-flip binary is 1.6 times
-the published host asset, so a local absolute figure is not comparable to a
-published one and this record does not pretend otherwise: the delta above is the
-only locally sound number, and the absolute per-target table the plan asks for
-requires the release candidate built by the producer.
+The per-target table below is the producer's own candidate build, not a local
+substitute. Run `46117453196` (`workflow_dispatch`, `candidate_sha`
+`cd075fc704b5c03dc2bc28f6a5c5408a320801a4`) built and qualified all seven lanes in
+27.8 minutes with 25 of 25 jobs green. Its `summary.json` records
+`source_revision: cd075fc704b5c03dc2bc28f6a5c5408a320801a4`, `release_id: v0.4.5`
+and `outcome: complete`, and the bytes below are read from the finalized release
+directory it produced — the directory publication would use. The producer builds
+through the crate's own `[profile.release]`, so these are stripped release binaries
+comparable to the published ones.
 
-Three published targets already exceed ADR-0024 §5's 20 MB review figure. A
-+2.34% delta does not move a target across that figure in either direction
-except where it already sat within 0.66 MiB below it, and none does.
+| Target | `v0.4.4` published | Candidate | Delta | Over 20 MB |
+|---|---|---|---|---|
+| `aarch64-apple-darwin` | 17,960,304 | 29,368,752 | +11,408,448 (+63.5%) | yes |
+| `aarch64-pc-windows-msvc` | 21,655,040 | 35,251,712 | +13,596,672 (+62.8%) | yes |
+| `aarch64-unknown-linux-gnu` | 18,524,080 | 29,984,432 | +11,460,352 (+61.9%) | yes |
+| `armv7-unknown-linux-gnueabihf` | 17,710,392 | 29,356,628 | +11,646,236 (+65.8%) | yes |
+| `x86_64-apple-darwin` | 19,779,368 | 32,369,512 | +12,590,144 (+63.7%) | yes |
+| `x86_64-pc-windows-msvc` | 25,869,312 | 42,128,384 | +16,259,072 (+62.9%) | yes |
+| `x86_64-unknown-linux-gnu` | 21,457,240 | 34,714,936 | +13,257,696 (+61.8%) | yes |
+
+### Review-threshold reason
+
+ADR-0024 §5's 20 MB figure was already exceeded by three published `v0.4.4`
+targets, and the candidate exceeds it on all seven. The reason, applicable to every
+row: **this milestone contributes about +0.69 MB (+2.3%); the rest of the increase
+predates it.**
+
+That attribution is measured rather than assumed. The local two-feature-set build
+above isolates the feature at +687,792 bytes (+2.34%), and the hosted wheels agree at
++2.20–2.73% per target. On the host target the candidate is +11,408,448 bytes against
+`v0.4.4`, of which the feature accounts for roughly 6%. The remaining ~10.7 MB is
+not this milestone's: a `documents`-off build of the same source is 29,370,512
+bytes, within 1,760 bytes of the producer's `documents`-on 29,368,752, so enabling
+the feature is not what separates this candidate from `v0.4.4`.
+
+The growth is **attributed but not explained**. It predates M008 and is reproduced by
+the producer, so it is not an artifact of this worktree, but its cause is not
+identified here and would require bisecting the release history between `v0.4.4` and
+this candidate. The plan's stop condition for an unexplained size figure is therefore
+live at the aggregate level, even though this milestone's own share is explained and
+small.
 
 ## Gates
 
@@ -163,6 +192,7 @@ except where it already sat within 0.66 MiB below it, and none does.
 | `cargo check --locked --no-default-features` | passes, so the lean shape still compiles |
 | `cargo test --locked --no-default-features --test documents` | 3 passed, rebuilt from current sources |
 | Hosted `Python native qualification`, run 46115248218 | 41/41 jobs succeeded on `cd075fc`: wheel and sdist built `--locked`, installed and tested on five platforms across CPython 3.11–3.15 |
+| Hosted eggpack candidate qualification, run 46117453196 | 25/25 jobs succeeded; all seven lanes built and finalized from `candidate_sha` `cd075fc`, `outcome: complete` |
 
 The `make check` row is the final run on the finished tree and covers the four documents
 cases as well as the rest of the gate. An earlier run preceded the last M007 fixture
@@ -189,29 +219,43 @@ here.
 
 ## Closure conditions
 
-The hosted-qualification condition is satisfied: run `46115248218` passed 41 of 41
-jobs on `cd075fc`, so the wheel change is qualified rather than locally inferred. One
-acceptance item remains, and this record does not claim it:
+All three conditions the plan names are met.
 
-1. **The per-target absolute size table for the seven release assets must come from the
-   producer's release candidate.** Only the host target is buildable here, and its
-   absolute figure is not comparable to the published assets, as the size section
-   explains. The wheel delta the plan also asks for is now measured, in the hosted
-   section above.
+1. **Hosted wheel qualification is green.** Run `46115248218` passed 41 of 41 jobs on
+   `cd075fc`.
+2. **The per-target size evidence comes from the producer's candidate.** Run
+   `46117453196` passed 25 of 25 jobs and produced the seven sizes above, with
+   `source_revision: cd075fc704b5c03dc2bc28f6a5c5408a320801a4` and
+   `outcome: complete`.
+3. **The size review is decided.** On 2026-11-28 the maintainer accepted the candidate
+   for review instead of taking ADR-0027 alternative 1: the default flip stays, and the
+   written reason in the review-threshold section travels with the release.
 
-The milestone therefore stays `conditionally closed`. The remaining condition fails
-closed in the release pipeline: a target that does not build stops publication before any
-asset is replaced, and the recovery is ADR-0027 alternative 1 rather than a per-target
-feature set.
+### Size review decision
+
+Decision: **keep the default feature set and send `v0.4.5` to size review**, taken
+2026-11-28 on the evidence above, in place of the plan's alternative-1 recovery.
+
+The decision rests on the attribution rather than the aggregate. This milestone's cost
+is +0.69 MB (+2.3%), measured twice — once by the local two-feature-set build and once
+by the hosted wheels — while the ~+60% pre-existing growth is a release-candidate
+question that the review answers.
+
+Carried forward rather than closed by this decision: the cause of that pre-existing
+growth is still unidentified. It is a known issue for the release candidate and would
+need a bisect between `v0.4.4` and this candidate. If the review rejects the growth,
+ADR-0027 alternative 1 remains the documented recovery.
 
 ## Limitations
 
-- **The seven release assets are neither measured nor reproducible here.** Only the
-  host target builds locally, and its absolute figure is not comparable to the
-  published bytes as explained above, so the per-target binary table still needs the
-  producer's candidate. The wheel side is qualified and its delta measured (41 of 41
-  jobs above); the release assets are not.
-- The local pre-flip binary being 1.6 times the published host asset is
-  unexplained. It is a pre-existing property of this worktree's build versus the
-  published `v0.4.4` artifact, not something this milestone introduced, and the
-  review question it raises belongs to the release candidate.
+- **The candidate's aggregate size growth has no identified cause.** All seven assets
+  exceed the 20 MB review figure, and about 60% of the increase against `v0.4.4`
+  predates this milestone. It is reproduced by the producer, so it is not a worktree
+  artifact, but attributing it needs a bisect of the release history this milestone
+  does not own. The size-review decision accepts it as a carried-forward known issue
+  rather than a closure blocker.
+- **A `workflow_dispatch` run's `headSha` is its dispatch ref, not its candidate.**
+  Run `46117453196` reports `headSha` `40e362f` because it was dispatched from
+  `main`; the build source is the `candidate_sha` input. `summary.json` records
+  `source_revision` `cd075fc`, and the `resolve` job fails unless the checked-out
+  `HEAD` equals that input, so read the input rather than the run field.

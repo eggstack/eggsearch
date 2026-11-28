@@ -1,6 +1,6 @@
 # M008 — Container-Document Default Enablement
 
-Status: conditionally closed
+Status: closed
 Date: 2026-11-26
 Subsystem: web acquisition expansion
 Milestone class: capability
