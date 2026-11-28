@@ -12,10 +12,12 @@ Builds on: M007 (`plans/closure/web-acquisition-expansion/007-status.md`)
 
 ## Candidate and changes
 
-Local candidate: the baseline plus the M007 change set plus this change set,
-uncommitted in the worktree on `feat/auto-20261126-82ca75e6`, unchanged HEAD
-`40e362f`. The milestone is a build-configuration and distribution change; no
-production source line moved.
+Qualified candidate: `cd075fc704b5c03dc2bc28f6a5c5408a320801a4` on
+`m008-documents-default-qualification`, the baseline plus the M007 change set plus
+this change set, committed and pushed to `origin` so the hosted matrix could run
+against it. The milestone is a build-configuration and distribution change; no
+production source line moved. The hosted-evidence section below was written after
+that run, so `cd075fc` carries this record without it.
 
 - `Cargo.toml`: `default = ["pdf", "browser", "documents"]`.
 - `bindings/python/Cargo.toml`: `features = ["pdf", "browser", "documents"]`.
@@ -44,9 +46,48 @@ both resolve on the candidate; at baseline neither did. `cargo metadata --locked
 --manifest-path bindings/python/Cargo.toml` exits 0, so the lockfile is
 consistent under `--locked` for the new feature edge.
 
-A hosted wheel build is not evidence that this record can produce; see
-Limitations. The local `--locked` metadata resolution is the only lockfile
-evidence available here.
+The hosted matrix builds every wheel and the sdist with `--locked` against this
+lockfile and all 41 jobs passed, so the resolved closure is qualified rather than
+merely parseable. See Hosted Python native qualification below.
+
+## Hosted Python native qualification
+
+Run [46115248218](https://github.com/eggstack/eggsearch/actions/runs/46115248218),
+`workflow_dispatch` against `m008-documents-default-qualification`, head
+`cd075fc704b5c03dc2bc28f6a5c5408a320801a4`, created 2026-11-28T06:08:47Z and
+completed 06:27:35Z. **41 of 41 jobs succeeded.** The wheel builds, installs into a
+clean consumer environment outside the checkout, and passes the binding suite on all
+five platform rows across CPython 3.11–3.15, including the Chrome render case, both
+explicit browser-absence cases, the ARMv7 cross build with its emulated
+installed-wheel smoke, and the offline rebuild of the extracted sdist.
+
+The run also executed the canaries the plan names: package name `eggsearch`, MIT
+license, `requires-python >=3.11,<3.16`, one `abi3`/`cp311`-tagged wheel per target,
+and the three version fields agreeing at `0.4.5`. `cargo deny check` ran against
+both the root and the binding graph on the new dependency closure. Every wheel stayed
+under the workflow's 20 MB threshold, the largest at 17.87 MB.
+
+### Wheel delta
+
+Bytes are read from the two runs' own step summaries. The baseline is run
+`46072717384`, the last pre-flip qualification of `main` at `057a86d`, whose wheel
+was built without `documents`; the candidate is this run. Both are `0.4.5`, so the
+difference is the feature plus the M007 corrections in the same compilation graph.
+
+| Wheel | Pre-flip bytes | Candidate bytes | Delta |
+|---|---|---|---|
+| `macosx_10_12_x86_64` | 16,260,226 | 16,654,714 | +394,488 (+2.43%) |
+| `macosx_11_0_arm64` | 15,730,450 | 16,156,596 | +426,146 (+2.71%) |
+| `manylinux2014_aarch64` | 17,027,887 | 17,477,555 | +449,668 (+2.64%) |
+| `manylinux2014_x86_64` | 17,352,428 | 17,815,648 | +463,220 (+2.67%) |
+| `manylinux_2_39_x86_64` (rebuilt from the extracted sdist) | 17,392,704 | 17,867,056 | +474,352 (+2.73%) |
+| `win_amd64` | 15,471,670 | 15,812,137 | +340,467 (+2.20%) |
+| `eggsearch-0.4.5.tar.gz` | 1,709,188 | 1,714,989 | +5,801 (+0.34%) |
+
+The wheel cost is 2.20–2.73% per target, consistent with the +2.34% measured on the
+host binary. No wheel approaches the 20 MB review figure, so the plan's written-reason
+requirement is not triggered on the wheel side; that requirement still applies to the
+seven release assets, three of which already exceed it.
 
 ## Capability report on a default build
 
@@ -121,6 +162,7 @@ except where it already sat within 0.66 MiB below it, and none does.
 | `make check` (canonical gate) | exit 0; 6,699 cases across 101 suites, including the new `parity-check` lane |
 | `cargo check --locked --no-default-features` | passes, so the lean shape still compiles |
 | `cargo test --locked --no-default-features --test documents` | 3 passed, rebuilt from current sources |
+| Hosted `Python native qualification`, run 46115248218 | 41/41 jobs succeeded on `cd075fc`: wheel and sdist built `--locked`, installed and tested on five platforms across CPython 3.11–3.15 |
 
 The `make check` row is the final run on the finished tree and covers the four documents
 cases as well as the rest of the gate. An earlier run preceded the last M007 fixture
@@ -147,30 +189,28 @@ here.
 
 ## Closure conditions
 
-Two acceptance items are not satisfiable from this worktree, and this record claims
-neither. The milestone is therefore `conditionally closed` rather than `closed`:
+The hosted-qualification condition is satisfied: run `46115248218` passed 41 of 41
+jobs on `cd075fc`, so the wheel change is qualified rather than locally inferred. One
+acceptance item remains, and this record does not claim it:
 
-1. **Hosted `Python native qualification` must be green on this change.** The plan names
-   it as an operational dependency and says a local wheel build is not evidence.
-2. **The per-target absolute size table and the wheel delta must come from the producer's
-   release candidate.** Only the host target is buildable here, and its absolute figure is
-   not comparable to the published assets, as the size section explains.
+1. **The per-target absolute size table for the seven release assets must come from the
+   producer's release candidate.** Only the host target is buildable here, and its
+   absolute figure is not comparable to the published assets, as the size section
+   explains. The wheel delta the plan also asks for is now measured, in the hosted
+   section above.
 
-Nothing else is outstanding. Both conditions fail closed in the release pipeline: a
-target that does not build, or a wheel that does not qualify, stops publication before any
+The milestone therefore stays `conditionally closed`. The remaining condition fails
+closed in the release pipeline: a target that does not build stops publication before any
 asset is replaced, and the recovery is ADR-0027 alternative 1 rather than a per-target
 feature set.
 
 ## Limitations
 
-- **No hosted qualification.** The `Python native qualification` matrix and the
-  seven-target release build are not reproducible from this worktree. This record
-  claims neither, and the plan's operational dependency on that matrix remains
-  outstanding.
-- **Per-target absolute sizes are not measured.** Only the host target is
-  reproducible locally, and its absolute figure is not comparable to the
-  published asset bytes as explained above. Publication still requires the
-  producer's candidate binaries.
+- **The seven release assets are neither measured nor reproducible here.** Only the
+  host target builds locally, and its absolute figure is not comparable to the
+  published bytes as explained above, so the per-target binary table still needs the
+  producer's candidate. The wheel side is qualified and its delta measured (41 of 41
+  jobs above); the release assets are not.
 - The local pre-flip binary being 1.6 times the published host asset is
   unexplained. It is a pre-existing property of this worktree's build versus the
   published `v0.4.4` artifact, not something this milestone introduced, and the

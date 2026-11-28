@@ -12,16 +12,17 @@ Plan: `plans/implementation/web-acquisition-expansion/007-container-document-ext
 
 ## Candidate and changes
 
-Local candidate: the baseline plus this change set, uncommitted in the worktree on
-`feat/auto-20261126-82ca75e6`, unchanged HEAD `40e362f`. The change is library-internal:
-no tool, argument, wire string, config key, or dependency moves.
+Candidate: `cd075fc704b5c03dc2bc28f6a5c5408a320801a4` on
+`m008-documents-default-qualification`, the baseline plus this change set, committed
+and pushed so the hosted matrix could compile it. The change is library-internal: no
+tool, argument, wire string, config key, or dependency moves.
 
-- `src/fetch/documents/extract.rs` (1,406 lines / 49,078 bytes; ordinary ceiling 1,600
+- `src/fetch/documents/extract.rs` (1,411 lines / 49,337 bytes; ordinary ceiling 1,600
   lines / 80 KB): `Event::GeneralRef` handling through `decode_general_ref`, the
   `text_token` merge of adjacent character data, doctype acceptance, qualified
   attribute keys, the streamed XLSX size scan with observed-content bounds, the
   incremental CSV cell count, and per-part truncation carried on `RawPart`.
-- `src/fetch/documents/tests.rs` (570 lines): one fixture per defect plus the observed
+- `src/fetch/documents/tests.rs` (595 lines): one fixture per defect plus the observed
   bounding-rectangle refusal.
 - `tests/documents.rs` (418 lines): three end-to-end cases across the tool boundary.
 - `src/mcp/tools/web_fetch_options.rs`: `document_unsupported` classified as a
@@ -159,6 +160,7 @@ is left silent.
 | `cargo test --locked --all-features --lib fetch::cache` | 59 passed |
 | `cargo test --locked --all-features --test static_guards` | 69 passed |
 | `make check` (canonical gate) | exit 0; 6,699 cases across 101 suites; `parity-check` lane present |
+| Hosted `Python native qualification`, run 46115248218 on `cd075fc` | 41/41 jobs succeeded, so this change set compiles and passes in the wheel's platforms and interpreters, not only on the host |
 
 The canonical `make check` result above is the final run, on the tree that carries the
 remediation in the audit section, and it covers the four documents cases itself. An
