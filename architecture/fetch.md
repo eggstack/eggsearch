@@ -237,11 +237,13 @@ per-tier byte budgets with exact accounting (drift self-heals in `stats()`).
 - `DerivedCacheKey { scope, raw_content_hash, extraction_key }` where the hash
   is `xxh3_64(body)` (`build_raw_response_hash`) and `ExtractionCacheKey`
   covers `extract_mode`, exact `max_chars`, `include_links`, `pdf_pages`,
-  `pdf_ocr`, `include_media`, `renderer_version: 5`, and `sanitize_output`.
-  Version 5 isolates document-scoped extraction; version 4 isolates the
-  encrypted-PDF refusal behavior; version 3 isolates entries derived before
-  PDF page classification stopped depending on `include_media`; version 2
-  isolated entries written before representation negotiation existed.
+  `pdf_ocr`, `include_media`, `renderer_version: 6`, and `sanitize_output`.
+  Version 6 covers the extraction-fidelity and bound changes and invalidates
+  every derived-cache entry class, not only container-document entries. Version
+  5 isolated document-scoped extraction; version 4 isolates the encrypted-PDF
+  refusal behavior; version 3 isolates entries derived before PDF page
+  classification stopped depending on `include_media`; version 2 isolated
+  entries written before representation negotiation existed.
 - `DerivedDocumentCacheEntry` stores the extracted title/description/text,
   `raw_text`, links, truncation flags, the structured `FetchDocument` (blocks,
   outline, chunks), trust markers, and transport tag.
@@ -377,23 +379,58 @@ matches every ZIP. ODF, legacy binary Office, and RTF resolve to
 resolves to `document_encrypted`.
 
 `FetchClient` mirrors its PDF early return with a document path: the pre-body
-gate admits a supported format only when the feature is compiled in, the body is
-read under a 16 MiB document cap, and the same extraction runs from a fresh
-response and from raw-cache re-derivation. With the feature off, every path
-behaves exactly as before.
+gate admits a supported format only when the feature is compiled in. The
+extractor input ceiling is 16 MiB (`MAX_INPUT_BYTES`), additionally clamped by
+`[fetch].max_bytes` (2,000,000 bytes by default); extraction sees only the
+admitted body. The same extraction runs from a fresh response and from
+raw-cache re-derivation. With the feature off, every path behaves exactly as
+before.
 
 Bounds are enforced on real inflated bytes, not on central-directory sizes,
-which the archive controls: 64 MiB decompressed, a 100:1 inflation ratio, 4,096
-archive entries, 4,096 parts, 200,000 characters before the caller budget, and
-XML depth 64. The archive is pre-scanned before `calamine` inflates it. Entries
-are never extracted to disk, absolute and parent-traversal names are rejected,
-and no DTD, external entity, `XInclude`, or external relationship is resolved.
+which the archive controls: `MAX_DECOMPRESSED_BYTES` is 64 MiB, the inflation
+ratio is 100:1, and the archive-entry and part bounds are 4,096 each.
+`MAX_DOCUMENT_CHARS` caps extracted text at 200,000 characters per document.
+The rendered per-part budget defaults to 12,000 characters
+(`[fetch].max_chars_default`) and can be addressed up to `[fetch].max_chars_cap`
+(50,000 by default); those budget defaults are not the hard extracted-text
+ceiling. XML nesting depth is 64. `MAX_XML_TOKENS` is 262,144 for the
+token-scanned DOCX body, PPTX slide documents, and EPUB spine documents.
+
+Workbook extraction bounds 200,000 observed cells (`MAX_CELL_COUNT`) across
+the workbook. Because the spreadsheet reader allocates a dense rectangle over
+observed cells, the bounding rectangle spanned by those cells is bounded too.
+The sheet-size scan streams sheet XML and counts observed `<c>` elements
+instead of collecting a token vector; declared `<dimension>` and the
+column-times-row product are not treated as content. Thus a sheet declaring
+`A1:XFD1048576` but populating one cell extracts normally, while a genuinely
+over-cap sheet is refused. CSV has the same 200,000-cell bound and enforces it
+incrementally during the scan, refusing at the cap rather than after building
+a row.
+
+For XML text extraction, the five predefined XML entities (`&amp;`, `&lt;`,
+`&gt;`, `&quot;`, `&apos;`) and decimal and hexadecimal character references
+are decoded into the surrounding text run. An undeclared named reference such
+as `&nbsp;` is preserved as its literal source text, neither dropped nor
+expanded; there is deliberately no HTML entity table, so output never depends
+on a table version. Adjacent character data, CDATA, and references merge into
+one text run, so no separator is inserted inside a word.
+
+A plain `<!DOCTYPE html>` with no internal subset and no `SYSTEM` or `PUBLIC`
+identifier is accepted. A doctype body containing `[`, `SYSTEM`, or `PUBLIC`
+(case-insensitive) is refused as `document_malformed`. No entity is ever
+resolved from a doctype, and no external entity, `XInclude`, or external
+relationship is resolved. Entries are never extracted to disk, and absolute
+and parent-traversal names are rejected. A malformed container returns
+`document_malformed`, never an empty success.
 
 Ordering is fixed and independent of ZIP directory order: DOCX body order, PPTX
 `presentation.xml` slide order, workbook sheet order, EPUB spine order, and
 fixed 100-row CSV blocks. `FetchDocument` carries `format`, `parts`, and
 `parts_total` additively; the response-level `text` remains the bounded
 concatenation, so an agent that never reads `parts` still sees the document.
+Each part carries its extractor truncation flag: the part that reaches its
+character budget is flagged, later parts are not, and `document_truncated` is
+true when any part was cut.
 The document path is admitted before the ordinary HTML/text/PDF rejection, so a
 container format is no longer refused as an unsupported content type when the
 feature is compiled in; with the feature off, that rejection is unchanged.

@@ -199,14 +199,18 @@ cargo run -- mcp stdio
 cargo run -- mcp serve
 ```
 
-Feature-scoped runs (default features already include `pdf` and `browser`, so the
-flags below are only needed after `--no-default-features` or to be explicit):
+Feature-scoped runs (Cargo defaults include `pdf`, `browser`, and `documents`, so a
+narrower build starts from `--no-default-features`):
 
 ```bash
 cargo run --features mock -- search "test query"
-cargo run --features pdf -- fetch https://example.com/doc.pdf
-cargo run --features browser -- fetch https://example.com
+cargo run --no-default-features --features pdf -- fetch https://example.com/doc.pdf
+cargo run --no-default-features --features browser -- fetch https://example.com
 ```
+
+To reproduce the previous artifact posture without container-document
+extraction, build with `--no-default-features --features pdf,browser`. This
+retains PDF extraction and browser rendering but leaves `documents` out.
 
 Diagnostics:
 

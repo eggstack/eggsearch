@@ -13,6 +13,7 @@ Use when building, testing, or contributing to eggsearch. Covers cargo commands,
 # Routine verification gate
 make check
 make packaging-check
+make parity-check
 cargo test --locked --all-features update::tests
 
 # Individual targets
@@ -35,9 +36,10 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `mock` | Test-only mock engine (`src/meta/mock.rs`) | Integration/corpus tests |
 | `pdf` | PDF text extraction via `lopdf` | PDF tests |
 | `browser` | Headless Chrome/Chromium rendering via `chromiumoxide` | Browser rendering tests |
+| `documents` | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX | `documents` suite |
 | `egress` | Optional listener-free HTTP/SOCKS proxy-chain route beneath eggfetch (provider upstreams only, source-build opt-in) | Egress routing tests |
 | `live-smoke` | Live network smoke tests (implies `mock`) | Manual only |
-| `live-mcp-smoke` | Real MCP-protocol smoke against built-in keyless defaults; retains default `pdf`/`browser`, does not enable `mock` | Manual only |
+| `live-mcp-smoke` | Real MCP-protocol smoke against built-in keyless defaults; retains default `pdf`/`browser`/`documents`, does not enable `mock` | Manual only |
 | `live-release-smoke` (make target) | The same ignored MCP smoke built with `--release`; the only valid measurement of challenge-solver and proof-of-work timing | Manual only |
 **Integration/corpus tests require `--features mock`.** Running `cargo test` without features misses most tests.
 
@@ -55,7 +57,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/snapshot_change.rs` | `mock` | Deterministic persistent fetch comparison, sanitized storage, brief projection, and disabled-store warning |
 | `tests/site_map.rs` | `mock` | Bounded same-origin site URL discovery: robots/sitemap/index/link sources, normalization, malformed XML, bounds, determinism, and zero fetch of discovered URLs |
 | `tests/snapshot_change.rs` | `mock` | Durable deterministic change comparison: `new`/`same`/`changed`/`removed`, sanitized storage, disabled and corrupt-store degradation, and caller-key validation |
-| `tests/documents.rs` | `documents` (feature-off cases run without it) | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic ordering, typed outcomes, and feature-off parity |
+| `tests/documents.rs` | `documents` (feature-off cases run without it) | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic ordering, typed outcomes, and feature-off parity (11 cases with the feature, 3 without) |
 | `tests/structured_local_code_intelligence.rs` | `mock` | Structured local code intelligence: 4-language fixtures, definition ranking, regex fallback, budgets, repo-map enrichment |
 | `tests/corpus_runner.rs` | `mock` | Multi-step workflow regression |
 | `tests/property_*.rs` | None | Property tests (sanitize, identity, fetch, render, local FS, excerpt economy) |
@@ -76,7 +78,7 @@ cargo bench --locked --all-features --bench perf --no-run  # characterization on
 | `tests/security_applicability_corpus.rs` | None | Security applicability pipeline regression |
 | `tests/browser_profiles.rs` | `browser` | Browser profile management |
 | `tests/browser_transport.rs` | `browser` | Browser transport orchestration |
-| `tests/mcp_http.rs` | `all-features`; live test via `live-mcp-smoke` | Loopback Streamable HTTP lifecycle, bounds, identity, shutdown, plus ignored real-provider MCP smoke exercising default PDF/browser features without `mock` |
+| `tests/mcp_http.rs` | `all-features`; live test via `live-mcp-smoke` | Loopback Streamable HTTP lifecycle, bounds, identity, shutdown, plus ignored real-provider MCP smoke exercising default PDF/browser/documents features without `mock` |
 | `bindings/python/tests/test_native.py` | CPython 3.11–3.14 | Native asyncio bridge, input bounds, started-barrier cancellation with Rust drop/permit recovery, concurrent close and 32-call saturation recovery, and default-config selection |
 
 This table is representative, not exhaustive — 96 test suites exist. Full per-suite inventory lives in `docs/test-inventory.md`.
@@ -97,6 +99,7 @@ cargo test --locked --all-features --test proxy_route_feasibility
 cargo test --locked --features mock --test fetch_proxy_route
 cargo test --locked --features mock --test site_map
 cargo test --locked --all-features --test documents
+cargo test --locked --no-default-features --test documents  # feature-off parity: 3 cases; 11 with the feature
 cargo test --locked --features mock --test snapshot_change
 cargo test --locked --all-features --test docs_config_snippets --test docs_provider_inventory --test docs_tool_names --test docs_safety_vocabulary --test docs_links --test static_guards
 ```

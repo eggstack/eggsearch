@@ -337,3 +337,82 @@ async fn malformed_container_is_distinguishable() {
     .expect_err("a malformed container is refused");
     assert!(error_text(&error).contains("document_malformed"));
 }
+
+#[cfg(feature = "documents")]
+#[tokio::test]
+async fn docx_character_references_survive_the_tool_boundary() {
+    let server = MockServer::start();
+    let body = archive(&[(
+        "word/document.xml",
+        r#"<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Q&amp;A &lt;tag&gt; caf&#233;</w:t></w:r></w:p></w:body></w:document>"#,
+    )]);
+    server.mock(|when, then| {
+        when.method(GET).path("/references.docx");
+        then.status(200)
+            .header("content-type", DOCX_CONTENT_TYPE)
+            .body(body.as_slice());
+    });
+    let response = fetch(server.url("/references.docx")).await;
+    assert_eq!(response["document"]["format"], "docx");
+    let text = response["document"]["parts"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Q&A <tag> caf\u{e9}"));
+}
+
+#[cfg(feature = "documents")]
+#[tokio::test]
+async fn epub_documents_with_a_plain_doctype_extract() {
+    let server = MockServer::start();
+    let body = archive(&[
+        ("mimetype", "application/epub+zip"),
+        (
+            "META-INF/container.xml",
+            r#"<container><rootfiles><rootfile full-path="OPS/book.opf"/></rootfiles></container>"#,
+        ),
+        (
+            "OPS/book.opf",
+            r#"<package><manifest><item id="one" href="one.xhtml"/></manifest><spine><itemref idref="one"/></spine></package>"#,
+        ),
+        (
+            "OPS/one.xhtml",
+            r#"<!DOCTYPE html><html><body><h1>Chapter</h1><p>Doctype body</p></body></html>"#,
+        ),
+    ]);
+    server.mock(|when, then| {
+        when.method(GET).path("/doctype.epub");
+        then.status(200)
+            .header("content-type", EPUB_CONTENT_TYPE)
+            .body(body.as_slice());
+    });
+    let response = fetch(server.url("/doctype.epub")).await;
+    assert_eq!(response["document"]["format"], "epub");
+    assert_eq!(response["document"]["parts_total"], 1);
+    assert!(response["document"]["parts"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Doctype body"));
+}
+
+#[cfg(feature = "documents")]
+#[tokio::test]
+async fn delimiter_dense_csv_is_refused_at_the_cell_bound() {
+    let server = MockServer::start();
+    let body = ",".repeat(300_000);
+    server.mock(|when, then| {
+        when.method(GET).path("/dense.csv");
+        then.status(200)
+            .header("content-type", "text/csv")
+            .body(body.as_str());
+    });
+    let error = run_web_fetch(
+        state(),
+        WebFetchArgs {
+            url: server.url("/dense.csv"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("a delimiter-dense body is refused at the cell bound");
+    let payload = error_text(&error);
+    assert!(payload.contains("document_malformed"));
+    assert!(payload.contains("CSV cell bound exceeded"));
+}

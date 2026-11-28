@@ -1915,7 +1915,7 @@ fn default_features_ship_pdf_and_browser() {
         .lines()
         .find(|line| line.trim_start().starts_with("default ="))
         .expect("Cargo.toml must declare a default feature set");
-    for required in ["pdf", "browser"] {
+    for required in ["pdf", "browser", "documents"] {
         assert!(
             default_line.contains(&format!("\"{required}\"")),
             "the default feature set must ship `{required}`: {default_line}"
@@ -1935,6 +1935,15 @@ fn default_features_ship_pdf_and_browser() {
     assert!(
         browser_default.contains("cfg!(feature = \"browser\")"),
         "browser rendering must default on exactly where the feature is compiled"
+    );
+
+    let documents_default = config
+        .split_once("fn default_documents_enabled() -> bool {")
+        .map(|(_, rest)| rest.chars().take(120).collect::<String>())
+        .expect("config must declare default_documents_enabled");
+    assert!(
+        documents_default.contains("cfg!(feature = \"documents\")"),
+        "container documents must default on exactly where the feature is compiled"
     );
 
     let release = fs::read_to_string(format!("{manifest}/.github/workflows/release-eggpack.yml"))

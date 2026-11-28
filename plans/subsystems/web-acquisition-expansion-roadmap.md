@@ -1,10 +1,10 @@
 # Web Acquisition Expansion Roadmap
 
-Status: active (M001, M002, M003, M004, and M006 closed; M005 closed as no-go)
+Status: active (M001, M002, M003, M004, M005, M006, and M007 closed; M008 conditionally closed)
 Planning baseline: `d932115d1f86af51710747d243455792ff63a6fb` (`docs/user-facing-polish-20261123`)
 Owner: fetch extraction, discovery, and document formats
 
-References: `plans/000-long-term-specification.md` §§1-4; `plans/001-terminology-and-domain-model.md` §4-5; ADR-0001, ADR-0002, ADR-0006 (keyless deterministic retrieval), ADR-0011 (document addressing), ADR-0014 (render bounds), ADR-0022 (nine tools); ADR-0026 (snapshot persistence, container formats, and the M005 no-go); `architecture/fetch.md`; `docs/tool-matrix.md`.
+References: `plans/000-long-term-specification.md` §§1-4; `plans/001-terminology-and-domain-model.md` §4-5; ADR-0001, ADR-0002, ADR-0006 (keyless deterministic retrieval), ADR-0011 (document addressing), ADR-0014 (render bounds), ADR-0022 (nine tools); ADR-0026 (snapshot persistence, container formats, and the M005 no-go); ADR-0027 (container documents in the default artifact set); `architecture/fetch.md`; `docs/tool-matrix.md`.
 
 ## 1. Purpose and ownership boundary
 
@@ -71,7 +71,7 @@ fetch/scope.rs         selector validation and DOM scoping (scraper)
 fetch/attributes.rs    bounded CSS attribute extraction
 fetch/site_map.rs      robots -> sitemap index -> sitemap (quick-xml) -> link fallback
 fetch/snapshots/       opt-in durable store (M003, gated by ADR)
-fetch/documents/       format detection and per-format extraction (M004, feature-gated)
+fetch/documents/       format detection and per-format extraction (M004; default from M008)
 ```
 
 All of it surfaces through the existing `fetch` web item. No tool is added.
@@ -82,8 +82,11 @@ All of it surfaces through the existing `fetch` web item. No tool is added.
 M001 selectors + cache-only ── interface ──> M003 change comparison (scope in snapshot key)
 M002 site discovery ────────── soft ───────> M003 (a changed page set becomes expressible)
 ADR-0026 Decision 1 ────────── hard ──> M003 (storage, scope, retention, diff guard)
-M004 documents ─────────────── independent ──> (no downstream milestone)
+M004 documents ─────────────── soft ───────> M006 (capability report), M007, M008
 ADR-0026 Decision 2 ────────── hard ──> M004 (format and dependency set)
+M006 capability report ─────── soft ───────> M008 (the triad must report the new default)
+M007 fidelity and bounds ───── hard ──> M008 (corrective before any default)
+ADR-0027 default enablement ── hard ──> M008 (artifact set and measurement gate)
 M005 screening ─────────────── rejected ──> closed (ADR-0026 Decision 3)
 ```
 
@@ -97,6 +100,8 @@ M005 screening ─────────────── rejected ──> cl
 | M004 — Document formats beyond PDF | capability | closed | `plans/implementation/web-acquisition-expansion/004-document-formats-beyond-pdf.md` | ADR-0026 Decision 2 (accepted); `documents` optional feature | An explicit URL to CSV, EPUB, DOCX, XLSX, or PPTX returns bounded structured text |
 | M005 — Instruction-signal screening | capability | closed (no-go) | `plans/implementation/web-acquisition-expansion/005-instruction-signal-screening.md` | ADR-0026 Decision 3 (rejected) | No field ships; the existing marker scan and its limits remain the contract |
 | M006 — Documents capability reporting and operator switch | corrective | closed | `plans/implementation/web-acquisition-expansion/006-documents-capability-reporting.md` | ADR-0026 Decision 2; M004 closure record | `provider_status` reports container-document support and `[fetch].documents_enabled` can refuse it, without changing non-default behaviour |
+| M007 — Container-document extraction fidelity and bound correctives | corrective | closed | `plans/implementation/web-acquisition-expansion/007-container-document-extraction-fidelity-correctives.md` | ADR-0027; ADR-0026 Decision 2 bounds contract; M004 and M006 closure records | The text a container document says is the text an agent receives: references resolve, ordinary EPUB XHTML is accepted, OOXML attributes do not collide, and every bound binds on observed content rather than on a declaration or a separator count |
+| M008 — Container-document default enablement | capability | conditionally closed | `plans/implementation/web-acquisition-expansion/008-container-document-default-enablement.md` | ADR-0027 (accepted); hard: M007; operational: hosted wheel qualification | Installing the published binary or wheel is enough to read DOCX, XLSX, PPTX, EPUB, and CSV from an explicit URL, at a recorded per-target size cost |
 
 ## 8. Cross-cutting requirements
 
@@ -122,6 +127,12 @@ M002; deterministic diff fixtures as unit cases for M003 (exact hunk lines and
 counts, byte-identical repeated builds); generated per-format archives for M004,
 including deliberately malformed, encrypted, and high-ratio inputs, so no binary
 corpus can drift from the parser. M005 has no corpus because it was rejected.
+M007 asserts extracted text, not only outcome kinds, against bodies carrying
+character references, a doctype, colliding attribute names, a declared
+spreadsheet dimension, and delimiter-dense CSV, and records peak allocation for
+the last of those before and after. M008 records per-target absolute size and
+delta against the published `v0.4.4` figures, and runs the documents suite with
+default features disabled because the canonical gate otherwise cannot.
 `make check` and `make docs-check` on every milestone. No test requires the
 network.
 
@@ -139,6 +150,17 @@ network.
   explicit rather than silently truncated.
 - **Dependency weight.** M004 adds crates to a 1.89 MSRV build with strict
   packaging guards; the `pdf` feature history is the template.
+- **Default enablement cost.** ADR-0027 puts container parsing in every
+  installed artifact, so a parser defect becomes a shipped defect rather than a
+  source-build inconvenience, and three of seven targets already exceed
+  ADR-0024 §5's 20 MB review figure at `v0.4.4` before the crates arrive. M007
+  closes first, and M008 records absolute size per target with a written reason
+  rather than a delta percentage.
+- **Bounds that bind on the wrong thing.** Three defects in this workstream
+  share one shape: a bound evaluated against what the input *declares* (a
+  spreadsheet dimension, a token count, a separator count) instead of what it
+  produces. Any new bound belongs on observed content and must stop work before
+  the allocation it bounds.
 - **Screening false positives.** M005 was rejected by ADR-0026 Decision 3: the
   proposed signal duplicates `scan_injection_markers`, and the precision bar is
   not reachable with fixed patterns. No field ships, and trust markers are
