@@ -53,10 +53,11 @@ PyO3 and Python packaging dependencies must not enter the root crate's
 default dependency graph or change its binary artifact inventory. Python
 import is side-effect-free. The binding owns Python types and lifecycle
 adaptation; all execution delegates through `src/sdk.rs`. The binding compiles
-`pdf` and `browser` with default features disabled; this is the single feature
-set used across Python wheel targets, and `egress` is not compiled. The browser
-feature uses a system Chrome/Chromium executable at runtime and never bundles
-one. Missing Chrome does not block installation, import, process startup,
+`pdf`, `browser`, and `documents` with default features disabled; this is the
+single feature set used across Python wheel targets, and `egress` is not compiled.
+The wheel includes PDF extraction, browser rendering, and container-document
+extraction. The browser feature uses a system Chrome/Chromium executable at
+runtime and never bundles one. Missing Chrome does not block installation, import, process startup,
 search, or HTTP fetch. For a missing executable, explicit browser requests
 raise `EggsearchError` with `code == "browser_unavailable"` and the cause in
 `message`; `auto` retains the HTTP outcome and adds a structured

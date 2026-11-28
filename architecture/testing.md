@@ -15,7 +15,7 @@ Per-suite counts live in `docs/test-inventory.md`; suite placement rules live in
 |----------|---------|
 | `tests/mcp_tools.rs`, `web_search_integration.rs`, `web_fetch_integration.rs`, `provider_routing.rs`, `provider_probe_conformance.rs`, `repo_workflow.rs`, `research_workflow.rs`, `security_workflow.rs`, `evidence_contract.rs` | Behavioral MCP/workflow contracts |
 | `tests/snapshot_change.rs` | Durable deterministic fetch snapshots, sanitized stored text, brief projection, disabled and corrupt-store degradation, and caller-key validation |
-| `tests/documents.rs` | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic ordering, typed outcomes, and feature-off parity |
+| `tests/documents.rs` | Container-document extraction for CSV/TSV, EPUB, DOCX, XLSX, and PPTX, deterministic ordering, typed outcomes, and feature-off parity (11 cases with the feature, 3 without) |
 | `tests/support/mod.rs` | Shared integration-test harness: git fixture and mock/local state builders, imported with `mod support;` (a module, never a suite target) |
 | `tests/corpus_runner.rs` + `tests/corpus/scenarios/` | Multi-step workflow regression |
 | `tests/corpus/adversarial/` + `tests/adversarial_corpus.rs` | Malformed-input structural validation |
@@ -43,7 +43,7 @@ Use behavioral suite names. Historical phase-suite names are retired; do not int
 | `web_search_integration` | Web search validation, sanitization, intent reranking, excerpt bounds, derived-intent reporting/applied reranking, search-result cache and coalescing equivalence |
 | `web_fetch_integration` | Fetch extraction, truncation, metadata-only mode, safety bounds |
 | `snapshot_change` | Persistent `new`/`same`/`changed`/`removed` comparison, content privacy, brief projection, disabled and corrupt-store degradation, and caller-key validation |
-| `documents` | Bounded container-document extraction, deterministic part order, the four outcome kinds, and feature-off parity |
+| `documents` | Bounded container-document extraction, deterministic part order, the four outcome kinds, and feature-off parity (11 cases with the feature, 3 without); fixtures include a DOCX with XML character references, an EPUB with a plain doctype, and delimiter-dense CSV refused at the cell bound |
 | `provider_routing` | Provider routing, code-host rewrites, diagnostics, capability-skip telemetry, keyless source-provider and credentialed-provider status/opt-in reporting, explicit-provider rejection classification matrix, `parse_shape` transitions and wire round-trip, CodeGG parity qualification journeys |
 | `provider_probe_conformance` | Shared probe service: configured/routable success, missing-key and config skips, unknown-provider skips, timeout, HTTP error (including 429 with `http_status`), parse and network failures, panic containment, probe-health isolation (no consecutive-failure or cooldown write), search-budget derivation and override, explicit-request-after-degraded semantics, bounded/sanitized messages, credential non-leakage, narrow-request budget observance, descriptor source-of-truth for native versus local domain filtering |
 | `repo_workflow` | Repository evidence discovery end to end |
@@ -291,6 +291,7 @@ cargo test --locked --features mock --test fetch_proxy_route
 cargo test --locked --features mock --test site_map
 cargo test --locked --features mock --test snapshot_change
 cargo test --locked --all-features --test documents
+cargo test --locked --no-default-features --test documents
 ```
 
 Browser suites are gated by the `browser` feature:
@@ -332,10 +333,11 @@ cargo test --locked --all-features --test schema_identity_registry
 
 ## Canonical commands
 
-`make check` is the canonical gate:
+`make check` is the canonical gate. Its `parity-check` lane runs 3 feature-off
+cases from `tests/documents.rs`; the suite runs 11 cases with `documents` enabled.
 
 ```bash
-make check  # fmt + clippy + no-default check + all-features tests + hygiene + dependency-policy + packaging-check
+make check  # fmt + clippy + no-default check + documents feature-off parity + all-features tests + hygiene + dependency-policy + packaging-check
 ```
 
 Target breakdown from the `Makefile`:
@@ -346,6 +348,7 @@ Target breakdown from the `Makefile`:
 | `clippy` | `cargo clippy --locked --all-targets --all-features -- -D warnings` (zero warnings) |
 | `feature-check` | `cargo check --locked --no-default-features` (compile-only) |
 | `test` | `cargo test --locked --all-features` |
+| `parity-check` | `cargo test --locked --no-default-features --test documents` (3 feature-off cases; 11 cases with `documents`) |
 | `hygiene` | `./packaging/check-repo-hygiene.sh` |
 | `dependency-policy` | `./packaging/check-dependency-policy.sh` (policy scripts plus pinned `cargo deny check` against `deny.toml`) |
 | `packaging-check` | `./packaging/check-contract.sh` |
@@ -358,7 +361,7 @@ make release-check  # check + docs + release build + publish dry-run
 
 which runs `release-candidate-check`, `docs-check` (`RUSTDOCFLAGS="-D warnings" cargo doc`), `release-build`, and `publish-check` (`cargo publish --dry-run`). MSRV is pinned by `rust-version = "1.89"` in `Cargo.toml`; edition 2021.
 
-CI runs two jobs from `.github/workflows/ci.yml`: `ci` on `ubuntu-latest` invoking `make ci` (an alias of `make check`) with every credential env var blanked, and `windows-portability` on `windows-latest` running `cargo check --locked --all-features --target x86_64-pc-windows-msvc` at the pinned Rust 1.89 so Windows `cfg` breakage cannot hide behind Linux-green CI. `.github/workflows/dependency-security.yml` adds a weekly `cargo deny` policy run, and `.github/workflows/egress-feature-qualify.yml` is a path-filtered, non-publishing per-target `--features egress` compile-check.
+CI runs two jobs from `.github/workflows/ci.yml`: `ci` on `ubuntu-latest` invoking `make ci` (an alias of `make check`, including the feature-off documents parity lane) with every credential env var blanked, and `windows-portability` on `windows-latest` running `cargo check --locked --all-features --target x86_64-pc-windows-msvc` at the pinned Rust 1.89 so Windows `cfg` breakage cannot hide behind Linux-green CI. `.github/workflows/dependency-security.yml` adds a weekly `cargo deny` policy run, and `.github/workflows/egress-feature-qualify.yml` is a path-filtered, non-publishing per-target `--features egress` compile-check.
 
 Individual suites:
 

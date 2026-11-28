@@ -1424,3 +1424,72 @@ mod document_budget {
         );
     }
 }
+
+#[cfg(feature = "documents")]
+mod document_error_mapping {
+    use super::*;
+    use httpmock::prelude::*;
+
+    fn state() -> Arc<ServerState> {
+        let mut config = AppConfig::default();
+        config.fetch.allow_localhost = true;
+        config.fetch.allow_private_network = true;
+        Arc::new(ServerState::build(config).expect("state builds"))
+    }
+
+    fn fetch_args(url: String) -> WebFetchArgs {
+        WebFetchArgs {
+            url,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn document_unsupported_container_is_capability_unavailable() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/legacy.odt");
+            then.status(200)
+                .header("content-type", "application/vnd.oasis.opendocument.text")
+                .body("legacy body");
+        });
+        let error = run_web_fetch(state(), fetch_args(server.url("/legacy.odt")))
+            .await
+            .expect_err("unsupported document format is a capability miss");
+        assert_eq!(
+            error.code(),
+            eggsearch::mcp::tools::ToolErrorCode::CapabilityUnavailable
+        );
+        assert_eq!(
+            error.error_payload()["data"]["code"],
+            "document_unsupported"
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_container_remains_upstream_failed() {
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path("/broken.docx");
+            then.status(200)
+                .header(
+                    "content-type",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
+                .body(b"PK\x03\x04not-a-real-archive".as_slice());
+        });
+        let error = run_web_fetch(state(), fetch_args(server.url("/broken.docx")))
+            .await
+            .expect_err("malformed document container is an upstream failure");
+        assert_eq!(
+            error.code(),
+            eggsearch::mcp::tools::ToolErrorCode::UpstreamFailed
+        );
+        let payload = error.error_payload();
+        let message = payload["message"].as_str().expect("message is a string");
+        assert!(
+            message.contains("document_malformed"),
+            "message names the fetch code: {message}"
+        );
+    }
+}

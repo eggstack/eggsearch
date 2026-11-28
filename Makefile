@@ -1,6 +1,6 @@
-.PHONY: check ci fmt clippy feature-check test hygiene dependency-policy packaging-check producer-drift release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke live-mcp-smoke live-release-smoke eval-tool-surface eval-retrieval-quality native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
+.PHONY: check ci fmt clippy feature-check parity-check test hygiene dependency-policy packaging-check producer-drift release-check release-candidate-check docs-check release-build publish-check bench-check fuzz-smoke live-smoke live-mcp-smoke live-release-smoke eval-tool-surface eval-retrieval-quality native-forge-smoke-github native-forge-smoke-gitlab native-forge-smoke-codeberg native-forge-smoke-gitea native-forge-smoke-all
 
-check: fmt clippy feature-check test hygiene dependency-policy packaging-check
+check: fmt clippy feature-check parity-check test hygiene dependency-policy packaging-check
 
 ci: check
 
@@ -12,6 +12,11 @@ clippy:
 
 feature-check:
 	cargo check --locked --no-default-features
+
+# The default feature set is what ships, so the feature-off half of
+# tests/documents.rs would otherwise only ever run by hand.
+parity-check:
+	cargo test --locked --no-default-features --test documents
 
 test:
 	cargo test --locked --all-features

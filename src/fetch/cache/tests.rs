@@ -1051,7 +1051,7 @@ fn derived_key_renderer_version_isolates_pre_encryption_refusal_entries() {
         false,
         true,
     );
-    assert_eq!(current.extraction_key.renderer_version, 5);
+    assert_eq!(current.extraction_key.renderer_version, 6);
     let mut legacy = current.clone();
     legacy.extraction_key.renderer_version = 3;
     assert_ne!(
@@ -1084,10 +1084,41 @@ async fn cache_derived_does_not_serve_pre_encryption_refusal_entries() {
         false,
         true,
     );
-    assert_eq!(current.extraction_key.renderer_version, 5);
+    assert_eq!(current.extraction_key.renderer_version, 6);
     assert!(
         cache.get_derived(&current).await.is_none(),
         "a derived entry written before the encryption-refusal bump must not be served"
+    );
+}
+
+#[tokio::test]
+async fn cache_derived_does_not_serve_pre_container_fidelity_entries() {
+    let cache = FetchCache::new(10, 10, 1_000_000, 1_000_000);
+    let mut legacy = make_derived_key(7);
+    legacy.extraction_key.renderer_version = 5;
+    let mut legacy_entry = make_derived_entry(7, 32);
+    legacy_entry.extraction_key = legacy.extraction_key.clone();
+    cache.insert_derived(legacy.clone(), legacy_entry).await;
+    assert!(
+        cache.get_derived(&legacy).await.is_some(),
+        "the fixture entry must be retrievable under its own key"
+    );
+
+    let current = build_derived_key(
+        &CacheScope::Anonymous,
+        7,
+        ExtractMode::Text,
+        ExtractionBudgetClass::document_scoped(50_000),
+        false,
+        None,
+        None,
+        false,
+        true,
+    );
+    assert_eq!(current.extraction_key.renderer_version, 6);
+    assert!(
+        cache.get_derived(&current).await.is_none(),
+        "a derived entry written before the container-fidelity bump must not be served"
     );
 }
 

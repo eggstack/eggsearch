@@ -189,23 +189,25 @@ unsupported.
 
 ## Document Formats
 
-CSV, EPUB, DOCX, XLSX, and PPTX are read as bounded, addressable documents when
-the binary includes the `documents` Cargo feature. PDF extraction is separate,
-stays on by default, and is described under [PDF Extraction](#pdf-extraction).
+The supported container formats are CSV/TSV, EPUB, DOCX, XLSX, and PPTX. PDF
+extraction is separate, stays on by default, and is described under
+[PDF Extraction](#pdf-extraction).
 
 ### Enabling
 
-`documents` is not in the default feature set. A source build that needs the
-container formats opts in explicitly:
+Every published binary and the Python wheel carry container-document extraction;
+no feature compilation is needed.
+
+Source builds include `documents` by default. To build without container-document
+extraction and reproduce the previous artifact posture:
 
 ```bash
-cargo build --features documents
+cargo build --no-default-features --features pdf,browser
 ```
 
-The feature adds the `zip` and `calamine` dependencies. It is additive: with
-the feature absent, every request behaves exactly as before, CSV keeps its
-existing bounded table preview, and a `.docx` or `.epub` URL returns the
-ordinary unsupported-content outcome.
+The `documents` feature adds the `zip` and `calamine` dependencies. Without it,
+CSV keeps the bounded table preview and container-document extraction is
+unavailable.
 
 In a build that has the feature, `[fetch].documents_enabled` is the operator
 switch. It defaults to the compiled-in state; setting it to `false` refuses
@@ -245,19 +247,49 @@ the web-fetch request shape has no part selector (only PDF page selection).
 
 | Bound | Value |
 |---|---|
-| Input archive | 16 MiB |
-| Total decompressed data | 64 MiB |
+| Extractor input ceiling | 16 MiB (`MAX_INPUT_BYTES`) |
+| Admitted body | Also clamped by `[fetch].max_bytes` (2,000,000 bytes by default) |
+| Total decompressed data | 64 MiB (`MAX_DECOMPRESSED_BYTES`) |
 | Inflation ratio | 100:1 |
 | Archive entries | 4,096 |
 | Parts | 4,096 |
-| Characters before the caller budget | 200,000 |
-| XML depth | 64 |
+| Extracted text per document | 200,000 characters (`MAX_DOCUMENT_CHARS` ceiling) |
+| Rendered per-part budget | 12,000 characters by default (`[fetch].max_chars_default`); can be addressed up to `[fetch].max_chars_cap` (50,000 by default) |
+| XML nesting depth | 64 |
+| XML token bound | 262,144 (`MAX_XML_TOKENS`) for DOCX body, PPTX slide documents, and EPUB spine documents |
+| Workbook observed cells | 200,000 (`MAX_CELL_COUNT`) across the workbook; the bounding rectangle spanned by observed cells is bounded too |
+| CSV observed cells | 200,000; enforced incrementally during the scan, with refusal at the cap |
+
+The 16 MiB extractor ceiling is separate from body admission: the admitted body
+is additionally clamped by `[fetch].max_bytes` (2,000,000 bytes by default), and
+extraction sees only that admitted body. `MAX_DOCUMENT_CHARS` is the extracted-text
+ceiling; the rendered per-part budget defaults to 12,000 characters and can be
+addressed up to `max_chars_cap` (50,000 by default); those defaults are not the
+hard extracted-text ceiling.
 
 ZIP central-directory sizes are attacker-controlled, so actual inflated bytes
-are counted through a bounded reader and the archive is pre-scanned before a
-spreadsheet parser inflates it. A bound breach is a typed error, never a partial
-success. Nothing is written to disk, and absolute or parent-traversal entry
-names are rejected defensively. No DTD, external entity, `XInclude`, or
+are counted through bounded readers. The XLSX sheet-size scan streams sheet XML
+and counts observed `<c>` elements instead of collecting a token vector; the
+declared `<dimension>` and column-times-row product are not treated as content.
+A sheet declaring `A1:XFD1048576` with one populated cell extracts normally,
+while an over-cap sheet is refused. CSV enforces the same 200,000-cell bound
+incrementally during the scan and refuses at the cap. A bound breach is a typed
+error, never a partial success; a malformed container returns
+`document_malformed`, never an empty success. Nothing is written to disk, and
+absolute or parent-traversal entry names are rejected defensively.
+
+For XML text extraction, the five predefined XML entities (`&amp;`, `&lt;`,
+`&gt;`, `&quot;`, `&apos;`) and decimal and hexadecimal character references
+are decoded into the surrounding text run. An undeclared named reference such
+as `&nbsp;` is preserved as its literal source text, neither dropped nor
+expanded; there is no HTML entity table, so output does not depend on a table
+version. Adjacent character data, CDATA, and references merge into one text
+run, so no separator is inserted inside a word.
+
+A plain `<!DOCTYPE html>` with no internal subset and no `SYSTEM` or `PUBLIC`
+identifier is accepted. A doctype body containing `[`, `SYSTEM`, or `PUBLIC`
+(case-insensitive) is refused as `document_malformed`. No entity is resolved
+from a doctype, and no external entity, `XInclude`, external relationship, or
 external media reference is resolved.
 
 ### Outcome Contract
@@ -269,9 +301,15 @@ external media reference is resolved.
 | `document_unsupported` | ODF, legacy binary Office, or RTF |
 | `document_encrypted` | Password-protected OOXML (`EncryptedPackage`) |
 
+At the tool boundary, `document_disabled` and `document_unsupported` report
+`capability_unavailable`; `document_malformed`, `document_empty`, and
+`document_encrypted` report `upstream_failed`. These fetch-layer code strings
+are unchanged.
+
 A supported format returns the document object instead of the ordinary text
-body. ODF, legacy `.doc`/`.xls`/`.ppt`, and RTF are refused explicitly
-rather than guessed at.
+body. On a default install, a CSV URL returns a `document` object instead of
+the former table preview. ODF, RTF, and legacy binary Office targets return
+`document_unsupported`, rather than being guessed at.
 
 ### Limitations
 

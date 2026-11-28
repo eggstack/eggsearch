@@ -718,7 +718,7 @@ pub fn build_derived_key_scoped_with_route(
             pdf_pages: pdf_pages.map(|s| s.to_string()),
             pdf_ocr: pdf_ocr.map(|s| s.to_string()),
             include_media,
-            renderer_version: 5,
+            renderer_version: 6,
             sanitize_output,
             scoping_fingerprint,
             route_fingerprint,

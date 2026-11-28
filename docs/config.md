@@ -641,12 +641,21 @@ batch_concurrency = 2
 | `include_links_default` | `false` |
 | `sanitize_output` | `true` |
 | `pdf_enabled` | Compiled-in feature state. Enabled by default in current source builds, absent from published `v0.4.4` binaries, and disabled by `--no-default-features` |
-| `documents_enabled` | Compiled-in `documents` feature state. `false` in every default build and in the Python wheel; when the feature is absent the setting is inert |
+| `documents_enabled` | Compiled-in `documents` feature state. `true` in every published binary and the Python wheel; setting it to `false` refuses extraction with `document_disabled`. In builds without the feature, the setting is inert |
 | `pdf_max_pages` | `25` |
 | `pdf_max_chars_per_page` | `12_000` |
 | `pdf_max_total_chars` | `50_000` |
 | `pdf_max_bytes` | `16_777_216` |
 | `pdf_max_decompressed_bytes` | `67_108_864` |
+
+For container documents, `MAX_INPUT_BYTES` is a 16 MiB extractor ceiling, not
+the admitted-body size: the body is also clamped by `[fetch].max_bytes`, which
+defaults to 2,000,000 bytes, and extraction sees only the admitted body.
+`MAX_DOCUMENT_CHARS` is the 200,000-character extracted-text ceiling per
+document. The rendered per-part budget defaults to 12,000 characters via
+`[fetch].max_chars_default` and can be addressed up to `[fetch].max_chars_cap`,
+which defaults to 50,000; those budget defaults are not the hard extracted-text
+ceiling.
 
 Fetch is bounded by byte and character budgets. The byte cap limits the
 response body. `max_chars_cap` limits how much text is extracted and made

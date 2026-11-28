@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Container-document extraction (DOCX, XLSX, PPTX, EPUB, CSV/TSV) is now part of the default feature set of every published binary and the Python wheel. `[fetch].documents_enabled` remains the operator switch; a CSV URL now returns a `document` object instead of the previous table preview.
+
 - The advertised `tools/list` surface is re-pinned: full+full fingerprint `678e2a042ab5b39b` (33,983 bytes) becomes `d7968115e378f708` (34,226 bytes, +243), and the compact profile becomes `4922171e414dc480` (22,405 bytes). The growth is the three selector-honest descriptions that now state the accepted forms for `repo_search`, `repo_map`, and `security_search`, plus the corrected `provider_status` disclaimer; `fetch.items` gained a description too. A byte reduction was not achieved. Hosts cache by fingerprint plus server version, so refresh the cached surface.
 
 - `repo_map` now publishes `next_actions` alongside `suggested_fetches`. Each entry is an executable `fetch` call carrying the repo item the suggestion already resolved, so a caller never reconstructs a locator, and `suggested_fetches` stays populated as a typed convenience.

@@ -74,6 +74,13 @@ pub(crate) fn fetch_tool_error(error: crate::fetch::FetchError) -> ToolError {
             "; DOCX/XLSX extraction is not compiled into this build; rebuild with --features documents (see docs/features.md)",
         );
     }
+    if code == "document_unsupported" {
+        return ToolError::execution_with_data(
+            ToolErrorCode::CapabilityUnavailable,
+            message,
+            serde_json::json!({"code": code}),
+        );
+    }
     if code.starts_with("proxy_") {
         return ToolError::execution_with_data(
             ToolErrorCode::UpstreamFailed,

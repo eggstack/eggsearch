@@ -160,8 +160,9 @@ python -m pip install --only-binary=:all: eggsearch
 Do not build the source distribution on an SBC. The source distribution is a
 developer fallback for environments outside the published wheel matrix. The
 extension package builds the Rust crate with `default-features = false,
-features = ["pdf", "browser"]`: the wheel compiles both PDF extraction and
-browser rendering; `egress` is not compiled. A wheel built from current source
+features = ["pdf", "browser", "documents"]`: the wheel compiles PDF extraction,
+browser rendering, and container-document extraction; `egress` is not compiled.
+A wheel built from current source
 matches the CLI binaries built from the same source; the published
 `eggsearch==0.4.4` wheel is PDF-only. A system Chrome/Chromium executable is a runtime
 dependency only and is never bundled. If it is absent,

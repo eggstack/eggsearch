@@ -169,20 +169,12 @@ pub fn extract_document(
         DocumentFormat::Xlsx => extract_xlsx(body, markdown)?,
         DocumentFormat::Pptx => extract_pptx(body)?,
     };
-    build_result(
-        format,
-        raw_parts.0,
-        raw_parts.1,
-        markdown,
-        document_chars,
-        window_chars,
-    )
+    build_result(format, raw_parts, markdown, document_chars, window_chars)
 }
 
 fn build_result(
     format: DocumentFormat,
-    mut raw_parts: Vec<RawPart>,
-    source_truncated: bool,
+    raw_parts: Vec<RawPart>,
     markdown: bool,
     document_chars: usize,
     window_chars: usize,
@@ -195,14 +187,9 @@ fn build_result(
             "part count bound exceeded".to_string(),
         ));
     }
-    if source_truncated {
-        if let Some(last) = raw_parts.last_mut() {
-            last.truncated = true;
-        }
-    }
     let parts_total = raw_parts.len();
     let mut remaining = document_chars.min(MAX_DOCUMENT_CHARS);
-    let mut document_truncated = source_truncated;
+    let mut document_truncated = false;
     let mut parts = Vec::with_capacity(raw_parts.len());
     for (offset, raw) in raw_parts.into_iter().enumerate() {
         let char_count = raw.text.chars().count();
@@ -246,7 +233,7 @@ fn extract_csv(
     url: &str,
     content_type: Option<&str>,
     markdown: bool,
-) -> Result<(Vec<RawPart>, bool), FetchError> {
+) -> Result<Vec<RawPart>, FetchError> {
     let input = String::from_utf8_lossy(body);
     if input.trim().is_empty() {
         return Err(FetchError::DocumentEmpty);
@@ -271,8 +258,8 @@ fn extract_csv(
     let mut rows_in_part = Vec::with_capacity(100);
     let mut parts = Vec::new();
     let mut rows_total = 0usize;
-    let mut source_truncated = false;
-    let mut emit_row = |row: Vec<String>| -> Result<(), FetchError> {
+    let mut truncated_at_row = None;
+    let mut emit_row = |row: Vec<String>, truncated_row: Option<usize>| -> Result<(), FetchError> {
         rows_total += 1;
         if rows_total > MAX_PARTS * 100 {
             return Err(FetchError::DocumentMalformed(
@@ -281,50 +268,79 @@ fn extract_csv(
         }
         rows_in_part.push(row);
         if rows_in_part.len() == 100 {
-            push_csv_part(&mut parts, &mut rows_in_part, rows_total, markdown)?;
+            push_csv_part(
+                &mut parts,
+                &mut rows_in_part,
+                rows_total,
+                truncated_row,
+                markdown,
+            )?;
         }
         Ok(())
     };
-    for_each_delimited_row(&input, delimiter, &mut emit_row, &mut source_truncated)?;
+    for_each_delimited_row(&input, delimiter, &mut emit_row, &mut truncated_at_row)?;
     if !rows_in_part.is_empty() {
-        push_csv_part(&mut parts, &mut rows_in_part, rows_total, markdown)?;
+        push_csv_part(
+            &mut parts,
+            &mut rows_in_part,
+            rows_total,
+            truncated_at_row,
+            markdown,
+        )?;
     }
     if parts.is_empty() {
         return Err(FetchError::DocumentEmpty);
     }
-    Ok((parts, source_truncated))
+    Ok(parts)
 }
 
 fn for_each_delimited_row<F>(
     input: &str,
     delimiter: char,
     callback: &mut F,
-    truncated: &mut bool,
+    truncated_at_row: &mut Option<usize>,
 ) -> Result<(), FetchError>
 where
-    F: FnMut(Vec<String>) -> Result<(), FetchError>,
+    F: FnMut(Vec<String>, Option<usize>) -> Result<(), FetchError>,
 {
     let mut chars = input.chars().peekable();
     let mut cell = String::new();
     let mut row = Vec::new();
     let mut quoted = false;
     let mut stored_chars = 0usize;
+    let mut rows_seen = 0usize;
+    let mut cells = 0usize;
     while let Some(character) = chars.next() {
         if character == '"' {
             if quoted && chars.peek() == Some(&'"') {
                 chars.next();
-                store_csv_char('"', &mut cell, &mut stored_chars, truncated);
+                store_csv_char(
+                    '"',
+                    &mut cell,
+                    &mut stored_chars,
+                    truncated_at_row,
+                    rows_seen + 1,
+                );
             } else {
                 quoted = !quoted;
             }
         } else if character == delimiter && !quoted {
             row.push(std::mem::take(&mut cell));
+            count_csv_cell(&mut cells)?;
         } else if character == '\n' && !quoted {
             row.push(std::mem::take(&mut cell));
-            callback(std::mem::take(&mut row))?;
+            count_csv_cell(&mut cells)?;
+            rows_seen += 1;
+            callback(std::mem::take(&mut row), *truncated_at_row)?;
         } else if character == '\r' && !quoted && chars.peek() == Some(&'\n') {
         } else {
-            store_csv_char(character, &mut cell, &mut stored_chars, truncated);
+            store_csv_char(
+                character,
+                &mut cell,
+                &mut stored_chars,
+                truncated_at_row,
+                rows_seen + 1,
+            );
         }
     }
     if quoted {
@@ -334,17 +350,34 @@ where
     }
     if !cell.is_empty() || !row.is_empty() || !input.ends_with('\n') {
         row.push(cell);
-        callback(row)?;
+        count_csv_cell(&mut cells)?;
+        callback(row, *truncated_at_row)?;
     }
     Ok(())
 }
 
-fn store_csv_char(character: char, cell: &mut String, stored: &mut usize, truncated: &mut bool) {
+fn count_csv_cell(cells: &mut usize) -> Result<(), FetchError> {
+    *cells += 1;
+    if *cells > MAX_CELL_COUNT {
+        return Err(FetchError::DocumentMalformed(
+            "CSV cell bound exceeded".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn store_csv_char(
+    character: char,
+    cell: &mut String,
+    stored: &mut usize,
+    truncated_at_row: &mut Option<usize>,
+    row: usize,
+) {
     if *stored < MAX_DOCUMENT_CHARS {
         cell.push(character);
         *stored += 1;
     } else {
-        *truncated = true;
+        truncated_at_row.get_or_insert(row);
     }
 }
 
@@ -352,6 +385,7 @@ fn push_csv_part(
     parts: &mut Vec<RawPart>,
     rows: &mut Vec<Vec<String>>,
     rows_total: usize,
+    truncated_at_row: Option<usize>,
     markdown: bool,
 ) -> Result<(), FetchError> {
     if parts.len() >= MAX_PARTS {
@@ -384,17 +418,18 @@ fn push_csv_part(
         }
     }
     text.truncate(text.trim_end_matches('\n').len());
+    let truncated = truncated_at_row.is_some_and(|row| rows_total >= row);
     parts.push(RawPart {
         kind: DocumentPartKind::TableBlock,
         title: Some(title),
         text,
-        truncated: false,
+        truncated,
     });
     rows.clear();
     Ok(())
 }
 
-fn extract_epub(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
+fn extract_epub(body: &[u8]) -> Result<Vec<RawPart>, FetchError> {
     preflight_zip(body)?;
     let container = xml_tokens(&read_zip_entry(body, "META-INF/container.xml")?)?;
     let opf_path = container
@@ -429,7 +464,6 @@ fn extract_epub(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
     }
     let base = opf_path.rsplit_once('/').map_or("", |(base, _)| base);
     let mut parts = Vec::with_capacity(spine.len());
-    let mut source_truncated = false;
     for id in spine {
         let href = manifest
             .get(&id)
@@ -438,7 +472,6 @@ fn extract_epub(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
         let path = resolve_archive_path(base, target)?;
         let tokens = xml_tokens(&read_zip_entry(body, &path)?)?;
         let (title, text, truncated) = extract_xhtml_text(&tokens);
-        source_truncated |= truncated;
         parts.push(RawPart {
             kind: DocumentPartKind::SpineItem,
             title: title.or(Some(id)),
@@ -449,7 +482,7 @@ fn extract_epub(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
     if parts.iter().all(|part| part.text.trim().is_empty()) {
         return Err(FetchError::DocumentEmpty);
     }
-    Ok((parts, source_truncated))
+    Ok(parts)
 }
 
 fn extract_xhtml_text(tokens: &[XmlToken]) -> (Option<String>, String, bool) {
@@ -525,7 +558,7 @@ fn extract_xhtml_text(tokens: &[XmlToken]) -> (Option<String>, String, bool) {
     (title, text.trim().to_string(), truncated)
 }
 
-fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), FetchError> {
+fn extract_docx(body: &[u8], markdown: bool) -> Result<Vec<RawPart>, FetchError> {
     preflight_zip(body)?;
     let tokens = xml_tokens(&read_zip_entry(body, "word/document.xml")?)?;
     let mut parts = Vec::new();
@@ -534,11 +567,12 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
     let mut style = String::new();
     let mut in_paragraph = false;
     let mut in_text = false;
-    let mut source_truncated = tokens.iter().any(|token| token.truncated);
+    let mut section_truncated = false;
     let mut section_title: Option<String> = None;
     let mut section_text = String::new();
     let mut section_chars = 0usize;
     for token in &tokens {
+        section_truncated |= token.truncated;
         match token.kind {
             TokenKind::Start if token.name == "p" => {
                 in_paragraph = true;
@@ -547,7 +581,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                 style.clear();
             }
             TokenKind::Start | TokenKind::Empty if token.name == "pstyle" && in_paragraph => {
-                if let Some(value) = token.attributes.get("val") {
+                if let Some(value) = attribute(&token.attributes, "w:val", "val") {
                     style = value.clone();
                 }
             }
@@ -558,7 +592,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                     &mut paragraph_chars,
                     &token.text,
                     MAX_DOCUMENT_CHARS,
-                    &mut source_truncated,
+                    &mut section_truncated,
                 );
             }
             TokenKind::Empty if in_paragraph && token.name == "tab" => {
@@ -567,7 +601,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                     &mut paragraph_chars,
                     "\t",
                     MAX_DOCUMENT_CHARS,
-                    &mut source_truncated,
+                    &mut section_truncated,
                 );
             }
             TokenKind::Empty if in_paragraph && token.name == "br" => {
@@ -576,7 +610,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                     &mut paragraph_chars,
                     "\n",
                     MAX_DOCUMENT_CHARS,
-                    &mut source_truncated,
+                    &mut section_truncated,
                 );
             }
             TokenKind::End if token.name == "t" => in_text = false,
@@ -589,8 +623,9 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                                 kind: DocumentPartKind::Section,
                                 title: section_title.take(),
                                 text: std::mem::take(&mut section_text),
-                                truncated: false,
+                                truncated: section_truncated,
                             });
+                            section_truncated = false;
                             section_chars = 0;
                         }
                         section_title = Some(value.to_string());
@@ -604,7 +639,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                             &mut section_chars,
                             &heading,
                             MAX_DOCUMENT_CHARS,
-                            &mut source_truncated,
+                            &mut section_truncated,
                         );
                     } else {
                         if !section_text.is_empty() {
@@ -613,7 +648,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                                 &mut section_chars,
                                 "\n",
                                 MAX_DOCUMENT_CHARS,
-                                &mut source_truncated,
+                                &mut section_truncated,
                             );
                         }
                         append_limited(
@@ -621,7 +656,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                             &mut section_chars,
                             value,
                             MAX_DOCUMENT_CHARS,
-                            &mut source_truncated,
+                            &mut section_truncated,
                         );
                     }
                 }
@@ -635,7 +670,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
             kind: DocumentPartKind::Section,
             title: section_title,
             text: section_text,
-            truncated: false,
+            truncated: section_truncated,
         });
     }
     if parts.is_empty() {
@@ -646,7 +681,7 @@ fn extract_docx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
             "part count bound exceeded".to_string(),
         ));
     }
-    Ok((parts, source_truncated))
+    Ok(parts)
 }
 
 fn heading_level(style: &str) -> Option<usize> {
@@ -659,9 +694,9 @@ fn heading_level(style: &str) -> Option<usize> {
     (1..=6).contains(&level).then_some(level)
 }
 
-fn extract_xlsx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), FetchError> {
+fn extract_xlsx(body: &[u8], markdown: bool) -> Result<Vec<RawPart>, FetchError> {
     preflight_zip(body)?;
-    let mut source_truncated = check_xlsx_sheet_sizes(body)?;
+    check_xlsx_sheet_sizes(body)?;
     let mut workbook = open_workbook_auto_from_rs(Cursor::new(body.to_vec()))
         .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
     let sheet_names = workbook.sheet_names().to_vec();
@@ -681,6 +716,7 @@ fn extract_xlsx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
             .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
         let mut text = String::new();
         let mut text_chars = 0usize;
+        let mut sheet_truncated = false;
         for row in range.rows() {
             if text_chars > 0 {
                 append_limited(
@@ -688,7 +724,7 @@ fn extract_xlsx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                     &mut text_chars,
                     "\n",
                     MAX_DOCUMENT_CHARS.saturating_sub(extracted_chars),
-                    &mut source_truncated,
+                    &mut sheet_truncated,
                 );
             }
             for (index, cell) in row.iter().enumerate() {
@@ -699,7 +735,7 @@ fn extract_xlsx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                         &mut text_chars,
                         separator,
                         MAX_DOCUMENT_CHARS.saturating_sub(extracted_chars),
-                        &mut source_truncated,
+                        &mut sheet_truncated,
                     );
                 }
                 let value = format_cell(cell);
@@ -708,7 +744,7 @@ fn extract_xlsx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
                     &mut text_chars,
                     &value,
                     MAX_DOCUMENT_CHARS.saturating_sub(extracted_chars),
-                    &mut source_truncated,
+                    &mut sheet_truncated,
                 );
             }
         }
@@ -717,13 +753,13 @@ fn extract_xlsx(body: &[u8], markdown: bool) -> Result<(Vec<RawPart>, bool), Fet
             kind: DocumentPartKind::Sheet,
             title: Some(sheet_name),
             text,
-            truncated: false,
+            truncated: sheet_truncated,
         });
     }
     if parts.iter().all(|part| part.text.trim().is_empty()) {
         return Err(FetchError::DocumentEmpty);
     }
-    Ok((parts, source_truncated))
+    Ok(parts)
 }
 
 fn format_cell(cell: &Data) -> String {
@@ -738,9 +774,8 @@ fn format_cell(cell: &Data) -> String {
     value.replace(['\r', '\n'], " ")
 }
 
-fn check_xlsx_sheet_sizes(body: &[u8]) -> Result<bool, FetchError> {
+fn check_xlsx_sheet_sizes(body: &[u8]) -> Result<(), FetchError> {
     let mut archive = ZipArchive::new(Cursor::new(body)).map_err(map_zip_error)?;
-    let mut source_truncated = false;
     let mut sheet_paths = Vec::new();
     for index in 0..archive.len() {
         let entry = archive.by_index(index).map_err(map_zip_error)?;
@@ -749,56 +784,67 @@ fn check_xlsx_sheet_sizes(body: &[u8]) -> Result<bool, FetchError> {
             sheet_paths.push(name);
         }
     }
+    let mut cells = 0usize;
     for path in sheet_paths {
-        let tokens = xml_tokens(&read_zip_entry(body, &path)?)?;
-        source_truncated |= tokens.iter().any(|token| token.truncated);
-        let mut cells = 0usize;
-        let mut max_row = 0usize;
+        let sheet = read_zip_entry(body, &path)?;
+        let xml = std::str::from_utf8(&sheet)
+            .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
+        let mut reader = quick_xml::Reader::from_str(xml);
+        reader.config_mut().trim_text(false);
+        let mut min_column = usize::MAX;
         let mut max_column = 0usize;
-        for token in &tokens {
-            if token.name == "dimension" {
-                if let Some(reference) = token.attributes.get("ref") {
-                    if cell_range_area(reference).is_some_and(|area| area > MAX_CELL_COUNT) {
-                        return Err(FetchError::DocumentMalformed(
-                            "spreadsheet cell bound exceeded".to_string(),
-                        ));
+        let mut min_row = usize::MAX;
+        let mut max_row = 0usize;
+        loop {
+            let event = reader
+                .read_event()
+                .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
+            match event {
+                Event::Start(element) | Event::Empty(element) => {
+                    if element.local_name().as_ref() != b"c" {
+                        continue;
                     }
-                }
-            }
-            if token.name == "c" && matches!(token.kind, TokenKind::Start | TokenKind::Empty) {
-                cells += 1;
-                if cells > MAX_CELL_COUNT {
-                    return Err(FetchError::DocumentMalformed(
-                        "spreadsheet cell bound exceeded".to_string(),
-                    ));
-                }
-                if let Some(reference) = token.attributes.get("r") {
-                    if let Some((column, row)) = cell_position(reference) {
-                        max_column = max_column.max(column);
-                        max_row = max_row.max(row);
-                        if max_column.saturating_mul(max_row) > MAX_CELL_COUNT {
+                    cells += 1;
+                    if cells > MAX_CELL_COUNT {
+                        return Err(cell_bound_exceeded());
+                    }
+                    for attribute in element.attributes().with_checks(false) {
+                        let attribute = attribute
+                            .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
+                        if attribute.key.local_name().as_ref() != b"r" {
+                            continue;
+                        }
+                        let reference = attribute
+                            .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                            .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
+                        if reference.chars().count() > 4096 {
                             return Err(FetchError::DocumentMalformed(
-                                "spreadsheet cell bound exceeded".to_string(),
+                                "XML attribute bound exceeded".to_string(),
                             ));
+                        }
+                        if let Some((column, row)) = cell_position(&reference) {
+                            min_column = min_column.min(column);
+                            max_column = max_column.max(column);
+                            min_row = min_row.min(row);
+                            max_row = max_row.max(row);
+                            let columns = max_column.saturating_sub(min_column).saturating_add(1);
+                            let rows = max_row.saturating_sub(min_row).saturating_add(1);
+                            if columns.saturating_mul(rows) > MAX_CELL_COUNT {
+                                return Err(cell_bound_exceeded());
+                            }
                         }
                     }
                 }
+                Event::Eof => break,
+                _ => {}
             }
         }
     }
-    Ok(source_truncated)
+    Ok(())
 }
 
-fn cell_range_area(reference: &str) -> Option<usize> {
-    let mut endpoints = reference.split(':');
-    let first = cell_position(endpoints.next()?)?;
-    let last = cell_position(endpoints.next().unwrap_or(reference))?;
-    Some(
-        last.0
-            .saturating_sub(first.0)
-            .saturating_add(1)
-            .saturating_mul(last.1.saturating_sub(first.1).saturating_add(1)),
-    )
+fn cell_bound_exceeded() -> FetchError {
+    FetchError::DocumentMalformed("spreadsheet cell bound exceeded".to_string())
 }
 
 fn cell_position(reference: &str) -> Option<(usize, usize)> {
@@ -825,14 +871,14 @@ fn cell_position(reference: &str) -> Option<(usize, usize)> {
     (column > 0 && row > 0).then_some((column, row))
 }
 
-fn extract_pptx(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
+fn extract_pptx(body: &[u8]) -> Result<Vec<RawPart>, FetchError> {
     preflight_zip(body)?;
     let presentation = xml_tokens(&read_zip_entry(body, "ppt/presentation.xml")?)?;
     let relationships = xml_tokens(&read_zip_entry(body, "ppt/_rels/presentation.xml.rels")?)?;
     let mut ordered_ids = Vec::new();
     for token in &presentation {
         if token.name == "sldid" && matches!(token.kind, TokenKind::Start | TokenKind::Empty) {
-            if let Some(id) = token.attributes.get("id") {
+            if let Some(id) = token.attributes.get("r:id") {
                 ordered_ids.push(id.clone());
             }
         }
@@ -864,7 +910,6 @@ fn extract_pptx(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
         }
     }
     let mut parts = Vec::with_capacity(ordered_ids.len());
-    let mut source_truncated = false;
     for id in ordered_ids {
         let target = targets.get(&id).ok_or_else(|| {
             FetchError::DocumentMalformed("PPTX slide relationship missing".to_string())
@@ -872,7 +917,6 @@ fn extract_pptx(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
         let path = resolve_archive_path("ppt", target)?;
         let tokens = xml_tokens(&read_zip_entry(body, &path)?)?;
         let (title, text, truncated) = extract_slide_text(&tokens);
-        source_truncated |= truncated;
         parts.push(RawPart {
             kind: DocumentPartKind::Slide,
             title,
@@ -883,7 +927,7 @@ fn extract_pptx(body: &[u8]) -> Result<(Vec<RawPart>, bool), FetchError> {
     if parts.iter().all(|part| part.text.trim().is_empty()) {
         return Err(FetchError::DocumentEmpty);
     }
-    Ok((parts, source_truncated))
+    Ok(parts)
 }
 
 fn extract_slide_text(tokens: &[XmlToken]) -> (Option<String>, String, bool) {
@@ -1140,7 +1184,7 @@ fn xml_tokens(bytes: &[u8]) -> Result<Vec<XmlToken>, FetchError> {
         .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
     let mut reader = quick_xml::Reader::from_str(xml);
     reader.config_mut().trim_text(false);
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<XmlToken> = Vec::new();
     let mut depth = 0usize;
     let mut total_text = 0usize;
     let mut truncated = false;
@@ -1153,32 +1197,32 @@ fn xml_tokens(bytes: &[u8]) -> Result<Vec<XmlToken>, FetchError> {
                         "XML depth bound exceeded".to_string(),
                     ));
                 }
-                XmlToken {
+                Some(XmlToken {
                     kind: TokenKind::Start,
                     name: local_name(event.local_name().as_ref()),
                     attributes: parse_attributes(&event)?,
                     text: String::new(),
                     truncated: false,
-                }
+                })
             }
-            Ok(Event::Empty(event)) => XmlToken {
+            Ok(Event::Empty(event)) => Some(XmlToken {
                 kind: TokenKind::Empty,
                 name: local_name(event.local_name().as_ref()),
                 attributes: parse_attributes(&event)?,
                 text: String::new(),
                 truncated: false,
-            },
+            }),
             Ok(Event::End(event)) => {
                 depth = depth.checked_sub(1).ok_or_else(|| {
                     FetchError::DocumentMalformed("unbalanced XML end tag".to_string())
                 })?;
-                XmlToken {
+                Some(XmlToken {
                     kind: TokenKind::End,
                     name: local_name(event.local_name().as_ref()),
                     attributes: HashMap::new(),
                     text: String::new(),
                     truncated: false,
-                }
+                })
             }
             Ok(Event::Text(event)) => {
                 let decoded = event
@@ -1186,48 +1230,41 @@ fn xml_tokens(bytes: &[u8]) -> Result<Vec<XmlToken>, FetchError> {
                     .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
                 let value = quick_xml::escape::unescape(&decoded)
                     .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
-                let remaining = MAX_DOCUMENT_CHARS.saturating_sub(total_text);
-                let text: String = value.chars().take(remaining).collect();
-                total_text += text.chars().count();
-                truncated |= text.chars().count() < value.chars().count();
-                XmlToken {
-                    kind: TokenKind::Text,
-                    name: String::new(),
-                    attributes: HashMap::new(),
-                    text,
-                    truncated: false,
-                }
+                text_token(&mut tokens, &value, &mut total_text, &mut truncated)
             }
             Ok(Event::CData(event)) => {
                 let value = event
                     .decode()
                     .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
-                let remaining = MAX_DOCUMENT_CHARS.saturating_sub(total_text);
-                let text: String = value.chars().take(remaining).collect();
-                total_text += text.chars().count();
-                truncated |= text.chars().count() < value.chars().count();
-                XmlToken {
-                    kind: TokenKind::Text,
-                    name: String::new(),
-                    attributes: HashMap::new(),
-                    text,
-                    truncated: false,
-                }
+                text_token(&mut tokens, &value, &mut total_text, &mut truncated)
             }
-            Ok(Event::DocType(_)) => {
-                return Err(FetchError::DocumentMalformed(
-                    "DTD is not supported".to_string(),
-                ));
+            Ok(Event::DocType(event)) => {
+                let body = event
+                    .decode()
+                    .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
+                let upper = body.to_ascii_uppercase();
+                if body.contains('[') || upper.contains("SYSTEM") || upper.contains("PUBLIC") {
+                    return Err(FetchError::DocumentMalformed(
+                        "DTD is not supported".to_string(),
+                    ));
+                }
+                None
+            }
+            Ok(Event::GeneralRef(event)) => {
+                let value = decode_general_ref(&event)?;
+                text_token(&mut tokens, &value, &mut total_text, &mut truncated)
             }
             Ok(Event::Eof) => break,
-            Ok(_) => continue,
+            Ok(_) => None,
             Err(error) => return Err(FetchError::DocumentMalformed(error.to_string())),
         };
-        tokens.push(token);
-        if tokens.len() > MAX_XML_TOKENS {
-            return Err(FetchError::DocumentMalformed(
-                "XML token bound exceeded".to_string(),
-            ));
+        if let Some(token) = token {
+            tokens.push(token);
+            if tokens.len() > MAX_XML_TOKENS {
+                return Err(FetchError::DocumentMalformed(
+                    "XML token bound exceeded".to_string(),
+                ));
+            }
         }
     }
     if depth != 0 {
@@ -1247,6 +1284,33 @@ fn xml_tokens(bytes: &[u8]) -> Result<Vec<XmlToken>, FetchError> {
     Ok(tokens)
 }
 
+fn text_token(
+    tokens: &mut [XmlToken],
+    value: &str,
+    total_text: &mut usize,
+    truncated: &mut bool,
+) -> Option<XmlToken> {
+    let remaining = MAX_DOCUMENT_CHARS.saturating_sub(*total_text);
+    let text: String = value.chars().take(remaining).collect();
+    let cut = text.chars().count() < value.chars().count();
+    *total_text += text.chars().count();
+    *truncated |= cut;
+    if let Some(previous) = tokens.last_mut() {
+        if previous.kind == TokenKind::Text {
+            previous.text.push_str(&text);
+            previous.truncated |= cut;
+            return None;
+        }
+    }
+    Some(XmlToken {
+        kind: TokenKind::Text,
+        name: String::new(),
+        attributes: HashMap::new(),
+        text,
+        truncated: cut,
+    })
+}
+
 fn parse_attributes(
     event: &quick_xml::events::BytesStart<'_>,
 ) -> Result<HashMap<String, String>, FetchError> {
@@ -1254,7 +1318,7 @@ fn parse_attributes(
     for attribute in event.attributes().with_checks(false) {
         let attribute =
             attribute.map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
-        let name = local_name(attribute.key.local_name().as_ref());
+        let name = String::from_utf8_lossy(attribute.key.as_ref()).to_ascii_lowercase();
         let value = attribute
             .normalized_value(quick_xml::XmlVersion::Implicit1_0)
             .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
@@ -1270,6 +1334,36 @@ fn parse_attributes(
 
 fn local_name(value: &[u8]) -> String {
     String::from_utf8_lossy(value).to_ascii_lowercase()
+}
+
+fn attribute<'a>(
+    attributes: &'a HashMap<String, String>,
+    qualified: &str,
+    local: &str,
+) -> Option<&'a String> {
+    attributes.get(qualified).or_else(|| attributes.get(local))
+}
+
+fn decode_general_ref(event: &quick_xml::events::BytesRef<'_>) -> Result<String, FetchError> {
+    let name = event
+        .decode()
+        .map_err(|error| FetchError::DocumentMalformed(error.to_string()))?;
+    let decoded = match &*name {
+        "amp" => Some('&'),
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "apos" => Some('\''),
+        "quot" => Some('"'),
+        _ => None,
+    };
+    if let Some(character) = decoded {
+        return Ok(character.to_string());
+    }
+    match event.resolve_char_ref() {
+        Ok(Some(character)) => Ok(character.to_string()),
+        Ok(None) => Ok(format!("&{name};")),
+        Err(error) => Err(FetchError::DocumentMalformed(error.to_string())),
+    }
 }
 
 fn append_spaced(

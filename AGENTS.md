@@ -9,12 +9,12 @@ Single library + binary crate, not a workspace. Stable contract is MCP tools (10
 From project root. CI pins Rust 1.89 (`rust-version` in `Cargo.toml`); edition 2021.
 
 ```bash
-make check  # canonical gate (= CI): fmt + clippy + no-default check + all-features tests + hygiene + dependency-policy + packaging-check
+make check  # canonical gate (= CI): fmt + clippy + no-default check + documents feature-off parity + all-features tests + hygiene + dependency-policy + packaging-check
 make release-check  # check + docs + release build + publish dry-run
 make bench-check  # compile-check the Criterion perf harness (characterization only, never a threshold); fuzz: make fuzz-smoke
 ```
 
-Feature flags: `pdf` and `browser` are enabled by Cargo defaults; `mock` is the test-only engine harness (**required for integration/corpus tests**, and plain `cargo test` misses most of them); `egress` is opt-in and excluded from prebuilt/default binaries; `live-smoke` implies `mock`; `live-mcp-smoke` is the opt-in real MCP/network smoke that retains default `pdf`/`browser` and does not enable `mock`. Both live smoke targets are ignored by default. Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
+Feature flags: `pdf`, `browser`, and `documents` are enabled by Cargo defaults; `mock` is the test-only engine harness (**required for integration/corpus tests**, and plain `cargo test` misses most of them); `egress` is opt-in and excluded from prebuilt/default binaries; `live-smoke` implies `mock`; `live-mcp-smoke` is the opt-in real MCP/network smoke that retains default `pdf`/`browser`/`documents` and does not enable `mock`. Both live smoke targets are ignored by default. Tests must pass keyless: CI blanks all credential env vars, so missing credentials are provider-scoped skips, never global failures. Tests must not require network.
 
 ```bash
 cargo test --locked --features mock --test web_search_integration  # single suite
